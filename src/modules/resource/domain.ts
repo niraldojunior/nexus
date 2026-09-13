@@ -343,6 +343,8 @@ export type ResourceCatalogNodeImpact = {
   nodeId: string;
   catalogId: string;
   descendantCount: number;
+  /** Descendentes ainda ativos: são os únicos que impedem inativar um GROUP. */
+  activeDescendantCount: number;
   descendantNodeIds: string[];
   resourceTypeIds: string[];
   specificationCount: number;

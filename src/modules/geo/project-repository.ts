@@ -232,9 +232,13 @@ const toProject = (row: ProjectRow): GeoProject => ({
 });
 
 export class GeoProjectRepository {
-  constructor(private db: DatabaseClient) {}
+  public constructor(
+    private readonly db: DatabaseClient,
+    private readonly options: { bootstrapStatusCatalog?: boolean } = {},
+  ) {}
 
   private async ensureStatusCatalog(tenantId: string): Promise<void> {
+    if (this.options.bootstrapStatusCatalog === false) return;
     for (const item of PROJECT_STATUS_DEFAULTS) {
       // ON CONFLICT é específico de Postgres/SQLite. O runtime corporativo usa Oracle,
       // portanto o bootstrap precisa ser simples e portável.

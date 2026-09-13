@@ -25,9 +25,20 @@ export type ExecuteProjectTransitionInput = {
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
 
+const emptyWorkflow = (fallbackChecksum?: string): GeoProjectWorkflowReadModel => ({
+  schemaVersion: GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
+  workflowId: GEO_PROJECT_WORKFLOW_ID,
+  initialStateCode: '',
+  states: [],
+  transitions: [],
+  fallback: false,
+  ...(fallbackChecksum ? { publicationChecksum: fallbackChecksum } : {}),
+});
+
 const normalizeWorkflow = (
   raw: Record<string, unknown> | undefined,
   fallbackChecksum?: string,
+  fallbackToCanonical = true,
 ): GeoProjectWorkflowReadModel => {
   if (
     !raw ||
@@ -36,11 +47,13 @@ const normalizeWorkflow = (
     !Array.isArray(raw.states) ||
     !Array.isArray(raw.transitions)
   ) {
-    return {
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
-      fallback: true,
-      ...(fallbackChecksum ? { publicationChecksum: fallbackChecksum } : {}),
-    };
+    return fallbackToCanonical
+      ? {
+          ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+          fallback: true,
+          ...(fallbackChecksum ? { publicationChecksum: fallbackChecksum } : {}),
+        }
+      : emptyWorkflow(fallbackChecksum);
   }
   return {
     schemaVersion: GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
@@ -61,6 +74,7 @@ export class GeoProjectWorkflowService {
     private readonly resourceService: ResourceService,
     private readonly studioService: StudioService,
     private readonly _eventService?: EventService,
+    private readonly options: { fallbackToCanonical?: boolean } = {},
   ) {}
 
   public async getWorkflow(context?: RequestContext): Promise<GeoProjectWorkflowReadModel> {
@@ -73,15 +87,21 @@ export class GeoProjectWorkflowService {
     try {
       const published = await this.studioService.getPublishedVersion('rules-workflows', ctx);
       if (published) {
-        return normalizeWorkflow(published.snapshot, published.checksum);
+        return normalizeWorkflow(
+          published.snapshot,
+          published.checksum,
+          this.options.fallbackToCanonical !== false,
+        );
       }
     } catch {
       // Fallback operacional resiliente quando o Studio ainda não foi publicado
     }
-    return {
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
-      fallback: true,
-    };
+    return this.options.fallbackToCanonical === false
+      ? emptyWorkflow()
+      : {
+          ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+          fallback: true,
+        };
   }
 
   public async getProjectTransitions(
@@ -99,6 +119,12 @@ export class GeoProjectWorkflowService {
     }
 
     const workflow = await this.getWorkflow(context);
+    if (workflow.states.length === 0) {
+      throw new AppError('project workflow is not configured', {
+        code: 'GEO_PROJECT_WORKFLOW_NOT_CONFIGURED',
+        statusCode: 409,
+      });
+    }
     const actorRoles = new Set(context.roles ?? []);
     const isPlatformAdmin = actorRoles.has('platform.admin');
 
@@ -143,6 +169,12 @@ export class GeoProjectWorkflowService {
     }
 
     const workflow = await this.getWorkflow(context);
+    if (workflow.states.length === 0) {
+      throw new AppError('project workflow is not configured', {
+        code: 'GEO_PROJECT_WORKFLOW_NOT_CONFIGURED',
+        statusCode: 409,
+      });
+    }
     const actorRoles = new Set(context.roles ?? []);
     const isPlatformAdmin = actorRoles.has('platform.admin');
 

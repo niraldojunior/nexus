@@ -9,6 +9,7 @@ import type {
 } from '../../../services/resourceCatalogApi';
 import {
   listResourceCatalogs,
+  createResourceCatalog,
   getResourceCatalogTree,
   createResourceCatalogNode,
   updateResourceCatalogNode,
@@ -140,10 +141,10 @@ export function ResourceModelStudio({
   }, []);
 
   // Load tree when selectedCatalogId changes
-  const reloadTree = async () => {
-    if (!selectedCatalogId) return;
+  const reloadTree = async (catalogId = selectedCatalogId) => {
+    if (!catalogId) return;
     try {
-      const treeData = await getResourceCatalogTree(selectedCatalogId, true);
+      const treeData = await getResourceCatalogTree(catalogId, true);
       setTree(treeData);
       if (selectedNode) {
         // Refresh selected node reference
@@ -245,14 +246,28 @@ export function ResourceModelStudio({
   // RESOURCE_TYPE) sob o pai resolvido, seleciona o nó recém-criado, expande o pai e fecha o menu
   // — a edição do nome acontece depois, via autosave na aba Geral.
   const handleCreateFromMenu = async (kind: CreateResourceCatalogNodeInput['kind']) => {
-    if (!selectedCatalogId) return;
     setCreateMenuOpen(false);
+    setError(null);
     try {
-      const created = await createResourceCatalogNode(selectedCatalogId, {
+      // Um ambiente `empty` ainda não possui catálogo. A primeira ação explícita de modelagem
+      // cria somente o contêiner vazio e, em seguida, o nó solicitado — nunca um template.
+      let catalogId = selectedCatalogId;
+      if (!catalogId) {
+        const catalog = await createResourceCatalog({
+          code: 'default-catalog',
+          name: 'Catálogo de Recursos',
+          isDefault: true,
+          sortOrder: 0,
+        });
+        catalogId = catalog.id;
+        setCatalogs((current) => [...current, catalog]);
+        setSelectedCatalogId(catalog.id);
+      }
+      const created = await createResourceCatalogNode(catalogId, {
         kind,
         parentNodeId: createMenuParent?.id,
       });
-      await reloadTree();
+      await reloadTree(catalogId);
       setSelectedNode(created);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Falha ao criar nó no catálogo.');

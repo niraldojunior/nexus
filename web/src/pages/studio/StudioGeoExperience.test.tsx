@@ -18,7 +18,7 @@ vi.mock('../../services/geoApi', () => ({
 }));
 
 vi.mock('../../services/resourceCatalogApi', () => ({
-  listResourceTypes: vi.fn(),
+  listModeledResourceTypes: vi.fn(),
 }));
 
 const baseNodes: StudioGeoNode[] = [
@@ -32,7 +32,7 @@ const baseNodes: StudioGeoNode[] = [
   },
 ];
 
-const makeStatus = (nodes: StudioGeoNode[]): StudioStatus => ({
+const makeStatus = (nodes?: StudioGeoNode[]): StudioStatus => ({
   workspace: {
     '@type': 'StudioWorkspace',
     id: 'ws-geo',
@@ -41,22 +41,24 @@ const makeStatus = (nodes: StudioGeoNode[]): StudioStatus => ({
     domain: 'studio-geo',
     updatedAt: '2026-09-05T10:00:00.000Z',
     publishedVersionId: undefined,
-    draftVersionId: 'ver-1',
+    draftVersionId: nodes ? 'ver-1' : undefined,
   },
   publishedVersion: undefined,
-  draftVersion: {
-    '@type': 'StudioVersion',
-    id: 'ver-1',
-    href: '/v1/studio/studio-geo/versions/ver-1',
-    tenantId: 'tenant-default',
-    domain: 'studio-geo',
-    versionNumber: 1,
-    status: 'draft',
-    snapshot: { schemaVersion: 2, nodes },
-    checksum: 'chk-1',
-    createdAt: '2026-09-05T10:00:00.000Z',
-    createdBy: 'user-admin',
-  },
+  draftVersion: nodes
+    ? {
+        '@type': 'StudioVersion',
+        id: 'ver-1',
+        href: '/v1/studio/studio-geo/versions/ver-1',
+        tenantId: 'tenant-default',
+        domain: 'studio-geo',
+        versionNumber: 1,
+        status: 'draft',
+        snapshot: { schemaVersion: 2, nodes },
+        checksum: 'chk-1',
+        createdAt: '2026-09-05T10:00:00.000Z',
+        createdBy: 'user-admin',
+      }
+    : undefined,
 });
 
 describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
@@ -64,11 +66,32 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     vi.resetAllMocks();
     vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(baseNodes));
     vi.mocked(geoApi.listGeoSiteSpecifications).mockResolvedValue([]);
-    vi.mocked(resourceCatalogApi.listResourceTypes).mockResolvedValue([]);
+    vi.mocked(resourceCatalogApi.listModeledResourceTypes).mockResolvedValue([]);
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('carrega uma hierarquia vazia quando não há draft nem publicação', async () => {
+    vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus());
+    let captureInitial: (() => Promise<Record<string, unknown>>) | null = null;
+
+    render(
+      <StudioGeoExperience
+        canEdit
+        isEditing
+        onRegisterCaptureInitialSnapshot={(fn) => {
+          captureInitial = fn;
+        }}
+      />,
+    );
+
+    expect(await screen.findByText('Nenhum nó na hierarquia.')).toBeInTheDocument();
+    expect(screen.getByText('Crie o primeiro grupo ou entidade visual.')).toBeInTheDocument();
+    expect(screen.queryByText('Locais')).not.toBeInTheDocument();
+    await waitFor(() => expect(captureInitial).not.toBeNull());
+    await expect(captureInitial!()).resolves.toEqual({ schemaVersion: 2, nodes: [] });
   });
 
   it('clique no "+" abre o menu com "Grupo" e "Entidade Visual", sem abrir modal', async () => {

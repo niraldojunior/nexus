@@ -51,15 +51,6 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
       };
     }
 
-    if (specs.length === 0) {
-      issues.push({
-        severity: 'error',
-        code: 'SPECS_EMPTY',
-        message: 'O modelo de locais deve conter pelo menos uma especificação de local.',
-        path: 'specifications',
-      });
-    }
-
     const codeSet = new Set<string>();
     const validCategories = new Set<GeographicSiteSpecificationCategory>([
       'Region',
@@ -158,12 +149,8 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
       }
     }
 
-    // Nota: auto-referência direta (uma spec listada como pai/filho de si mesma) NÃO é
-    // rejeitada aqui — é o modelo canônico documentado em RF-004 para Region (Continente > País >
-    // Estado > Cidade > Regional V.tal > Bairro são todos category=Region, aninhados recursivamente
-    // via Region→Region). O bootstrap protege exatamente esse containment (ver
-    // BOOTSTRAP_SPECIFICATIONS em geo/service.ts), então rejeitar auto-referência aqui bloquearia
-    // toda publicação/descarte do modelo de locais.
+    // Auto-referência direta não é rejeitada: uma hierarquia pode modelar níveis recursivos
+    // da mesma specification quando o catálogo publicado assim o permitir.
 
     return {
       valid: issues.length === 0,
@@ -252,28 +239,11 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
         .map((c) => codeToIdMap.get(c.trim().toUpperCase()))
         .filter((id): id is string => Boolean(id));
 
-      // As regras de contenção protegidas (bootstrap, C11) nunca podem ser removidas — mas o
-      // snapshot capturado no frontend resolve pai/filho só pelos códigos presentes nele. Se o
-      // snapshot estiver incompleto ou desatualizado em relação ao que já está protegido no banco
-      // (ex.: normalização de código, spec ausente do snapshot), a lista resolvida acima pode ficar
-      // menor que o conjunto protegido vigente, e `updateSpec` rejeitaria com
-      // GEO_SPEC_CONTAINMENT_PROTECTED. Mesclamos aqui os IDs já protegidos para nunca dropá-los —
-      // materialize() (publish e "Cancelar"/discard) precisa ser sempre idempotente sobre proteções.
-      const existing = existingByCode.get(normalizedCode);
-      const protectedParentIds = existing?._protectedAllowedParentSpecIds ?? [];
-      const protectedChildIds = existing?._protectedAllowedChildSpecIds ?? [];
-      const mergedAllowedParentSpecIds = Array.from(
-        new Set([...allowedParentSpecIds, ...protectedParentIds]),
-      );
-      const mergedAllowedChildSpecIds = Array.from(
-        new Set([...allowedChildSpecIds, ...protectedChildIds]),
-      );
-
       await this.geoService.updateSpec(
         specId,
         {
-          allowedParentSpecIds: mergedAllowedParentSpecIds,
-          allowedChildSpecIds: mergedAllowedChildSpecIds,
+          allowedParentSpecIds,
+          allowedChildSpecIds,
         },
         reqContext,
       );

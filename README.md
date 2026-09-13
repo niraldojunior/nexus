@@ -181,8 +181,21 @@ para não apagar DEV/HML/PRD no mesmo schema.
 | Comando                    | O que faz                                                 |
 | -------------------------- | --------------------------------------------------------- |
 | `npm run db:migrate`       | Aplica DDL pendente no prefixo Oracle configurado         |
+| `npm run db:environment`   | Cria ou exclui interativamente um ambiente Oracle Nexus   |
 | `npm run mcp:tmf`          | Servidor MCP (stdio) expondo as APIs TMF a clientes de IA |
 | `npm run browsers:install` | Instala o Chromium do Playwright                          |
+
+#### Gerenciar ambientes Oracle
+
+Use `npm run db:environment` para provisionar ou remover um namespace Nexus no schema Oracle compartilhado. O operador precisa configurar no `.env` `ORACLE_CONNECTION_STRING`, `ORACLE_USER` e `ORACLE_PASSWORD`; o usuário Oracle também precisa de privilégios para criar e remover objetos DDL.
+
+No fluxo de criação, informe um prefixo terminado em `_` (por exemplo, `NX_DEV1_`) e o nome do Tenant inicial. O comando aplica o schema e as migrations canônicas, cria o Tenant como `Organization` TMF, gera seu UUID v7 e cria `admin@vtal.com`, vinculado a esse Tenant e com `platform.admin`. A senha temporária aleatória é exibida apenas ao término bem-sucedido: use-a no primeiro login e altere-a imediatamente. O comando não grava senha nem modifica o `.env`.
+
+Depois da criação, mantenha `AUTH_JWT_SECRET` no `.env` e inicie o ambiente escolhido sem editar o arquivo: `./start-dev.ps1 -Prefix <prefixo-criado>` (por exemplo, `./start-dev.ps1 -Prefix NX_DEV1_`). Sem parâmetros, `npm run dev` e `./start-dev.ps1` preservam o ambiente tradicional `NEXUS_DEV_`. As credenciais Oracle continuam exclusivamente no `.env`; o parâmetro seleciona apenas o conjunto de tabelas.
+
+Para aplicar migrations no prefixo selecionado antes de iniciar, use `./start-dev.ps1 -Prefix NX_DEV1_ -Migrate`.
+
+No fluxo de exclusão, o comando lista os prefixos Nexus detectados, inclusive os semelhantes a ambientes produtivos. A remoção é física e irreversível: ela só continua após digitar literalmente o prefixo selecionado. Apenas tabelas pertencentes à allowlist do Nexus são removidas; objetos desconhecidos com o mesmo prefixo não são tocados.
 
 ---
 

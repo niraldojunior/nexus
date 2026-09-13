@@ -7,6 +7,7 @@ import type { ResourceCatalog, ResourceCatalogTreeNode } from '../../../services
 
 vi.mock('../../../services/resourceCatalogApi', () => ({
   listResourceCatalogs: vi.fn(),
+  createResourceCatalog: vi.fn(),
   getResourceCatalogTree: vi.fn(),
   createResourceCatalogNode: vi.fn(),
   updateResourceCatalogNode: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('../../../services/resourceCatalogApi', () => ({
   getResourceCatalogNodeImpact: vi.fn().mockResolvedValue({
     nodeId: 'leaf-1',
     descendantCount: 0,
+    activeDescendantCount: 0,
     descendantNodeIds: [],
     resourceTypeIds: ['rt-1'],
     specificationCount: 0,
@@ -136,6 +138,45 @@ describe('ResourceModelStudio', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Nenhum nó selecionado')).toBeInTheDocument();
+    });
+  });
+
+  it('creates the first catalog and group in an empty environment', async () => {
+    const user = userEvent.setup();
+    const catalog = { ...mockCatalog, id: 'empty-cat', tenantId: 'tenant-empty' };
+    const createdNode = {
+      '@type': 'ResourceCatalogNode' as const,
+      id: 'grp-first',
+      href: '/v1/resource-catalogs/empty-cat/nodes/grp-first',
+      catalogId: 'empty-cat',
+      code: 'group-first',
+      name: 'Novo Grupo',
+      kind: 'GROUP' as const,
+      status: 'active' as const,
+      sortOrder: 0,
+      tenantId: 'tenant-empty',
+    };
+    vi.mocked(resourceCatalogApi.listResourceCatalogs).mockResolvedValue([]);
+    vi.mocked(resourceCatalogApi.createResourceCatalog).mockResolvedValue(catalog);
+    vi.mocked(resourceCatalogApi.createResourceCatalogNode).mockResolvedValue(createdNode);
+    vi.mocked(resourceCatalogApi.getResourceCatalogTree).mockResolvedValue([]);
+
+    render(<ResourceModelStudio canEdit={true} canAdmin={true} isEditing={true} />);
+
+    await user.click(screen.getByTitle('Incluir nó'));
+    await user.click(screen.getByRole('menuitem', { name: /Grupo/ }));
+
+    await waitFor(() => {
+      expect(resourceCatalogApi.createResourceCatalog).toHaveBeenCalledWith({
+        code: 'default-catalog',
+        name: 'Catálogo de Recursos',
+        isDefault: true,
+        sortOrder: 0,
+      });
+      expect(resourceCatalogApi.createResourceCatalogNode).toHaveBeenCalledWith(
+        'empty-cat',
+        expect.objectContaining({ kind: 'GROUP' }),
+      );
     });
   });
 

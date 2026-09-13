@@ -857,9 +857,9 @@ const routeRequest = async ({
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
 };
 
-// Read-model operacional de camadas: só a publicação pode dirigir o mapa. Quando não há versão
-// publicada (migração incompleta ou indisponibilidade transitória), devolve o catálogo canônico em
-// fallback para não deixar o mapa inoperante.
+// Read-model operacional de camadas: só a publicação pode dirigir o mapa. O namespace empty
+// devolve catálogo não configurado sem criar publicação; o fallback canônico é apenas compatibilidade
+// dos namespaces legacy.
 const routePublishedGeoLayerCatalogRequest = async ({
   request,
   response,
@@ -877,31 +877,36 @@ const routePublishedGeoLayerCatalogRequest = async ({
   requireRoles(context, GEO_PROJECT_READ_ROLES);
   let published: Awaited<ReturnType<typeof runtime.studioService.getPublishedVersion>>;
   try {
-    published = await runtime.studioService.ensurePublishedBootstrap(
-      'studio-geo',
-      CANONICAL_STUDIO_GEO_SNAPSHOT,
-      {
-        ...context,
-        actorSub: 'studio-bootstrap',
-        roles: ['studio.admin', 'platform.admin'],
-      },
-    );
-    // `ensurePublishedBootstrap` returns the existing publication without touching it; when a
-    // tenant already has Studio GEO, the operational read remains a pure published-version read.
+    published = await runtime.studioService.getPublishedVersion('studio-geo', context);
   } catch {
-    // O catálogo canônico mantém o mapa operacional durante uma migração ainda não aplicada ou
-    // uma falha transitória de leitura do control plane; drafts continuam inacessíveis aqui.
+    // Leitura indisponível não pode materializar configuração. Legacy preserva somente o fallback
+    // de leitura para manter o mapa operacional durante uma migração incompleta.
     published = undefined;
   }
   const snapshot = published?.snapshot;
-  const catalog: StudioGeoCatalog =
-    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+  const hasPublishedSnapshot = Boolean(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot));
+  const catalog: StudioGeoCatalog = hasPublishedSnapshot
+    ? {
+        ...normalizeStudioGeoSnapshot(snapshot as Record<string, unknown>),
+        configured: true,
+        environmentId: runtime.environmentProfile.environmentId,
+        ...(published ? { publicationChecksum: published.checksum } : {}),
+        fallback: false,
+      }
+    : runtime.environmentProfile.bootstrapMode === 'legacy'
       ? {
-          ...normalizeStudioGeoSnapshot(snapshot as Record<string, unknown>),
-          ...(published ? { publicationChecksum: published.checksum } : {}),
-          fallback: false,
+          ...CANONICAL_STUDIO_GEO_SNAPSHOT,
+          configured: false,
+          environmentId: runtime.environmentProfile.environmentId,
+          fallback: true,
         }
-      : { ...CANONICAL_STUDIO_GEO_SNAPSHOT, fallback: true };
+      : {
+          schemaVersion: 2,
+          nodes: [],
+          configured: false,
+          environmentId: runtime.environmentProfile.environmentId,
+          fallback: false,
+        };
   if (catalog.publicationChecksum) response.setHeader('ETag', catalog.publicationChecksum);
   await sendJson(response, 200, catalog);
 };

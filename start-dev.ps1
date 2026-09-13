@@ -1,5 +1,6 @@
 param(
-  # Ambiente Oracle a subir (prefixo dos objetos no schema único). Padrão: DEV.
+  # Ambiente Oracle a subir (prefixo dos objetos no schema único). Sem parâmetros, usa NEXUS_DEV_.
+  # Exemplo: .\start-dev.ps1 -Prefix NX_DEV1_
   [string]$Prefix = 'NEXUS_DEV_',
   # Aplica o schema (db:migrate) no prefixo antes de subir. Use quando o schema mudou
   # (ex.: colunas/tabelas novas). Sem o flag, o boot só valida a versão — mais rápido.
@@ -9,6 +10,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 Set-Location $PSScriptRoot
+
+# Identificadores Oracle não são parametrizáveis; validar antes de parar processos ou iniciar build.
+$Prefix = $Prefix.Trim().ToUpperInvariant()
+if ($Prefix -notmatch '^[A-Za-z][A-Za-z0-9_]*_$') {
+  Write-Error 'Prefixo Oracle inválido. Use letras, números ou _, começando por letra e terminando em _ (ex.: NX_DEV1_).'
+}
 
 # Sobe backend Oracle e frontend Vite com um comando, encerrando antes qualquer
 # sessão de desenvolvimento anterior que esteja usando as mesmas portas.

@@ -95,6 +95,10 @@ export type StudioGeoNode = StudioGeoGroupNode | StudioGeoEntityNode;
 export type StudioGeoCatalog = {
   schemaVersion: 2;
   nodes: StudioGeoNode[];
+  /** Whether an explicit Studio GEO publication exists for the current tenant. */
+  configured: boolean;
+  /** Stable public namespace identity for browser-only map preferences. */
+  environmentId: string;
   publicationChecksum?: string;
   fallback: boolean;
 };

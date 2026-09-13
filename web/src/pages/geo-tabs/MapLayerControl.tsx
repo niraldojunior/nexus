@@ -94,7 +94,7 @@ export function MapLayerControl({
   allVisible,
   scaleMeters,
 }: MapLayerControlProps) {
-  const [open, setOpen] = useState(() => readStoredLayerControlOpen(false));
+  const [open, setOpen] = useState(() => readStoredLayerControlOpen(catalog.environmentId, false));
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() =>
     readStoredExpandedGroups(catalog),
   );
@@ -104,7 +104,7 @@ export function MapLayerControl({
 
   const handleSetOpen = (nextOpen: boolean) => {
     setOpen(nextOpen);
-    writeStoredLayerControlOpen(nextOpen);
+    writeStoredLayerControlOpen(nextOpen, catalog.environmentId);
   };
 
   useEffect(() => {
@@ -126,7 +126,7 @@ export function MapLayerControl({
       } else {
         next.add(groupId);
       }
-      writeStoredExpandedGroups(next);
+      writeStoredExpandedGroups(next, catalog.environmentId);
       return next;
     });
   };

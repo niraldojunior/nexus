@@ -68,6 +68,7 @@ export type ResourceCatalogNodeImpact = {
   nodeId: string;
   catalogId: string;
   descendantCount: number;
+  activeDescendantCount: number;
   descendantNodeIds: string[];
   resourceTypeIds: string[];
   specificationCount: number;
@@ -158,6 +159,19 @@ export async function listResourceCatalogs(): Promise<ResourceCatalog[]> {
 
 export async function getResourceCatalog(id: string): Promise<ResourceCatalog> {
   return await requestJson<ResourceCatalog>(`/v1/resource-catalogs/${encodeURIComponent(id)}`);
+}
+
+export async function createResourceCatalog(input: {
+  code: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  sortOrder?: number;
+}): Promise<ResourceCatalog> {
+  return await requestJson<ResourceCatalog>('/v1/resource-catalogs', {
+    method: 'POST',
+    body: input,
+  });
 }
 
 export async function getResourceCatalogTree(

@@ -87,9 +87,47 @@ test('ResourceService: calculates impact of a node and its descendants', async (
   const impact = await resourceService.getResourceCatalogNodeImpact(catalog.id, group.id, context);
   assert.equal(impact.nodeId, group.id);
   assert.equal(impact.descendantCount, 1);
+  assert.equal(impact.activeDescendantCount, 1);
   assert.deepEqual(impact.descendantNodeIds, [leaf.id]);
   assert.ok(leaf.resourceTypeId);
   assert.equal(impact.resourceTypeIds.includes(leaf.resourceTypeId), true);
+});
+
+test('ResourceService: blocks a group only while it has active descendants', async () => {
+  const { resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'cat-inactivate-group', name: 'Catálogo de Inativação' },
+    context,
+  );
+  const group = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-root', name: 'Grupo Raiz', kind: 'GROUP' },
+    context,
+  );
+  const nestedGroup = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-nested', name: 'Grupo Aninhado', kind: 'GROUP', parentNodeId: group.id },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'leaf-active', name: 'Folha Ativa', kind: 'RESOURCE_TYPE', parentNodeId: nestedGroup.id },
+    context,
+  );
+
+  await assert.rejects(
+    () => resourceService.deleteResourceCatalogNode(catalog.id, group.id, context),
+    (error: { code?: string }) => error.code === 'RESOURCE_CATALOG_NODE_HAS_CHILDREN',
+  );
+
+  await resourceService.deleteResourceCatalogNode(catalog.id, leaf.id, context);
+  await resourceService.deleteResourceCatalogNode(catalog.id, nestedGroup.id, context);
+  const retiredGroup = await resourceService.deleteResourceCatalogNode(catalog.id, group.id, context);
+
+  assert.equal(retiredGroup.status, 'inactive');
+  const impact = await resourceService.getResourceCatalogNodeImpact(catalog.id, group.id, context);
+  assert.equal(impact.descendantCount, 2);
+  assert.equal(impact.activeDescendantCount, 0);
 });
 
 test('ResourceModelStudioAdapter: validates snapshot for cycles, missing codes, and invalid parents', async () => {

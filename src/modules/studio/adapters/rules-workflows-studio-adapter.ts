@@ -29,6 +29,10 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
   constructor(private readonly db?: DatabaseClient) {}
 
   public async validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> {
+    if (Object.keys(snapshot).length === 0) {
+      return { valid: true, issues: [], validatedAt: new Date().toISOString() };
+    }
+
     const typed = snapshot as Partial<GeoProjectWorkflowSnapshot>;
     const issues: StudioValidationIssue[] = [];
 
@@ -307,7 +311,7 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
       );
     }
 
-    if (!this.db) return;
+    if (!this.db || Object.keys(snapshot).length === 0) return;
 
     const typed = snapshot as unknown as GeoProjectWorkflowSnapshot;
     const incomingCodes = new Set(typed.states.map((state) => state.code));

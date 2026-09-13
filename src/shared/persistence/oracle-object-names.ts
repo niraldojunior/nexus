@@ -16,6 +16,19 @@ import { TABLE_NAMES } from './schema.js';
 // it must also be per-environment, so it joins the set of names that get prefixed.
 export const PREFIXABLE_TABLE_NAMES: readonly string[] = [...TABLE_NAMES, 'schema_migrations'];
 
+export const ORACLE_OBJECT_PREFIX_PATTERN = /^[A-Za-z][A-Za-z0-9_]*_$/;
+
+/** Valida e normaliza um prefixo de ambiente para o formato usado por identificadores Oracle. */
+export const normalizeOracleObjectPrefix = (value: string): string => {
+  const normalized = value.trim().toUpperCase();
+  if (!ORACLE_OBJECT_PREFIX_PATTERN.test(normalized)) {
+    throw new Error(
+      'ORACLE_OBJECT_PREFIX must match ^[A-Za-z][A-Za-z0-9_]*_$ (e.g. NEXUS_DEV_, NEXUS_TEST_).',
+    );
+  }
+  return normalized;
+};
+
 // Longest names first so a longer name (tmf_resource_relationship_generic) is attempted before a
 // shorter one it contains (tmf_resource_relationship). The trailing \b in the pattern already guards
 // this, but ordering keeps the intent explicit and the regex robust.

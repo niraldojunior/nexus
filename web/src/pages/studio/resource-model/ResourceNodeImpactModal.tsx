@@ -40,7 +40,8 @@ export function ResourceNodeImpactModal({
 
   if (!isOpen) return null;
 
-  const hasDescendants = impact && impact.descendantCount > 0;
+  const activeDescendantCount = impact?.activeDescendantCount ?? 0;
+  const hasActiveDescendants = activeDescendantCount > 0;
   const isGroup = node.kind === 'GROUP';
 
   const handleConfirm = async () => {
@@ -79,7 +80,7 @@ export function ResourceNodeImpactModal({
           <Button
             variant="danger"
             onClick={handleConfirm}
-            disabled={submitting || Boolean(isGroup && hasDescendants)}
+            disabled={submitting || Boolean(isGroup && hasActiveDescendants)}
             iconLeft={<Trash2 className="h-4 w-4" />}
           >
             {submitting ? 'Inativando…' : 'Inativar nó'}
@@ -109,20 +110,21 @@ export function ResourceNodeImpactModal({
                 Você está prestes a inativar o nó <strong>{node.name}</strong>.
               </p>
 
-              {isGroup && hasDescendants && (
+              {isGroup && hasActiveDescendants && (
                 <div className="rounded-[16px] border border-red-200 bg-red-50/70 p-4 text-red-800 text-[0.84rem]">
-                  <strong className="font-semibold block mb-1">Atenção: Nó com filhos diretos</strong>
-                  Este grupo possui {impact?.descendantCount} nó(s) subordinado(s). O backend recusa
-                  a inativação direta de grupos não-vazios. Remova ou mova os nós filhos antes de
-                  inativar este grupo.
+                  <strong className="font-semibold block mb-1">Atenção: subordinados ativos</strong>
+                  Este grupo possui {activeDescendantCount} nó(s) subordinado(s) ativo(s). Inative ou
+                  mova todos os subordinados ativos antes de inativar este grupo.
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 pt-1">
                 <div className="rounded-[10px] border border-app-border p-3">
-                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Filhos</span>
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Subordinados ativos
+                  </span>
                   <p className="text-[1.1rem] font-semibold text-app-text mt-0.5">
-                    {impact?.descendantCount ?? 0}
+                    {activeDescendantCount}
                   </p>
                 </div>
                 <div className="rounded-[10px] border border-app-border p-3">

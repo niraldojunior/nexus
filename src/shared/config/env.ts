@@ -1,4 +1,5 @@
 import type { DatabasePoolConfig } from '../persistence/database-client.js';
+import { normalizeOracleObjectPrefix } from '../persistence/oracle-object-names.js';
 
 export type OracleConfig = {
   provider: 'oracle';
@@ -132,15 +133,8 @@ export const resolveDatabaseConfig = (env: NodeJS.ProcessEnv): OracleConfig => (
 // DEV/HML/PRD/TEST share one Oracle schema, so every object name carries this prefix. Validated to
 // a leading letter, word chars, and a trailing `_` so it can be interpolated straight into SQL
 // object names without escaping.
-const resolveOracleObjectPrefix = (env: NodeJS.ProcessEnv): string => {
-  const value = requireOracleValue(env.ORACLE_OBJECT_PREFIX, 'ORACLE_OBJECT_PREFIX').trim();
-  if (!/^[A-Za-z][A-Za-z0-9_]*_$/.test(value)) {
-    throw new Error(
-      'ORACLE_OBJECT_PREFIX must match ^[A-Za-z][A-Za-z0-9_]*_$ (e.g. NEXUS_DEV_, NEXUS_TEST_).',
-    );
-  }
-  return value;
-};
+const resolveOracleObjectPrefix = (env: NodeJS.ProcessEnv): string =>
+  normalizeOracleObjectPrefix(requireOracleValue(env.ORACLE_OBJECT_PREFIX, 'ORACLE_OBJECT_PREFIX'));
 
 // Oracle pool: ORACLE_POOL_* overrides the shared DATABASE_POOL_* defaults; timeouts arrive in
 // seconds (oracledb convention) and are converted to the milliseconds the pool config carries.

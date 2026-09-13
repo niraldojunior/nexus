@@ -8,6 +8,7 @@ vi.mock('../../../services/resourceCatalogApi', () => ({
   getResourceCatalogNodeImpact: vi.fn().mockResolvedValue({
     nodeId: 'leaf-1',
     descendantCount: 0,
+    activeDescendantCount: 0,
     descendantNodeIds: [],
     resourceTypeIds: ['rt-1'],
     specificationCount: 2,

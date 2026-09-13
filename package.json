@@ -17,6 +17,7 @@
     "dev:local": "powershell -ExecutionPolicy Bypass -File start-dev.ps1",
     "docs:check": "node scripts/validate-functional-specs.mjs",
     "db:migrate": "npm run build && node dist/src/scripts/migrate-database.js",
+    "db:environment": "npm run build && node dist/src/scripts/manage-database-environment.js",
     "migrate:netwin:infranode": "npm run build && node dist/src/scripts/migrate-netwin-infranode.js",
     "migrate:netwin:osp": "npm run build && node dist/src/scripts/migrate-netwin-osp.js",
     "migrate:resource-catalog": "npm run build && node dist/src/scripts/migrate-resource-catalog.js",

@@ -40,8 +40,8 @@ export function useMapLayers(catalog: StudioGeoCatalog): UseMapLayers {
   }, [catalog, catalogKey]);
 
   useEffect(() => {
-    writeStoredLayers(layers);
-  }, [layers]);
+    writeStoredLayers(layers, catalog.environmentId);
+  }, [layers, catalog.environmentId]);
 
   const toggleLayer = useCallback((id: MapLayerId) => {
     setLayers((current) => (id in current ? { ...current, [id]: !current[id] } : current));

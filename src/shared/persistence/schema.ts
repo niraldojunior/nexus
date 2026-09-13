@@ -65,6 +65,7 @@ export const TABLE_NAMES = [
   'tmf_resource_relationship_type',
   'tmf_resource_type_relationship_rule',
   'tmf_resource_type_clone_ledger',
+  'nexus_environment',
 ] as const;
 
 // Column migrations added after the base schema so databases created before these columns get
@@ -1959,6 +1960,20 @@ const MIGRATIONS_SQL_V16_MAP_FEATURE_SOURCE_MODEL_ID_WIDTH = `
   ALTER TABLE geo_map_feature ALTER COLUMN source_model_id TYPE VARCHAR(255);
 `;
 
+// Perfil persistido do namespace Nexus. Ambientes anteriores à migration recebem a linha legacy;
+// o provisionador atualiza-a para empty ao criar o Tenant/admin inicial.
+const MIGRATIONS_SQL_V17_ENVIRONMENT_PROFILE = `
+  CREATE TABLE IF NOT EXISTS nexus_environment (
+    id TEXT PRIMARY KEY,
+    bootstrap_mode TEXT NOT NULL DEFAULT 'legacy' CHECK(bootstrap_mode IN ('empty', 'legacy')),
+    tenant_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  UPDATE tmf_geographic_site_specification SET is_bootstrap = 0 WHERE is_bootstrap <> 0;
+  UPDATE tmf_geographic_site_spec_containment_rule SET is_protected = 0 WHERE is_protected <> 0;
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2015,6 +2030,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 16,
     name: 'map-feature-source-model-id-width',
     sql: MIGRATIONS_SQL_V16_MAP_FEATURE_SOURCE_MODEL_ID_WIDTH,
+  },
+  {
+    version: 17,
+    name: 'environment-profile-and-unprotected-geo-specs',
+    sql: MIGRATIONS_SQL_V17_ENVIRONMENT_PROFILE,
   },
 ];
 

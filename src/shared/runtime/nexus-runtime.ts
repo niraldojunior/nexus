@@ -20,6 +20,7 @@ import type { DatabaseClient } from '../persistence/database-client.js';
 import { OracleSearchRepository } from '../persistence/oracle-search-repository.js';
 import type { UserRecord } from '../persistence/oracle-user-repository.js';
 import { OracleUserRepository } from '../persistence/oracle-user-repository.js';
+import { EnvironmentProfileRepository } from '../persistence/environment-profile-repository.js';
 import { EventService } from '../tmf/index.js';
 import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
 import { AuthService } from '../../modules/auth/index.js';
@@ -82,19 +83,24 @@ export const DEFAULT_RUNTIME_USER = {
 
 export const createNexusRuntime = async (db: DatabaseClient, options: NexusRuntimeOptions = {}) => {
   const userRepository = new OracleUserRepository(db);
+  const environmentProfile = await new EnvironmentProfileRepository(db).get();
+  const isEmptyEnvironment = environmentProfile.bootstrapMode === 'empty';
   const authService = new AuthService(userRepository, {
     ...(options.auth?.jwtSecret ? { jwtSecret: options.auth.jwtSecret } : {}),
     accessTokenTtlSeconds: options.auth?.accessTokenTtlSeconds ?? DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
   });
   const geoSearchHistoryRepository = new GeoSearchHistoryRepository(db);
-  const geoProjectRepository = new GeoProjectRepository(db);
+  const geoProjectRepository = new GeoProjectRepository(db, {
+    bootstrapStatusCatalog: !isEmptyEnvironment,
+  });
   const searchRepository = new OracleSearchRepository(db);
   const researchRepository = new OracleResearchRepository(db);
   const geoRepository = new OracleGeoRepository(db);
   const mapFeatureSynchronizer = new GeoMapFeatureSynchronizer(db);
   const geoService = new GeoService(geoRepository, mapFeatureSynchronizer);
-  await geoService.ensureBootstrapSpecifications();
-  await geoService.ensureBootstrapRelationshipTypes();
+  if (!isEmptyEnvironment) {
+    await geoService.ensureBootstrapRelationshipTypes();
+  }
   const geoTreeService = new GeoTreeService(db);
   const geoMapTileService = new GeoMapTileService(db);
   const geoMapDensityService = new GeoMapDensityService(db);
@@ -106,9 +112,11 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   await partyRepository.initialize();
   const partyService = new PartyService(partyRepository, eventService, db);
   const partyRoleTypeRepository = new PartyRoleTypeRepository(db);
-  await partyRoleTypeRepository.ensureSupplierSeed(DEFAULT_TENANT_ID);
   const partyRoleTypeCharacteristicRepository = new PartyRoleTypeCharacteristicRepository(db);
-  await partyRoleTypeCharacteristicRepository.ensureManufacturerCnpjSeed(DEFAULT_TENANT_ID);
+  if (!isEmptyEnvironment) {
+    await partyRoleTypeRepository.ensureSupplierSeed(DEFAULT_TENANT_ID);
+    await partyRoleTypeCharacteristicRepository.ensureManufacturerCnpjSeed(DEFAULT_TENANT_ID);
+  }
   const referenceDataRepository = new OracleReferenceDataRepository(db);
   const resourceRepository = new OracleResourceRepository(db);
   await resourceRepository.initialize();
@@ -237,24 +245,26 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   );
   studioService.registerAdapter(new RulesWorkflowsStudioAdapter(db));
   studioService.registerAdapter(new TemplatesStudioAdapter(resourceService));
-  await studioService.ensurePublishedBootstrap('studio-geo', CANONICAL_STUDIO_GEO_SNAPSHOT, {
-    actorSub: 'studio-bootstrap',
-    tenantId: DEFAULT_TENANT_ID,
-    roles: ['studio.admin', 'platform.admin'],
-    traceId: createCanonicalId(),
-  });
-  await studioService.ensurePublishedBootstrap('rules-workflows', CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT, {
-    actorSub: 'studio-bootstrap',
-    tenantId: DEFAULT_TENANT_ID,
-    roles: ['studio.admin', 'platform.admin'],
-    traceId: createCanonicalId(),
-  });
-  await studioService.ensurePublishedBootstrap('templates', CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>, {
-    actorSub: 'studio-bootstrap',
-    tenantId: DEFAULT_TENANT_ID,
-    roles: ['studio.admin', 'platform.admin'],
-    traceId: createCanonicalId(),
-  });
+  if (!isEmptyEnvironment) {
+    await studioService.ensurePublishedBootstrap('studio-geo', CANONICAL_STUDIO_GEO_SNAPSHOT, {
+      actorSub: 'studio-bootstrap',
+      tenantId: DEFAULT_TENANT_ID,
+      roles: ['studio.admin', 'platform.admin'],
+      traceId: createCanonicalId(),
+    });
+    await studioService.ensurePublishedBootstrap('rules-workflows', CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT, {
+      actorSub: 'studio-bootstrap',
+      tenantId: DEFAULT_TENANT_ID,
+      roles: ['studio.admin', 'platform.admin'],
+      traceId: createCanonicalId(),
+    });
+    await studioService.ensurePublishedBootstrap('templates', CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>, {
+      actorSub: 'studio-bootstrap',
+      tenantId: DEFAULT_TENANT_ID,
+      roles: ['studio.admin', 'platform.admin'],
+      traceId: createCanonicalId(),
+    });
+  }
   const geoProjectWorkflowService = new GeoProjectWorkflowService(
     db,
     geoProjectRepository,
@@ -262,21 +272,28 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     resourceService,
     studioService,
     eventService,
+    { fallbackToCanonical: !isEmptyEnvironment },
   );
 
-  let defaultUser = await userRepository.getByExternalId(DEFAULT_RUNTIME_USER.externalId);
-  if (!defaultUser) {
+  let defaultUser = isEmptyEnvironment
+    ? await userRepository.getByEmail('admin@vtal.com')
+    : await userRepository.getByExternalId(DEFAULT_RUNTIME_USER.externalId);
+  if (!defaultUser && !isEmptyEnvironment) {
     defaultUser = await userRepository.create(DEFAULT_RUNTIME_USER);
   }
+  if (!defaultUser) {
+    throw new Error('O ambiente vazio não possui o administrador inicial provisionado.');
+  }
 
-  // Admin semente idempotente: só cria/atualiza quando as duas variáveis existem. Sem elas,
-  // não há como fazer o primeiro login — o chamador (createApp) registra o aviso.
-  if (options.auth?.adminEmail && options.auth?.adminPassword) {
+  // O administrador de .env é um bootstrap funcional legado; o namespace empty usa apenas a
+  // conta provisionada pelo gerenciador de ambiente.
+  if (!isEmptyEnvironment && options.auth?.adminEmail && options.auth?.adminPassword) {
     await authService.ensureAdmin(options.auth.adminEmail, options.auth.adminPassword);
   }
 
   return {
     db,
+    environmentProfile,
     userRepository,
     authService,
     geoSearchHistoryRepository,

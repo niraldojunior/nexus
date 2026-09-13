@@ -30,7 +30,7 @@ import type {
 import { listGeoSiteSpecifications, type GeoSpec } from '../../services/geoApi';
 import { listModeledResourceTypes } from '../../services/resourceCatalogApi';
 import type { ResourceType } from '../../services/resourceApi';
-import { MAP_LAYER_CATALOG_FALLBACK, mapLayerTree, type MapLayerTreeNode } from '../../utils/mapLayers';
+import { mapLayerTree, type MapLayerTreeNode } from '../../utils/mapLayers';
 import {
   GeoNodeVisualConfigTab,
   useStudioPointIconPreviewUrl,
@@ -58,11 +58,15 @@ type StudioGeoExperienceProps = {
 export type DropPosition = 'before' | 'after' | 'inside';
 type StudioGeoSnapshot = Pick<StudioGeoCatalog, 'schemaVersion' | 'nodes'>;
 
+// Ausência de draft/publicação normaliza para um snapshot vazio — o Studio nunca pré-popula o
+// editor com o catálogo canônico legado. Esse fallback só existe como compatibilidade de leitura
+// do mapa em namespaces legacy (`GET /v1/geo/map-layer-catalog`), nunca como conteúdo inicial de
+// um ambiente novo nem como dado editável aqui.
 const normalize = (value: Record<string, unknown> | undefined): StudioGeoSnapshot => {
   if (value?.schemaVersion === 2 && Array.isArray(value.nodes)) {
     return { schemaVersion: 2, nodes: value.nodes as StudioGeoNode[] };
   }
-  return { schemaVersion: 2, nodes: MAP_LAYER_CATALOG_FALLBACK.nodes };
+  return { schemaVersion: 2, nodes: [] };
 };
 
 const compactOrder = (nodes: StudioGeoNode[]): StudioGeoNode[] => {
@@ -126,7 +130,7 @@ export function StudioGeoExperience({
 }: StudioGeoExperienceProps) {
   const [snapshot, setSnapshot] = useState<StudioGeoSnapshot>({
     schemaVersion: 2,
-    nodes: MAP_LAYER_CATALOG_FALLBACK.nodes,
+    nodes: [],
   });
   const [checksum, setChecksum] = useState<string>();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -170,7 +174,8 @@ export function StudioGeoExperience({
       setExpanded(new Set(next.nodes.filter((node) => node.kind === 'GROUP').map((node) => node.id)));
       setError(null);
     } catch (reason) {
-      setSnapshot({ schemaVersion: 2, nodes: MAP_LAYER_CATALOG_FALLBACK.nodes });
+      // Erro de rede/leitura fica sendo erro — nunca é convertido silenciosamente em dados
+      // editáveis (nem o catálogo canônico legado, nem qualquer outro conteúdo sintético).
       setError(reason instanceof Error ? reason.message : 'Falha ao carregar a Hierarquia Visual.');
     } finally {
       setLoading(false);
@@ -210,7 +215,10 @@ export function StudioGeoExperience({
     return () => onRegisterCaptureInitialSnapshot?.(null);
   }, [buildSnapshot, onRegisterCaptureInitialSnapshot]);
 
-  const tree = useMemo(() => mapLayerTree({ ...snapshot, fallback: false }), [snapshot]);
+  const tree = useMemo(
+    () => mapLayerTree({ ...snapshot, configured: true, environmentId: 'studio-draft', fallback: false }),
+    [snapshot],
+  );
   const selected = snapshot.nodes.find((node) => node.id === selectedId) ?? null;
 
   const patchSelected = (patch: Partial<StudioGeoNode>) =>

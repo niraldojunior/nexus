@@ -142,6 +142,10 @@ export type StudioGeoSnapshot = {
 };
 
 export type StudioGeoCatalog = StudioGeoSnapshot & {
+  /** Indica se existe uma publicação explícita do Studio GEO para o tenant. */
+  configured: boolean;
+  /** Identidade pública e estável do namespace para preferências locais do mapa. */
+  environmentId: string;
   publicationChecksum?: string;
   fallback: boolean;
 };
@@ -406,9 +410,6 @@ export class StudioGeoAdapter implements StudioDomainAdapter {
       const key = `${node.parentNodeId ?? 'root'}:${node.sortOrder}`;
       if (siblingKeys.has(key)) issues.push({ severity: 'error', code: 'STUDIO_GEO_SIBLING_ORDER_DUPLICATE', message: 'Irmãos não podem compartilhar a mesma ordem interna.', path: 'nodes' });
       else siblingKeys.add(key);
-    }
-    if (!typed.nodes.some((node) => node.kind === 'ENTITY' && node.active)) {
-      issues.push({ severity: 'error', code: 'STUDIO_GEO_ENTITIES_EMPTY', message: 'Ao menos uma entidade GEO deve permanecer ativa.', path: 'nodes' });
     }
     return { valid: !issues.some((issue) => issue.severity === 'error'), issues, validatedAt: new Date().toISOString() };
   }

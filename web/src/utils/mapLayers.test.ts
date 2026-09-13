@@ -246,6 +246,8 @@ describe('nodeForMapFeature', () => {
 
   const publishedCatalog: StudioGeoCatalog = {
     schemaVersion: 2,
+    configured: true,
+    environmentId: 'env-published',
     fallback: false,
     nodes: [
       {
@@ -424,7 +426,10 @@ describe('published catalog reconciliation', () => {
         },
       ],
     };
-    window.localStorage.setItem('nexus.geo.mapLayers', JSON.stringify({ resourceCdoe: false, resourceDropCable: true }));
+    window.localStorage.setItem(
+      `nexus.geo.mapLayers::${catalog.environmentId}`,
+      JSON.stringify({ resourceCdoe: false, resourceDropCable: true }),
+    );
     expect(readStoredLayers(catalog)).toMatchObject({ resourceCdoe: false, newLayer: false });
     expect(readStoredLayers(catalog).resourceDropCable).toBeUndefined();
   });
@@ -441,6 +446,8 @@ describe('published catalog reconciliation', () => {
 });
 
 describe('readStoredLayers / writeStoredLayers', () => {
+  const ENV = 'env-a';
+
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -451,68 +458,87 @@ describe('readStoredLayers / writeStoredLayers', () => {
 
   it('round-trip: grava e lê de volta', () => {
     const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false, 'coverage-gpon': false };
-    writeStoredLayers(visibility);
-    expect(readStoredLayers()).toEqual(visibility);
+    writeStoredLayers(visibility, ENV);
+    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV })).toEqual(visibility);
   });
 
   it('JSON inválido cai no default', () => {
-    window.localStorage.setItem('nexus.geo.mapLayers', '{not json');
-    expect(readStoredLayers()).toEqual(ALL_MAP_LAYERS_VISIBLE);
+    window.localStorage.setItem(`nexus.geo.mapLayers::${ENV}`, '{not json');
+    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV })).toEqual(
+      ALL_MAP_LAYERS_VISIBLE,
+    );
   });
 
   it('valor não-booleano numa chave conhecida é ignorado (mantém o default daquela chave)', () => {
     window.localStorage.setItem(
-      'nexus.geo.mapLayers',
+      `nexus.geo.mapLayers::${ENV}`,
       JSON.stringify({ resourceDropCable: 'nope', 'coverage-gpon': false }),
     );
-    const result = readStoredLayers();
+    const result = readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV });
     expect(result.resourceDropCable).toBe(true);
     expect(result['coverage-gpon']).toBe(false);
   });
 
   it('chave desconhecida (inclusive a antiga "sites") é ignorada', () => {
     window.localStorage.setItem(
-      'nexus.geo.mapLayers',
+      `nexus.geo.mapLayers::${ENV}`,
       JSON.stringify({ sites: false, unknownLayer: false, stations: false }),
     );
-    const result = readStoredLayers();
+    const result = readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV });
     expect(result.stations).toBe(false);
     expect((result as Record<string, unknown>).unknownLayer).toBeUndefined();
     expect((result as Record<string, unknown>).sites).toBeUndefined();
   });
 
   it('array (não-objeto de chave/valor) cai no default', () => {
-    window.localStorage.setItem('nexus.geo.mapLayers', JSON.stringify(['stations']));
-    expect(readStoredLayers()).toEqual(ALL_MAP_LAYERS_VISIBLE);
+    window.localStorage.setItem(`nexus.geo.mapLayers::${ENV}`, JSON.stringify(['stations']));
+    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV })).toEqual(
+      ALL_MAP_LAYERS_VISIBLE,
+    );
+  });
+
+  it('dois environmentId isolam as preferências entre si', () => {
+    writeStoredLayers({ ...ALL_MAP_LAYERS_VISIBLE, stations: false }, 'env-x');
+    writeStoredLayers({ ...ALL_MAP_LAYERS_VISIBLE, stations: true }, 'env-y');
+    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-x' }).stations).toBe(
+      false,
+    );
+    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-y' }).stations).toBe(
+      true,
+    );
   });
 });
 
 describe('readStoredLayerControlOpen / writeStoredLayerControlOpen', () => {
+  const ENV = 'env-a';
+
   beforeEach(() => {
     window.localStorage.clear();
   });
 
   it('retorna default quando não há chave gravada', () => {
-    expect(readStoredLayerControlOpen(false)).toBe(false);
-    expect(readStoredLayerControlOpen(true)).toBe(true);
+    expect(readStoredLayerControlOpen(ENV, false)).toBe(false);
+    expect(readStoredLayerControlOpen(ENV, true)).toBe(true);
   });
 
   it('grava e lê o estado de seletor aberto/fechado', () => {
-    writeStoredLayerControlOpen(true);
-    expect(readStoredLayerControlOpen(false)).toBe(true);
+    writeStoredLayerControlOpen(true, ENV);
+    expect(readStoredLayerControlOpen(ENV, false)).toBe(true);
 
-    writeStoredLayerControlOpen(false);
-    expect(readStoredLayerControlOpen(true)).toBe(false);
+    writeStoredLayerControlOpen(false, ENV);
+    expect(readStoredLayerControlOpen(ENV, true)).toBe(false);
   });
 });
 
 describe('readStoredExpandedGroups / writeStoredExpandedGroups', () => {
+  const ENV = 'env-a';
+
   beforeEach(() => {
     window.localStorage.clear();
   });
 
   it('retorna todos os grupos expandidos por default', () => {
-    const defaultExpanded = readStoredExpandedGroups();
+    const defaultExpanded = readStoredExpandedGroups({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV });
     expect(defaultExpanded.has('locations')).toBe(true);
     expect(defaultExpanded.has('coverage')).toBe(true);
     expect(defaultExpanded.has('netwinInfrastructure')).toBe(true);
@@ -521,12 +547,41 @@ describe('readStoredExpandedGroups / writeStoredExpandedGroups', () => {
 
   it('grava e lê o conjunto de grupos expandidos filtrando IDs inválidos', () => {
     const next = new Set(['locations', 'resources']);
-    writeStoredExpandedGroups(next);
+    writeStoredExpandedGroups(next, ENV);
 
-    const read = readStoredExpandedGroups();
+    const read = readStoredExpandedGroups({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV });
     expect(read.has('locations')).toBe(true);
     expect(read.has('resources')).toBe(true);
     expect(read.has('coverage')).toBe(false);
     expect(read.has('netwinInfrastructure')).toBe(false);
+  });
+});
+
+describe('migração de chaves legadas (sem namespace)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('ambiente legacy migra uma única vez a chave antiga sem namespace', () => {
+    window.localStorage.setItem(
+      'nexus.geo.mapLayers',
+      JSON.stringify({ ...ALL_MAP_LAYERS_VISIBLE, stations: false }),
+    );
+    const legacyCatalog = { ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'legacy' };
+    expect(readStoredLayers(legacyCatalog).stations).toBe(false);
+
+    // Migração persiste sob a chave namespaced; alterações futuras não voltam a copiar a antiga.
+    window.localStorage.setItem('nexus.geo.mapLayers', JSON.stringify(ALL_MAP_LAYERS_VISIBLE));
+    expect(readStoredLayers(legacyCatalog).stations).toBe(false);
+  });
+
+  it('ambiente empty nunca lê nem apaga a chave legada sem namespace', () => {
+    window.localStorage.setItem(
+      'nexus.geo.mapLayers',
+      JSON.stringify({ ...ALL_MAP_LAYERS_VISIBLE, stations: false }),
+    );
+    const emptyCatalog = { ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-empty-1', fallback: false };
+    expect(readStoredLayers(emptyCatalog)).toEqual(ALL_MAP_LAYERS_VISIBLE);
+    expect(window.localStorage.getItem('nexus.geo.mapLayers')).not.toBeNull();
   });
 });

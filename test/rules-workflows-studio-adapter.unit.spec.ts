@@ -12,6 +12,12 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
     assert.equal(result.issues.length, 0);
   });
 
+  it('allows an empty snapshot', async () => {
+    const result = await adapter.validate({});
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.issues, []);
+  });
+
   it('rejects invalid schema version or workflowId', async () => {
     const badVersion = await adapter.validate({
       ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,

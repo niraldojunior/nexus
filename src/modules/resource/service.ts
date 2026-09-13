@@ -1190,6 +1190,7 @@ export class ResourceService {
       nodeId: rootNode.id,
       catalogId: catalog.id,
       descendantCount: descendantNodeIds.length,
+      activeDescendantCount: descendantNodeIds.filter((id) => byId.get(id)?.status === 'active').length,
       descendantNodeIds,
       resourceTypeIds,
       specificationCount: specifications.length,
@@ -1205,12 +1206,9 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceCatalogNode> {
     const current = await this.getResourceCatalogNodeOrThrow(catalogId, nodeId, context);
-    const childCount = await this.repository.countResourceCatalogNodeChildren(
-      current.id,
-      scopeOf(context),
-    );
-    if (childCount > 0) {
-      throw new AppError('resource catalog node has children', {
+    const impact = await this.getResourceCatalogNodeImpact(catalogId, current.id, context);
+    if (impact.activeDescendantCount > 0) {
+      throw new AppError('resource catalog node has active descendants', {
         code: 'RESOURCE_CATALOG_NODE_HAS_CHILDREN',
         statusCode: 409,
       });

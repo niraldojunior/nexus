@@ -183,7 +183,17 @@ test('GeoService validates governed containment rules and stores relatedSite', a
   assert.equal(stored?.relatedSite[0]?.relationshipType, 'fedBy');
 });
 
-test('GeoService bootstraps governed specifications and blocks containment changes with impact', async () => {
+test('GeoService permite remover containment bootstrap sem sites impactados', async () => {
+  const service = new GeoService(new GeoRepository());
+  const bootstrap = await service.ensureBootstrapSpecifications();
+  const regionSpec = bootstrap.specs.find((item) => item.code === 'REGION');
+  assert.ok(regionSpec);
+
+  const updated = await service.updateSpec(regionSpec.id, { allowedChildSpecIds: [] });
+  assert.deepEqual(updated.allowedChildSpecIds, []);
+});
+
+test('GeoService bloqueia remoção de containment quando há sites impactados', async () => {
   const service = new GeoService(new GeoRepository());
   const bootstrap = await service.ensureBootstrapSpecifications();
 
@@ -211,7 +221,7 @@ test('GeoService bootstraps governed specifications and blocks containment chang
 
   await assert.rejects(
     () => service.updateSpec(regionSpec.id, { allowedChildSpecIds: [] }),
-    /protected child containment rule cannot be removed|containment rule change has impacted sites/,
+    /containment rule change has impacted sites/,
   );
 });
 

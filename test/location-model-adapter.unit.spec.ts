@@ -156,12 +156,9 @@ test('LocationModelStudioAdapter materializes specifications and containment rul
   assert.equal(createSpecMock.mock.calls.length, 1);
 });
 
-test('LocationModelStudioAdapter preserves protected containment rules even if the snapshot omits them', async () => {
-  // Regressão: "Cancelar edição" (discard) chama materialize() com a baseline capturada no
-  // frontend. Se o snapshot não conseguir resolver algum código protegido (normalização,
-  // dessincronia, spec ausente do snapshot), o cálculo de allowedParentSpecIds/allowedChildSpecIds
-  // não pode ficar menor que o conjunto já protegido no banco — senão GeoService.updateSpec rejeita
-  // com GEO_SPEC_CONTAINMENT_PROTECTED (409), como reportado ao clicar em "Cancelar edição".
+test('LocationModelStudioAdapter permite remover containment que o snapshot não declara', async () => {
+  // O snapshot publicado é a fonte de verdade do catálogo. Regras históricas de bootstrap não
+  // podem ser reintroduzidas automaticamente quando foram removidas pelo editor governado.
   const existingSpecs: GeographicSiteSpecification[] = [
     {
       '@type': 'GeographicSiteSpecification',
@@ -212,8 +209,7 @@ test('LocationModelStudioAdapter preserves protected containment rules even if t
 
   const adapter = new LocationModelStudioAdapter(geoService);
 
-  // Snapshot incompleto: REGION não traz de volta o containment protegido (CO ausente das
-  // allowedChildCodes), simulando uma baseline dessincronizada.
+  // O snapshot remove explicitamente o containment REGION → CO.
   const incompleteSnapshot = {
     specifications: [
       {
@@ -240,12 +236,9 @@ test('LocationModelStudioAdapter preserves protected containment rules even if t
     (c) => c.id === 'spec-region-id' && 'allowedChildSpecIds' in c.patch,
   );
   assert.ok(regionUpdate, 'REGION deveria receber update de containment');
-  assert.deepEqual(
-    new Set(regionUpdate!.patch.allowedChildSpecIds as string[]),
-    new Set(['spec-region-id', 'spec-co-id']),
-  );
+  assert.deepEqual(new Set(regionUpdate!.patch.allowedChildSpecIds as string[]), new Set());
 
   const coUpdate = updateSpecCalls.find((c) => c.id === 'spec-co-id' && 'allowedParentSpecIds' in c.patch);
   assert.ok(coUpdate, 'CO deveria receber update de containment');
-  assert.deepEqual(new Set(coUpdate!.patch.allowedParentSpecIds as string[]), new Set(['spec-region-id']));
+  assert.deepEqual(new Set(coUpdate!.patch.allowedParentSpecIds as string[]), new Set());
 });

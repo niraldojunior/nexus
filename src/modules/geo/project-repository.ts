@@ -65,7 +65,7 @@ export type CreateGeoProjectInput = {
   description?: string | null;
   iconDataUrl?: string | null;
   status?: GeoProjectStatus;
-  statusCode?: string;
+  statusCode: string;
 };
 
 export type UpdateGeoProjectInput = {
@@ -374,7 +374,7 @@ export class GeoProjectRepository {
         input.description ?? null,
         input.iconDataUrl ?? null,
         input.status ?? 'planned',
-        input.statusCode ?? '1',
+        input.statusCode,
         actorSub,
         now,
         now,

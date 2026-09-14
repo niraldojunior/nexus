@@ -70,7 +70,6 @@ export function statusBadgeMeta(status: string | undefined): { label: string; to
 
 const SITE_SPEC_CATEGORY_LABELS: Record<GeoSpecCategory, string> = {
   Region: 'Região',
-  FunctionalGroup: 'Grupo Funcional',
   Site: 'Local',
   SubSite: 'Sub-local',
 };
@@ -105,7 +104,9 @@ export function siteRoleLabel(role: string | undefined): string {
 // nome cru — não há como adivinhar a tradução de um tipo que o usuário acabou de inventar.
 const SITE_SPEC_TRANSLATIONS: ReadonlyArray<{ code: string; name: string; label: string }> = [
   { code: 'REGION', name: 'Region', label: 'Região' },
-  { code: 'FUNCTIONAL_GROUP', name: 'Functional Group', label: 'Grupo Funcional' },
+  // FUNCTIONAL_GROUP foi descontinuada (D-GEO-003 superada): a categoria FunctionalGroup não
+  // existe mais no domínio. A entrada fica só para rotular specs Retired de bases já existentes.
+  { code: 'FUNCTIONAL_GROUP', name: 'Functional Group', label: 'Grupo Funcional (descontinuado)' },
   { code: 'CO', name: 'Central Office', label: 'Estação (CO)' },
   { code: 'POP', name: 'POP', label: 'POP' },
   { code: 'CABINET', name: 'Cabinet', label: 'Gabinete' },

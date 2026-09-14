@@ -185,11 +185,15 @@ test('GeoService validates governed containment rules and stores relatedSite', a
 
 test('GeoService permite remover containment bootstrap sem sites impactados', async () => {
   const service = new GeoService(new GeoRepository());
-  const bootstrap = await service.ensureBootstrapSpecifications();
-  const regionSpec = bootstrap.specs.find((item) => item.code === 'REGION');
-  assert.ok(regionSpec);
+  const parent = await service.createSpec({ name: 'Tipo pai', category: 'Region' });
+  const child = await service.createSpec({
+    name: 'Tipo filho',
+    category: 'Site',
+    allowedParentSpecIds: [parent.id],
+  });
+  await service.updateSpec(parent.id, { allowedChildSpecIds: [child.id] });
 
-  const updated = await service.updateSpec(regionSpec.id, { allowedChildSpecIds: [] });
+  const updated = await service.updateSpec(parent.id, { allowedChildSpecIds: [] });
   assert.deepEqual(updated.allowedChildSpecIds, []);
 });
 
@@ -197,7 +201,7 @@ test('GeoService bloqueia remoção de containment quando há sites impactados',
   const service = new GeoService(new GeoRepository());
   const bootstrap = await service.ensureBootstrapSpecifications();
 
-  assert.equal(bootstrap.specs.length, 12);
+  assert.equal(bootstrap.specs.length, 11);
 
   const regionSpec = bootstrap.specs.find((item) => item.code === 'REGION');
   const centralSpec = bootstrap.specs.find((item) => item.code === 'CO');
@@ -257,6 +261,39 @@ test('GeoService self-heals duplicate bootstrap specifications left by a boot ra
 
   const repairedSite = await service.getSite(strandedSite.id);
   assert.equal(repairedSite?.siteSpecificationId, customerSite.id);
+});
+
+test('GeoService aposenta (soft-retire) uma spec FUNCTIONAL_GROUP remanescente de boot anterior', async () => {
+  // D-GEO-003 foi superada: FunctionalGroup deixou de ser uma categoria válida do domínio e a
+  // spec de bootstrap correspondente não é mais definida. Uma base já existente pode ainda ter
+  // essa linha Active de um boot anterior à mudança — o bootstrap precisa aposentá-la (C6, nunca
+  // DELETE físico) em vez de deixá-la órfã com uma categoria que o resto do código não reconhece.
+  const repository = new GeoRepository();
+  const service = new GeoService(repository);
+
+  await service.ensureBootstrapSpecifications();
+
+  const legacyFunctionalGroup = await repository.upsertSpec({
+    '@type': 'GeographicSiteSpecification',
+    id: '00000000-0000-7000-8000-000000000099',
+    href: '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification/00000000-0000-7000-8000-000000000099',
+    code: 'FUNCTIONAL_GROUP',
+    name: 'Functional Group',
+    category: 'FunctionalGroup' as unknown as 'Region',
+    siteRole: 'grouping',
+    lifecycleStatus: 'Active',
+    specCharacteristic: [],
+    allowedParentSpec: [],
+    allowedChildSpec: [],
+    allowedParentSpecIds: [],
+    allowedChildSpecIds: [],
+    _bootstrapProtected: true,
+  });
+  assert.equal(legacyFunctionalGroup.lifecycleStatus, 'Active');
+
+  const healed = await service.ensureBootstrapSpecifications();
+  const retired = healed.specs.find((item) => item.id === legacyFunctionalGroup.id);
+  assert.equal(retired?.lifecycleStatus, 'Retired');
 });
 
 test('GeoService updates status and records TMF688 events', async () => {
@@ -372,6 +409,55 @@ test('GeoService applies canonical lifecycle transitions', async () => {
     'Active',
   );
   assert.ok((await service.listSiteHistory(site.id, platform)).length >= 4);
+});
+
+test('GeoService aceita recategorizar uma spec persistida e preserva código/ID', async () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = await service.createSpec({
+    name: 'Grupo Técnico',
+    category: 'Region',
+    specCharacteristic: [{ name: 'cor', defaultValue: 'azul', valueType: 'string' }],
+  });
+
+  const updated = await service.updateSpec(spec.id, { category: 'Site' });
+
+  assert.equal(updated.id, spec.id);
+  assert.equal(updated.code, spec.code);
+  assert.equal(updated.category, 'Site');
+  assert.deepEqual(updated.specCharacteristic, spec.specCharacteristic);
+});
+
+test('GeoService bloqueia recategorizar para SubSite quando há site ativo sem pai', async () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = await service.createSpec({ name: 'Sala Técnica', category: 'Site' });
+  await service.createSite({ name: 'Sala 101', siteSpecificationId: spec.id });
+
+  await assert.rejects(
+    () => service.updateSpec(spec.id, { category: 'SubSite' }),
+    /sub-site specification has active sites without parent/,
+  );
+
+  const untouched = await service.getSpec(spec.id);
+  assert.equal(untouched?.category, 'Site');
+});
+
+test('GeoService permite recategorizar para SubSite quando os sites ativos já têm pai', async () => {
+  const service = new GeoService(new GeoRepository());
+  const regionSpec = await service.createSpec({ name: 'Região', category: 'Region' });
+  const region = await service.createSite({ name: 'RJ', siteSpecificationId: regionSpec.id });
+  const spec = await service.createSpec({
+    name: 'Pavimento',
+    category: 'Site',
+    allowedParentSpecIds: [regionSpec.id],
+  });
+  await service.createSite({
+    name: 'Pavimento 1',
+    siteSpecificationId: spec.id,
+    parentSiteId: region.id,
+  });
+
+  const updated = await service.updateSpec(spec.id, { category: 'SubSite' });
+  assert.equal(updated.category, 'SubSite');
 });
 
 test('GeoService creates inverse governed site relationships', async () => {

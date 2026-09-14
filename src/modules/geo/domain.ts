@@ -45,7 +45,7 @@ export type Characteristic = {
 
 export type GeoSiteStatus = 'Planned' | 'InConstruction' | 'Active' | 'InDeactivation' | 'Retired';
 export type GeoSiteStatusAlias = 'planned' | 'active' | 'suspended' | 'terminated';
-export type GeographicSiteSpecificationCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+export type GeographicSiteSpecificationCategory = 'Region' | 'Site' | 'SubSite';
 export type GeographicSiteSpecificationLifecycleStatus = 'Active' | 'Retired';
 
 // Eixo funcional (C11): o que o site É, ortogonal a `category` (onde ele cabe na hierarquia).
@@ -55,7 +55,7 @@ export const GEO_SITE_ROLES: GeographicSiteRole[] = ['grouping', 'network', 'pro
 
 /** Default de `siteRole` para specs legadas (`site_role IS NULL`) ou ad-hoc sem papel explícito. */
 export function defaultSiteRoleFor(category: GeographicSiteSpecificationCategory): GeographicSiteRole {
-  if (category === 'Region' || category === 'FunctionalGroup') return 'grouping';
+  if (category === 'Region') return 'grouping';
   return 'network';
 }
 

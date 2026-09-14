@@ -105,7 +105,7 @@ export type GeoAddress = {
   sourceRef?: string;
 };
 
-export type GeoSpecCategory = 'Region' | 'FunctionalGroup' | 'Site' | 'SubSite';
+export type GeoSpecCategory = 'Region' | 'Site' | 'SubSite';
 
 // Eixo funcional (C11): o que o site É (network/property/service), ortogonal a `category`
 // (onde ele cabe na hierarquia). Ver src/modules/geo/domain.ts GeographicSiteRole.

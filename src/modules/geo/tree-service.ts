@@ -47,7 +47,7 @@ export type GeoTreeNode = {
   sublabel?: string;
   refId?: string;
   referredType?: 'GeographicSite' | 'PhysicalResource' | 'LogicalResource';
-  // Categoria TMF674 da spec do local (Region | FunctionalGroup | Site | SubSite).
+  // Categoria TMF674 da spec do local (Region | Site | SubSite).
   // Com o nome do tipo (`sublabel`), é o que resolve o ícone do local no front.
   siteCategory?: string;
   // Id da GeographicSiteSpecification do local (só em nó de Site) — o combo de tipo do
@@ -1401,7 +1401,7 @@ const STATION_WHERE = `sp.code IN ('CO', 'POP') AND s.status NOT IN ('Retired', 
 const STATION_UF_SQL = `CASE WHEN TRIM(a.state_or_province) IS NULL OR TRIM(a.state_or_province) = '' THEN '${SEM_UF}' ELSE TRIM(a.state_or_province) END`;
 const STATION_CITY_SQL = `CASE WHEN TRIM(a.city) IS NULL OR TRIM(a.city) = '' THEN '${SEM_MUNICIPIO}' ELSE TRIM(a.city) END`;
 
-// Site (categoria 'Site', nunca Region/FunctionalGroup/SubSite) dentro de um bbox do mapa —
+// Site (categoria 'Site', nunca Region/SubSite) dentro de um bbox do mapa —
 // fonte de `sitesInViewport`, o par de `resourcesInViewport` para o Site: CO/Estação é o
 // único tipo com visibilidade em qualquer escala (sempre vem de `roots()`); qualquer outro
 // tipo de Site (POP, CDO, Ponto de Instalação…) só aparece no mapa em escala de detalhe

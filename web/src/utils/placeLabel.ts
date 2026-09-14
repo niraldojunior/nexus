@@ -46,7 +46,6 @@ export function siteKindFromSpec(spec?: {
   if (spec.siteRole === 'service') return 'PI';
   if (spec.siteRole === 'property') return spec.category === 'SubSite' ? 'SUBSITE' : 'SITE';
   if (spec.category === 'Region') return 'REGION';
-  if (spec.category === 'FunctionalGroup') return 'REGION';
   if (spec.category === 'SubSite') return 'SUBSITE';
   const name = spec.name.toLowerCase();
   if (name.includes('central') || name === 'co' || name.includes('estac') || name.includes('estaç'))

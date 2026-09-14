@@ -1,32 +1,20 @@
-import { useEffect, useState } from 'react';
-import {
-  AlertCircle,
-  Building2,
-  Check,
-  FolderTree,
-  Globe,
-  Layers,
-  Pencil,
-  RotateCcw,
-  Save,
-  Trash2,
-} from 'lucide-react';
-import type { GeoSpec, GeoSpecCategory, GeoSiteRole, UpdateGeoSpecInput } from '../../../services/geoApi';
+import { useEffect, useMemo, useState } from 'react';
+import { FolderTree, Layers, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import type { GeoSiteRole, GeoSpecCategory } from '../../../services/geoApi';
 import { Button } from '../../../components/ui';
-import GeoCharacteristicsEditor from '../../../components/GeoCharacteristicsEditor';
 import {
   buildGeoCharacteristicPayload,
   geoCharacteristicRowsFrom,
-  geoCharacteristicRowsValid,
   type GeoCharacteristicRow,
 } from '../../../utils/geoCharacteristicsForm';
-
-const CATEGORY_LABELS: Record<GeoSpecCategory, string> = {
-  Region: 'Região',
-  FunctionalGroup: 'Grupo Funcional',
-  Site: 'Local',
-  SubSite: 'Sub-Local',
-};
+import type { LocationModelDraftSpec } from './locationModelDraft';
+import { LocationCharacteristicFormModal } from './LocationCharacteristicFormModal';
+import {
+  LOCATION_CATEGORY_LABELS,
+  locationCategoryIcon,
+  locationCategoryIconTone,
+  locationCategoryLabel,
+} from './locationCategoryPresentation';
 
 const ROLE_LABELS: Record<GeoSiteRole, string> = {
   grouping: 'Agrupamento',
@@ -35,40 +23,28 @@ const ROLE_LABELS: Record<GeoSiteRole, string> = {
   service: 'Serviço',
 };
 
-// Ícone + paleta por categoria (mesmo padrão de cor-por-natureza do `ResourceNodeDetail`, mas o
-// eixo aqui é `category` — onde o local cabe na hierarquia — não `siteRole`).
-const CATEGORY_ICON: Record<GeoSpecCategory, typeof Building2> = {
-  Region: Globe,
-  FunctionalGroup: FolderTree,
-  Site: Building2,
-  SubSite: Layers,
-};
-
-const CATEGORY_ICON_TONE: Record<GeoSpecCategory, string> = {
-  Region: 'border-amber-200 bg-amber-50 text-amber-600',
-  FunctionalGroup: 'border-amber-200 bg-amber-50 text-amber-600',
-  Site: 'border-sky-200 bg-sky-50 text-sky-600',
-  SubSite: 'border-purple-200 bg-purple-50 text-purple-600',
+const VALUE_TYPE_LABELS: Record<string, string> = {
+  string: 'Texto',
+  integer: 'Inteiro',
+  decimal: 'Decimal',
+  boolean: 'Booleano',
+  date: 'Data',
+  list: 'Lista de opções',
+  json: 'JSON livre',
 };
 
 type DetailTab = 'overview' | 'characteristics' | 'relations';
 
 export type LocationSpecDetailProps = {
-  spec: GeoSpec;
-  allSpecs: GeoSpec[];
+  spec: LocationModelDraftSpec;
+  allSpecs: LocationModelDraftSpec[];
   canEdit: boolean;
-  /** Existe um draft de governança aberto — controla a visibilidade dos botões de mutação. */
   isEditing: boolean;
-  /**
-   * A especificação já estava `Active` no instante em que a sessão de edição atual começou
-   * (baseline capturada em `LocationModelStudio.buildSnapshot`). Diferencia "inativada agora,
-   * pode reverter" de "já estava inativa antes desta sessão" — só a primeira ganha "Reativar".
-   */
   wasActiveAtBaseline: boolean;
-  onEdit: () => void;
+  onPatch: (patch: Partial<LocationModelDraftSpec>) => void;
+  onRemoveNew: () => void;
   onInactivate: () => void;
   onReactivate: () => void;
-  onUpdateCharacteristics: (id: string, input: UpdateGeoSpecInput) => Promise<void>;
 };
 
 export function LocationSpecDetail({
@@ -77,291 +53,199 @@ export function LocationSpecDetail({
   canEdit,
   isEditing,
   wasActiveAtBaseline,
-  onEdit,
+  onPatch,
+  onRemoveNew,
   onInactivate,
   onReactivate,
-  onUpdateCharacteristics,
 }: LocationSpecDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
-
-  // Linhas editáveis das características da especificação — espelha `typeCharacteristicRows` do
-  // `ResourceNodeDetail`, mas por spec de local (o modelo de locais não tem um "tipo" separado da
-  // especificação, ao contrário de Resource — ver C1/C11).
-  const [rows, setRows] = useState<GeoCharacteristicRow[]>(() =>
-    geoCharacteristicRowsFrom(spec.specCharacteristic),
+  const [characteristicModalOpen, setCharacteristicModalOpen] = useState(false);
+  const [editingCharacteristicRow, setEditingCharacteristicRow] = useState<GeoCharacteristicRow | null>(null);
+  const [characteristicDeletingKey, setCharacteristicDeletingKey] = useState<string | null>(null);
+  const canMutate = canEdit && isEditing;
+  const characteristicRows = useMemo(
+    () => geoCharacteristicRowsFrom(spec.specCharacteristic),
+    [spec.specCharacteristic],
   );
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const relationsCount = spec.allowedParentLocalIds.length + spec.allowedChildLocalIds.length;
+  const otherSpecs = allSpecs.filter(
+    (item) => item.localId !== spec.localId && item.lifecycleStatus === 'Active',
+  );
 
   useEffect(() => {
     setActiveTab('overview');
-    setRows(geoCharacteristicRowsFrom(spec.specCharacteristic));
-    setError(null);
-    setSuccess(false);
-  }, [spec.id, spec.specCharacteristic]);
+    setCharacteristicModalOpen(false);
+  }, [spec.localId]);
 
-  const canMutate = canEdit && isEditing;
+  const patchCharacteristics = (rows: GeoCharacteristicRow[]) =>
+    onPatch({ specCharacteristic: buildGeoCharacteristicPayload(rows) });
 
-  const initialPayloadJson = JSON.stringify(
-    buildGeoCharacteristicPayload(geoCharacteristicRowsFrom(spec.specCharacteristic)),
-  );
-  const currentPayload = buildGeoCharacteristicPayload(rows);
-  const hasCharacteristicChanges =
-    JSON.stringify(currentPayload) !== initialPayloadJson ||
-    rows.some((r) => !r.name.trim() && (r.valueText || r.description || r.group));
-
-  const handleSaveCharacteristics = async () => {
-    if (!geoCharacteristicRowsValid(rows)) {
-      setError('Toda característica precisa de um nome.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await onUpdateCharacteristics(spec.id, { specCharacteristic: currentPayload });
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 2500);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao salvar características.');
-    } finally {
-      setSaving(false);
-    }
+  const openCharacteristic = (row: GeoCharacteristicRow) => {
+    setEditingCharacteristicRow(row);
+    setCharacteristicModalOpen(true);
   };
 
-  const CategoryIcon = CATEGORY_ICON[spec.category];
-  const relationsCount = spec.allowedParentSpecIds.length + spec.allowedChildSpecIds.length;
+  const saveCharacteristic = (row: GeoCharacteristicRow) => {
+    const exists = characteristicRows.some((item) => item.key === row.key);
+    patchCharacteristics(exists ? characteristicRows.map((item) => (item.key === row.key ? row : item)) : [...characteristicRows, row]);
+  };
+
+  const deleteCharacteristic = (row: GeoCharacteristicRow) => {
+    setCharacteristicDeletingKey(row.key);
+    patchCharacteristics(characteristicRows.filter((item) => item.key !== row.key));
+    setCharacteristicDeletingKey(null);
+  };
+
+  const toggleRelation = (field: 'allowedParentLocalIds' | 'allowedChildLocalIds', localId: string) => {
+    const current = spec[field];
+    onPatch({ [field]: current.includes(localId) ? current.filter((id) => id !== localId) : [...current, localId] });
+  };
+
+  const CategoryIcon = locationCategoryIcon(spec.category);
 
   return (
     <div className="vt-card flex h-full flex-col overflow-hidden p-0">
-      {/* Header */}
-      <div className="px-4 pt-4 pb-3">
+      <div className="px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${CATEGORY_ICON_TONE[spec.category]}`}
-            >
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${locationCategoryIconTone(spec.category)}`}>
               <CategoryIcon className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-bold leading-tight text-app-text truncate">{spec.name}</h3>
-              {/* Papel funcional e status já aparecem na aba Geral logo abaixo — o título fica
-                  só com a categoria, em texto simples, para não duplicar informação em pill. */}
-              <span
-                className="mt-0.5 block"
-                style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
-              >
-                {CATEGORY_LABELS[spec.category]}
+              <h3 className="truncate font-bold leading-tight text-app-text">{spec.name}</h3>
+              <span className="mt-0.5 block" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                {locationCategoryLabel(spec.category)}
               </span>
             </div>
           </div>
-
           {canMutate && (
-            <div className="flex items-center gap-2 shrink-0">
-              <Button variant="secondary" size="sm" iconLeft={<Pencil className="h-4 w-4" />} onClick={onEdit}>
-                Editar
-              </Button>
-              {!spec._bootstrapProtected && spec.lifecycleStatus === 'Active' && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  iconLeft={<Trash2 className="h-4 w-4" />}
-                  onClick={onInactivate}
-                >
-                  Inativar
+            <div className="flex shrink-0 items-center gap-2">
+              {!spec.persistedId ? (
+                <Button variant="danger" size="sm" iconLeft={<Trash2 className="h-4 w-4" />} onClick={onRemoveNew}>
+                  Remover
                 </Button>
-              )}
-              {spec.lifecycleStatus !== 'Active' && wasActiveAtBaseline && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  iconLeft={<RotateCcw className="h-4 w-4" />}
-                  onClick={onReactivate}
-                >
-                  Reativar
-                </Button>
+              ) : (
+                <>
+                  {!spec.bootstrapProtected && spec.lifecycleStatus === 'Active' && (
+                    <Button variant="danger" size="sm" iconLeft={<Trash2 className="h-4 w-4" />} onClick={onInactivate}>
+                      Inativar
+                    </Button>
+                  )}
+                  {spec.lifecycleStatus !== 'Active' && wasActiveAtBaseline && (
+                    <Button variant="secondary" size="sm" iconLeft={<RotateCcw className="h-4 w-4" />} onClick={onReactivate}>
+                      Reativar
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
-
-        {/* Tabs — segmented control pill */}
         <div className="mt-3.5 flex">
-          <div className="inline-flex items-center rounded-xl bg-black/[0.04] p-1 gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('overview')}
-              className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
-                activeTab === 'overview'
-                  ? 'bg-white text-app-text font-semibold shadow-sm'
-                  : 'text-app-muted hover:text-app-text'
-              }`}
-            >
-              Geral
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('characteristics')}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
-                activeTab === 'characteristics'
-                  ? 'bg-white text-app-text font-semibold shadow-sm'
-                  : 'text-app-muted hover:text-app-text'
-              }`}
-            >
-              Características
-              <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">
-                {spec.specCharacteristic?.length ?? 0}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('relations')}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
-                activeTab === 'relations'
-                  ? 'bg-white text-app-text font-semibold shadow-sm'
-                  : 'text-app-muted hover:text-app-text'
-              }`}
-            >
-              Relações
-              <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">{relationsCount}</span>
-            </button>
+          <div className="inline-flex items-center gap-1 rounded-xl bg-black/[0.04] p-1">
+            {([
+              ['overview', 'Geral'],
+              ['characteristics', `Características (${spec.specCharacteristic.length})`],
+              ['relations', `Relações (${relationsCount})`],
+            ] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${activeTab === tab ? 'bg-white font-semibold text-app-text shadow-sm' : 'text-app-muted hover:text-app-text'}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Tab Content */}
-      <div className="px-6 pb-6 pt-4 overflow-y-auto flex-1">
+      <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
         {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="mb-2" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+          canMutate ? (
+            <div className="space-y-5">
+              <label className="block text-[0.8rem] font-semibold text-app-text">
+                Nome *
+                <input value={spec.name} onChange={(event) => onPatch({ name: event.target.value })} placeholder="Ex.: Central Office, Pavimento..." className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-[0.8rem] font-semibold text-app-text">
+                  Categoria
+                  <select value={spec.category} onChange={(event) => onPatch({ category: event.target.value as GeoSpecCategory })} className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent">
+                    {Object.entries(LOCATION_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+                <label className="block text-[0.8rem] font-semibold text-app-text">
+                  Papel funcional
+                  <select value={spec.siteRole} onChange={(event) => onPatch({ siteRole: event.target.value as GeoSiteRole })} className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent">
+                    {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="block text-[0.8rem] font-semibold text-app-text">
                 Descrição
-              </h3>
-              <p className="text-[0.92rem] text-app-text leading-relaxed">
-                {spec.description || 'Nenhuma descrição informada.'}
-              </p>
+                <textarea rows={3} value={spec.description ?? ''} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Descreva a finalidade deste tipo de local..." className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" />
+              </label>
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Categoria</span>
-                <p className="text-[0.95rem] font-medium text-app-text mt-1">
-                  {CATEGORY_LABELS[spec.category]}
-                </p>
-              </div>
-
-              <div className="rounded-[10px] border border-app-border p-4">
-                <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
-                  Papel Funcional
-                </span>
-                <p className="text-[0.95rem] font-medium text-app-text mt-1">
-                  {ROLE_LABELS[spec.siteRole]}
-                </p>
+          ) : (
+            <div className="space-y-6">
+              {spec.description?.trim() && <div><h3 className="mb-2" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Descrição</h3><p className="text-[0.92rem] leading-relaxed text-app-text">{spec.description}</p></div>}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-[10px] border border-app-border p-4"><span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Categoria</span><p className="mt-1 text-[0.95rem] font-medium text-app-text">{locationCategoryLabel(spec.category)}</p></div>
+                <div className="rounded-[10px] border border-app-border p-4"><span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Papel funcional</span><p className="mt-1 text-[0.95rem] font-medium text-app-text">{ROLE_LABELS[spec.siteRole]}</p></div>
               </div>
             </div>
-          </div>
+          )
         )}
 
         {activeTab === 'characteristics' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-[0.88rem] font-semibold text-app-text">
-                  Características da especificação de local
-                </h3>
-                <p className="text-[0.78rem] text-app-muted mt-0.5">
-                  Extensões V.tal via characteristic (C1) — nome, grupo, tipo e valor padrão.
-                </p>
-              </div>
-              {canMutate && (
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  iconLeft={<Save className="h-3.5 w-3.5" />}
-                  onClick={handleSaveCharacteristics}
-                  disabled={!hasCharacteristicChanges || saving}
-                >
-                  {saving ? 'Salvando…' : 'Salvar'}
-                </Button>
-              )}
+              <h3 className="text-[0.88rem] font-semibold text-app-text">Características ({characteristicRows.length})</h3>
+              {canMutate && <Button type="button" variant="primary" size="sm" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingCharacteristicRow(null); setCharacteristicModalOpen(true); }}>Adicionar característica</Button>}
             </div>
-
-            {error && (
-              <div
-                className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
-                style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{error}</span>
+            {characteristicRows.length === 0 ? (
+              <div className="rounded-[18px] border border-dashed border-app-border p-8 text-center text-app-muted"><p className="text-[0.88rem] font-medium">Nenhuma característica cadastrada.</p></div>
+            ) : (
+              <div className="divide-y divide-app-border overflow-hidden rounded-[18px] border border-app-border">
+                {characteristicRows.map((row) => (
+                  <div key={row.key} onClick={() => openCharacteristic(row)} role="button" tabIndex={0} title={row.description || undefined} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCharacteristic(row); } }} className="group flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 transition hover:bg-black/[0.02]">
+                    <div className="min-w-0"><h4 className="truncate text-[0.88rem] font-semibold text-app-text">{row.name}</h4><p className="truncate text-[0.78rem] text-app-muted">{row.group ? `${row.group} · ` : ''}{VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}</p></div>
+                    {canMutate && <button type="button" title="Remover característica" onClick={(event) => { event.stopPropagation(); deleteCharacteristic(row); }} disabled={characteristicDeletingKey === row.key} className="hidden shrink-0 rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 group-hover:flex group-focus-within:flex"><Trash2 className="h-4 w-4" /></button>}
+                  </div>
+                ))}
               </div>
             )}
-
-            {success && (
-              <div className="flex items-center gap-2 rounded-[10px] bg-emerald-50 p-3 text-[0.84rem] text-emerald-800 border border-emerald-200">
-                <Check className="h-4 w-4 shrink-0 text-emerald-600" />
-                <span>Características salvas com sucesso.</span>
-              </div>
-            )}
-
-            <GeoCharacteristicsEditor rows={rows} onChange={setRows} disabled={!canMutate} />
           </div>
         )}
 
         {activeTab === 'relations' && (
           <div className="grid gap-4 md:grid-cols-2">
-            {/* Pais Permitidos */}
-            <div className="rounded-[10px] border border-app-border p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <FolderTree className="h-4 w-4 text-amber-600" />
-                <h4 className="text-[0.85rem] font-semibold text-app-text">Pais permitidos</h4>
-              </div>
-              {spec.allowedParentSpecIds.length === 0 ? (
-                <p className="text-[0.8rem] text-app-muted italic">Nenhum pai permitido (raiz do modelo).</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {spec.allowedParentSpecIds.map((pId) => {
-                    const parentSpec = allSpecs.find((s) => s.id === pId);
-                    return (
-                      <span
-                        key={pId}
-                        className="inline-flex items-center gap-1 rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] text-app-text font-medium"
-                      >
-                        {parentSpec ? parentSpec.name : pId}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Filhos Permitidos */}
-            <div className="rounded-[10px] border border-app-border p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Layers className="h-4 w-4 text-sky-600" />
-                <h4 className="text-[0.85rem] font-semibold text-app-text">Filhos permitidos</h4>
-              </div>
-              {spec.allowedChildSpecIds.length === 0 ? (
-                <p className="text-[0.8rem] text-app-muted italic">Nenhum filho permitido (folha do modelo).</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {spec.allowedChildSpecIds.map((cId) => {
-                    const childSpec = allSpecs.find((s) => s.id === cId);
-                    return (
-                      <span
-                        key={cId}
-                        className="inline-flex items-center gap-1 rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] text-app-text font-medium"
-                      >
-                        {childSpec ? childSpec.name : cId}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {(['allowedParentLocalIds', 'allowedChildLocalIds'] as const).map((field) => {
+              const parent = field === 'allowedParentLocalIds';
+              const ids = spec[field];
+              return <div key={field} className="rounded-[10px] border border-app-border p-4">
+                <div className="mb-3 flex items-center gap-2">{parent ? <FolderTree className="h-4 w-4 text-amber-600" /> : <Layers className="h-4 w-4 text-sky-600" />}<h4 className="text-[0.85rem] font-semibold text-app-text">{parent ? 'Pais permitidos' : 'Filhos permitidos'}</h4></div>
+                {canMutate ? (
+                  <div className="max-h-56 space-y-1 overflow-y-auto">
+                    {otherSpecs.length === 0 ? <p className="text-[0.8rem] italic text-app-muted">Nenhuma outra especificação ativa.</p> : otherSpecs.map((item) => <label key={item.localId} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[0.82rem] text-app-text hover:bg-black/[0.02]"><input type="checkbox" checked={ids.includes(item.localId)} onChange={() => toggleRelation(field, item.localId)} className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent" />{item.name}</label>)}
+                  </div>
+                ) : ids.length === 0 ? <p className="text-[0.8rem] italic text-app-muted">{parent ? 'Nenhum pai permitido (raiz do modelo).' : 'Nenhum filho permitido (folha do modelo).'}</p> : <div className="flex flex-wrap gap-1.5">{ids.map((id) => <span key={id} className="rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] font-medium text-app-text">{allSpecs.find((item) => item.localId === id)?.name ?? id}</span>)}</div>}
+              </div>;
+            })}
           </div>
         )}
       </div>
+
+      <LocationCharacteristicFormModal
+        isOpen={characteristicModalOpen}
+        onClose={() => setCharacteristicModalOpen(false)}
+        editingRow={editingCharacteristicRow}
+        readOnly={!canMutate}
+        existingNames={characteristicRows.filter((row) => row.key !== editingCharacteristicRow?.key).map((row) => row.name)}
+        onSave={saveCharacteristic}
+      />
     </div>
   );
 }

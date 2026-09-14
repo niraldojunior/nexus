@@ -695,7 +695,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         id: { type: 'string' },
         name: { type: 'string' },
         code: { type: 'string' },
-        category: { type: 'string', enum: ['Region', 'FunctionalGroup', 'Site', 'SubSite'] },
+        category: { type: 'string', enum: ['Region', 'Site', 'SubSite'] },
         lifecycleStatus: { type: 'string', enum: ['Active', 'Retired'] },
         limit: { type: 'integer' },
         offset: { type: 'integer' },
@@ -706,12 +706,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       const query: NonNullable<Parameters<typeof runtime.geoService.listSpecs>[0]> = {};
       if (typeof input.name === 'string') query.name = input.name;
       if (typeof input.code === 'string') query.code = input.code;
-      if (
-        input.category === 'Region' ||
-        input.category === 'FunctionalGroup' ||
-        input.category === 'Site' ||
-        input.category === 'SubSite'
-      )
+      if (input.category === 'Region' || input.category === 'Site' || input.category === 'SubSite')
         query.category = input.category;
       if (input.lifecycleStatus === 'Active' || input.lifecycleStatus === 'Retired')
         query.lifecycleStatus = input.lifecycleStatus;

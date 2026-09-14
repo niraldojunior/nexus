@@ -117,7 +117,7 @@ Faltam:
 - Prevenção de ciclos ancestrais.
 - Limite e validação de profundidade.
 - Regras específicas para movimentação de Sub-Sites.
-- Consulta de membros e agregações de FunctionalGroup.
+- A abordagem de consulta de membros e agregações de `FunctionalGroup` foi descontinuada junto com a categoria; bases existentes preservam a spec legada somente como `Retired` (C6).
 
 Para relações topológicas, faltam:
 

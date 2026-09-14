@@ -10,7 +10,7 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | ----------------------- | ------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD01-GEO              |
 | **Versão**              | 1.24 — draft                   |
-| **Data**                | Agosto 2026                    |
+| **Data**                | Setembro 2026                  |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001           |
 | **TMFC coberto**        | TMFC014 — Geographic Site Mgmt |
 | **Open APIs**           | TMF673, TMF674, TMF675, TMF688 |
@@ -36,8 +36,9 @@ Este documento se ancora arquiteturalmente no documento de visão geral VTN-HLD-
 - Modelagem canônica de Geographic Site (TMF674) e sua hierarquia parentSite.
 - Catálogo de Site Specifications com regras de contenção configuráveis.
 - Regiões Geográficas como GeographicSite administrativo (category=Region).
-- Grupos Funcionais como GeographicSite agrupador (category=FunctionalGroup).
+- Sites operacionais como GeographicSite (category=Site).
 - Sub-Sites (andares, salas, cages) como GeographicSite interno (category=SubSite).
+- `FunctionalGroup` descontinuado como categoria: a spec legada `FUNCTIONAL_GROUP` é soft-retired (C6) e não aceita novas instâncias.
 - Ciclo de vida formal de Sites com histórico via TMF688 StateChangeEvent.
 - Relações topológicas A↔Z entre Sites via relatedSite.
 - Visão de mapa georreferenciado com sincronização bidirecional.
@@ -65,7 +66,7 @@ O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado veri
 | **REQ-MOD01-002** | Parcial          | CRUD TMF673, vínculo com Location e testes de rota estão ativos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sugestão/geocodificação Geosite, versionamento e carga em massa.                                                                                                                                                  | [#105](https://github.com/niraldojunior/nexus/issues/105)                                                            | [#131](https://github.com/niraldojunior/nexus/issues/131), [#135](https://github.com/niraldojunior/nexus/issues/135) |
 | **REQ-MOD01-003** | Parcial          | CRUD de SiteSpecification e regras de contenção são exercitados em `geo.unit.spec.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Categorias continuam fechadas no tipo TypeScript; falta lifecycle e consulta `allowedChildren`.                                                                                                                   | `D-GEO-003`                                                                                                          | [#132](https://github.com/niraldojunior/nexus/issues/132)                                                            |
 | **REQ-MOD01-004** | Parcial          | Região é representável por SiteSpecification e a árvore expõe raízes/filhos paginados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Filtros próprios, contadores acumulados e invariantes administrativas.                                                                                                                                            | `D-GEO-003`, [#102](https://github.com/niraldojunior/nexus/issues/102)                                               | [#133](https://github.com/niraldojunior/nexus/issues/133)                                                            |
-| **REQ-MOD01-005** | Parcial          | `relatedSite` e specs permitem classificação e agrupamento básico.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `siteType`, consulta de membros, filtros combinados e agregações de grupo.                                                                                                                                        | [#104](https://github.com/niraldojunior/nexus/issues/104)                                                            | [#133](https://github.com/niraldojunior/nexus/issues/133)                                                            |
+| **REQ-MOD01-005** | Parcial          | A classificação por `FunctionalGroup` foi removida do domínio; `FUNCTIONAL_GROUP` é soft-retired em bases existentes (C6).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | O agrupamento funcional deve usar extensões de catálogo futuras, sem reinstalar uma categoria estrutural.                                                                                                          | `D-GEO-003` superada                                                                                                 | [#133](https://github.com/niraldojunior/nexus/issues/133)                                                            |
 | **REQ-MOD01-006** | Parcial          | CRUD TMF674, `/v1/geo/workspace/site-at-address`, busca e frontend Geo estão testados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Filtros completos, bulk, múltiplos endereços e características governadas pelo catálogo.                                                                                                                          | `D-GEO-003`                                                                                                          | [#133](https://github.com/niraldojunior/nexus/issues/133), [#135](https://github.com/niraldojunior/nexus/issues/135) |
 | **REQ-MOD01-007** | Parcial          | `/v1/geo/tree/roots`, `children` e `search` entregam navegação lazy com contagens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Árvore completa dedicada, profundidade/ciclos e operações específicas de Sub-Site.                                                                                                                                | [#108](https://github.com/niraldojunior/nexus/issues/108)                                                            | [#133](https://github.com/niraldojunior/nexus/issues/133)                                                            |
 | **REQ-MOD01-008** | Parcial          | PATCH de status gera TMF688 e `/v1/geo/sites/{id}/events` expõe histórico bruto.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Máquina de transições, `statusDate`, histórico semântico e retenção.                                                                                                                                              | [#107](https://github.com/niraldojunior/nexus/issues/107)                                                            | [#133](https://github.com/niraldojunior/nexus/issues/133), [#158](https://github.com/niraldojunior/nexus/issues/158) |
@@ -158,7 +159,7 @@ Toda operação de cadastro do módulo — inclusive digitalização de geometri
 
 ## 5. Resumo dos requisitos do módulo
 
-O módulo Geographic é composto por 16 requisitos, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial, cobertura agregada por bairro, projetos de trabalho, painel unificado de Local).
+O módulo Geographic é composto por 16 requisitos ativos e um requisito superado, organizados conforme o fluxo natural de modelagem TMF: primeiro as entidades geoespaciais base (Location, Address), depois o catálogo (SiteSpecification), depois as instâncias (Region, Site, Sub-Site, ciclo de vida), depois as relações (contenção, topologia A↔Z) e finalmente as funcionalidades transversais (mapa, eventos, edição geoespacial, cobertura agregada por bairro, projetos de trabalho, painel unificado de Local). `FunctionalGroup` foi descontinuada como categoria; o REQ-MOD01-005 fica registrado apenas como histórico da decisão superada.
 
 | ID                | Título                                                         | Entidade TMF principal                                                               |
 | ----------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -166,7 +167,7 @@ O módulo Geographic é composto por 16 requisitos, organizados conforme o fluxo
 | **REQ-MOD01-002** | Cadastro de Geographic Address (endereço postal estruturado)   | _GeographicAddress (TMF673)_                                                         |
 | **REQ-MOD01-003** | Catálogo de Geographic Site Specification (tipos de site)      | _GeographicSiteSpecification (TMF674)_                                               |
 | **REQ-MOD01-004** | Cadastro de Região Geográfica (GeographicSite administrativo)  | _GeographicSite com siteType=Region (TMF674)_                                        |
-| **REQ-MOD01-005** | Classificação Funcional de Sites (siteType e grupo funcional)  | _GeographicSite com siteType (TMF674) + grupo via relatedSite_                       |
+| **REQ-MOD01-005** | Classificação funcional por FunctionalGroup (superado)         | _Histórico — categoria removida do domínio; ver D-GEO-003 superada_                   |
 | **REQ-MOD01-006** | Cadastro de Geographic Site (entidade central do módulo)       | _GeographicSite (TMF674)_                                                            |
 | **REQ-MOD01-007** | Sub-Sites (andares, salas, cages como GeographicSite)          | _GeographicSite com category=SubSite (TMF674)_                                       |
 | **REQ-MOD01-008** | Ciclo de Vida do Site (status, transições e histórico)         | _GeographicSite.status + StateChangeEvent (TMF674 + TMF688)_                         |
@@ -186,7 +187,7 @@ O módulo Geographic é composto por 16 requisitos, organizados conforme o fluxo
 A ordem natural de construção respeita as dependências entre entidades:
 
 - **Camada 1 (fundação geoespacial):** REQ-001 (Location) + REQ-002 (Address) + REQ-003 (SiteSpec). Sem estas três, nenhuma instância de Site pode existir.
-- **Camada 2 (instâncias hierárquicas):** REQ-004 (Região) + REQ-005 (Grupo Funcional) + REQ-006 (Site) + REQ-007 (Sub-Site). É a operação CRUD efetiva sobre Sites.
+- **Camada 2 (instâncias hierárquicas):** REQ-004 (Região) + REQ-006 (Site) + REQ-007 (Sub-Site). É a operação CRUD efetiva sobre Sites. REQ-005 permanece somente como registro da abordagem `FunctionalGroup` superada.
 - **Camada 3 (governança):** REQ-008 (Ciclo de Vida) + REQ-009 (Contenção). Endurece a operação do dia a dia.
 - **Camada 4 (topologia e visualização):** REQ-010 (Relações A↔Z) + REQ-011 (Mapa) + REQ-013 (Edição de geometria) + REQ-014 (Cobertura GPON por bairro). Eleva a operação para análise topológica, torna o cadastro geoespacial autossuficiente no navegador e dá leitura de densidade/disponibilidade da planta em qualquer escala.
 - **Camada 5 (interoperabilidade):** REQ-012 (Eventos). Habilita módulos downstream e Data Lake — pode ser implementado em paralelo às camadas 2-4.
@@ -446,7 +447,7 @@ Atributos canônicos da entidade GeographicSiteSpecification (TMF674):
 | `name`               | string           |     Sim     | Nome do tipo de site (ex.: "Central Office", "POP", "Armário", "Andar", "Sala").   |
 | `code`               | string           |     Sim     | Código interno (ex.: "CO", "POP", "ARM", "AND", "SLA"). Único na plataforma.       |
 | `description`        | string           |     Não     | Descrição funcional do tipo de site.                                               |
-| `category`           | enum             |     Sim     | Region                                                                             | FunctionalGroup                                                | Site | SubSite. Determina o papel hierárquico. |
+| `category`           | enum             |     Sim     | `Region` \| `Site` \| `SubSite`. Determina o papel hierárquico.                  |
 | `lifecycleStatus`    | enum             |     Sim     | Active                                                                             | Retired — especificações descontinuadas não criam novos sites. |
 | `specCharacteristic` | array<CharSpec>  |     Não     | Lista de atributos customizados do tipo (CLLI, CN, Anel, capacidade etc.).         |
 | `validFor`           | TimePeriod       |     Não     | Período de validade da especificação.                                              |
@@ -494,7 +495,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | ID         | Nome                             | Descrição                                                                                                                                     |
 | ---------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **RF-001** | **Criar SiteSpecification**      | Permitir criação de novo tipo de Site com nome, código, categoria e atributos customizados.                                                   |
-| **RF-002** | **Catálogo de tipos base**       | Pré-popular o catálogo com tipos canônicos V.tal: Region, FunctionalGroup, CentralOffice, POP, Cabinet, InstallationPoint, Floor, Room, Cage. |
+| **RF-002** | **Catálogo de tipos base**       | Pré-popular o catálogo com tipos canônicos V.tal nas categorias `Region`, `Site` e `SubSite`; `FUNCTIONAL_GROUP` legado é soft-retired.       |
 | **RF-003** | **Atributos customizados**       | Permitir definir specCharacteristics por tipo: nome, tipo (string/int/enum/date), obrigatório, valor padrão, validador (regex ou lookup).     |
 | **RF-004** | **Regras de contenção**          | Configurar allowedParentSpec e allowedChildSpec para definir quais tipos podem se conter.                                                     |
 | **RF-005** | **Versionamento**                | Permitir versionar SiteSpecifications via validFor; especificações descontinuadas não criam novos sites mas mantêm sites existentes.          |
@@ -508,7 +509,7 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 | ID         | Regra de Negócio                                                                                                                        |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **RN-001** | O code da SiteSpecification deve ser único globalmente na plataforma.                                                                   |
-| **RN-002** | As 4 categorias base (Region, FunctionalGroup, Site, SubSite) determinam o papel hierárquico e não podem ser sobrescritas.              |
+| **RN-002** | As categorias `Region`, `Site` e `SubSite` determinam o papel hierárquico; `FunctionalGroup` é inválida para novas specs.                |
 | **RN-003** | specCharacteristic obrigatório só pode ser adicionado a SiteSpec sem sites instanciados — caso contrário, exige migração explícita.     |
 | **RN-004** | Regras de contenção (allowedParent/Child) são imutáveis para combinações já existentes — só podem ser flexibilizadas, não restringidas. |
 | **RN-005** | SiteSpecification em status Retired não pode criar novos sites, mas sites existentes desse tipo continuam ativos.                       |
@@ -637,91 +638,70 @@ Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
 
 ---
 
-## 10. REQ-MOD01-005 — Classificação Funcional de Sites (siteType e grupo funcional)
+## 10. REQ-MOD01-005 — Classificação funcional por FunctionalGroup (superado)
 
-> **Entidade TMF:** GeographicSite com siteType (TMF674) + grupo via relatedSite  
-> **Open API TMF:** TMF674 — Geographic Site Management API  
-> **Prioridade:** Média — habilita filtros operacionais e relatórios  
-> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.2 — draft
+> **Entidade TMF:** Histórico — GeographicSite com `relatedSite`
+> **Open API TMF:** TMF674 — Geographic Site Management API
+> **Prioridade:** Não aplicável
+> **Status funcional:** Especificado — decisão superada: `FunctionalGroup` deixou de ser categoria válida; ver D-GEO-003.
 
 ### 10.1 Descrição
 
-Além da hierarquia geográfica (REQ-004), Sites podem ser agrupados por função/papel operacional: Centrais de Borda, POPs de Distribuição Sudeste, Armários Rurais. Esta classificação é ortogonal à hierarquia geográfica — um mesmo POP é classificado por "onde está" (Regional Sudeste) e por "o que é" (POP de Distribuição). No modelo TMF674, isto é expresso de duas formas complementares: (a) siteType como atributo classificador do GeographicSite; (b) Grupo Funcional como GeographicSite com category="FunctionalGroup" referenciado via relatedSite.
+Este requisito registrava a classificação funcional por um `GeographicSite` adicional de categoria
+`FunctionalGroup`, conectado por `relatedSite` com papel `memberOf`. A abordagem foi descontinuada:
+a categoria estrutural aceita apenas `Region`, `Site` e `SubSite`. Specs legadas de código
+`FUNCTIONAL_GROUP` são preservadas somente como histórico e recebem `lifecycleStatus: Retired` no
+self-heal do bootstrap, conforme C6.
 
 ### 10.2 Racional arquitetural
 
-Aqui o Nexus se afasta deliberadamente do modelo NetBox (que trata Site Group como entidade separada paralela a Region). A análise mostra que Site Group é mais bem modelado como mais um tipo de GeographicSite (category="FunctionalGroup") — preservando a unificação no TMF674. Esta abordagem evita a duplicação de hierarquias (Region + SiteGroup como duas árvores) e habilita Grupos Funcionais com atributos customizados próprios (capacidade agregada, política de manutenção, SLA). O siteType é mantido como atributo direto do Site para consultas rápidas; o vínculo com FunctionalGroup permite agregação e governança.
+O mecanismo confundia classificação funcional com uma categoria estrutural de localização. O eixo
+funcional canônico permanece em `GeographicSiteSpecification.siteRole` (C11), enquanto extensões
+de classificação e relacionamento devem ser modeladas por catálogos governados, sem introduzir uma
+quarta categoria fechada de Site.
 
 ### 10.3 Mapeamento de atributos TMF
 
-Atributos canônicos da entidade GeographicSite com siteType (TMF674) + grupo via relatedSite:
-
-| Atributo TMF     | Tipo   | Obrigatório | Observação V.tal                                                                                                          |
-| ---------------- | ------ | :---------: | ------------------------------------------------------------------------------------------------------------------------- |
-| `siteType`       | string |     Não     | Classificação direta (ex.: "CO", "POP-Distribuição", "Armário-Rural"). Derivada do code da siteSpecification + atributos. |
-| `relatedSite`    | array  |     Não     | Vínculos com FunctionalGroups via {site, role:"memberOf"}.                                                                |
-| `characteristic` | array  |     Não     | Atributos de classificação funcional (capacidade, classe de serviço, função técnica).                                     |
+| Atributo histórico | Destino após a descontinuação |
+| ------------------ | ----------------------------- |
+| `category: FunctionalGroup` | Valor inválido para criação e atualização; specs legadas são soft-retired. |
+| `relatedSite` com `role: memberOf` | Não é usado para membership de FunctionalGroup; relações topológicas continuam regidas pelo REQ-MOD01-010. |
 
 ### 10.4 Exemplo de payload
 
-Exemplo ilustrativo da representação JSON da entidade conforme o contrato TMF:
-
-```json
-{
-  "id": "site-pop-rj-001",
-  "name": "POP Botafogo",
-  "siteType": "POP-Distribuicao",
-  "siteSpecification": { "id": "spec-pop", "@referredType": "GeographicSiteSpecification" },
-  "parentSite": { "id": "site-region-rj", "@referredType": "GeographicSite" },
-  "relatedSite": [
-    {
-      "site": { "id": "site-fg-pops-borda", "@referredType": "GeographicSite" },
-      "role": "memberOf"
-    }
-  ]
-}
-```
+Não aplicável a novas integrações. Não crie payloads com `category: "FunctionalGroup"` nem vínculos
+`memberOf` destinados a grupo funcional.
 
 ### 10.5 Pré-condições
 
-- Existem GeographicSites do tipo FunctionalGroup criados no catálogo de regiões/grupos.
+Não aplicável. Em bases existentes, o bootstrap deve executar para aposentar a spec legada
+`FUNCTIONAL_GROUP` sem exclusão física.
 
 ### 10.6 Requisitos Funcionais
 
-| ID         | Nome                                | Descrição                                                                                          |
-| ---------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **RF-001** | **Definir siteType**                | Permitir associar siteType ao Site na criação/edição, baseado na SiteSpecification.                |
-| **RF-002** | **Vincular a FunctionalGroup**      | Permitir vincular um Site a um ou mais GeographicSites do tipo FunctionalGroup via relatedSite.    |
-| **RF-003** | **Hierarquia de Grupos Funcionais** | Suportar hierarquia em FunctionalGroups (ex.: "POPs" > "POPs de Borda" > "POPs de Borda Sudeste"). |
-| **RF-004** | **Filtragem por classificação**     | Listar Sites filtrando por siteType e/ou por FunctionalGroup; combinação com filtro geográfico.    |
-| **RF-005** | **Agregação por grupo**             | Expor agregados (contagem, soma de capacidade) por FunctionalGroup.                                |
-| **RF-006** | **Auditoria de classificação**      | Toda mudança de siteType ou vínculo com FunctionalGroup gera Audit Trail.                          |
+| ID | Situação |
+| -- | -------- |
+| RF-001 a RF-006 | Superados junto com a categoria `FunctionalGroup`; não devem orientar novas implementações. |
 
 ### 10.7 Regras de Negócio
 
-| ID         | Regra de Negócio                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------ |
-| **RN-001** | siteType é livre mas recomendado vir de um conjunto canônico V.tal (preset).               |
-| **RN-002** | Um Site pode pertencer a múltiplos FunctionalGroups simultaneamente (relação N:N).         |
-| **RN-003** | FunctionalGroups podem ter atributos customizados próprios (capacidade total, política).   |
-| **RN-004** | Reassignar siteType de um Site exige Audit Trail e potencial revisão de regras associadas. |
+| ID | Regra de Negócio |
+| -- | ---------------- |
+| RN-001 | `FunctionalGroup` não é um valor válido de `GeographicSiteSpecification.category`. |
+| RN-002 | A descontinuação preserva dados existentes por soft-retire (C6), sem DELETE físico. |
 
 ### 10.8 Critérios de Aceite
 
-| ID         | Critério               | Resultado Esperado                                                                       |
-| ---------- | ---------------------- | ---------------------------------------------------------------------------------------- |
-| **CA-001** | **Filtro combinado**   | GET /geographicSite?regionId=RJ&siteType=POP-Distribuicao retorna apenas POPs no RJ.     |
-| **CA-002** | **Vínculo a grupo**    | POST /geographicSite/{id}/relatedSite com role=memberOf vincula Site a FunctionalGroup.  |
-| **CA-003** | **Múltiplos grupos**   | Um Site pode aparecer em GET /geographicSite/{groupId}/members de mais de um grupo.      |
-| **CA-004** | **Agregado por grupo** | GET /geographicSite/{groupId}/aggregate retorna count e atributos agregados dos membros. |
+| ID | Critério | Resultado Esperado |
+| -- | -------- | ------------------ |
+| CA-001 | Subir o bootstrap sobre uma base com `FUNCTIONAL_GROUP` ativa | A spec é marcada como `Retired` e deixa de aparecer como tipo ativo. |
+| CA-002 | Tentar criar ou atualizar uma spec com `category: "FunctionalGroup"` | A validação de domínio rejeita o valor. |
 
 ### 10.9 Mapeamento contra sistemas de referência
 
-| Capacidade                     | Netwin                           | Kuwaiba                          | NetBox                           | Decisão Nexus                                                         |
-| ------------------------------ | -------------------------------- | -------------------------------- | -------------------------------- | --------------------------------------------------------------------- |
-| **Modelagem de Grupo de Site** | Campo tipo (texto)               | Não identificado no levantamento | Entidade SiteGroup separada      | **GeographicSite com category=FunctionalGroup (unificado em TMF674)** |
-| **Classificação ortogonal**    | Não identificado no levantamento | Via metamodelo                   | Sim (Region + SiteGroup)         | **Sim (parentSite + relatedSite)**                                    |
-| **Múltiplos grupos por Site**  | Não identificado no levantamento | Não identificado no levantamento | Não identificado no levantamento | **Sim (relatedSite array)**                                           |
+| Capacidade | Netwin | Kuwaiba | NetBox | Decisão Nexus |
+| ---------- | ------ | ------- | ------ | ------------- |
+| **Grupo funcional como categoria de Site** | Campo de tipo livre, sem categoria TMF equivalente. | Não identificado no levantamento. | Entidade SiteGroup separada. | **Superada.** O domínio não cria nem expõe `FunctionalGroup`; preservar histórico não reinstala a categoria. |
 
 ---
 
@@ -756,7 +736,7 @@ Atributos canônicos da entidade GeographicSite (TMF674):
 | `place`             | EntityRef  |     Não     | Referência para GeographicLocation (TMF675). Recomendado para visualização em mapa.                              |
 | `address`           | array      |     Não     | Referências a GeographicAddress (TMF673). Suporta múltiplos endereços com papel (principal, despacho, cobrança). |
 | `relatedParty`      | array      |     Não     | Owners, operadores, Tenants relacionados.                                                                        |
-| `relatedSite`       | array      |     Não     | Relações com outros Sites (alimentação, backhaul, FunctionalGroup membership).                                   |
+| `relatedSite`       | array      |     Não     | Relações topológicas com outros Sites, como alimentação e backhaul.                                              |
 | `characteristic`    | array      |     Não     | Valores dos specCharacteristics do tipo: CLLI, CN, Anel, SICOM_ID, Sitar etc.                                    |
 | `description`       | string     |     Não     | Descrição livre.                                                                                                 |
 | `validFor`          | TimePeriod |     Não     | Período de validade (data de ativação até desativação).                                                          |
@@ -2104,7 +2084,7 @@ Exemplo ilustrativo de uma mancha de concentração conforme o contrato TMF675, 
 
 ### 23.1 Descrição
 
-O cadastro Geo tipava um `GeographicSite` por um único eixo — `category` (`Region | FunctionalGroup | Site | SubSite`), que é **estrutural**: diz onde o nó cabe na hierarquia, não o que ele é. Um Central Office, um condomínio e a casa de um assinante eram todos `category: 'Site'`, indistinguíveis. Este requisito introduz o eixo **funcional**, `siteRole` (`grouping | network | property | service`), na `GeographicSiteSpecification` — Network Site (CO, POP, armário: infraestrutura de rede) ≠ Property Site (condomínio/MDU: imóvel) ≠ Service Site (a unidade atendida). Introduz também `GeographicSubAddress` (TMF673) em `GeographicAddress`, para localizar torre/bloco/andar/unidade dentro do endereço único de um condomínio, e migra `INSTALLATION_POINT` — cadastrado incorretamente como site spec — para `CUSTOMER_SITE`, o novo tipo com `siteRole: 'service'`.
+O cadastro Geo tipava um `GeographicSite` por um único eixo — `category` (`Region | Site | SubSite`), que é **estrutural**: diz onde o nó cabe na hierarquia, não o que ele é. Um Central Office, um condomínio e a casa de um assinante eram todos `category: 'Site'`, indistinguíveis. Este requisito introduz o eixo **funcional**, `siteRole` (`grouping | network | property | service`), na `GeographicSiteSpecification` — Network Site (CO, POP, armário: infraestrutura de rede) ≠ Property Site (condomínio/MDU: imóvel) ≠ Service Site (a unidade atendida). Introduz também `GeographicSubAddress` (TMF673) em `GeographicAddress`, para localizar torre/bloco/andar/unidade dentro do endereço único de um condomínio, e migra `INSTALLATION_POINT` — cadastrado incorretamente como site spec — para `CUSTOMER_SITE`, o novo tipo com `siteRole: 'service'`.
 
 ### 23.2 Racional arquitetural
 
@@ -2185,7 +2165,7 @@ Exemplo ilustrativo de uma `GeographicSiteSpecification` com `siteRole` e de um 
 
 | ID         | Critério                                                      | Resultado Esperado                                                                                                                |
 | ---------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **CA-001** | Criar uma spec sem informar `siteRole` explicitamente         | `siteRole` é resolvido pelo default de `category` (`Region`/`FunctionalGroup` → `grouping`, resto → `network`).                   |
+| **CA-001** | Criar uma spec sem informar `siteRole` explicitamente         | `siteRole` é resolvido pelo default de `category` (`Region` → `grouping`, demais categorias → `network`).                          |
 | **CA-002** | Gravar um `GeographicAddress` com `subAddress` de três níveis | Round-trip preserva os três itens na ordem gravada; `formatAddress` concatena os três.                                            |
 | **CA-003** | Rodar o script de migração em dry-run e depois com `--apply`  | Dry-run só reporta contagem; `--apply` reaponta os sites, corrige `geo_map_feature.sublabel` e não deixa regra de contenção órfã. |
 | **CA-004** | Abrir o seletor de camadas do mapa                            | O grupo "Locais" mostra Sites de Rede/Imóveis/Sites de Serviço/Sub-locais, sem código cru de spec em inglês.                      |
@@ -2275,7 +2255,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **D-GEO-001** | O Nexus gera UUID v7 próprio e preserva IDs legados em `_origin`.                                                                                                         | Aplica-se a Site, Address e Location; detalhamento na seção 26.2.                                                                  |
 | **D-GEO-002** | O provedor de geocodificação é o Geosite Logradouros.                                                                                                                     | Resolve uma questão antiga já superada; a interface técnica continua em [#105](https://github.com/niraldojunior/nexus/issues/105). |
-| **D-GEO-003** | `SiteSpecifications` do bootstrap fechadas em 31/07/2026: `Region`, `FunctionalGroup`, `Central Office`, `POP`, `Cabinet`, `InstallationPoint`, `Floor`, `Room` e `Cage`. | Resolve a antiga `D-GEO-003`.                                                                                                      |
+| **D-GEO-003** | Catálogo bootstrapado de SiteSpecifications; a categoria `FunctionalGroup` foi descontinuada. | Superada parcialmente: só `Region`, `Site` e `SubSite` são categorias válidas; `FUNCTIONAL_GROUP` legado é soft-retired (C6). |
 
 ### 26.2 D-GEO-001 — Identidade e proveniência de entidades
 
@@ -2369,7 +2349,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.21   | Agosto 2026 | Engenharia — V.tal Nexus | Migração do backlog documental para GitHub Issues: questões pendentes e lacunas passam a ser rastreadas por issue, com labels `tipo:decisão`/`tipo:lacuna` e `mod:geo`. §27 aponta para o filtro de issues em vez de tabela local; a questão do catálogo de bootstrap foi resolvida como `D-GEO-003`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 1.22   | Agosto 2026 | Engenharia — V.tal Nexus | Fase 4 do issue [#171](https://github.com/niraldojunior/nexus/issues/171): consulta inversa de cobertura GPON — novo `coverageForPoint` em `GeoCoverageService` e rota `GET /v1/geo/coverage/by-resource/:id` (REQ-MOD01-014/RF-010), resolvendo o ponto do recurso via `GeoTreeService` e devolvendo célula fina + áreas (`neighborhood`/`city`/`uf`) que o contêm; 404 para recurso sem geometria de ponto. "Setor Censitário" (IBGE) fica fora do escopo — sem geometria própria no modelo hoje.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 1.23   | Agosto 2026 | Engenharia — V.tal Nexus | Consolidação das Fases 3 e 4 do issue [#171](https://github.com/niraldojunior/nexus/issues/171): o painel de CTO incorpora a aba **Portas** com drill-down empilhado para portas de splitter materializadas; todo Resource com geometria `Point` incorpora a aba **Cobertura**, que consulta sob demanda a célula e as áreas da cobertura GPON. A UI preserva a fronteira canônica: cobertura continua Geographic read model (TMF675), não Resource ou Service.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 1.24   | Setembro 2026 | Engenharia — V.tal Nexus | Atualização de referências técnicas para Oracle-only / execução local (C10): o script de migração INSTALLATION_POINT para CUSTOMER_SITE (REQ-MOD01-018/RF-006) passa a rodar exclusivamente sobre Oracle, não mais Postgres+Oracle; sem mudança de comportamento funcional. |
+| 1.24   | Setembro 2026 | Engenharia — V.tal Nexus | Atualização de referências técnicas para Oracle-only / execução local (C10): o script de migração INSTALLATION_POINT para CUSTOMER_SITE (REQ-MOD01-018/RF-006) passa a rodar exclusivamente sobre Oracle, não mais Postgres+Oracle. Também descontinua `FunctionalGroup` como categoria estrutural: o domínio aceita somente `Region`, `Site` e `SubSite`; a spec legada `FUNCTIONAL_GROUP` recebe soft-retire (C6), e REQ-MOD01-005/D-GEO-003 registram a decisão superada. |
 
 ---
 

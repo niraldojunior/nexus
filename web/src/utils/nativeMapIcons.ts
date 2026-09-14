@@ -471,12 +471,17 @@ const dataUrlCache = new Map<string, string>();
 
 export function nativeMapIconDataUrl(
   entry: NativeMapIcon,
-  options: { size?: number; shape?: IconShape } = {},
+  options: { size?: number; shape?: IconShape; color?: string; opacity?: number } = {},
 ): string {
-  const key = `${entry.code}:${entry.glyph}:${entry.color}:${options.size ?? ''}:${options.shape ?? ''}`;
+  const color = options.color ?? entry.color;
+  const opacity = options.opacity ?? 1;
+  const key = `${entry.code}:${entry.glyph}:${color}:${opacity}:${options.size ?? ''}:${options.shape ?? ''}`;
   const cached = dataUrlCache.get(key);
   if (cached) return cached;
-  const value = toDataUrl(renderIconSvg(entry.node, entry.color, options));
+  const svg = renderIconSvg(entry.node, color, options);
+  const value = toDataUrl(
+    opacity === 1 ? svg : svg.replace('<svg ', `<svg opacity="${opacity}" `),
+  );
   dataUrlCache.set(key, value);
   return value;
 }

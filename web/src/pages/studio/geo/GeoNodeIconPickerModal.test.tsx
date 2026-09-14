@@ -3,32 +3,20 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { GeoNodeIconPickerModal } from './GeoNodeIconPickerModal';
 import * as studioAssetApi from '../../../services/studioAssetApi';
-import type { StudioGeoEntityNode, StudioGeoPointVisualConfig } from '../../../services/studioGeoApi';
+import type { StudioGeoPointVisualConfig } from '../../../services/studioGeoApi';
+import { defaultColorRule } from '../../../utils/studioGeoDefaults';
 
 vi.mock('../../../services/studioAssetApi', () => ({
   listStudioAssets: vi.fn(),
   createStudioSvgAsset: vi.fn(),
+  getStudioSvgAssetDataUrl: vi.fn(),
 }));
-
-const stationNode: StudioGeoEntityNode = {
-  id: 'stations',
-  kind: 'ENTITY',
-  parentNodeId: null,
-  label: 'Estações',
-  sortOrder: 10,
-  active: true,
-  defaultVisible: true,
-  entity: {
-    category: 'LOCAL',
-    sourceDomain: 'location-model',
-    sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
-    sourceId: 'CO',
-  },
-};
 
 const pointConfig: StudioGeoPointVisualConfig = {
   geometryKind: 'POINT',
   iconCode: 'CO',
+  color: defaultColorRule('LOCAL', '#8b5cf6'),
+  opacity: 1,
   scaleBands: {
     le5m: { visible: true, sizePx: 18 },
     le10m: { visible: true, sizePx: 18 },
@@ -45,6 +33,7 @@ describe('GeoNodeIconPickerModal', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(studioAssetApi.listStudioAssets).mockResolvedValue([]);
+    vi.mocked(studioAssetApi.getStudioSvgAssetDataUrl).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -55,7 +44,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={pointConfig}
         onClose={vi.fn()}
         onSelect={vi.fn()}
@@ -78,7 +66,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={{ ...pointConfig, iconCode: 'energy.substation' }}
         onClose={vi.fn()}
         onSelect={vi.fn()}
@@ -99,7 +86,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={pointConfig}
         onClose={vi.fn()}
         onSelect={vi.fn()}
@@ -120,7 +106,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={pointConfig}
         onClose={vi.fn()}
         onSelect={vi.fn()}
@@ -138,7 +123,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={pointConfig}
         onClose={vi.fn()}
         onSelect={vi.fn()}
@@ -163,7 +147,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={{ ...pointConfig, assetId: 'asset-1' }}
         onClose={onClose}
         onSelect={onSelect}
@@ -191,7 +174,6 @@ describe('GeoNodeIconPickerModal', () => {
     render(
       <GeoNodeIconPickerModal
         isOpen
-        node={stationNode}
         pointConfig={pointConfig}
         onClose={vi.fn()}
         onSelect={vi.fn()}

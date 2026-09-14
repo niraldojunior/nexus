@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileUp, Image as ImageIcon, Search } from 'lucide-react';
 import { Button, Modal } from '../../../components/ui';
-import type {
-  StudioGeoEntityNode,
-  StudioGeoPointVisualConfig,
-} from '../../../services/studioGeoApi';
+import type { StudioGeoPointVisualConfig } from '../../../services/studioGeoApi';
 import {
   createStudioSvgAsset,
+  getStudioSvgAssetDataUrl,
   listStudioAssets,
   type StudioAsset,
 } from '../../../services/studioAssetApi';
@@ -14,16 +12,16 @@ import {
   NATIVE_MAP_ICON_INDUSTRIES,
   NATIVE_MAP_ICON_INDUSTRY_LABEL,
   filterNativeMapIcons,
+  nativeMapIconDataUrl,
   nativeMapIconForCode,
   type NativeMapIconIndustry,
 } from '../../../utils/nativeMapIcons';
-import { canonicalPointIconPreviewUrl } from './GeoNodeVisualConfigTab';
+import { STUDIO_GEO_NEUTRAL_ICON_COLOR } from '../../../utils/studioGeoDefaults';
 
 type Selection = { kind: 'system'; iconCode: string } | { kind: 'asset'; assetId: string };
 
 type GeoNodeIconPickerModalProps = {
   isOpen: boolean;
-  node: StudioGeoEntityNode;
   pointConfig: StudioGeoPointVisualConfig;
   onClose: () => void;
   onSelect: (selection: Selection) => void;
@@ -31,12 +29,12 @@ type GeoNodeIconPickerModalProps = {
 
 export function GeoNodeIconPickerModal({
   isOpen,
-  node,
   pointConfig,
   onClose,
   onSelect,
 }: GeoNodeIconPickerModalProps) {
   const [assets, setAssets] = useState<StudioAsset[]>([]);
+  const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [industry, setIndustry] = useState<NativeMapIconIndustry>('TELECOM');
   const [selection, setSelection] = useState<Selection>(
@@ -62,6 +60,22 @@ export function GeoNodeIconPickerModal({
       .then(setAssets)
       .catch(() => setAssets([]));
   }, [isOpen, pointConfig.assetId, pointConfig.iconCode]);
+
+  // Miniatura real de cada SVG personalizado — o conteúdo vem sanitizado pelo Studio, e sem ele
+  // a lista só mostraria um ícone genérico igual para todos.
+  useEffect(() => {
+    let active = true;
+    for (const asset of assets) {
+      if (assetPreviews[asset.id]) continue;
+      void getStudioSvgAssetDataUrl(asset.id).then((url) => {
+        if (active && url) setAssetPreviews((current) => ({ ...current, [asset.id]: url }));
+      });
+    }
+    return () => {
+      active = false;
+    };
+    // `assetPreviews` entra só como cache consultado; incluí-lo reexecutaria a cada resposta.
+  }, [assets]);
 
   const systemIcons = useMemo(() => filterNativeMapIcons(industry, search), [industry, search]);
   const customAssets = useMemo(() => {
@@ -131,7 +145,7 @@ export function GeoNodeIconPickerModal({
           <div className="mb-2 flex items-center justify-between gap-3">
             <h4 className="text-[0.82rem] font-semibold text-app-text">Ícones nativos</h4>
             <span className="text-[0.74rem] text-app-muted">
-              Os mesmos ícones disponíveis no mapa
+              A cor de fundo é escolhida depois, em Ícone &amp; Cor
             </span>
           </div>
           <div
@@ -182,8 +196,13 @@ export function GeoNodeIconPickerModal({
                         : 'border-app-border bg-white hover:bg-black/[0.02]'
                     }`}
                   >
+                    {/* Glifo neutro sem badge: o fundo colorido só é decidido na aba. */}
                     <img
-                      src={canonicalPointIconPreviewUrl(node, mapIcon.code, 32)}
+                      src={nativeMapIconDataUrl(mapIcon, {
+                        size: 32,
+                        shape: 'none',
+                        color: STUDIO_GEO_NEUTRAL_ICON_COLOR,
+                      })}
                       alt=""
                       className="h-8 w-8"
                     />
@@ -237,7 +256,15 @@ export function GeoNodeIconPickerModal({
                         : 'border-app-border bg-white hover:bg-black/[0.02]'
                     }`}
                   >
-                    <ImageIcon className="h-4 w-4 shrink-0 text-app-muted" />
+                    {assetPreviews[asset.id] ? (
+                      <img
+                        src={assetPreviews[asset.id]}
+                        alt=""
+                        className="h-5 w-5 shrink-0 object-contain"
+                      />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 shrink-0 text-app-muted" />
+                    )}
                     <span className="truncate font-medium text-app-text">{asset.name}</span>
                   </button>
                 );

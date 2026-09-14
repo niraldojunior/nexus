@@ -26,7 +26,16 @@ import { siteKindFromSpec } from '../../utils/placeLabel';
 import { nodeForMapFeature, type MapSiteRole } from '../../utils/mapLayers';
 import { nativeMapIconDataUrl, nativeMapIconForCode } from '../../utils/nativeMapIcons';
 import type { StudioGeoCatalog, StudioGeoVisualConfig } from '../../services/studioGeoApi';
-import { resolveScaleBandKey } from '../../utils/studioGeoDefaults';
+import {
+  normalizeStudioGeoVisualConfig,
+  resolveStudioGeoVisualStyle,
+  type ResolvedStudioGeoStyle,
+} from '../../utils/studioGeoVisual';
+import {
+  animatedDashOffset,
+  prefersReducedMotion,
+  strokeDashPattern,
+} from '../../utils/studioGeoStroke';
 import { getStudioSvgAssetDataUrl } from '../../services/studioAssetApi';
 import type { MapTileFeature } from '../../services/geoMapTileApi';
 
@@ -90,14 +99,45 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   let catalog: StudioGeoCatalog | undefined;
   let scaleMeters: number | null | undefined;
 
-  const visualConfigFor = (feature: MapTileFeature): StudioGeoVisualConfig | undefined =>
-    catalog ? nodeForMapFeature(feature, catalog, roleByCode)?.visualConfig : undefined;
+  // Normalizar um visualConfig custa o suficiente para não repetir por feature a cada frame —
+  // em bairro denso são dezenas de milhares de features para poucas dezenas de nós do catálogo.
+  // O cache é invalidado junto com o catálogo, em setData.
+  let normalizedCache = new Map<string, StudioGeoVisualConfig>();
 
-  const lineDashFor = (style: 'solid' | 'dashed' | 'dotted'): number[] => {
-    if (style === 'dashed') return [6, 4];
-    if (style === 'dotted') return [2, 3];
-    return [];
+  const styleFor = (feature: MapTileFeature): ResolvedStudioGeoStyle | undefined => {
+    if (!catalog) return undefined;
+    const node = nodeForMapFeature(feature, catalog, roleByCode);
+    if (!node?.visualConfig) return undefined;
+    let config = normalizedCache.get(node.id);
+    if (!config) {
+      config = normalizeStudioGeoVisualConfig(node.visualConfig, node.entity, node.label);
+      normalizedCache.set(node.id, config);
+    }
+    return resolveStudioGeoVisualStyle(config, node.entity.category, feature.status, scaleMeters);
   };
+
+  // Um único relógio de animação para todas as linhas `animated-dotted` visíveis: o offset do
+  // tracejado é função do tempo decorrido, então basta invalidar o overlay por frame enquanto
+  // houver pelo menos uma linha animada em tela.
+  let animationStart = 0;
+  let animationFrame: number | null = null;
+  let animatedLinesDrawn = 0;
+
+  function syncAnimation(): void {
+    if (animatedLinesDrawn > 0 && animationFrame === null && !prefersReducedMotion()) {
+      animationStart = performance.now();
+      const tick = () => {
+        animationFrame = requestAnimationFrame(tick);
+        overlay.draw();
+      };
+      animationFrame = requestAnimationFrame(tick);
+      return;
+    }
+    if (animatedLinesDrawn === 0 && animationFrame !== null) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+  }
 
   // Projeção e resultado do último `draw()` — hitTest reusa os dois: reprojeta a coordenada
   // consultada no MESMO espaço de pixel local em que os pontos/linhas já foram desenhados, em
@@ -262,7 +302,11 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       pointGrid = new Map();
       lineGrid = new Map();
       lastProject = null;
-      if (data.length === 0) return;
+      animatedLinesDrawn = 0;
+      if (data.length === 0) {
+        syncAnimation();
+        return;
+      }
 
       const toLocal: Project = (lng, lat) => {
         const pixel = projection.fromLatLngToDivPixel(new maps.LatLng(lat, lng));
@@ -317,6 +361,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
 
       for (const point of drawnPoints) insertPoint(pointGrid, point);
       for (const line of drawnLines) insertLine(lineGrid, line);
+      syncAnimation();
     }
 
     private drawLine(
@@ -335,17 +380,23 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         resourceType: feature.typeCode ?? '',
         status: feature.status,
       });
-      const visualConfig = visualConfigFor(feature);
-      const lineConfig = visualConfig?.geometryKind === 'LINE' ? visualConfig : undefined;
-      if (
-        lineConfig?.scaleBands[resolveScaleBandKey(scaleMeters)]?.visible === false
-      ) {
-        return;
+      const style = styleFor(feature);
+      const lineStyle = style?.geometryKind === 'LINE' ? style : undefined;
+      if (lineStyle && !lineStyle.visible) return;
+
+      const strokeWidth = lineStyle?.strokeWidth ?? CABLE_STROKE_WEIGHT[icon.code] ?? 2.5;
+      context.strokeStyle = lineStyle?.strokeColor ?? icon.color;
+      context.globalAlpha = lineStyle?.opacity ?? 0.9;
+      context.lineWidth = strokeWidth;
+      context.setLineDash(
+        lineStyle ? strokeDashPattern(lineStyle.strokeStyle, strokeWidth) : [],
+      );
+      if (lineStyle?.strokeStyle === 'animated-dotted') {
+        animatedLinesDrawn += 1;
+        context.lineDashOffset = prefersReducedMotion()
+          ? 0
+          : -animatedDashOffset(performance.now() - animationStart, 'animated-dotted', strokeWidth);
       }
-      context.strokeStyle = lineConfig?.strokeColor ?? icon.color;
-      context.globalAlpha = lineConfig?.opacity ?? 0.9;
-      context.lineWidth = lineConfig?.strokeWidth ?? CABLE_STROKE_WEIGHT[icon.code] ?? 2.5;
-      context.setLineDash(lineConfig ? lineDashFor(lineConfig.strokeStyle) : []);
       context.lineCap = 'round';
       context.lineJoin = 'round';
       context.beginPath();
@@ -353,6 +404,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       for (let i = 1; i < points.length; i += 1) context.lineTo(points[i]![0], points[i]![1]);
       context.stroke();
       context.setLineDash([]);
+      context.lineDashOffset = 0;
       context.globalAlpha = 1;
 
       drawnLines.push({ points, feature });
@@ -366,11 +418,10 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const local = project(feature.lng, feature.lat);
       if (!local) return;
       const [x, y] = local;
-      const visualConfig = visualConfigFor(feature);
-      const pointConfig = visualConfig?.geometryKind === 'POINT' ? visualConfig : undefined;
-      const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
-      if (scaleConfig?.visible === false) return;
-      const size = scaleConfig?.sizePx ?? resourceMarkerSize;
+      const style = styleFor(feature);
+      const pointStyle = style?.geometryKind === 'POINT' ? style : undefined;
+      if (pointStyle && !pointStyle.visible) return;
+      const size = pointStyle?.sizePx ?? resourceMarkerSize;
       const inferredIcon = resourceIconFor({
         resourceType: feature.typeCode ?? '',
         status: feature.status,
@@ -380,12 +431,17 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         // usado pelo resto do código (ex.: condominium-workflow.ts).
         name: feature.label,
       });
-      const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
-      const img = pointConfig?.assetId
-        ? loadStudioAsset(pointConfig.assetId)
+      const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
+      const img = pointStyle?.assetId
+        ? loadStudioAsset(pointStyle.assetId)
         : loadImage(
             nativeIcon
-              ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'circle' })
+              ? nativeMapIconDataUrl(nativeIcon, {
+                  size,
+                  shape: 'circle',
+                  color: pointStyle?.color,
+                  opacity: pointStyle?.opacity,
+                })
               : resourceIconDataUrl(inferredIcon, { size }),
           );
       // Âncora no canto inferior-esquerdo — mesma regra de buildPointMarkerVisual em GeoPage
@@ -408,19 +464,23 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         name: feature.sublabel,
         siteRole: feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined,
       });
-      const visualConfig = visualConfigFor(feature);
-      const pointConfig = visualConfig?.geometryKind === 'POINT' ? visualConfig : undefined;
-      const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
+      const style = styleFor(feature);
+      const pointStyle = style?.geometryKind === 'POINT' ? style : undefined;
+      if (pointStyle && !pointStyle.visible) return;
       const size =
-        scaleConfig?.sizePx ?? (inferredKind === 'CO' ? siteMarkerSize : resourceMarkerSize);
-      if (scaleConfig?.visible === false) return;
+        pointStyle?.sizePx ?? (inferredKind === 'CO' ? siteMarkerSize : resourceMarkerSize);
       const icon = siteIconFor(inferredKind, feature.status);
-      const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
-      const img = pointConfig?.assetId
-        ? loadStudioAsset(pointConfig.assetId)
+      const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
+      const img = pointStyle?.assetId
+        ? loadStudioAsset(pointStyle.assetId)
         : loadImage(
             nativeIcon
-              ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'squircle' })
+              ? nativeMapIconDataUrl(nativeIcon, {
+                  size,
+                  shape: 'squircle',
+                  color: pointStyle?.color,
+                  opacity: pointStyle?.opacity,
+                })
               : siteIconDataUrl(icon, { size }),
           );
       // Âncora central — mesma regra de buildPointMarkerVisual em GeoPage (squircle).
@@ -438,6 +498,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       siteMarkerSize = options.siteMarkerSize;
       excludeNodeId = options.excludeNodeId;
       roleByCode = options.roleByCode;
+      if (catalog !== options.catalog) normalizedCache = new Map();
       catalog = options.catalog;
       scaleMeters = options.scaleMeters;
       data = features;
@@ -474,7 +535,11 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       }
       return nearestLine ? nearestLine.feature : null;
     },
-    destroy: () => overlay.setMap(null),
+    destroy: () => {
+      animatedLinesDrawn = 0;
+      syncAnimation();
+      overlay.setMap(null);
+    },
   };
 }
 

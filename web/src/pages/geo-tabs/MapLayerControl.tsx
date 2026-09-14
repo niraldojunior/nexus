@@ -1,15 +1,6 @@
 import { useEffect, useId, useState } from 'react';
-import {
-  Box,
-  ChevronDown,
-  ChevronRight,
-  Folder,
-  FolderOpen,
-  Globe,
-  Layers,
-  X,
-} from 'lucide-react';
-import type { StudioGeoCatalog } from '../../services/studioGeoApi';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Layers, X } from 'lucide-react';
+import type { StudioGeoCatalog, StudioGeoEntityNode } from '../../services/studioGeoApi';
 import {
   groupVisibility,
   MAP_LAYER_CATALOG_FALLBACK,
@@ -23,7 +14,10 @@ import {
   type MapLayerTreeNode,
   type MapLayerVisibility,
 } from '../../utils/mapLayers';
-import { resolveScaleBandKey } from '../../utils/studioGeoDefaults';
+import { resolveScaleBandKey, visualGeometryKindOf } from '../../utils/studioGeoDefaults';
+import { normalizeStudioGeoVisualConfig, resolveStudioGeoColor } from '../../utils/studioGeoVisual';
+import { useStudioPointIconPreviewUrl } from '../../hooks/useStudioPointIconPreviewUrl';
+import { STROKE_STYLE_OPTIONS } from '../studio/geo/VisualStyleControls';
 
 export type MapLayerControlProps = {
   catalog?: StudioGeoCatalog;
@@ -46,6 +40,82 @@ function disabledHint(node: MapLayerTreeNode, scaleMeters: number | null | undef
   const band = config.scaleBands[resolveScaleBandKey(scaleMeters)];
   if (band?.visible !== false) return null;
   return 'Oculto nesta escala — configurado no Studio GEO';
+}
+
+// Amostra do visual publicado no Studio GEO para a entidade — substitui os ícones genéricos de
+// Local/Recurso/Região por algo que já mostra o que o usuário configurou (ícone/cor do ponto,
+// estilo/cor do traço, preenchimento+borda do polígono). O seletor não representa uma instância
+// nem um status específico: usa sempre `defaultColor` e a faixa "le20m" como referência de traço.
+function LayerEntitySample({ node }: { node: StudioGeoEntityNode }) {
+  // O catálogo publicado normalmente já vem íntegro, mas catálogos legados/fallback podem
+  // carregar um `visualConfig` parcial (sem `color`/`opacity`) — normalizar aqui evita que o
+  // seletor quebre lendo um contrato antigo.
+  const config = normalizeStudioGeoVisualConfig(
+    node.visualConfig,
+    node.entity,
+    node.label,
+    visualGeometryKindOf(node.visualConfig, node.entity, node.label),
+  );
+  const pointConfig = config.geometryKind === 'POINT' ? config : null;
+  const pointColor = pointConfig
+    ? resolveStudioGeoColor(pointConfig.color, node.entity.category, null)
+    : undefined;
+  // O hook precisa rodar incondicionalmente; para LINE/POLYGON ele devolve `undefined`.
+  const previewUrl = useStudioPointIconPreviewUrl(node, pointConfig, 20, {
+    ...(pointColor ? { color: pointColor } : {}),
+    ...(pointConfig ? { opacity: pointConfig.opacity } : {}),
+  });
+
+  if (pointConfig) {
+    const color = pointColor as string;
+    return previewUrl ? (
+      <img src={previewUrl} alt="" className="h-4 w-4 shrink-0" />
+    ) : (
+      <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+    );
+  }
+
+  if (config.geometryKind === 'LINE') {
+    const strokeColor = resolveStudioGeoColor(config.stroke, node.entity.category, null);
+    const dashArray =
+      STROKE_STYLE_OPTIONS.find((option) => option.value === config.strokeStyle)?.dashArray ??
+      'none';
+    return (
+      <svg width="16" height="14" className="shrink-0" aria-hidden="true">
+        <line
+          x1="1"
+          y1="7"
+          x2="15"
+          y2="7"
+          stroke={strokeColor}
+          strokeWidth={2}
+          strokeOpacity={config.opacity}
+          strokeLinecap="round"
+          strokeDasharray={dashArray}
+        />
+      </svg>
+    );
+  }
+
+  if (config.geometryKind !== 'POLYGON') return null;
+  const fillColor = resolveStudioGeoColor(config.fill, node.entity.category, null);
+  const strokeColor = resolveStudioGeoColor(config.stroke, node.entity.category, null);
+  return (
+    <svg width="16" height="16" className="shrink-0" aria-hidden="true">
+      <rect
+        x="1.5"
+        y="1.5"
+        width="13"
+        height="13"
+        rx="3"
+        fill={fillColor}
+        fillOpacity={config.fillOpacity}
+        stroke={strokeColor}
+        strokeOpacity={config.strokeOpacity}
+        strokeWidth={1.5}
+      />
+    </svg>
+  );
 }
 
 function LayerSwitch({
@@ -134,8 +204,6 @@ export function MapLayerControl({
   const renderNode = (node: MapLayerTreeNode, depth: number) => {
     if (node.kind === 'ENTITY') {
       const hint = disabledHint(node, scaleMeters);
-      const isLocal = node.entity.category === 'LOCAL';
-      const isResource = node.entity.category === 'RESOURCE';
 
       return (
         <div
@@ -144,13 +212,7 @@ export function MapLayerControl({
           style={{ paddingLeft: `${depth * 14 + 4}px` }}
           title={hint ?? node.hint ?? undefined}
         >
-          {isLocal ? (
-            <Layers className="h-3.5 w-3.5 shrink-0 text-app-muted" />
-          ) : isResource ? (
-            <Box className="h-3.5 w-3.5 shrink-0 text-app-muted" />
-          ) : (
-            <Globe className="h-3.5 w-3.5 shrink-0 text-app-muted" />
-          )}
+          <LayerEntitySample node={node} />
           <span
             className={`min-w-0 flex-1 truncate text-[0.78rem] ${hint ? 'text-app-muted' : 'text-app-text'}`}
           >

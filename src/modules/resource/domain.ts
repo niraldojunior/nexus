@@ -2,6 +2,7 @@ import type { Characteristic, RelatedParty, TimePeriod } from '../../shared/tmf/
 import type { GeoGeometryType, GeoJSONGeometry } from '../geo/domain.js';
 
 export type ResourceKind = 'PhysicalResource' | 'LogicalResource';
+export type ResourceGeometryKind = 'POINT' | 'LINE' | 'POLYGON';
 export type ResourceStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
 // Eixos de estado do SID/X.731 (REQ-MOD02-006). `shuttingDown` é o estado de transição exigido
 // para bloquear um recurso que ainda está em uso (RN-002: não se salta de unlocked para locked
@@ -26,6 +27,8 @@ export type ResourceType = {
   nature: ResourceKind;
   /** Flag canônica (1/0 no Oracle) para a presença própria do tipo no mapa. */
   mapPresence: boolean;
+  /** Geometria canônica das instâncias no mapa; obrigatória quando um tipo físico está visível. */
+  geometryKind?: ResourceGeometryKind;
   /**
    * Características que **definem** este tipo de recurso — o contrato estrutural que toda
    * `ResourceSpecification` do tipo herda. Cada entrada carrega também um valor padrão, copiado
@@ -44,6 +47,8 @@ export type UpdateResourceTypeInput = {
   status?: ResourceCatalogStatus;
   nature?: ResourceKind;
   mapPresence?: boolean;
+  /** `null` limpa explicitamente; ausência mantém a geometria atual. */
+  geometryKind?: ResourceGeometryKind | null;
   resourceTypeCharacteristic?: Characteristic[];
 };
 
@@ -231,6 +236,7 @@ type ResourceCatalogNodeShapeInput =
       resourceTypeId?: string;
       nature?: ResourceKind;
       mapPresence?: boolean;
+      geometryKind?: ResourceGeometryKind;
       resourceTypeCharacteristic?: Characteristic[];
     };
 
@@ -259,6 +265,8 @@ export type UpdateResourceCatalogNodeInput = {
   /** Campos exclusivos da folha, persistidos no ResourceType associado na mesma transação. */
   nature?: ResourceKind;
   mapPresence?: boolean;
+  /** `null` limpa explicitamente; ausência mantém a geometria atual. */
+  geometryKind?: ResourceGeometryKind | null;
   resourceTypeCharacteristic?: Characteristic[];
 };
 
@@ -365,6 +373,8 @@ export type ResourceModelSnapshotResourceType = {
   status?: ResourceCatalogStatus;
   nature?: ResourceKind;
   mapPresence?: boolean;
+  /** `null` limpa explicitamente; ausência mantém a geometria atual. */
+  geometryKind?: ResourceGeometryKind | null;
   resourceTypeCharacteristic?: Characteristic[];
 };
 

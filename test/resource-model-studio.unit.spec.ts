@@ -26,7 +26,7 @@ const createTestServices = () => {
   const adapter = new ResourceModelStudioAdapter(resourceService);
   studioService.registerAdapter(adapter);
 
-  return { resourceRepo, resourceService, studioRepo, studioService, adapter };
+  return { resourceRepo, resourceService, studioRepo, studioService, adapter, eventService };
 };
 
 test('ResourceService: reorders nodes under the same parent atomically', async () => {
@@ -218,12 +218,24 @@ test('ResourceService: snapshot source aggregates modeled types and rules in one
   );
   const leaf = await resourceService.createResourceCatalogNode(
     catalog.id,
-    { code: 'cdoe', name: 'CDOE', kind: 'RESOURCE_TYPE', mapPresence: true },
+    {
+      code: 'cdoe',
+      name: 'CDOE',
+      kind: 'RESOURCE_TYPE',
+      mapPresence: true,
+      geometryKind: 'POINT',
+    },
     context,
   );
   const inactiveLeaf = await resourceService.createResourceCatalogNode(
     catalog.id,
-    { code: 'cdoi', name: 'CDOI', kind: 'RESOURCE_TYPE', mapPresence: true },
+    {
+      code: 'cdoi',
+      name: 'CDOI',
+      kind: 'RESOURCE_TYPE',
+      mapPresence: true,
+      geometryKind: 'POINT',
+    },
     context,
   );
   assert.ok(leaf.resourceTypeId);
@@ -266,6 +278,7 @@ test('ResourceModelStudioAdapter: unchanged snapshot skips catalog, node, type, 
       parentNodeId: group.id,
       sortOrder: 0,
       mapPresence: true,
+      geometryKind: 'POINT',
     },
     context,
   );
@@ -303,6 +316,7 @@ test('ResourceModelStudioAdapter: unchanged snapshot skips catalog, node, type, 
                 status: type.status,
                 nature: type.nature,
                 mapPresence: type.mapPresence,
+                ...(type.geometryKind !== undefined ? { geometryKind: type.geometryKind } : {}),
                 ...(type.resourceTypeCharacteristic !== undefined
                   ? { resourceTypeCharacteristic: type.resourceTypeCharacteristic }
                   : {}),
@@ -360,6 +374,7 @@ test('ResourceModelStudioAdapter: applies ResourceType details when materializin
           status: 'active',
           nature: 'PhysicalResource',
           mapPresence: true,
+          geometryKind: 'POLYGON',
           resourceTypeCharacteristic: characteristics,
         },
         relationshipRules: [],
@@ -651,6 +666,226 @@ test('ResourceService.updateResourceType: persists resourceTypeCharacteristic (i
   // Persistido de fato — releitura via listResourceTypes reflete o novo estado.
   const reloaded = (await resourceService.listResourceTypes(context)).find((t) => t.id === ctoType.id);
   assert.equal(reloaded?.resourceTypeCharacteristic?.length, 2);
+});
+
+test('ResourceService.updateResourceType: geometryKind is required, preserved and explicitly clearable (issue #240)', async () => {
+  const { resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-geometry-kind', name: 'Catálogo Geometria' },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'poste', name: 'Poste', kind: 'RESOURCE_TYPE' },
+    context,
+  );
+  const typeId = leaf.resourceTypeId!;
+
+  // Físico visível sem geometria é recusado antes de qualquer escrita.
+  await assert.rejects(
+    resourceService.updateResourceType(typeId, { mapPresence: true }, context),
+    (error: { code?: string; statusCode?: number }) =>
+      error.code === 'RESOURCE_TYPE_GEOMETRY_REQUIRED' && error.statusCode === 422,
+  );
+
+  const visible = await resourceService.updateResourceType(
+    typeId,
+    { mapPresence: true, geometryKind: 'POLYGON' },
+    context,
+  );
+  assert.equal(visible.mapPresence, true);
+  assert.equal(visible.geometryKind, 'POLYGON');
+
+  // Campo ausente no PATCH preserva a geometria atual.
+  const renamed = await resourceService.updateResourceType(typeId, { name: 'Poste renomeado' }, context);
+  assert.equal(renamed.geometryKind, 'POLYGON');
+
+  // Desligar apenas a presença preserva a geometria para reativação futura.
+  const hidden = await resourceService.updateResourceType(typeId, { mapPresence: false }, context);
+  assert.equal(hidden.mapPresence, false);
+  assert.equal(hidden.geometryKind, 'POLYGON');
+
+  // `null` é a limpeza explícita — permitida enquanto o tipo está fora do mapa.
+  const cleared = await resourceService.updateResourceType(typeId, { geometryKind: null }, context);
+  assert.equal(cleared.geometryKind, undefined);
+
+  // Tipo lógico nunca mantém presença nem geometria operacional.
+  const logical = await resourceService.updateResourceType(
+    typeId,
+    { nature: 'LogicalResource', mapPresence: true, geometryKind: 'LINE' },
+    context,
+  );
+  assert.equal(logical.nature, 'LogicalResource');
+  assert.equal(logical.mapPresence, false);
+  assert.equal(logical.geometryKind, undefined);
+});
+
+test('ResourceService: leaf creation resolves geometryKind atomically with mapPresence (issue #240)', async () => {
+  const { resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-leaf-geometry', name: 'Catálogo Folha Geometria' },
+    context,
+  );
+
+  await assert.rejects(
+    resourceService.createResourceCatalogNode(
+      catalog.id,
+      { code: 'sem-geometria', name: 'Sem geometria', kind: 'RESOURCE_TYPE', mapPresence: true },
+      context,
+    ),
+    (error: { code?: string }) => error.code === 'RESOURCE_TYPE_GEOMETRY_REQUIRED',
+  );
+
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    {
+      code: 'cabo',
+      name: 'Cabo',
+      kind: 'RESOURCE_TYPE',
+      mapPresence: true,
+      geometryKind: 'LINE',
+    },
+    context,
+  );
+  const created = (await resourceService.listResourceTypes(context)).find(
+    (type) => type.id === leaf.resourceTypeId,
+  );
+  assert.equal(created?.mapPresence, true);
+  assert.equal(created?.geometryKind, 'LINE');
+});
+
+test('ResourceModelStudioAdapter: rejects incoherent geometry and preserves it for historical snapshots (issue #240)', async () => {
+  const { adapter, resourceService } = createTestServices();
+
+  const invalid = await adapter.validate({
+    catalog: { code: 'cat-geo', name: 'Catálogo' },
+    nodes: [
+      {
+        code: 'leaf-bad-value',
+        name: 'Valor inválido',
+        kind: 'RESOURCE_TYPE',
+        resourceTypeCode: 'CTO',
+        resourceType: { nature: 'PhysicalResource', mapPresence: true, geometryKind: 'CIRCLE' },
+      },
+      {
+        code: 'leaf-logical',
+        name: 'Lógico com geometria',
+        kind: 'RESOURCE_TYPE',
+        resourceTypeCode: 'CTO',
+        resourceType: { nature: 'LogicalResource', geometryKind: 'POINT' },
+      },
+      {
+        code: 'leaf-visible-cleared',
+        name: 'Visível sem geometria',
+        kind: 'RESOURCE_TYPE',
+        resourceTypeCode: 'CTO',
+        resourceType: { nature: 'PhysicalResource', mapPresence: true, geometryKind: null },
+      },
+    ],
+  } as never);
+
+  assert.equal(invalid.valid, false);
+  const codes = invalid.issues.map((issue) => issue.code);
+  assert.equal(codes.includes('RESOURCE_TYPE_GEOMETRY_KIND_INVALID'), true);
+  assert.equal(codes.includes('RESOURCE_TYPE_GEOMETRY_NOT_APPLICABLE'), true);
+  assert.equal(codes.includes('RESOURCE_TYPE_GEOMETRY_REQUIRED'), true);
+
+  // Snapshot histórico (anterior à issue #240, sem o campo) continua válido e não apaga a
+  // geometria viva do tipo ao materializar.
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-historic-geometry', name: 'Catálogo Histórico' },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    {
+      code: 'leaf-historic',
+      name: 'Folha Histórica',
+      kind: 'RESOURCE_TYPE',
+      mapPresence: true,
+      geometryKind: 'POLYGON',
+    },
+    context,
+  );
+
+  const historical = {
+    catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+    nodes: [
+      {
+        id: leaf.id,
+        code: leaf.code,
+        name: 'Folha Histórica Renomeada',
+        kind: 'RESOURCE_TYPE',
+        resourceTypeId: leaf.resourceTypeId,
+        parentNodeId: null,
+        sortOrder: 0,
+        status: 'active',
+        resourceType: { status: 'active', nature: 'PhysicalResource', mapPresence: true },
+      },
+    ],
+  };
+  const validation = await adapter.validate(historical as never);
+  assert.equal(validation.valid, true);
+
+  await adapter.materialize(historical as never, { tenantId: context.tenantId });
+  const preserved = (await resourceService.listResourceTypes(context)).find(
+    (type) => type.id === leaf.resourceTypeId,
+  );
+  assert.equal(preserved?.geometryKind, 'POLYGON');
+  assert.equal(preserved?.mapPresence, true);
+});
+
+test('ResourceModelStudioAdapter: restores the baseline geometry when a draft is discarded (issue #240)', async () => {
+  const { studioService, resourceService } = createTestServices();
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-geometry-revert', name: 'Catálogo Reverte Geometria' },
+    context,
+  );
+  const leaf = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    {
+      code: 'geometry-revert',
+      name: 'Tipo com geometria',
+      kind: 'RESOURCE_TYPE',
+      mapPresence: true,
+      geometryKind: 'LINE',
+    },
+    context,
+  );
+  const typeId = leaf.resourceTypeId!;
+
+  const baseline = {
+    catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+    nodes: [
+      {
+        id: leaf.id,
+        code: leaf.code,
+        name: leaf.name,
+        kind: leaf.kind,
+        resourceTypeId: typeId,
+        parentNodeId: null,
+        sortOrder: leaf.sortOrder,
+        status: 'active',
+        resourceType: {
+          status: 'active',
+          nature: 'PhysicalResource',
+          mapPresence: true,
+          geometryKind: 'LINE',
+        },
+      },
+    ],
+  };
+  const draft = await studioService.saveDraft('resource-model', baseline as never, context);
+
+  // Diverge durante a edição: a geometria vira POLYGON.
+  await resourceService.updateResourceType(typeId, { geometryKind: 'POLYGON' }, context);
+
+  await studioService.discardDraft('resource-model', context, draft.checksum);
+
+  const restored = (await resourceService.listResourceTypes(context)).find(
+    (type) => type.id === typeId,
+  );
+  assert.equal(restored?.geometryKind, 'LINE');
 });
 
 test('ResourceService.updateResourceType: rejects forbidden characteristic names (manufacturer/networkType)', async () => {

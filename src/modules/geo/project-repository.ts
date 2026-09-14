@@ -6,20 +6,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES } from './project-resource-classification.js';
 
-// A categoria legada Infrastructure.Passive foi substituída pelos códigos técnicos
-// canônicos de ResourceType. O catálogo é navegação; esta classificação operacional
-// não depende de um caminho ou de um nó de catálogo.
-const INFRASTRUCTURE_RESOURCE_TYPE_CODES = [
-  'Splitter',
-  'CTO',
-  'DIO',
-  'SpliceClosure',
-  'OpticalNode',
-] as const;
-const INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL = INFRASTRUCTURE_RESOURCE_TYPE_CODES.map(
-  (code) => `'${code}'`,
-).join(', ');
+const PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL =
+  PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES.map((code) => `'${code}'`).join(', ');
 
 // Mesmo vocabulário de GeoStatus (web/src/services/geoApi.ts) — o projeto é a unidade de
 // estado do REQ-MOD01-015: mudar o status do projeto cascateia (best-effort) para cada Site
@@ -65,7 +55,7 @@ export type CreateGeoProjectInput = {
   description?: string | null;
   iconDataUrl?: string | null;
   status?: GeoProjectStatus;
-  statusCode: string;
+  statusCode?: string;
 };
 
 export type UpdateGeoProjectInput = {
@@ -171,21 +161,57 @@ type ProjectSiteLinkRow = {
 
 const PROJECT_STATUS_DEFAULTS: ReadonlyArray<GeoProjectStatusCatalogItem> = [
   { code: '1', name: 'Projeto criado', sortOrder: 1, active: true, behavior: 'planning' },
-  { code: '11', name: 'Projeto em planejamento', sortOrder: 11, active: true, behavior: 'planning' },
+  {
+    code: '11',
+    name: 'Projeto em planejamento',
+    sortOrder: 11,
+    active: true,
+    behavior: 'planning',
+  },
   { code: '12', name: 'Obra em execução', sortOrder: 12, active: true, behavior: 'execution' },
   { code: '13', name: 'Obra concluída', sortOrder: 13, active: true, behavior: 'execution' },
   { code: '14', name: 'Enviado ao SAP', sortOrder: 14, active: true, behavior: 'execution' },
   { code: '15', name: 'Erro de conciliação', sortOrder: 15, active: true, behavior: 'suspended' },
   { code: '16', name: 'Conciliado com o SAP', sortOrder: 16, active: true, behavior: 'execution' },
   { code: '17', name: 'Projeto encerrado', sortOrder: 17, active: true, behavior: 'close-release' },
-  { code: '18', name: 'Projeto em quantificação', sortOrder: 18, active: true, behavior: 'planning' },
-  { code: '19', name: 'Projeto enviado para orçamento CRE', sortOrder: 19, active: true, behavior: 'planning' },
-  { code: '20', name: 'Projeto aguardando verba', sortOrder: 20, active: true, behavior: 'planning' },
+  {
+    code: '18',
+    name: 'Projeto em quantificação',
+    sortOrder: 18,
+    active: true,
+    behavior: 'planning',
+  },
+  {
+    code: '19',
+    name: 'Projeto enviado para orçamento CRE',
+    sortOrder: 19,
+    active: true,
+    behavior: 'planning',
+  },
+  {
+    code: '20',
+    name: 'Projeto aguardando verba',
+    sortOrder: 20,
+    active: true,
+    behavior: 'planning',
+  },
   { code: '21', name: 'Projeto em contratação', sortOrder: 21, active: true, behavior: 'planning' },
   { code: '22', name: 'Projeto em execução', sortOrder: 22, active: true, behavior: 'execution' },
   { code: '23', name: 'Projeto paralisado', sortOrder: 23, active: true, behavior: 'suspended' },
-  { code: '25', name: 'Projeto conciliado físico-contábil', sortOrder: 25, active: true, behavior: 'execution' },
-  { code: 'legacy-cancelled', name: 'Cancelado (legado)', sortOrder: 99_999, active: false, behavior: 'close-release' },
+  {
+    code: '25',
+    name: 'Projeto conciliado físico-contábil',
+    sortOrder: 25,
+    active: true,
+    behavior: 'execution',
+  },
+  {
+    code: 'legacy-cancelled',
+    name: 'Cancelado (legado)',
+    sortOrder: 99_999,
+    active: false,
+    behavior: 'close-release',
+  },
 ];
 
 const PROJECT_SELECT = `
@@ -203,7 +229,7 @@ const PROJECT_SELECT = `
             JOIN tmf_resource_type rt
               ON rt.id = rs.resource_type_id
            WHERE pr.project_id = p.id AND pr.detached_at IS NULL
-             AND rt.code IN (${INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})) AS infrastructureCount,
+             AND rt.code IN (${PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})) AS infrastructureCount,
          (SELECT COUNT(*) FROM geo_project_area pa WHERE pa.project_id = p.id) AS areaCount
     FROM geo_project p
     LEFT JOIN geo_project_status_catalog sc
@@ -217,7 +243,17 @@ const toProject = (row: ProjectRow): GeoProject => ({
   description: row.description,
   iconDataUrl: row.iconDataUrl,
   status: row.status,
-  statusCode: row.statusCode ?? (row.status === 'active' ? '22' : row.status === 'suspended' ? '23' : row.status === 'terminated' ? '17' : row.status === 'cancelled' ? 'legacy-cancelled' : '11'),
+  statusCode:
+    row.statusCode ??
+    (row.status === 'active'
+      ? '22'
+      : row.status === 'suspended'
+        ? '23'
+        : row.status === 'terminated'
+          ? '17'
+          : row.status === 'cancelled'
+            ? 'legacy-cancelled'
+            : '11'),
   statusName: row.statusName,
   statusBehavior: row.statusBehavior,
   createdBy: row.createdBy,
@@ -267,7 +303,10 @@ export class GeoProjectRepository {
     return rows.map((row) => ({ ...row, active: Number(row.active) === 1 }));
   }
 
-  async getStatusCatalogItem(tenantId: string, code: string): Promise<GeoProjectStatusCatalogItem | null> {
+  async getStatusCatalogItem(
+    tenantId: string,
+    code: string,
+  ): Promise<GeoProjectStatusCatalogItem | null> {
     await this.ensureStatusCatalog(tenantId);
     const row = await this.db.get<GeoProjectStatusCatalogItem & { active: unknown }>(
       `SELECT code, name, sort_order AS sortOrder,
@@ -361,8 +400,10 @@ export class GeoProjectRepository {
     actorSub: string,
     input: CreateGeoProjectInput,
   ): Promise<GeoProject> {
+    await this.ensureStatusCatalog(tenantId);
     const id = randomUUID();
     const now = new Date().toISOString();
+    const statusCode = input.statusCode ?? '11';
     await this.db.run(
       `INSERT INTO geo_project
           (id, tenant_id, name, description, icon_data_url, status, status_code, created_by, created_at, updated_at)
@@ -374,7 +415,7 @@ export class GeoProjectRepository {
         input.description ?? null,
         input.iconDataUrl ?? null,
         input.status ?? 'planned',
-        input.statusCode,
+        statusCode,
         actorSub,
         now,
         now,
@@ -449,14 +490,32 @@ export class GeoProjectRepository {
   async listResourceLinks(
     tenantId: string,
     projectId: string,
-    options: { limit?: number; offset?: number; includeDetached?: boolean } = {},
+    options: {
+      limit?: number;
+      offset?: number;
+      includeDetached?: boolean;
+      view?: 'all' | 'infrastructure';
+    } = {},
   ): Promise<GeoProjectResourceLink[]> {
+    const infrastructureFilter =
+      options.view === 'infrastructure'
+        ? `AND pr.resource_kind = 'PhysicalResource'
+           AND EXISTS (
+             SELECT 1
+               FROM tmf_physical_resource r
+               JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+               JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+              WHERE r.id = pr.resource_id
+                AND rt.code IN (${PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})
+           )`
+        : '';
     const rows = await this.db.all<GeoProjectResourceLink>(
       `SELECT pr.id, pr.resource_id AS resourceId, pr.resource_kind AS resourceKind,
               pr.origin_kind AS originKind, pr.position, pr.linked_at AS linkedAt,
               pr.detached_at AS detachedAt, pr.detached_reason AS detachedReason
          FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
         WHERE p.tenant_id = ? AND pr.project_id = ? ${options.includeDetached ? '' : 'AND pr.detached_at IS NULL'}
+          ${infrastructureFilter}
         ORDER BY pr.position LIMIT ? OFFSET ?`,
       [tenantId, projectId, options.limit ?? 50, options.offset ?? 0],
     );
@@ -483,7 +542,10 @@ export class GeoProjectRepository {
     const prefix = `${trimmed}%`;
     const contains = `%${trimmed}%`;
 
-    const sites = scope === 'infrastructure' || scope === 'resources' ? [] : await this.db.all<GeoProjectSearchItem>(
+    const sites =
+      scope === 'infrastructure' || scope === 'resources'
+        ? []
+        : await this.db.all<GeoProjectSearchItem>(
       `SELECT s.id, 'site' AS kind, s.name AS label,
               CASE WHEN LOWER(s.name) LIKE LOWER(?) THEN 0 ELSE 1 END AS rank
          FROM geo_project_site ps
@@ -495,7 +557,10 @@ export class GeoProjectRepository {
       [prefix, tenantId, projectId, contains, cappedLimit],
     );
 
-    const resources = scope === 'sites' ? [] : await this.db.all<GeoProjectSearchItem>(
+    const resources =
+      scope === 'sites'
+        ? []
+        : await this.db.all<GeoProjectSearchItem>(
       `SELECT * FROM (
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
@@ -509,9 +574,12 @@ export class GeoProjectRepository {
              ON rt.id = rs.resource_type_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'PhysicalResource'
-            ${scope === 'infrastructure' ? `AND rt.code IN (${INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})` : ''}
+            ${scope === 'infrastructure' ? `AND rt.code IN (${PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})` : ''}
             AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))
-         ${scope === 'infrastructure' ? '' : `UNION ALL
+         ${
+           scope === 'infrastructure'
+             ? ''
+             : `UNION ALL
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
                      WHEN LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) THEN 1
@@ -524,13 +592,23 @@ export class GeoProjectRepository {
              ON rt.id = rs.resource_type_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'LogicalResource'
-            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`}
+            AND (LOWER(r.name) LIKE LOWER(?) OR LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) OR LOWER(COALESCE(rs.name, '')) LIKE LOWER(?))`
+         }
        ) AS matches
        ORDER BY rank, label
        LIMIT ?`,
       [
-        prefix, prefix, prefix, tenantId, projectId, contains, contains, contains,
-        ...(scope === 'infrastructure' ? [] : [prefix, prefix, prefix, tenantId, projectId, contains, contains, contains]),
+              prefix,
+              prefix,
+              prefix,
+              tenantId,
+              projectId,
+              contains,
+              contains,
+              contains,
+              ...(scope === 'infrastructure'
+                ? []
+                : [prefix, prefix, prefix, tenantId, projectId, contains, contains, contains]),
         cappedLimit,
       ],
     );
@@ -544,13 +622,15 @@ export class GeoProjectRepository {
     tenantId: string,
     resourceId: string,
   ): Promise<{ projectId: string; projectName: string } | null> {
-    return (await this.db.get<{ projectId: string; projectName: string }>(
+    return (
+      (await this.db.get<{ projectId: string; projectName: string }>(
       `SELECT p.id AS projectId, p.name AS projectName
          FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
         WHERE p.tenant_id = ? AND pr.resource_id = ? AND pr.detached_at IS NULL
           AND p.status NOT IN ('terminated', 'cancelled') AND p.archived_at IS NULL`,
       [tenantId, resourceId],
-    )) ?? null;
+      )) ?? null
+    );
   }
 
   async linkResource(
@@ -562,9 +642,19 @@ export class GeoProjectRepository {
   ): Promise<GeoProjectResourceLink> {
     const now = new Date().toISOString();
     const max = await this.db.get<{ maxPos: number | null }>(
-      `SELECT MAX(position) AS maxPos FROM geo_project_resource WHERE project_id = ?`, [projectId],
+      `SELECT MAX(position) AS maxPos FROM geo_project_resource WHERE project_id = ?`,
+      [projectId],
     );
-    const link: GeoProjectResourceLink = { id: randomUUID(), resourceId, resourceKind, originKind, position: (max?.maxPos ?? -1) + 1, linkedAt: now, detachedAt: null, detachedReason: null };
+    const link: GeoProjectResourceLink = {
+      id: randomUUID(),
+      resourceId,
+      resourceKind,
+      originKind,
+      position: (max?.maxPos ?? -1) + 1,
+      linkedAt: now,
+      detachedAt: null,
+      detachedReason: null,
+    };
     await this.db.run(
       `INSERT INTO geo_project_resource (id, project_id, resource_id, resource_kind, origin_kind, position, linked_at, linked_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -574,7 +664,12 @@ export class GeoProjectRepository {
     return link;
   }
 
-  async detachResource(projectId: string, resourceId: string, actorSub: string, reason: string): Promise<boolean> {
+  async detachResource(
+    projectId: string,
+    resourceId: string,
+    actorSub: string,
+    reason: string,
+  ): Promise<boolean> {
     const result = await this.db.run(
       `UPDATE geo_project_resource SET detached_at = ?, detached_by = ?, detached_reason = ?
         WHERE project_id = ? AND resource_id = ? AND detached_at IS NULL`,
@@ -740,12 +835,7 @@ export class GeoProjectRepository {
         `INSERT INTO tmf_geographic_location
             (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
          VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
-        [
-          location.id,
-          location.geometry,
-          `PROJECT:${projectId}`,
-          location.characteristics,
-        ],
+        [location.id, location.geometry, `PROJECT:${projectId}`, location.characteristics],
       );
     }
     for (const [position, area] of areas.entries()) {

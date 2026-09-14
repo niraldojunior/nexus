@@ -154,6 +154,49 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           characteristicNames.add(key);
         }
 
+        // Geometria canônica do tipo (issue #240). A checagem é sintática e coerente com o que
+        // `materialize` consegue aplicar: um snapshot histórico sem o campo continua válido, pois
+        // a geometria viva do ResourceType é preservada. O que não pode passar é um valor fora do
+        // domínio, geometria em tipo lógico ou limpeza explícita de um tipo físico visível.
+        const snapshotType = node.resourceType;
+        if (snapshotType) {
+          const geometryKind = snapshotType.geometryKind;
+          if (
+            geometryKind !== undefined &&
+            geometryKind !== null &&
+            geometryKind !== 'POINT' &&
+            geometryKind !== 'LINE' &&
+            geometryKind !== 'POLYGON'
+          ) {
+            issues.push({
+              severity: 'error',
+              code: 'RESOURCE_TYPE_GEOMETRY_KIND_INVALID',
+              message: `Geometria inválida '${String(geometryKind)}' no nó '${node.code}'. Use POINT, LINE ou POLYGON.`,
+              path: `${pathPrefix}.resourceType.geometryKind`,
+            });
+          }
+          if (snapshotType.nature === 'LogicalResource' && geometryKind) {
+            issues.push({
+              severity: 'error',
+              code: 'RESOURCE_TYPE_GEOMETRY_NOT_APPLICABLE',
+              message: `Recurso lógico '${node.code}' não participa do mapa e não pode declarar geometria.`,
+              path: `${pathPrefix}.resourceType.geometryKind`,
+            });
+          }
+          if (
+            snapshotType.nature !== 'LogicalResource' &&
+            snapshotType.mapPresence === true &&
+            geometryKind === null
+          ) {
+            issues.push({
+              severity: 'error',
+              code: 'RESOURCE_TYPE_GEOMETRY_REQUIRED',
+              message: `O nó '${node.code}' está visível no mapa e precisa de uma geometria canônica.`,
+              path: `${pathPrefix}.resourceType.geometryKind`,
+            });
+          }
+        }
+
         // Regras de relação embutidas (plano §4.4) — checagem estrutural mínima; a validação
         // semântica completa (RelationshipType Active, targetKind permitido, duplicata,
         // cardinalidade) já é feita pelo service ao materializar, com AppError se o snapshot
@@ -503,12 +546,22 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           desiredNature === 'LogicalResource'
             ? false
             : (snapshotType.mapPresence ?? currentType.mapPresence);
+        // `undefined` (campo ausente — snapshot histórico anterior à issue #240) preserva a
+        // geometria viva; `null` é a limpeza explícita capturada pelo Studio. Tipo lógico nunca
+        // carrega geometria operacional.
+        const desiredGeometryKind =
+          desiredNature === 'LogicalResource'
+            ? undefined
+            : snapshotType.geometryKind === undefined
+              ? currentType.geometryKind
+              : (snapshotType.geometryKind ?? undefined);
         const typeChanged =
           (snapshotType.description !== undefined &&
             (currentType.description ?? '') !== snapshotType.description.trim()) ||
           (snapshotType.status !== undefined && currentType.status !== snapshotType.status) ||
           currentType.nature !== desiredNature ||
           currentType.mapPresence !== desiredMapPresence ||
+          currentType.geometryKind !== desiredGeometryKind ||
           (snapshotType.resourceTypeCharacteristic !== undefined &&
             !isDeepStrictEqual(
               currentType.resourceTypeCharacteristic ?? [],
@@ -524,6 +577,11 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
             ...(snapshotType.mapPresence !== undefined
               ? { mapPresence: snapshotType.mapPresence }
               : {}),
+            // Reafirma a geometria já resolvida acima: restaurar uma baseline precisa poder tanto
+            // repor o valor anterior quanto limpá-lo (`null`), não só preservar o estado vivo.
+            ...(desiredNature === 'LogicalResource'
+              ? {}
+              : { geometryKind: desiredGeometryKind ?? null }),
             ...(snapshotType.resourceTypeCharacteristic !== undefined
               ? { resourceTypeCharacteristic: snapshotType.resourceTypeCharacteristic }
               : {}),

@@ -23,6 +23,8 @@ export type ResourceCategory = {
   status: 'active' | 'inactive';
 };
 
+export type ResourceGeometryKind = 'POINT' | 'LINE' | 'POLYGON';
+
 export type ResourceType = {
   '@type': 'ResourceType';
   id: string;
@@ -35,6 +37,7 @@ export type ResourceType = {
   /** Campos presentes no contrato atual; opcionais para compatibilidade de leitura com catálogos legados. */
   nature?: 'PhysicalResource' | 'LogicalResource';
   mapPresence?: boolean;
+  geometryKind?: ResourceGeometryKind;
   resourceTypeCharacteristic?: ResourceCharacteristic[];
 };
 
@@ -157,6 +160,7 @@ export type UpdateResourceTypeInput = {
   status?: ResourceType['status'];
   nature?: ResourceType['nature'];
   mapPresence?: boolean;
+  geometryKind?: ResourceGeometryKind | null;
   resourceTypeCharacteristic?: ResourceCharacteristic[];
 };
 
@@ -348,7 +352,7 @@ export async function updateResourceType(
 ): Promise<ResourceType> {
   return await requestJson<ResourceType>(`/v1/resource-types/${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    body: cleanObject(payload),
+    body: cleanUpdatePayload(payload as Record<string, unknown>),
   });
 }
 

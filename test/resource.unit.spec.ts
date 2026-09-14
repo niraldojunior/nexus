@@ -4,10 +4,7 @@ import { AppError } from '../src/shared/errors/app-error.js';
 import { ResourceRepository } from '../src/modules/resource/repository.js';
 import { ResourceService } from '../src/modules/resource/service.js';
 import { getResourceTypeByCode } from '../src/modules/resource/catalog.js';
-import {
-  foldStatusText,
-  resolveStatusCode,
-} from '../src/modules/resource/status-catalog.js';
+import { foldStatusText, resolveStatusCode } from '../src/modules/resource/status-catalog.js';
 
 const resourceTypeByCode = (code: string) => {
   const resourceType = getResourceTypeByCode(code);
@@ -46,7 +43,9 @@ test('ResourceRepository returns status catalog and resource detail aggregate', 
     name: 'CDOE Corning',
     resourceTypeId: 'rt-cto',
     resourceType: resourceTypeByCode('CTO'),
-    resourceSpecificationCharacteristic: [{ name: 'model', value: 'CDOE 8-48FS', valueType: 'string' }],
+    resourceSpecificationCharacteristic: [
+      { name: 'model', value: 'CDOE 8-48FS', valueType: 'string' },
+    ],
     relatedParty: [
       {
         id: 'party-corning',
@@ -250,7 +249,14 @@ test('Resource ports projection derives output occupancy from current and invers
   resource('splitter-1', 'Splitter 1:8', 'Splitter', 'spec-splitter', [
     { name: 'razao', value: '1:8', valueType: 'string' },
   ]);
-  resource('port-input', 'FO.I', 'Port', 'spec-port', [{ name: 'role', value: 'FO.I', valueType: 'string' }], 'busy');
+  resource(
+    'port-input',
+    'FO.I',
+    'Port',
+    'spec-port',
+    [{ name: 'role', value: 'FO.I', valueType: 'string' }],
+    'busy',
+  );
   resource('port-output-free', 'FO.O.1', 'Port', 'spec-port', [
     { name: 'role', value: 'FO.O', valueType: 'string' },
     { name: 'index', value: '1', valueType: 'string' },
@@ -269,35 +275,53 @@ test('Resource ports projection derives output occupancy from current and invers
   resource('ont-1', 'ONT do cliente', 'ONT', 'spec-ont');
 
   repository.upsertResourceRelationship('cto-1', {
-    id: 'splitter-1', relationshipType: 'containsAsChild', '@referredType': 'Resource',
+    id: 'splitter-1',
+    relationshipType: 'containsAsChild',
+    '@referredType': 'Resource',
   });
-  for (const portId of ['port-input', 'port-output-free', 'port-output-used', 'port-output-history']) {
+  for (const portId of [
+    'port-input',
+    'port-output-free',
+    'port-output-used',
+    'port-output-history',
+  ]) {
     repository.upsertResourceRelationship('splitter-1', {
-      id: portId, relationshipType: 'containsAsChild', '@referredType': 'Resource',
+      id: portId,
+      relationshipType: 'containsAsChild',
+      '@referredType': 'Resource',
     });
   }
   // A projeção deve reconhecer a relação simétrica mesmo quando escrita drop → porta.
   repository.upsertResourceRelationship('drop-current', {
-    id: 'port-output-used', relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: 'port-output-used',
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
   });
   repository.upsertResourceRelationship('port-output-history', {
-    id: 'drop-history', relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: 'drop-history',
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
     validFor: { endDateTime: '2020-01-01T00:00:00.000Z' },
   });
   repository.upsertResourceRelationship('port-output-free', {
-    id: 'distribution-cable', relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: 'distribution-cable',
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
   });
   repository.upsertResourceRelationship('drop-current', {
-    id: 'ont-1', relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: 'ont-1',
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
   });
 
   const view = repository.getResourcePortsView('cto-1');
   assert.ok(view);
   assert.equal(view.groups.length, 1);
   const ports = view.groups[0]?.ports ?? [];
-  assert.deepEqual(ports.map((port) => port.resource.id), [
-    'port-input', 'port-output-free', 'port-output-used', 'port-output-history',
-  ]);
+  assert.deepEqual(
+    ports.map((port) => port.resource.id),
+    ['port-input', 'port-output-free', 'port-output-used', 'port-output-history'],
+  );
   assert.equal(ports[0]?.resource.usageState, 'busy');
   assert.equal(ports[1]?.derivedUsageState, 'idle');
   assert.equal(ports[1]?.drops.length, 0);
@@ -320,43 +344,64 @@ test('ResourceService allows one active drop per splitter output in either relat
   const repository = new ResourceRepository();
   const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
   const outputSpec = await service.createResourceSpecification({
-    name: 'Porta de splitter', resourceTypeId: 'rt-port',
+    name: 'Porta de splitter',
+    resourceTypeId: 'rt-port',
   });
   const inputSpec = outputSpec;
   const dropSpec = await service.createResourceSpecification({
-    name: 'Cabo drop', resourceTypeId: 'rt-drop-cable',
+    name: 'Cabo drop',
+    resourceTypeId: 'rt-drop-cable',
   });
   const distributionSpec = await service.createResourceSpecification({
-    name: 'Cabo distribuição', resourceTypeId: 'rt-distribution-cable',
+    name: 'Cabo distribuição',
+    resourceTypeId: 'rt-distribution-cable',
   });
   const output = await service.createPhysicalResource({
-    name: 'FO.O.1', resourceSpecificationId: outputSpec.id,
+    name: 'FO.O.1',
+    resourceSpecificationId: outputSpec.id,
     characteristic: [{ name: 'role', value: 'FO.O', valueType: 'string' }],
   });
   const input = await service.createPhysicalResource({
-    name: 'FO.I', resourceSpecificationId: inputSpec.id,
+    name: 'FO.I',
+    resourceSpecificationId: inputSpec.id,
     characteristic: [{ name: 'role', value: 'FO.I', valueType: 'string' }],
   });
-  const dropOne = await service.createPhysicalResource({ name: 'Drop 1', resourceSpecificationId: dropSpec.id });
-  const dropTwo = await service.createPhysicalResource({ name: 'Drop 2', resourceSpecificationId: dropSpec.id });
+  const dropOne = await service.createPhysicalResource({
+    name: 'Drop 1',
+    resourceSpecificationId: dropSpec.id,
+  });
+  const dropTwo = await service.createPhysicalResource({
+    name: 'Drop 2',
+    resourceSpecificationId: dropSpec.id,
+  });
   const distribution = await service.createPhysicalResource({
-    name: 'Distribuição', resourceSpecificationId: distributionSpec.id,
+    name: 'Distribuição',
+    resourceSpecificationId: distributionSpec.id,
   });
 
   await service.addResourceRelationship(dropOne.id, {
-    id: output.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: output.id,
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
   });
   await assert.rejects(
-    () => service.addResourceRelationship(output.id, {
-      id: dropTwo.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+    () =>
+      service.addResourceRelationship(output.id, {
+        id: dropTwo.id,
+        relationshipType: 'connectedTo',
+        '@referredType': 'Resource',
     }),
     (error: unknown) => error instanceof AppError && error.code === 'RESOURCE_PORT_DROP_OCCUPIED',
   );
   await service.addResourceRelationship(output.id, {
-    id: distribution.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: distribution.id,
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
   });
   await service.addResourceRelationship(input.id, {
-    id: dropTwo.id, relationshipType: 'connectedTo', '@referredType': 'Resource',
+    id: dropTwo.id,
+    relationshipType: 'connectedTo',
+    '@referredType': 'Resource',
   });
 });
 
@@ -409,6 +454,14 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     resourceTypeId: 'rt-olt',
     relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
   });
+  const logicalType = await service.createResourceCatalogNode(
+    (await service.createResourceCatalog({ code: 'logical-test', name: 'Lógico' })).id,
+    { code: 'vlan-test', name: 'VLAN', kind: 'RESOURCE_TYPE', nature: 'LogicalResource' },
+  );
+  const logicalSpec = await service.createResourceSpecification({
+    name: 'VLAN',
+    resourceTypeId: logicalType.resourceTypeId!,
+  });
   const functionSpec = await service.createResourceFunctionSpecification({ name: 'Activation' });
   assert.equal(functionSpec.name, 'Activation');
 
@@ -439,12 +492,28 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
 
   const logical = await service.createLogicalResource({
     name: 'VLAN 100',
-    resourceSpecificationId: spec.id,
+    resourceSpecificationId: logicalSpec.id,
     placeId: place.id,
     supportingPhysicalResourceId: physical.id,
     relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'owner' }],
   });
   assert.equal(logical['@type'], 'LogicalResource');
+
+  await assert.rejects(
+    () =>
+      service.createLogicalResource({ name: 'Lógico inválido', resourceSpecificationId: spec.id }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_SPECIFICATION_NATURE_MISMATCH',
+  );
+  await assert.rejects(
+    () =>
+      service.createPhysicalResource({
+        name: 'Físico inválido',
+        resourceSpecificationId: logicalSpec.id,
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_SPECIFICATION_NATURE_MISMATCH',
+  );
 
   await assert.rejects(
     async () =>
@@ -460,7 +529,7 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
     async () =>
       await service.createLogicalResource({
         name: 'Bad supporting resource',
-        resourceSpecificationId: spec.id,
+        resourceSpecificationId: logicalSpec.id,
         supportingPhysicalResourceId: 'missing',
       }),
     /resource not found/,
@@ -487,6 +556,17 @@ test('ResourceService creates, mutates and terminates inventory resources', asyn
   });
   assert.equal(updatedLogical.name, 'VLAN 100A');
   assert.equal(updatedLogical.supportingPhysicalResourceId, physical.id);
+
+  await assert.rejects(
+    () => service.updatePhysicalResource(physical.id, { resourceSpecificationId: logicalSpec.id }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_SPECIFICATION_NATURE_MISMATCH',
+  );
+  await assert.rejects(
+    () => service.updateLogicalResource(logical.id, { resourceSpecificationId: spec.id }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_SPECIFICATION_NATURE_MISMATCH',
+  );
 
   // `placeId: null` desvincula o recurso do Site (aba Recursos do painel unificado de
   // Local, REQ-MOD01-016) — `undefined` (campo ausente) não deve mexer no place existente.
@@ -651,8 +731,7 @@ test('ResourceCatalog and ResourceCatalogNode domain operations, ordering and tr
         parentNodeId: groupBoxes.id,
         sortOrder: 0,
       }),
-    (error: unknown) =>
-      error instanceof AppError && error.code === 'RESOURCE_CATALOG_NODE_CYCLE',
+    (error: unknown) => error instanceof AppError && error.code === 'RESOURCE_CATALOG_NODE_CYCLE',
   );
 
   // Prevenção de self-parent

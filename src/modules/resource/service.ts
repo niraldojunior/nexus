@@ -10,6 +10,7 @@ import type {
   PhysicalResource,
   PhysicalResourceDetail,
   Resource,
+  ResourceKind,
   ResourceFunctionActivationInput,
   ResourceFunctionSpecification,
   ResourceFunctionSpecificationQuery,
@@ -22,6 +23,7 @@ import type {
   ResourceCatalogQuery,
   ResourceCatalogTreeNode,
   ResourceType,
+  ResourceGeometryKind,
   ResourceTypeCatalogContext,
   UpdateResourceTypeInput,
   ResourceSpecification,
@@ -53,10 +55,7 @@ import type {
   CreateResourceTypeRelationshipRuleInput,
   UpdateResourceTypeRelationshipRuleInput,
 } from './domain.js';
-import type {
-  IResourceRepository,
-  ResourceTenantScope,
-} from './resource-repository-interface.js';
+import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
@@ -284,9 +283,12 @@ export class ResourceService {
       input.resourceTypeCharacteristic === undefined
         ? current.resourceTypeCharacteristic
         : assertCanonicalCharacteristics(input.resourceTypeCharacteristic);
-    const nature = input.nature ?? current.nature;
+    const mapConfiguration = resolveResourceTypeMapConfiguration(current, input);
+    // A geometria sai da base antes do spread: `mapConfiguration` é a única autoridade sobre o
+    // trio natureza/presença/geometria e precisa poder limpar o campo, não só sobrescrevê-lo.
+    const { geometryKind: _previousGeometryKind, ...currentWithoutGeometry } = current;
     const updated = await this.repository.upsertResourceType({
-      ...current,
+      ...currentWithoutGeometry,
       code: input.code?.trim() ?? current.code,
       name: input.name?.trim() ?? current.name,
       ...(input.description !== undefined
@@ -297,8 +299,7 @@ export class ResourceService {
           ? { description: current.description }
           : {}),
       status: input.status ?? current.status,
-      nature,
-      mapPresence: nature === 'LogicalResource' ? false : (input.mapPresence ?? current.mapPresence),
+      ...mapConfiguration,
       ...(characteristics ? { resourceTypeCharacteristic: characteristics } : {}),
     });
     await this.emit(
@@ -343,7 +344,9 @@ export class ResourceService {
     return await this.repository.transaction(async () => {
       let created = 0;
       for (const definition of definitions) {
-        const existing = await this.repository.getResourceRelationshipType(definition.code, { tenantId });
+        const existing = await this.repository.getResourceRelationshipType(definition.code, {
+          tenantId,
+        });
         if (existing) continue;
         created += 1;
         await this.repository.upsertResourceRelationshipType({
@@ -493,7 +496,9 @@ export class ResourceService {
     const uniqueIds = [...new Set(resourceTypeIds)];
     if (uniqueIds.length === 0) return [];
     const visibleTypes = new Set(
-      (await this.repository.listResourceTypes(scopeOf(context))).map((resourceType) => resourceType.id),
+      (await this.repository.listResourceTypes(scopeOf(context))).map(
+        (resourceType) => resourceType.id,
+      ),
     );
     if (uniqueIds.some((id) => !visibleTypes.has(id))) {
       throw new AppError('resource type not found', {
@@ -622,7 +627,10 @@ export class ResourceService {
     code: string,
     context?: RequestContext,
   ): Promise<ResourceRelationshipType> {
-    const relationshipType = await this.repository.getResourceRelationshipType(code, scopeOf(context));
+    const relationshipType = await this.repository.getResourceRelationshipType(
+      code,
+      scopeOf(context),
+    );
     if (!relationshipType) {
       throw new AppError('resource relationship type not found', {
         code: 'RESOURCE_RELATIONSHIP_TYPE_NOT_FOUND',
@@ -729,7 +737,10 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceCatalog> {
     const current = await this.getResourceCatalogOrThrow(id, context);
-    const activeNodes = await this.repository.listResourceCatalogNodes(current.id, scopeOf(context));
+    const activeNodes = await this.repository.listResourceCatalogNodes(
+      current.id,
+      scopeOf(context),
+    );
     if (activeNodes.length > 0) {
       throw new AppError('resource catalog is not empty', {
         code: 'RESOURCE_CATALOG_NOT_EMPTY',
@@ -824,6 +835,11 @@ export class ResourceService {
             statusCode: 409,
           });
         }
+        const mapConfiguration = resolveResourceTypeMapConfiguration(undefined, {
+          ...(leafInput?.nature ? { nature: leafInput.nature } : {}),
+          ...(leafInput?.mapPresence !== undefined ? { mapPresence: leafInput.mapPresence } : {}),
+          ...(leafInput?.geometryKind ? { geometryKind: leafInput.geometryKind } : {}),
+        });
         await this.repository.upsertResourceType({
           '@type': 'ResourceType',
           id: resourceTypeId,
@@ -833,9 +849,7 @@ export class ResourceService {
           categoryCode: 'Uncategorized',
           ...(node.description ? { description: node.description } : {}),
           status: 'active',
-          nature: leafInput?.nature ?? 'PhysicalResource',
-          mapPresence:
-            leafInput?.nature === 'LogicalResource' ? false : (leafInput?.mapPresence ?? false),
+          ...mapConfiguration,
           resourceTypeCharacteristic: assertCanonicalCharacteristics(
             leafInput?.resourceTypeCharacteristic ?? [],
           ),
@@ -847,7 +861,13 @@ export class ResourceService {
     if (resourceTypeId) {
       const resourceType = await this.repository.getResourceType(resourceTypeId, { tenantId });
       if (resourceType) {
-        await this.emit('ResourceTypeCreateEvent', resourceType.id, 'ResourceType', resourceType, context);
+        await this.emit(
+          'ResourceTypeCreateEvent',
+          resourceType.id,
+          'ResourceType',
+          resourceType,
+          context,
+        );
       }
     }
     await this.emit(
@@ -926,17 +946,17 @@ export class ResourceService {
             });
           }
         }
+        const mapConfiguration = resolveResourceTypeMapConfiguration(resourceType, input);
+        // Mesmo racional de `updateResourceType`: a geometria vinda do estado atual precisa sair
+        // do spread para que `mapConfiguration` consiga limpá-la quando o Studio pedir.
+        const { geometryKind: _previousGeometryKind, ...typeWithoutGeometry } = resourceType;
         await this.repository.upsertResourceType({
-          ...resourceType,
+          ...typeWithoutGeometry,
           code: nextNode.code,
           name: nextNode.name,
           ...(nextNode.description ? { description: nextNode.description } : {}),
           status: nextNode.status,
-          nature: input.nature ?? resourceType.nature,
-          mapPresence:
-            (input.nature ?? resourceType.nature) === 'LogicalResource'
-              ? false
-              : (input.mapPresence ?? resourceType.mapPresence),
+          ...mapConfiguration,
           ...(input.resourceTypeCharacteristic !== undefined
             ? {
                 resourceTypeCharacteristic: assertCanonicalCharacteristics(
@@ -949,7 +969,10 @@ export class ResourceService {
       return await this.repository.upsertResourceCatalogNode(nextNode);
     });
     if (updated.kind === 'RESOURCE_TYPE' && updated.resourceTypeId) {
-      const resourceType = await this.repository.getResourceType(updated.resourceTypeId, scopeOf(context));
+      const resourceType = await this.repository.getResourceType(
+        updated.resourceTypeId,
+        scopeOf(context),
+      );
       if (resourceType) {
         await this.emit(
           'ResourceTypeAttributeValueChangeEvent',
@@ -1056,7 +1079,11 @@ export class ResourceService {
     input: ReorderResourceCatalogNodesInput,
     context?: RequestContext,
   ): Promise<ResourceCatalogNode[]> {
-    if (!input.orderedNodeIds || !Array.isArray(input.orderedNodeIds) || input.orderedNodeIds.length === 0) {
+    if (
+      !input.orderedNodeIds ||
+      !Array.isArray(input.orderedNodeIds) ||
+      input.orderedNodeIds.length === 0
+    ) {
       throw new AppError('orderedNodeIds must be a non-empty array of node ids', {
         code: 'RESOURCE_CATALOG_REORDER_INVALID',
         statusCode: 400,
@@ -1190,7 +1217,8 @@ export class ResourceService {
       nodeId: rootNode.id,
       catalogId: catalog.id,
       descendantCount: descendantNodeIds.length,
-      activeDescendantCount: descendantNodeIds.filter((id) => byId.get(id)?.status === 'active').length,
+      activeDescendantCount: descendantNodeIds.filter((id) => byId.get(id)?.status === 'active')
+        .length,
       descendantNodeIds,
       resourceTypeIds,
       specificationCount: specifications.length,
@@ -1277,11 +1305,13 @@ export class ResourceService {
       const resourceType = visibleTypes.get(id);
       return resourceType ? [resourceType] : [];
     });
-    const relationshipRules =
-      await this.repository.listResourceTypeRelationshipRulesBySourceIds(resourceTypeIds, {
+    const relationshipRules = await this.repository.listResourceTypeRelationshipRulesBySourceIds(
+      resourceTypeIds,
+      {
         ...scopeOf(context),
         includeRetired: false,
-      });
+      },
+    );
     return { catalog, nodes, resourceTypes, relationshipRules };
   }
 
@@ -1610,8 +1640,9 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<PhysicalResource> {
     assertName(input.name);
-    const spec = await this.getResourceSpecificationOrThrow(
+    const spec = await this.getResourceSpecificationForKindOrThrow(
       input.resourceSpecificationId,
+      'PhysicalResource',
       context,
     );
     const id = createCanonicalId();
@@ -1670,7 +1701,11 @@ export class ResourceService {
     if (input.name !== undefined) assertName(input.name);
     const specification =
       input.resourceSpecificationId !== undefined
-        ? await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context)
+        ? await this.getResourceSpecificationForKindOrThrow(
+            input.resourceSpecificationId,
+            'PhysicalResource',
+            context,
+          )
         : undefined;
 
     // `place` some do objeto base (não só do spread condicional de baixo) porque
@@ -1825,8 +1860,9 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<LogicalResource> {
     assertName(input.name);
-    const spec = await this.getResourceSpecificationOrThrow(
+    const spec = await this.getResourceSpecificationForKindOrThrow(
       input.resourceSpecificationId,
+      'LogicalResource',
       context,
     );
     const place = await this.resolvePlace(input.placeId, input.placeType);
@@ -1882,7 +1918,11 @@ export class ResourceService {
     if (input.name !== undefined) assertName(input.name);
     const specification =
       input.resourceSpecificationId !== undefined
-        ? await this.getResourceSpecificationOrThrow(input.resourceSpecificationId, context)
+        ? await this.getResourceSpecificationForKindOrThrow(
+            input.resourceSpecificationId,
+            'LogicalResource',
+            context,
+          )
         : undefined;
     // `place` some do objeto base (mesmo motivo do updatePhysicalResource): só assim
     // `placeId: null` (desvincular do local) consegue apagar um `current.place` existente
@@ -1982,10 +2022,7 @@ export class ResourceService {
     );
   }
 
-  public async listResources(
-    query?: ResourceQuery,
-    context?: RequestContext,
-  ): Promise<Resource[]> {
+  public async listResources(query?: ResourceQuery, context?: RequestContext): Promise<Resource[]> {
     const scopedQuery = { ...query, tenantId: tenantOf(context) };
     if (scopedQuery.kind === 'PhysicalResource') {
       return await this.repository.listPhysicalResources(scopedQuery);
@@ -2031,14 +2068,24 @@ export class ResourceService {
     input: ResourceRelationship,
     context?: RequestContext,
   ): Promise<void> {
-    const port = resource.resourceType === 'Port' ? resource : relatedResource.resourceType === 'Port' ? relatedResource : undefined;
+    const port =
+      resource.resourceType === 'Port'
+        ? resource
+        : relatedResource.resourceType === 'Port'
+          ? relatedResource
+          : undefined;
     const drop =
       resource.resourceType === 'DropCable'
         ? resource
         : relatedResource.resourceType === 'DropCable'
           ? relatedResource
           : undefined;
-    if (!port || !drop || characteristicValue(port, 'role') !== 'FO.O' || !relationshipIsActive(input)) {
+    if (
+      !port ||
+      !drop ||
+      characteristicValue(port, 'role') !== 'FO.O' ||
+      !relationshipIsActive(input)
+    ) {
       return;
     }
 
@@ -2122,7 +2169,12 @@ export class ResourceService {
       'ResourceFunctionActivationEvent',
       resource.id,
       resource['@type'],
-      { resourceId: resource.id, action: input.action ?? 'activate', reason: input.reason, resource },
+      {
+        resourceId: resource.id,
+        action: input.action ?? 'activate',
+        reason: input.reason,
+        resource,
+      },
       context,
     );
     return resource;
@@ -2193,6 +2245,25 @@ export class ResourceService {
         statusCode: 404,
       });
     return spec;
+  }
+
+  private async getResourceSpecificationForKindOrThrow(
+    id: string,
+    kind: ResourceKind,
+    context?: RequestContext,
+  ): Promise<ResourceSpecification> {
+    const specification = await this.getResourceSpecificationOrThrow(id, context);
+    const resourceType = await this.getResourceTypeByIdOrThrow(
+      specification.resourceTypeId,
+      context,
+    );
+    if (resourceType.nature !== kind) {
+      throw new AppError('resource specification nature does not match resource kind', {
+        code: 'RESOURCE_SPECIFICATION_NATURE_MISMATCH',
+        statusCode: 409,
+      });
+    }
+    return specification;
   }
 
   private async getResourceFunctionSpecificationOrThrow(
@@ -2277,13 +2348,43 @@ const buildTimePeriod = (
   return period;
 };
 
+type ResourceTypeMapConfiguration = {
+  nature: ResourceKind;
+  mapPresence: boolean;
+  geometryKind?: ResourceGeometryKind;
+};
+
+const resolveResourceTypeMapConfiguration = (
+  current: Pick<ResourceType, 'nature' | 'mapPresence' | 'geometryKind'> | undefined,
+  input: Pick<UpdateResourceTypeInput, 'nature' | 'mapPresence' | 'geometryKind'>,
+): ResourceTypeMapConfiguration => {
+  const nature = input.nature ?? current?.nature ?? 'PhysicalResource';
+  if (nature === 'LogicalResource') return { nature, mapPresence: false };
+
+  const mapPresence = input.mapPresence ?? current?.mapPresence ?? false;
+  const geometryKind =
+    input.geometryKind === null ? undefined : (input.geometryKind ?? current?.geometryKind);
+  if (mapPresence && !geometryKind) {
+    throw new AppError('geometryKind is required when a physical resource type is visible on the map', {
+      code: 'RESOURCE_TYPE_GEOMETRY_REQUIRED',
+      statusCode: 422,
+    });
+  }
+  return {
+    nature,
+    mapPresence,
+    ...(geometryKind ? { geometryKind } : {}),
+  };
+};
+
 // Compartilhada entre ResourceSpecification e ResourceType (issue #216) — os dois modelam o
 // mesmo conceito TMF (`Characteristic[]`), então a mesma lista de nomes proibidos vale nos dois
 // níveis: `manufacturer`/`networkType` já são campos de primeira classe (relatedParty/categoryCode),
 // não fazem sentido como characteristic solto em nenhum dos dois.
 const assertCanonicalCharacteristics = <T extends { name: string }>(characteristics: T[]): T[] => {
   const forbidden = characteristics.find(
-    (characteristic) => characteristic.name === 'manufacturer' || characteristic.name === 'networkType',
+    (characteristic) =>
+      characteristic.name === 'manufacturer' || characteristic.name === 'networkType',
   );
   if (forbidden) {
     throw new AppError(`${forbidden.name} is not a canonical characteristic`, {

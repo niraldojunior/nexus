@@ -256,7 +256,7 @@ export function ResourceCatalogTree({
     // quem só está consultando. Em modo de edição, só reaparecem os que foram inativados DURANTE
     // a sessão atual (estavam `active` na baseline) — nós já inativos antes de "Editar" continuam
     // ocultos mesmo em edição, para não reexibir lixo histórico.
-    const wasActiveAtBaseline = baselineActiveIds === null || baselineActiveIds.has(node.id);
+    const wasActiveAtBaseline = baselineActiveIds?.has(node.id) ?? false;
     if (node.status === 'inactive' && (!isEditing || !wasActiveAtBaseline)) {
       return null;
     }

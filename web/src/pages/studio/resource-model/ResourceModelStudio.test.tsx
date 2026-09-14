@@ -216,4 +216,34 @@ describe('ResourceModelStudio', () => {
       }),
     );
   });
+
+  it('hides nodes inactivated in past publications even when entering in edit mode', async () => {
+    // Nó inativado em publicação anterior (não faz parte da baseline da sessão atual)
+    const treeWithInactive: ResourceCatalogTreeNode[] = [
+      mockTree[0]!,
+      {
+        '@type': 'ResourceCatalogNode',
+        id: 'grp-old-inactive',
+        href: '/v1/resource-catalogs/cat-1/nodes/grp-old-inactive',
+        catalogId: 'cat-1',
+        code: 'grp-old',
+        name: 'Grupo Antigo Excluído',
+        kind: 'GROUP',
+        status: 'inactive',
+        sortOrder: 2,
+        tenantId: 'vtal',
+        children: [],
+      },
+    ];
+    vi.mocked(resourceCatalogApi.getResourceCatalogTree).mockResolvedValue(treeWithInactive);
+
+    render(<ResourceModelStudio canEdit={true} canAdmin={true} isEditing={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Acesso')).toBeInTheDocument();
+    });
+
+    // O nó inativo de publicação anterior não deve ser renderizado na árvore
+    expect(screen.queryByText('Grupo Antigo Excluído')).not.toBeInTheDocument();
+  });
 });

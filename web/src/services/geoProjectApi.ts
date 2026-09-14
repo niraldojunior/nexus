@@ -12,7 +12,11 @@ import {
   type GeoSite,
 } from './geoApi';
 import type { GeoTreeNode, MapBounds } from './geoTreeApi';
-import type { LogicalResourcePayload, PhysicalResourcePayload, ResourceEntity } from './resourceApi';
+import type {
+  LogicalResourcePayload,
+  PhysicalResourcePayload,
+  ResourceEntity,
+} from './resourceApi';
 
 // Mesmo vocabulário de GeoStatus — o projeto é a unidade de estado (REQ-MOD01-015): mudar
 // o status do projeto cascateia (best-effort) para cada Site vinculado. Enquanto o projeto
@@ -141,7 +145,9 @@ export const createProject = (name?: string): Promise<GeoProject> =>
 
 export const updateProject = (
   id: string,
-  patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
+  patch: Partial<
+    Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+  >,
 ): Promise<GeoProject & { siteCascade?: GeoProjectSiteCascade }> =>
   patchJson<GeoProject & { siteCascade?: GeoProjectSiteCascade }>(`${BASE_URL}/${id}`, patch);
 
@@ -214,7 +220,38 @@ export const fetchProjectAreasAndSites = (
   return request;
 };
 
-export type ProjectPagedResult = { items: GeoTreeNode[]; offset: number; limit: number; hasMore: boolean };
+export type ProjectPagedResult = {
+  items: GeoTreeNode[];
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+};
+
+export type ProjectResourceCreationOptions = {
+  catalog: { id: string; code: string; name: string } | null;
+  resourceTypes: Array<{
+    id: string;
+    code: string;
+    name: string;
+    nature: 'PhysicalResource' | 'LogicalResource';
+    infrastructureEligible: boolean;
+  }>;
+  resourceSpecifications: Array<{ id: string; name: string; resourceTypeId: string }>;
+};
+
+const resourceCreationOptionsInFlight = new Map<string, Promise<ProjectResourceCreationOptions>>();
+
+export const fetchProjectResourceCreationOptions = (
+  projectId: string,
+): Promise<ProjectResourceCreationOptions> => {
+  const existing = resourceCreationOptionsInFlight.get(projectId);
+  if (existing) return existing;
+  const request = getJson<ProjectResourceCreationOptions>(
+    `${BASE_URL}/${projectId}/resource-creation-options`,
+  ).finally(() => resourceCreationOptionsInFlight.delete(projectId));
+  resourceCreationOptionsInFlight.set(projectId, request);
+  return request;
+};
 
 export const fetchProjectResources = (
   projectId: string,
@@ -234,12 +271,16 @@ export const searchProject = (
   signal?: AbortSignal,
   scope?: 'sites' | 'infrastructure' | 'resources',
 ): Promise<ProjectPagedResult> =>
-  getJson<ProjectPagedResult>(`${BASE_URL}/${projectId}/search?q=${encodeURIComponent(q)}&limit=20&offset=${offset}${scope ? `&scope=${scope}` : ''}`, { signal });
+  getJson<ProjectPagedResult>(
+    `${BASE_URL}/${projectId}/search?q=${encodeURIComponent(q)}&limit=20&offset=${offset}${scope ? `&scope=${scope}` : ''}`,
+    { signal },
+  );
 
 export const createProjectResource = (
   projectId: string,
   payload: PhysicalResourcePayload | LogicalResourcePayload,
-): Promise<ResourceEntity> => postJson<ResourceEntity>(`${BASE_URL}/${projectId}/resources`, payload);
+): Promise<ResourceEntity> =>
+  postJson<ResourceEntity>(`${BASE_URL}/${projectId}/resources`, payload);
 
 export const listProjectStatusCatalog = (): Promise<GeoProjectStatusCatalogItem[]> =>
   getJson('/v1/geo/project-statuses');
@@ -248,14 +289,21 @@ export const createProjectStatusCatalogItem = (item: Omit<GeoProjectStatusCatalo
 export const updateProjectStatusCatalogItem = (
   code: string,
   patch: Partial<Omit<GeoProjectStatusCatalogItem, 'code'>>,
-) => patchJson<GeoProjectStatusCatalogItem>(`/v1/geo/project-statuses/${encodeURIComponent(code)}`, patch);
+) =>
+  patchJson<GeoProjectStatusCatalogItem>(
+    `/v1/geo/project-statuses/${encodeURIComponent(code)}`,
+    patch,
+  );
 export const deactivateProjectStatusCatalogItem = (code: string) =>
   deleteJson<GeoProjectStatusCatalogItem>(`/v1/geo/project-statuses/${encodeURIComponent(code)}`);
 
 export const linkProjectResource = (projectId: string, resourceId: string): Promise<unknown> =>
   postJson(`${BASE_URL}/${projectId}/resources/${resourceId}`, {});
 
-export const unlinkProjectResource = (projectId: string, resourceId: string): Promise<{ detached: boolean }> =>
+export const unlinkProjectResource = (
+  projectId: string,
+  resourceId: string,
+): Promise<{ detached: boolean }> =>
   deleteJson<{ detached: boolean }>(`${BASE_URL}/${projectId}/resources/${resourceId}`);
 
 export type GeoProjectWorkflowRole = 'inventory.editor' | 'platform.admin';
@@ -302,14 +350,18 @@ let workflowRequest: Promise<GeoProjectWorkflowReadModel> | null = null;
 
 export const fetchProjectWorkflow = (): Promise<GeoProjectWorkflowReadModel> => {
   if (!workflowRequest) {
-    workflowRequest = getJson<GeoProjectWorkflowReadModel>('/v1/geo/project-workflow').finally(() => {
+    workflowRequest = getJson<GeoProjectWorkflowReadModel>('/v1/geo/project-workflow').finally(
+      () => {
       workflowRequest = null;
-    });
+      },
+    );
   }
   return workflowRequest;
 };
 
-export const fetchProjectTransitions = (projectId: string): Promise<GeoProjectTransitionsResponse> =>
+export const fetchProjectTransitions = (
+  projectId: string,
+): Promise<GeoProjectTransitionsResponse> =>
   getJson<GeoProjectTransitionsResponse>(`${BASE_URL}/${projectId}/transitions`);
 
 export const transitionProject = (

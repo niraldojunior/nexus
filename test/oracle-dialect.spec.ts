@@ -240,6 +240,31 @@ test('ALTER COLUMN ... TYPE vira MODIFY no Oracle (lote 16)', () => {
   assert.doesNotMatch(batch.sql, /ALTER COLUMN/i);
 });
 
+test('geometria canônica do ResourceType atravessa o transform Oracle (lote 18)', () => {
+  // A coluna nasce no CREATE TABLE (namespace novo) e no lote aditivo (namespace existente). As
+  // duas formas precisam sobreviver ao transform, senão `findColumnDrift` derruba o boot de um dos
+  // dois caminhos — exatamente a armadilha que já apareceu com map_presence.
+  const table = ORACLE_SCHEMA_SQL.split('CREATE TABLE tmf_resource_type')[1]!.split(';')[0]!;
+  assert.match(table, /geometry_kind VARCHAR2\(255 CHAR\)/);
+  assert.match(table, /geometry_kind IN \('POINT', 'LINE', 'POLYGON'\)/);
+
+  const batch = ORACLE_MIGRATION_BATCHES.find(
+    (candidate) => candidate.name === 'resource-type-geometry-kind',
+  );
+  assert.ok(batch, 'lote da geometria canônica deve existir');
+  assert.equal(batch.version, 18);
+  assert.match(batch.sql, /ALTER TABLE tmf_resource_type ADD geometry_kind VARCHAR2\(255 CHAR\)/);
+  assert.doesNotMatch(batch.sql, /ADD COLUMN/i);
+});
+
+test('geo_map_feature.shape aceita polygon em namespace novo (lote 18)', () => {
+  // Namespace novo cai só no CREATE TABLE: se o CHECK continuasse restrito a point/line, nenhuma
+  // feature de polígono entraria no índice e o erro só apareceria no rebuild. Bases já existentes
+  // dependem do callback do adapter, porque a constraint anônima virou SYS_C###### no Oracle.
+  const table = ORACLE_MIGRATIONS_SQL.split('CREATE TABLE geo_map_feature')[1]!.split(';')[0]!;
+  assert.match(table, /shape IN \('point', 'line', 'polygon'\)/);
+});
+
 test('findPostgresisms catches constructs the translator cannot bridge', () => {
   // IS DISTINCT FROM against a column (not a quoted literal) is not handled by the translator.
   assert.throws(

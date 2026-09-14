@@ -1,5 +1,6 @@
 import { AppError } from '../../../shared/errors/app-error.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type { ResourceType } from '../../resource/domain.js';
 
 /** Snapshot v1, kept only to normalize historical publications and drafts. */
 export type StudioGeoLayerShape = 'stations' | 'sites' | 'resource-points' | 'resource-lines' | 'coverage';
@@ -349,7 +350,10 @@ const visualConfigIssues = (visualConfig: unknown, path: string): StudioValidati
 export class StudioGeoAdapter implements StudioDomainAdapter {
   public readonly domain = 'studio-geo';
 
-  constructor(private readonly assetExists: (tenantId: string, assetId: string) => Promise<boolean>) {}
+  constructor(
+    private readonly assetExists: (tenantId: string, assetId: string) => Promise<boolean>,
+    private readonly listResourceTypes: (tenantId: string) => Promise<ResourceType[]>,
+  ) {}
 
   public async validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> {
     const typed = normalizeStudioGeoSnapshot(snapshot);
@@ -417,7 +421,33 @@ export class StudioGeoAdapter implements StudioDomainAdapter {
   public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
     const validation = await this.validate(snapshot);
     if (!validation.valid) throw new AppError(validation.issues.map((issue) => issue.message).join('; '), { code: 'STUDIO_MATERIALIZE_INVALID', statusCode: 422 });
+    const resourceTypes = await this.listResourceTypes(context.tenantId);
     for (const node of normalizeStudioGeoSnapshot(snapshot).nodes) {
+      // Snapshots legados não materializavam `visualConfig`; eles seguem legíveis/publicáveis até
+      // serem normalizados pelo editor. Toda entidade RESOURCE configurada pelo fluxo atual traz
+      // a geometria visual explícita e precisa coincidir com o ResourceType canônico.
+      if (
+        node.kind === 'ENTITY' &&
+        node.entity.category === 'RESOURCE' &&
+        node.visualConfig !== undefined
+      ) {
+        const resourceType = resourceTypes.find(
+          (type) => type.id === node.entity.sourceId || type.code === node.entity.sourceId,
+        );
+        if (
+          !resourceType ||
+          resourceType.status !== 'active' ||
+          resourceType.nature !== 'PhysicalResource' ||
+          resourceType.mapPresence !== true ||
+          !resourceType.geometryKind ||
+          node.visualConfig?.geometryKind !== resourceType.geometryKind
+        ) {
+          throw new AppError('studio GEO resource must reference an active physical resource type with matching map geometry', {
+            code: 'STUDIO_GEO_RESOURCE_GEOMETRY_INVALID',
+            statusCode: 422,
+          });
+        }
+      }
       const visualAssetId =
         node.kind === 'ENTITY' && node.visualConfig?.geometryKind === 'POINT'
           ? node.visualConfig.assetId

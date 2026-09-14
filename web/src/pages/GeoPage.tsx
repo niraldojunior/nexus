@@ -1892,7 +1892,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               mapLayersAllVisible={mapLayers.allVisible}
               mapLayersScaleMeters={scaleMeters}
               siteRoleByCode={siteRoleByCode}
-            /> : <MapLoadingBar />}
+            /> : <MapLoadingBar busy />}
           </div>
 
           {/* Instância única da barra de pesquisa: sobreposta à doca e ao mapa, com o

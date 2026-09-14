@@ -1,5 +1,5 @@
 import type { GeoSpec } from '../services/geoApi';
-import type { ResourceType } from '../services/resourceApi';
+import type { ResourceGeometryKind, ResourceType } from '../services/resourceApi';
 import type {
   StudioGeoEntityCategory,
   StudioGeoEntityReference,
@@ -16,6 +16,7 @@ export type EligibleOption = {
   sourceType: StudioGeoSourceType;
   sourceId: string;
   description?: string;
+  geometryKind: ResourceGeometryKind;
   reference: StudioGeoEntityReference;
 };
 
@@ -52,7 +53,14 @@ const LOGICAL_RESOURCE_CODES = new Set([
  * - Exclui componentes internos de contenção (Splitter, Port) que não têm existência geográfica própria
  */
 export function isPhysicalResourceType(rt: ResourceType): boolean {
-  if (rt.status !== 'active' || rt.mapPresence !== true) return false;
+  if (
+    rt.status !== 'active' ||
+    rt.nature !== 'PhysicalResource' ||
+    rt.mapPresence !== true ||
+    !rt.geometryKind
+  ) {
+    return false;
+  }
   if (INTERNAL_RESOURCE_CODES.has(rt.code) || INTERNAL_RESOURCE_CODES.has(rt.id)) return false;
   if (rt.categoryCode?.startsWith('Logical')) return false;
   if (LOGICAL_RESOURCE_CODES.has(rt.code) || LOGICAL_RESOURCE_CODES.has(rt.id)) return false;
@@ -85,6 +93,7 @@ export function buildEligibleSites(siteSpecs: GeoSpec[]): EligibleOption[] {
         sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION' as const,
         sourceId: spec.code || spec.id,
         description: spec.description || `Local (Site)`,
+        geometryKind: 'POINT',
         reference: {
           category: 'LOCAL',
           sourceDomain: 'location-model',
@@ -112,6 +121,7 @@ export function buildEligibleResources(resourceTypes: ResourceType[]): EligibleO
         sourceType: 'RESOURCE_TYPE' as const,
         sourceId: rt.code || rt.id,
         description: rt.description || `Recurso físico (${rt.categoryCode})`,
+        geometryKind: rt.geometryKind!,
         reference: {
           category: 'RESOURCE',
           sourceDomain: 'resource-model',
@@ -139,6 +149,7 @@ export function buildEligibleCoverages(siteSpecs: GeoSpec[]): EligibleOption[] {
         sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION' as const,
         sourceId: spec.code || spec.id,
         description: spec.description || 'Região geográfica (Site Spec)',
+        geometryKind: 'POLYGON',
         reference: {
           category: 'COVERAGE',
           sourceDomain: 'location-model',

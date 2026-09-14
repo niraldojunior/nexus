@@ -19,6 +19,7 @@ export type ResourceRelationshipRulesPanelProps = {
   resourceTypeId: string;
   canEdit: boolean;
   isEditing: boolean;
+  onActiveRulesCountChange?: (count: number) => void;
 };
 
 const targetKindLabel: Record<ResourceRelationshipTargetKind, string> = {
@@ -30,6 +31,7 @@ export function ResourceRelationshipRulesPanel({
   resourceTypeId,
   canEdit,
   isEditing,
+  onActiveRulesCountChange,
 }: ResourceRelationshipRulesPanelProps) {
   const canMutate = canEdit && isEditing;
   const [relationshipTypes, setRelationshipTypes] = useState<ResourceRelationshipType[]>([]);
@@ -150,6 +152,12 @@ export function ResourceRelationshipRulesPanel({
   };
 
   const activeRules = rules.filter((r) => r.lifecycleStatus === 'Active');
+
+  useEffect(() => {
+    if (!loading) {
+      onActiveRulesCountChange?.(activeRules.length);
+    }
+  }, [activeRules.length, loading, onActiveRulesCountChange]);
 
   if (loading) {
     return <p className="text-[0.85rem] text-app-muted">Carregando relações…</p>;

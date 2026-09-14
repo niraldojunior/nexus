@@ -1,5 +1,22 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { Boxes, ChevronLeft, Layers3, MapPinned, MoreVertical, Plus, Search, Trash2, X } from 'lucide-react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
+import {
+  Boxes,
+  ChevronLeft,
+  Layers3,
+  MapPinned,
+  MoreVertical,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
 import {
   GeoProject,
   GeoProjectDeleteSummary,
@@ -10,8 +27,13 @@ import {
   searchProject,
   type GeoProjectStatusCatalogItem,
   createProjectResource,
+  fetchProjectResourceCreationOptions,
+  type ProjectResourceCreationOptions,
 } from '../../services/geoProjectApi';
-import { loadResourceWorkspaceSnapshot, type PhysicalResourcePayload, type LogicalResourcePayload, type ResourceWorkspaceSnapshot } from '../../services/resourceApi';
+import {
+  type PhysicalResourcePayload,
+  type LogicalResourcePayload,
+} from '../../services/resourceApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
@@ -69,7 +91,9 @@ export type ProjectDetailPanelProps = {
   // somem.
   canEdit: boolean;
   onUpdate: (
-    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
+    patch: Partial<
+      Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+    >,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade } | void>;
   onDelete: () => Promise<GeoProjectDeleteSummary>;
   onBack: () => void;
@@ -133,9 +157,15 @@ export function ProjectDetailPanel({
   const [resources, setResources] = useState<GeoTreeNode[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
   const [resourceReloadToken, setResourceReloadToken] = useState(0);
-  const [createResourceMode, setCreateResourceMode] = useState<'infrastructure' | 'resources' | null>(null);
-  const [pendingTab, setPendingTab] = useState<'sites' | 'infrastructure' | 'resources' | 'coverage' | null>(null);
-  const [searchMode, setSearchMode] = useState<'sites' | 'infrastructure' | 'resources' | null>(null);
+  const [createResourceMode, setCreateResourceMode] = useState<
+    'infrastructure' | 'resources' | null
+  >(null);
+  const [pendingTab, setPendingTab] = useState<
+    'sites' | 'infrastructure' | 'resources' | 'coverage' | null
+  >(null);
+  const [searchMode, setSearchMode] = useState<'sites' | 'infrastructure' | 'resources' | null>(
+    null,
+  );
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GeoTreeNode[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -159,9 +189,15 @@ export function ProjectDetailPanel({
   useEffect(() => {
     let cancelled = false;
     void fetchStatusCatalogDeduped()
-      .then((items) => { if (!cancelled) setStatusCatalog(items); })
-      .catch(() => { if (!cancelled) setStatusCatalog([]); });
-    return () => { cancelled = true; };
+      .then((items) => {
+        if (!cancelled) setStatusCatalog(items);
+      })
+      .catch(() => {
+        if (!cancelled) setStatusCatalog([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const commitTitle = () => {
@@ -187,10 +223,18 @@ export function ProjectDetailPanel({
     if (tab !== 'resources' && tab !== 'infrastructure') return;
     let stale = false;
     setResourcesLoading(true);
-    void fetchProjectResources(project.id, { view: tab === 'infrastructure' ? 'infrastructure' : 'all' })
-      .then((page) => { if (!stale) setResources(page.items); })
-      .finally(() => { if (!stale) setResourcesLoading(false); });
-    return () => { stale = true; };
+    void fetchProjectResources(project.id, {
+      view: tab === 'infrastructure' ? 'infrastructure' : 'all',
+    })
+      .then((page) => {
+        if (!stale) setResources(page.items);
+      })
+      .finally(() => {
+        if (!stale) setResourcesLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
   }, [project.id, tab, resourceReloadToken]);
 
   useEffect(() => {
@@ -208,9 +252,20 @@ export function ProjectDetailPanel({
       // Reaproveita imediatamente as sugestões do prefixo anterior enquanto a busca precisa
       // chega: o cache contém apenas itens deste projeto.
       const prefixRows = [...projectSearchCache.entries()]
-        .filter(([key]) => key.startsWith(`${project.id}:${searchMode}:`) && term.toLocaleLowerCase().startsWith(key.split(':').slice(2).join(':')))
+        .filter(
+          ([key]) =>
+            key.startsWith(`${project.id}:${searchMode}:`) &&
+            term.toLocaleLowerCase().startsWith(key.split(':').slice(2).join(':')),
+        )
         .sort((left, right) => right[0].length - left[0].length)[0]?.[1];
-      if (prefixRows) setResults(prefixRows.filter((item) => `${item.label} ${item.sublabel ?? ''} ${item.resourceType ?? ''}`.toLocaleLowerCase().includes(term.toLocaleLowerCase())));
+      if (prefixRows)
+        setResults(
+          prefixRows.filter((item) =>
+            `${item.label} ${item.sublabel ?? ''} ${item.resourceType ?? ''}`
+              .toLocaleLowerCase()
+              .includes(term.toLocaleLowerCase()),
+          ),
+        );
     }
     const controller = new AbortController();
     setSearchLoading(!cached);
@@ -229,7 +284,10 @@ export function ProjectDetailPanel({
           if (!controller.signal.aborted) setSearchLoading(false);
         });
     }, 80);
-    return () => { window.clearTimeout(timer); controller.abort(); };
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [project.id, query, searchMode]);
 
   const handleConfirmDelete = async () => {
@@ -377,7 +435,18 @@ export function ProjectDetailPanel({
         </div>
       ) : (
         <select
-          value={project.statusCode ?? (project.status === 'planned' ? '11' : project.status === 'active' ? '22' : project.status === 'suspended' ? '23' : project.status === 'cancelled' ? 'legacy-cancelled' : '17')}
+          value={
+            project.statusCode ??
+            (project.status === 'planned'
+              ? '11'
+              : project.status === 'active'
+                ? '22'
+                : project.status === 'suspended'
+                  ? '23'
+                  : project.status === 'cancelled'
+                    ? 'legacy-cancelled'
+                    : '17')
+          }
           onChange={(event) => void handleStatusChange(event.target.value)}
           aria-label="Status do projeto"
           className="h-8 shrink-0 rounded-[10px] border border-app-border bg-white px-2 text-[0.76rem] font-semibold text-app-text outline-none transition hover:border-app-accent-border focus:border-app-accent-border"
@@ -385,11 +454,20 @@ export function ProjectDetailPanel({
           {(statusCatalog.length > 0
             ? statusCatalog.filter((option) => option.active || option.code === project.statusCode)
             : PROJECT_STATUS_OPTIONS.map((option) => ({
-                code: option.value === 'planned' ? '11' : option.value === 'active' ? '22' : option.value === 'suspended' ? '23' : option.value === 'cancelled' ? 'legacy-cancelled' : '17',
+                code:
+                  option.value === 'planned'
+                    ? '11'
+                    : option.value === 'active'
+                      ? '22'
+                      : option.value === 'suspended'
+                        ? '23'
+                        : option.value === 'cancelled'
+                          ? 'legacy-cancelled'
+                          : '17',
                 name: option.label,
                 active: true,
-              })))
-            .map((option) => (
+              }))
+          ).map((option) => (
             <option key={option.code} value={option.code}>
               {option.name}
             </option>
@@ -426,7 +504,6 @@ export function ProjectDetailPanel({
       {sites.length < totalCount ? ` (mostrando ${sites.length})` : ''}
     </span>
   );
-
 
   const addSiteButton = canEdit ? (
     <button
@@ -496,55 +573,197 @@ export function ProjectDetailPanel({
     ) : null;
 
   const tabBar = (
-    <div className="flex flex-wrap gap-1 border-b border-app-border px-3 py-2" role="tablist" aria-label="Conteúdo do projeto">
-      {([
-        ['sites', 'Locais', MapPinned], ['infrastructure', 'Infraestrutura', Layers3], ['resources', 'Recursos', Boxes], ['coverage', 'Cobertura', MapPinned],
-      ] as const).map(([value, label, icon]) => (
-        <PanelBarButton key={value} icon={icon} label={label} active={tab === value} onClick={() => { if (value === tab) return; if (createResourceMode || addSiteDisabled) setPendingTab(value); else setTab(value); }} ariaLabel={label} />
+    <div
+      className="flex flex-wrap gap-1 border-b border-app-border px-3 py-2"
+      role="tablist"
+      aria-label="Conteúdo do projeto"
+    >
+      {(
+        [
+          ['sites', 'Locais', MapPinned],
+          ['infrastructure', 'Infraestrutura', Layers3],
+          ['resources', 'Recursos', Boxes],
+          ['coverage', 'Cobertura', MapPinned],
+        ] as const
+      ).map(([value, label, icon]) => (
+        <PanelBarButton
+          key={value}
+          icon={icon}
+          label={label}
+          active={tab === value}
+          onClick={() => {
+            if (value === tab) return;
+            if (createResourceMode || addSiteDisabled) setPendingTab(value);
+            else setTab(value);
+          }}
+          ariaLabel={label}
+        />
       ))}
     </div>
   );
   const addResourceButton = (mode: 'infrastructure' | 'resources') =>
     canEdit ? (
-      <button type="button" onClick={() => setCreateResourceMode(mode)} disabled={Boolean(createResourceMode) || project.status === 'terminated' || project.status === 'cancelled'} className="geo-btn primary mb-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60">
+      <button
+        type="button"
+        onClick={() => setCreateResourceMode(mode)}
+        disabled={
+          Boolean(createResourceMode) ||
+          project.status === 'terminated' ||
+          project.status === 'cancelled'
+        }
+        className="geo-btn primary mb-2 w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+      >
         <Plus className="h-4 w-4" />
         {mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}
       </button>
     ) : null;
 
-  const resourceRows = resourcesLoading ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Carregando recursos…</p>
-    : resources.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum recurso nesta visão.</p>
-    : resources.map((resource) => <button key={resource.id} type="button" onClick={() => onOpenResource?.(resource)} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft">
-      <NodeIcon node={resource} /><span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">{resource.label}</span><span className="text-[0.68rem] text-app-muted">{resource.referredType === 'LogicalResource' ? 'Lógico' : resource.resourceType ?? 'Físico'}</span>
-    </button>);
+  const resourceRows = resourcesLoading ? (
+    <p className="px-2 py-3 text-[0.82rem] text-app-muted">Carregando recursos…</p>
+  ) : resources.length === 0 ? (
+    <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum recurso nesta visão.</p>
+  ) : (
+    resources.map((resource) => (
+      <button
+        key={resource.id}
+        type="button"
+        onClick={() => onOpenResource?.(resource)}
+        className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft"
+      >
+        <NodeIcon node={resource} />
+        <span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">
+          {resource.label}
+        </span>
+        <span className="text-[0.68rem] text-app-muted">
+          {resource.referredType === 'LogicalResource'
+            ? 'Lógico'
+            : (resource.resourceType ?? 'Físico')}
+        </span>
+      </button>
+    ))
+  );
 
-  const coverageRows = areas.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhuma mancha de cobertura gerada.</p>
-    : areas.slice().sort((left, right) => (right.siteCount + (right.resourceCount ?? 0)) - (left.siteCount + (left.resourceCount ?? 0))).map((area) => <button key={area.id} type="button" onClick={() => onFocusArea?.(area)} className="grid w-full grid-cols-[1fr_auto] gap-x-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft">
-      <span className="text-[0.84rem] font-medium text-app-text">{area.kind === 'concentration' ? 'Concentração' : 'Dispersão'}</span>
-      <span className="text-[0.72rem] text-app-muted">{area.areaKm2?.toFixed(2) ?? '—'} km²</span>
-      <span className="text-[0.72rem] text-app-muted">{area.siteCount} locais · {area.resourceCount} recursos</span>
-    </button>);
+  const coverageRows =
+    areas.length === 0 ? (
+      <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhuma mancha de cobertura gerada.</p>
+    ) : (
+      areas
+        .slice()
+        .sort(
+          (left, right) =>
+            right.siteCount +
+            (right.resourceCount ?? 0) -
+            (left.siteCount + (left.resourceCount ?? 0)),
+        )
+        .map((area) => (
+          <button
+            key={area.id}
+            type="button"
+            onClick={() => onFocusArea?.(area)}
+            className="grid w-full grid-cols-[1fr_auto] gap-x-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft"
+          >
+            <span className="text-[0.84rem] font-medium text-app-text">
+              {area.kind === 'concentration' ? 'Concentração' : 'Dispersão'}
+            </span>
+            <span className="text-[0.72rem] text-app-muted">
+              {area.areaKm2?.toFixed(2) ?? '—'} km²
+            </span>
+            <span className="text-[0.72rem] text-app-muted">
+              {area.siteCount} locais · {area.resourceCount} recursos
+            </span>
+          </button>
+        ))
+    );
 
-  const searchRows = query.trim().length < 2 ? null
-    : searchLoading && results.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Pesquisando…</p>
-    : searchError ? <p className="px-2 py-3 text-[0.82rem] text-status-red">{searchError}</p>
-    : results.length === 0 ? <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum resultado neste projeto.</p>
-    : results.map((item) => <button key={item.id} type="button" onClick={() => item.kind === 'site' ? onOpenSite(item) : onOpenResource?.(item)} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft"><NodeIcon node={item} /><span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">{item.label}</span><span className="text-[0.68rem] text-app-muted">{item.kind === 'site' ? 'Local' : 'Recurso'}</span></button>);
+  const searchRows =
+    query.trim().length < 2 ? null : searchLoading && results.length === 0 ? (
+      <p className="px-2 py-3 text-[0.82rem] text-app-muted">Pesquisando…</p>
+    ) : searchError ? (
+      <p className="px-2 py-3 text-[0.82rem] text-status-red">{searchError}</p>
+    ) : results.length === 0 ? (
+      <p className="px-2 py-3 text-[0.82rem] text-app-muted">Nenhum resultado neste projeto.</p>
+    ) : (
+      results.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => (item.kind === 'site' ? onOpenSite(item) : onOpenResource?.(item))}
+          className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-app-accent-soft"
+        >
+          <NodeIcon node={item} />
+          <span className="min-w-0 flex-1 truncate text-[0.84rem] font-medium text-app-text">
+            {item.label}
+          </span>
+          <span className="text-[0.68rem] text-app-muted">
+            {item.kind === 'site' ? 'Local' : 'Recurso'}
+          </span>
+        </button>
+      ))
+    );
 
   const searchActions = (scope: 'sites' | 'infrastructure' | 'resources', add: ReactNode) => (
     <div className="mb-2 flex gap-2">
       {searchMode === scope ? (
-        <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar neste projeto" className="h-10 min-w-0 flex-1 rounded-[10px] border border-app-border bg-white px-3 text-[0.82rem] outline-none focus:border-app-accent-border" />
-      ) : add}
-      <button type="button" onClick={() => { if (searchMode === scope) { setSearchMode(null); setQuery(''); } else { setSearchMode(scope); setQuery(''); } }} aria-pressed={searchMode === scope} className="geo-btn secondary h-10 justify-center px-3">
+        <input
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Pesquisar neste projeto"
+          className="h-10 min-w-0 flex-1 rounded-[10px] border border-app-border bg-white px-3 text-[0.82rem] outline-none focus:border-app-accent-border"
+        />
+      ) : (
+        add
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (searchMode === scope) {
+            setSearchMode(null);
+            setQuery('');
+          } else {
+            setSearchMode(scope);
+            setQuery('');
+          }
+        }}
+        aria-pressed={searchMode === scope}
+        className="geo-btn secondary h-10 justify-center px-3"
+      >
         <Search className="h-4 w-4" />
         Pesquisar
       </button>
     </div>
   );
-  const tabContent = tab === 'sites' ? <><div className="mb-1 flex items-center justify-between">{countLabel}</div>{searchActions('sites', addSiteButton)}<div className="grid gap-0.5">{searchMode === 'sites' && query.trim().length >= 2 ? searchRows : <>{siteRows}{loadMoreSitesButton}</>}</div></>
-    : tab === 'coverage' ? <div className="grid gap-0.5">{coverageRows}</div>
-    : <div className="grid gap-0.5"><div className="mb-1 flex items-center justify-between"><span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">{tab === 'infrastructure' ? `${project.infrastructureCount ?? 0} itens de infraestrutura` : `${project.resourceCount ?? 0} recursos`}</span></div>{searchActions(tab, addResourceButton(tab))}{searchMode === tab && query.trim().length >= 2 ? searchRows : resourceRows}</div>;
+  const tabContent =
+    tab === 'sites' ? (
+      <>
+        <div className="mb-1 flex items-center justify-between">{countLabel}</div>
+        {searchActions('sites', addSiteButton)}
+        <div className="grid gap-0.5">
+          {searchMode === 'sites' && query.trim().length >= 2 ? (
+            searchRows
+          ) : (
+            <>
+              {siteRows}
+              {loadMoreSitesButton}
+            </>
+          )}
+        </div>
+      </>
+    ) : tab === 'coverage' ? (
+      <div className="grid gap-0.5">{coverageRows}</div>
+    ) : (
+      <div className="grid gap-0.5">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+            {tab === 'infrastructure'
+              ? `${project.infrastructureCount ?? 0} itens de infraestrutura`
+              : `${project.resourceCount ?? 0} recursos`}
+          </span>
+        </div>
+        {searchActions(tab, addResourceButton(tab))}
+        {searchMode === tab && query.trim().length >= 2 ? searchRows : resourceRows}
+      </div>
+    );
 
   const deleteConfirm = confirmDelete ? (
     <Modal
@@ -611,14 +830,34 @@ export function ProjectDetailPanel({
   ) : null;
 
   const tabChangeConfirm = pendingTab ? (
-    <Modal onClose={() => setPendingTab(null)} title={addSiteDisabled ? 'Descartar novo local' : 'Descartar novo recurso'} eyebrow="Projeto">
+    <Modal
+      onClose={() => setPendingTab(null)}
+      title={addSiteDisabled ? 'Descartar novo local' : 'Descartar novo recurso'}
+      eyebrow="Projeto"
+    >
       <div className="grid gap-4">
         <p className="text-[0.9rem] text-app-text">
           {addSiteDisabled
             ? 'Ao trocar de aba, o novo local será perdido. Tem certeza?'
             : `Ao trocar de aba, o novo ${createResourceMode === 'infrastructure' ? 'item de infraestrutura' : 'recurso'} será descartado.`}
         </p>
-        <div className="flex justify-end gap-2"><button type="button" className="geo-btn secondary" onClick={() => setPendingTab(null)}>Cancelar</button><button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={() => { if (addSiteDisabled) onDiscardNewSite?.(); else setCreateResourceMode(null); setTab(pendingTab); setPendingTab(null); }}>Descartar</button></div>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="geo-btn secondary" onClick={() => setPendingTab(null)}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="geo-btn border-status-red/30 bg-status-red-soft text-status-red"
+            onClick={() => {
+              if (addSiteDisabled) onDiscardNewSite?.();
+              else setCreateResourceMode(null);
+              setTab(pendingTab);
+              setPendingTab(null);
+            }}
+          >
+            Descartar
+          </button>
+        </div>
       </div>
     </Modal>
   ) : null;
@@ -633,12 +872,27 @@ export function ProjectDetailPanel({
           {descriptionBlock}
           {cascadeNotice ? <div className="mt-2">{cascadeNotice}</div> : null}
           {deleteNoticeBlock ? <div className="mt-2">{deleteNoticeBlock}</div> : null}
-          <div className="mt-3 border-t border-app-border pt-2">{tabBar}<div className="pt-3">{tabContent}</div></div>
+          <div className="mt-3 border-t border-app-border pt-2">
+            {tabBar}
+            <div className="pt-3">{tabContent}</div>
+          </div>
         </div>
         {deleteConfirm}
         {removeSiteConfirm}
         {tabChangeConfirm}
-        {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} isMobile onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
+        {createResourceMode ? (
+          <ProjectResourceModal
+            projectId={project.id}
+            mode={createResourceMode}
+            isMobile
+            onClose={() => setCreateResourceMode(null)}
+            onCreated={() => {
+              projectSearchCache.clear();
+              setResourceReloadToken((value) => value + 1);
+              onResourceCreated?.();
+            }}
+          />
+        ) : null}
       </BottomSheet>
     );
   }
@@ -666,54 +920,252 @@ export function ProjectDetailPanel({
       </div>
       {/* Sibling flex item (não `fixed`) — fica ao lado do painel de projeto, como o
           SitePanel de "novo local", em vez de colado na borda direita do mapa. */}
-      {createResourceMode ? <ProjectResourceModal projectId={project.id} mode={createResourceMode} isMobile={false} onClose={() => setCreateResourceMode(null)} onCreated={() => { projectSearchCache.clear(); setResourceReloadToken((value) => value + 1); onResourceCreated?.(); }} /> : null}
+      {createResourceMode ? (
+        <ProjectResourceModal
+          projectId={project.id}
+          mode={createResourceMode}
+          isMobile={false}
+          onClose={() => setCreateResourceMode(null)}
+          onCreated={() => {
+            projectSearchCache.clear();
+            setResourceReloadToken((value) => value + 1);
+            onResourceCreated?.();
+          }}
+        />
+      ) : null}
     </>
   );
 }
 
-function ProjectResourceModal({ projectId, mode, isMobile, onClose, onCreated }: { projectId: string; mode: 'infrastructure' | 'resources'; isMobile: boolean; onClose: () => void; onCreated: () => void }) {
-  const [snapshot, setSnapshot] = useState<ResourceWorkspaceSnapshot | null>(null);
+function ProjectResourceModal({
+  projectId,
+  mode,
+  isMobile,
+  onClose,
+  onCreated,
+}: {
+  projectId: string;
+  mode: 'infrastructure' | 'resources';
+  isMobile: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [options, setOptions] = useState<ProjectResourceCreationOptions | null>(null);
   const [kind, setKind] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
-  const [category, setCategory] = useState(mode === 'infrastructure' ? 'Infrastructure.Passive' : '');
   const [name, setName] = useState('');
-  const [resourceType, setResourceType] = useState('');
+  const [resourceTypeId, setResourceTypeId] = useState('');
   const [specificationId, setSpecificationId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const dirty = Boolean(name.trim() || resourceType || specificationId || (mode === 'resources' && (category || kind !== 'PhysicalResource')));
-  const requestClose = () => { if (dirty) setConfirmDiscard(true); else onClose(); };
+  const dirty = Boolean(
+    name.trim() ||
+    resourceTypeId ||
+    specificationId ||
+    (mode === 'resources' && kind !== 'PhysicalResource'),
+  );
+  const requestClose = () => {
+    if (dirty) setConfirmDiscard(true);
+    else onClose();
+  };
+  const loadOptions = () => {
+    setError(null);
+    void fetchProjectResourceCreationOptions(projectId)
+      .then(setOptions)
+      .catch(() => setError('Não foi possível carregar o catálogo.'));
+  };
 
-  useEffect(() => { void loadResourceWorkspaceSnapshot({ tab: 'PhysicalResource', limit: 100, offset: 0 }).then(setSnapshot).catch(() => setError('Não foi possível carregar o catálogo.')); }, []);
-  const types = snapshot?.resourceTypes.filter((item) => item.categoryCode === category && item.status === 'active') ?? [];
-  const specs = snapshot?.resourceSpecificationOptions.filter((item) => item.category === category && (!resourceType || item.resourceType === resourceType)) ?? [];
+  useEffect(loadOptions, [projectId]);
+  const types = (options?.resourceTypes ?? []).filter(
+    (item) => item.nature === kind && (mode !== 'infrastructure' || item.infrastructureEligible),
+  );
+  const specs = (options?.resourceSpecifications ?? []).filter(
+    (item) => item.resourceTypeId === resourceTypeId,
+  );
+  const selectedType = types.find((item) => item.id === resourceTypeId);
+  const selectedSpecification = specs.find((item) => item.id === specificationId);
+  const canSubmit = Boolean(
+    options?.catalog && name.trim() && selectedType && selectedSpecification && !saving,
+  );
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!name.trim() || !specificationId) return;
-    setSaving(true); setError(null);
+    if (!canSubmit || !selectedSpecification) return;
+    setSaving(true);
+    setError(null);
     try {
-      const payload: PhysicalResourcePayload | LogicalResourcePayload = kind === 'PhysicalResource'
-        ? { '@type': 'PhysicalResource', name: name.trim(), resourceSpecificationId: specificationId }
-        : { '@type': 'LogicalResource', name: name.trim(), resourceSpecificationId: specificationId };
+      const payload: PhysicalResourcePayload | LogicalResourcePayload =
+        kind === 'PhysicalResource'
+          ? {
+              '@type': 'PhysicalResource',
+              name: name.trim(),
+              resourceSpecificationId: selectedSpecification.id,
+            }
+          : {
+              '@type': 'LogicalResource',
+              name: name.trim(),
+              resourceSpecificationId: selectedSpecification.id,
+            };
       await createProjectResource(projectId, payload);
-      onCreated(); onClose();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível criar o recurso.'); }
-    finally { setSaving(false); }
+      onCreated();
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o recurso.');
+    } finally {
+      setSaving(false);
+    }
   };
   const wrapperClassName = isMobile
     ? 'fixed inset-y-0 right-0 z-[70] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock'
     : `${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`;
-  return <aside className={wrapperClassName} aria-label={mode === 'infrastructure' ? 'Novo item de infraestrutura' : 'Novo recurso'}>
-    <div className="flex items-center justify-between border-b border-app-border px-4 py-3"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[.1em] text-app-muted">Projeto</p><h2 className="font-display text-[1.05rem] font-semibold text-app-text">{mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}</h2></div><button type="button" onClick={requestClose} className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft" aria-label="Fechar novo recurso"><X className="h-4 w-4"/></button></div>
+  return (
+    <aside
+      className={wrapperClassName}
+      aria-label={mode === 'infrastructure' ? 'Novo item de infraestrutura' : 'Novo recurso'}
+    >
+      <div className="flex items-center justify-between border-b border-app-border px-4 py-3">
+        <div>
+          <p className="text-[0.7rem] font-semibold uppercase tracking-[.1em] text-app-muted">
+            Projeto
+          </p>
+          <h2 className="font-display text-[1.05rem] font-semibold text-app-text">
+            {mode === 'infrastructure' ? 'Criar infraestrutura' : 'Criar recurso'}
+          </h2>
+        </div>
+        <button
+          type="button"
+          onClick={requestClose}
+          className="rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
+          aria-label="Fechar novo recurso"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     <form onSubmit={submit} className="grid flex-1 content-start gap-3 overflow-y-auto p-4">
-      {mode === 'resources' ? <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Classe<select value={kind} onChange={(event) => { setKind(event.target.value as typeof kind); setSpecificationId(''); }} className="geo-input"><option value="PhysicalResource">Recurso físico</option><option value="LogicalResource">Recurso lógico</option></select></label> : null}
-      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Categoria<select value={category} onChange={(event) => { setCategory(event.target.value); setResourceType(''); setSpecificationId(''); }} disabled={mode === 'infrastructure'} className="geo-input"><option value="">Selecione uma categoria</option>{snapshot?.resourceCategories.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
-      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Nome<input required value={name} onChange={(event) => setName(event.target.value)} className="geo-input" /></label>
-      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Tipo<select required value={resourceType} onChange={(event) => { setResourceType(event.target.value); setSpecificationId(''); }} className="geo-input"><option value="">Selecione um tipo</option>{types.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}</select></label>
-      <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">Modelo<select required value={specificationId} onChange={(event) => setSpecificationId(event.target.value)} className="geo-input"><option value="">Selecione um modelo</option>{specs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      {error ? <p className="text-[0.8rem] text-status-red">{error}</p> : null}
-      <div className="flex justify-end gap-2"><button type="button" onClick={requestClose} className="geo-btn secondary">Cancelar</button><button type="submit" disabled={saving || !snapshot} className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Criando…' : 'Criar'}</button></div>
+        {mode === 'resources' ? (
+          <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+            Classe
+            <select
+              value={kind}
+              onChange={(event) => {
+                setKind(event.target.value as typeof kind);
+                setResourceTypeId('');
+                setSpecificationId('');
+              }}
+              className="geo-input"
+            >
+              <option value="PhysicalResource">Recurso físico</option>
+              <option value="LogicalResource">Recurso lógico</option>
+            </select>
+          </label>
+        ) : null}
+        <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+          Nome
+          <input
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="geo-input"
+          />
+        </label>
+        <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+          Tipo
+          <select
+            required
+            value={resourceTypeId}
+            onChange={(event) => {
+              setResourceTypeId(event.target.value);
+              setSpecificationId('');
+            }}
+            disabled={!options || types.length === 0}
+            className="geo-input"
+          >
+            <option value="">Selecione um tipo</option>
+            {types.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+          Modelo
+          <select
+            required
+            value={specificationId}
+            onChange={(event) => setSpecificationId(event.target.value)}
+            disabled={!resourceTypeId || specs.length === 0}
+            className="geo-input"
+          >
+            <option value="">Selecione um modelo</option>
+            {specs.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!options && !error ? (
+          <p className="text-[0.8rem] text-app-muted">Carregando catálogo…</p>
+        ) : null}
+        {options && !options.catalog ? (
+          <p className="text-[0.8rem] text-app-muted">Não há catálogo de recursos ativo.</p>
+        ) : null}
+        {options?.catalog && types.length === 0 ? (
+          <p className="text-[0.8rem] text-app-muted">Não há tipos disponíveis para esta classe.</p>
+        ) : null}
+        {resourceTypeId && specs.length === 0 ? (
+          <p className="text-[0.8rem] text-app-muted">Não há modelos disponíveis para este tipo.</p>
+        ) : null}
+        {error ? (
+          <p className="text-[0.8rem] text-status-red">
+            {error}{' '}
+            <button type="button" onClick={loadOptions} className="underline">
+              Tentar novamente
+            </button>
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={requestClose} className="geo-btn secondary">
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="geo-btn primary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? 'Criando…' : 'Criar'}
+          </button>
+        </div>
     </form>
-    {confirmDiscard ? <Modal onClose={() => setConfirmDiscard(false)} title="Descartar novo recurso" eyebrow="Projeto"><div className="grid gap-4"><p className="text-[0.9rem] text-app-text">Há campos preenchidos. Deseja descartar o novo recurso?</p><div className="flex justify-end gap-2"><button type="button" className="geo-btn secondary" onClick={() => setConfirmDiscard(false)}>Cancelar</button><button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={onClose}>Descartar</button></div></div></Modal> : null}
-  </aside>;
+      {confirmDiscard ? (
+        <Modal
+          onClose={() => setConfirmDiscard(false)}
+          title="Descartar novo recurso"
+          eyebrow="Projeto"
+        >
+          <div className="grid gap-4">
+            <p className="text-[0.9rem] text-app-text">
+              Há campos preenchidos. Deseja descartar o novo recurso?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="geo-btn secondary"
+                onClick={() => setConfirmDiscard(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="geo-btn border-status-red/30 bg-status-red-soft text-status-red"
+                onClick={onClose}
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+    </aside>
+  );
 }

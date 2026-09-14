@@ -16,6 +16,7 @@ import {
   writeStoredLayers,
 } from './mapLayers';
 import type { StudioGeoCatalog, StudioGeoPointVisualConfig } from '../services/studioGeoApi';
+import { defaultColorRule } from './studioGeoDefaults';
 
 describe('groupVisibility / setGroupVisibility', () => {
   it('reporta "all" quando todos os filhos do grupo estão ligados', () => {
@@ -232,6 +233,8 @@ describe('nodeForMapFeature', () => {
   const publishedPointConfig: StudioGeoPointVisualConfig = {
     geometryKind: 'POINT',
     iconCode: 'energy.substation',
+    color: defaultColorRule('LOCAL', '#8b5cf6'),
+    opacity: 1,
     scaleBands: {
       le5m: { visible: true, sizePx: 18 },
       le10m: { visible: true, sizePx: 18 },

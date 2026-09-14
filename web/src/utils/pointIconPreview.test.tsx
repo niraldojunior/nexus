@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { StudioGeoEntityNode } from '../../../services/studioGeoApi';
-import { canonicalPointIconPreviewUrl } from './GeoNodeVisualConfigTab';
+import type { StudioGeoEntityNode } from '../services/studioGeoApi';
+import { canonicalPointIconPreviewUrl } from './pointIconPreview';
 
 const stationNode: StudioGeoEntityNode = {
   id: 'stations',

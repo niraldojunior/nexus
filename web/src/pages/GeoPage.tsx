@@ -60,6 +60,14 @@ import type {
 import { nativeMapIconDataUrl, nativeMapIconForCode } from '../utils/nativeMapIcons';
 import { getStudioSvgAssetDataUrl } from '../services/studioAssetApi';
 import { resolveScaleBandKey } from '../utils/studioGeoDefaults';
+import {
+  normalizeStudioGeoVisualConfig,
+  resolveStudioGeoVisualStyle,
+  type ResolvedStudioGeoLineStyle,
+  type ResolvedStudioGeoPointStyle,
+  type ResolvedStudioGeoPolygonStyle,
+} from '../utils/studioGeoVisual';
+import { prefersReducedMotion } from '../utils/studioGeoStroke';
 import { createCoverageOverlay, type CoverageOverlayHandle } from './geo-tabs/CoverageOverlay';
 import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
 import { projectAreaSwatchDataUrl } from '../utils/projectAreaColor';
@@ -314,17 +322,37 @@ function pointVisualConfigForNode(
   return pointLayerForNode(node, catalog)?.visualConfig as StudioGeoPointVisualConfig | undefined;
 }
 
+/**
+ * Estilo publicado pelo Studio GEO para o pin de um nó, já resolvido pelo status da própria
+ * instância e pela faixa de escala atual. `undefined` quando não há entidade visual publicada
+ * para a origem do nó — aí valem os perfis canônicos legados (siteIconFor/resourceIconFor).
+ */
+function pointStyleForNode(
+  node: GeoTreeNode,
+  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
+  scaleMeters: number | null,
+): ResolvedStudioGeoPointStyle | undefined {
+  const layer = pointLayerForNode(node, catalog);
+  if (!layer?.visualConfig) return undefined;
+  const config = normalizeStudioGeoVisualConfig(layer.visualConfig, layer.entity, layer.label);
+  const resolved = resolveStudioGeoVisualStyle(
+    config,
+    layer.entity.category,
+    node.status,
+    scaleMeters,
+  );
+  return resolved.geometryKind === 'POINT' ? resolved : undefined;
+}
+
 function buildPointMarkerVisual(
   maps: GoogleMapsApi['maps'],
   node: GeoTreeNode,
   selected: boolean,
   stationMarkerSize: number,
   resourceMarkerSize: number,
-  scaleMeters: number | null,
-  pointConfig?: StudioGeoPointVisualConfig,
+  pointStyle?: ResolvedStudioGeoPointStyle,
   assetDataUrl?: string,
 ): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
-  const scaleConfig = pointConfig?.scaleBands[resolveScaleBandKey(scaleMeters)];
   if (node.kind === 'site') {
     const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
     const icon = siteIconFor(kind, node.status);
@@ -332,14 +360,19 @@ function buildPointMarkerVisual(
     // (cliente, condomínio, edificação, POP...) usa a mesma régua de Resource.
     const isStation = kind === 'CO';
     const baseSize = isStation ? stationMarkerSize : resourceMarkerSize;
-    const size = selected ? baseSize + (isStation ? 8 : 6) : (scaleConfig?.sizePx ?? baseSize);
-    const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
+    const size = selected ? baseSize + (isStation ? 8 : 6) : (pointStyle?.sizePx ?? baseSize);
+    const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
     return {
       iconOptions: {
         url:
           assetDataUrl ??
           (nativeIcon
-            ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'squircle' })
+            ? nativeMapIconDataUrl(nativeIcon, {
+                size,
+                shape: 'squircle',
+                color: pointStyle?.color,
+                opacity: pointStyle?.opacity,
+              })
             : siteIconDataUrl(icon, { size })),
         scaledSize: new maps.Size(size, size),
         anchor: new maps.Point(size / 2, size / 2),
@@ -356,14 +389,19 @@ function buildPointMarkerVisual(
     sublabel: node.sublabel,
   });
   const baseSize = resourceMarkerSize;
-  const size = selected ? baseSize + 6 : (scaleConfig?.sizePx ?? baseSize);
-  const nativeIcon = nativeMapIconForCode(pointConfig?.iconCode);
+  const size = selected ? baseSize + 6 : (pointStyle?.sizePx ?? baseSize);
+  const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
   return {
     iconOptions: {
       url:
         assetDataUrl ??
         (nativeIcon
-          ? nativeMapIconDataUrl(nativeIcon, { size, shape: 'circle' })
+          ? nativeMapIconDataUrl(nativeIcon, {
+              size,
+              shape: 'circle',
+              color: pointStyle?.color,
+              opacity: pointStyle?.opacity,
+            })
           : resourceIconDataUrl(icon, { size })),
       scaledSize: new maps.Size(size, size),
       // Âncora no canto inferior-esquerdo: o equipamento fica acima e à direita da
@@ -373,6 +411,74 @@ function buildPointMarkerVisual(
     },
     zIndex: selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z,
     title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
+  };
+}
+
+function lineStyleForNode(
+  node: GeoTreeNode,
+  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
+  scaleMeters: number | null,
+): ResolvedStudioGeoLineStyle | undefined {
+  if (node.kind === 'site') return undefined;
+  const layer = mapLayerEntities(catalog).find(
+    (candidate) =>
+      candidate.entity.sourceType === 'RESOURCE_TYPE' &&
+      candidate.entity.sourceId === node.resourceType &&
+      candidate.visualConfig?.geometryKind === 'LINE',
+  );
+  if (!layer?.visualConfig) return undefined;
+  const config = normalizeStudioGeoVisualConfig(layer.visualConfig, layer.entity, layer.label);
+  const resolved = resolveStudioGeoVisualStyle(
+    config,
+    layer.entity.category,
+    node.status,
+    scaleMeters,
+  );
+  return resolved.geometryKind === 'LINE' ? resolved : undefined;
+}
+
+// Tracejado numa google.maps.Polyline é feito de símbolos repetidos sobre um traço de opacidade
+// zero — o "tracinho" é o próprio símbolo. Mesma técnica da simulação de drop mais abaixo, aqui
+// parametrizada pelo estilo publicado no Studio. `offsetPercent` só varia no modo animado.
+function polylineStyleOptions(
+  maps: GoogleMapsApi['maps'],
+  style: ResolvedStudioGeoLineStyle,
+  offsetPercent = 0,
+): Record<string, unknown> {
+  if (style.strokeStyle === 'solid') {
+    return {
+      strokeColor: style.strokeColor,
+      strokeOpacity: style.opacity,
+      strokeWeight: style.strokeWidth,
+      icons: [],
+    };
+  }
+  const dashed = style.strokeStyle === 'dashed';
+  return {
+    strokeColor: style.strokeColor,
+    strokeOpacity: 0,
+    strokeWeight: style.strokeWidth,
+    icons: [
+      {
+        icon: dashed
+          ? {
+              path: 'M 0,-1 0,1',
+              strokeColor: style.strokeColor,
+              strokeOpacity: style.opacity,
+              strokeWeight: style.strokeWidth,
+              scale: 3,
+            }
+          : {
+              path: maps.SymbolPath.CIRCLE,
+              fillColor: style.strokeColor,
+              fillOpacity: style.opacity,
+              strokeOpacity: 0,
+              scale: Math.max(1, style.strokeWidth / 2),
+            },
+        offset: `${offsetPercent}%`,
+        repeat: dashed ? '16px' : '12px',
+      },
+    ],
   };
 }
 
@@ -692,8 +798,24 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       ),
     [mapLayerCatalog.catalog],
   );
-  const coverageVisualConfig =
-    coverageLayer?.visualConfig?.geometryKind === 'POLYGON' ? coverageLayer.visualConfig : undefined;
+  // O agregado GPON não expõe status por área em runtime — a cor resolvida cai sempre no
+  // `defaultColor` da regra publicada, sem inventar um estado que a fonte não fornece.
+  const coverageStyle = useMemo(() => {
+    if (!coverageLayer?.visualConfig) return undefined;
+    const config = normalizeStudioGeoVisualConfig(
+      coverageLayer.visualConfig,
+      coverageLayer.entity,
+      coverageLayer.label,
+    );
+    if (config.geometryKind !== 'POLYGON') return undefined;
+    const resolved = resolveStudioGeoVisualStyle(
+      config,
+      coverageLayer.entity.category,
+      null,
+      scaleMeters,
+    );
+    return resolved.geometryKind === 'POLYGON' ? resolved : undefined;
+  }, [coverageLayer, scaleMeters]);
   const coverageVisible = gponAggregateVisible;
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
   const [coverageHover, setCoverageHover] = useState<{
@@ -1868,7 +1990,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               }
               onViewportChange={handleViewportChange}
               coverage={coverageVisible ? coverage : null}
-              coverageVisualConfig={coverageVisualConfig}
+              coverageStyle={coverageStyle}
               siteMarkerSize={siteMarkerSize}
               stationMarkerSize={stationMarkerSize}
               resourceMarkerSize={resourceMarkerSize}
@@ -1995,7 +2117,7 @@ export function GoogleMapPanel({
   selectionActive,
   onViewportChange,
   coverage,
-  coverageVisualConfig,
+  coverageStyle,
   siteMarkerSize,
   stationMarkerSize = siteMarkerSize,
   resourceMarkerSize,
@@ -2085,7 +2207,8 @@ export function GoogleMapPanel({
   // Cobertura GPON da viewport (mapa de calor por bairro), ou null quando fora de escala. O
   // painel só a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
   coverage: CoverageResponse | null;
-  coverageVisualConfig?: import('../services/studioGeoApi').StudioGeoPolygonVisualConfig;
+  // Estilo da mancha já resolvido pelo catálogo publicado do Studio GEO para a escala atual.
+  coverageStyle?: ResolvedStudioGeoPolygonStyle;
   // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts).
   siteMarkerSize: number;
   // Tamanho da Central Office publicado pelo Studio para a faixa de escala atual.
@@ -2637,8 +2760,8 @@ export function GoogleMapPanel({
 
   // Repassa os dados de cobertura para a camada de canvas quando mudam (ou saem de escala).
   useEffect(() => {
-    coverageOverlayRef.current?.setData(coverage, coverageVisualConfig);
-  }, [coverage, coverageVisualConfig, mapsReady]);
+    coverageOverlayRef.current?.setData(coverage, coverageStyle);
+  }, [coverage, coverageStyle, mapsReady]);
 
   // Descarta a camada de cobertura no desmonte, junto do mapa.
   useEffect(
@@ -2756,16 +2879,15 @@ export function GoogleMapPanel({
       const [lng, lat] = node.geometry.coordinates;
       const selected = node.id === selectedNodeIdAtRun;
       const existing = markersRef.current.get(node.id);
-      const pointConfig = pointVisualConfigForNode(node, mapLayerCatalog);
+      const pointStyle = pointStyleForNode(node, mapLayerCatalog, mapVisualScaleMeters);
       const visual = buildPointMarkerVisual(
         maps,
         node,
         selected,
         stationMarkerSize,
         resourceMarkerSize,
-        mapVisualScaleMeters,
-        pointConfig,
-        pointConfig?.assetId ? assetDataUrls.get(pointConfig.assetId) : undefined,
+        pointStyle,
+        pointStyle?.assetId ? assetDataUrls.get(pointStyle.assetId) : undefined,
       );
 
       if (existing) {
@@ -2830,16 +2952,15 @@ export function GoogleMapPanel({
       const marker = markersRef.current.get(id);
       const node = nodeByIdRef.current.get(id);
       if (!marker || !node || node.geometry?.type !== 'Point') continue;
-      const pointConfig = pointVisualConfigForNode(node, mapLayerCatalog);
+      const pointStyle = pointStyleForNode(node, mapLayerCatalog, mapVisualScaleMeters);
       const visual = buildPointMarkerVisual(
         maps,
         node,
         id === selectedNodeId,
         stationMarkerSize,
         resourceMarkerSize,
-        mapVisualScaleMeters,
-        pointConfig,
-        pointConfig?.assetId ? assetDataUrls.get(pointConfig.assetId) : undefined,
+        pointStyle,
+        pointStyle?.assetId ? assetDataUrls.get(pointStyle.assetId) : undefined,
       );
       marker.setIcon(visual.iconOptions);
       marker.setZIndex(visual.zIndex);
@@ -2890,16 +3011,15 @@ export function GoogleMapPanel({
       return;
     }
     const [lng, lat] = pinnedNode.geometry.coordinates;
-    const pinnedPointConfig = pointVisualConfigForNode(pinnedNode, mapLayerCatalog);
+    const pinnedPointStyle = pointStyleForNode(pinnedNode, mapLayerCatalog, mapVisualScaleMeters);
     const visual = buildPointMarkerVisual(
       maps,
       pinnedNode,
       true,
       stationMarkerSize,
       resourceMarkerSize,
-      mapVisualScaleMeters,
-      pinnedPointConfig,
-      pinnedPointConfig?.assetId ? assetDataUrls.get(pinnedPointConfig.assetId) : undefined,
+      pinnedPointStyle,
+      pinnedPointStyle?.assetId ? assetDataUrls.get(pinnedPointStyle.assetId) : undefined,
     );
     nodeByIdRef.current.set(pinnedNode.id, pinnedNode);
     if (!pinnedMarkerRef.current) {
@@ -3115,32 +3235,41 @@ export function GoogleMapPanel({
     if (!mapsReady || !mapRef.current || !maps) return;
 
     const visibleIds = new Set<string>();
+    // Um único relógio para todas as rotas com `animated-dotted` — um setInterval por cabo
+    // multiplicaria timers por centenas de linhas na mesma viewport.
+    const animated: Array<{ line: GooglePolylineInstance; style: ResolvedStudioGeoLineStyle }> = [];
 
     for (const node of nodes) {
       const route = treeNodeRoute(node);
       if (!route) continue;
+      const style = lineStyleForNode(node, mapLayerCatalog, mapVisualScaleMeters);
+      if (style && !style.visible) continue;
       visibleIds.add(node.id);
       nodeByIdRef.current.set(node.id, node);
       const icon = resourceIconFor({ resourceType: node.resourceType ?? '', status: node.status });
       const path = route.map(([lng, lat]) => ({ lng, lat }));
+      const options = style
+        ? polylineStyleOptions(maps, style)
+        : {
+            strokeColor: icon.color,
+            strokeOpacity: 0.9,
+            strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
+            icons: [],
+          };
       const existing = cableRoutesRef.current.get(node.id);
 
       if (existing) {
         existing.setPath(path);
-        existing.setOptions({
-          strokeColor: icon.color,
-          strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
-        });
+        existing.setOptions(options);
+        if (style?.strokeStyle === 'animated-dotted') animated.push({ line: existing, style });
         continue;
       }
 
       const line = new maps.Polyline({
         map: mapRef.current,
         path,
-        strokeColor: icon.color,
-        strokeOpacity: 0.9,
-        strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
         zIndex: CABLE_ROUTE_Z,
+        ...options,
       });
       line.addListener('click', () =>
         onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
@@ -3150,6 +3279,7 @@ export function GoogleMapPanel({
       );
       line.addListener('mouseout', () => onHoverNodeRef.current(null));
       cableRoutesRef.current.set(node.id, line);
+      if (style?.strokeStyle === 'animated-dotted') animated.push({ line, style });
     }
 
     for (const [id, line] of cableRoutesRef.current) {
@@ -3158,7 +3288,19 @@ export function GoogleMapPanel({
         cableRoutesRef.current.delete(id);
       }
     }
-  }, [mapsReady, nodes]);
+
+    // Quem pediu menos movimento no sistema operacional fica com o pontilhado parado — a
+    // informação é a mesma (mesma regra da simulação de drop).
+    if (animated.length === 0 || prefersReducedMotion()) return;
+    let offset = 0;
+    const timer = window.setInterval(() => {
+      offset = (offset + 2) % 100;
+      for (const entry of animated) {
+        entry.line.setOptions(polylineStyleOptions(maps, entry.style, offset));
+      }
+    }, DROP_DASH_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [mapsReady, nodes, mapLayerCatalog, mapVisualScaleMeters]);
 
   // Simulação do drop: o traçado entre o endereço e a CDO escolhida na aba de
   // Viabilidade. Não é planta — é um estudo do que *seria* o cabo —, então tem desenho

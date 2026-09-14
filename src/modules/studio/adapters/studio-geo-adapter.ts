@@ -90,30 +90,45 @@ export type StudioGeoScalePointConfig = StudioGeoScaleVisibility & {
   sizePx: number;
 };
 
+export type StudioGeoScaleStrokeConfig = StudioGeoScaleVisibility & {
+  strokeWidth: number;
+};
+
+export type StudioGeoColorMode = 'fixed' | 'status';
+
+export type StudioGeoColorRule = {
+  mode: StudioGeoColorMode;
+  defaultColor: string;
+  statusColors: Record<string, string>;
+};
+
+export type StudioGeoStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'animated-dotted';
+
 export type StudioGeoPointVisualConfig = {
   geometryKind: 'POINT';
   assetId?: string;
   iconCode?: string;
+  color: StudioGeoColorRule;
+  opacity: number;
   scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScalePointConfig>;
 };
 
 export type StudioGeoLineVisualConfig = {
   geometryKind: 'LINE';
-  strokeColor: string;
-  strokeWidth: number;
-  strokeStyle: 'solid' | 'dashed' | 'dotted';
+  stroke: StudioGeoColorRule;
+  strokeStyle: StudioGeoStrokeStyle;
   opacity: number;
-  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleStrokeConfig>;
 };
 
 export type StudioGeoPolygonVisualConfig = {
   geometryKind: 'POLYGON';
-  strokeColor: string;
-  strokeWidth: number;
-  strokeStyle: 'solid' | 'dashed' | 'dotted';
-  fillColor: string;
+  stroke: StudioGeoColorRule;
+  strokeStyle: StudioGeoStrokeStyle;
+  strokeOpacity: number;
+  fill: StudioGeoColorRule;
   fillOpacity: number;
-  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleStrokeConfig>;
 };
 
 export type StudioGeoVisualConfig =
@@ -166,14 +181,158 @@ const entitySourceForLegacyMatcher = (matcher: StudioGeoLayerMatcher): StudioGeo
 const compareNodes = (left: StudioGeoNode, right: StudioGeoNode) =>
   left.sortOrder - right.sortOrder || left.id.localeCompare(right.id);
 
+const DEFAULT_STATUS_COLORS: Record<StudioGeoEntityCategory, Record<string, string>> = {
+  RESOURCE: {
+    active: '#047857',
+    inactive: '#64748b',
+    suspended: '#ef4444',
+    terminated: '#334155',
+  },
+  LOCAL: {
+    Planned: '#f59e0b',
+    InConstruction: '#2563eb',
+    Active: '#047857',
+    InDeactivation: '#ef4444',
+    Retired: '#64748b',
+  },
+  COVERAGE: {
+    Planned: '#f59e0b',
+    InConstruction: '#2563eb',
+    Active: '#047857',
+    InDeactivation: '#ef4444',
+    Retired: '#64748b',
+  },
+};
+
+const defaultColorRule = (
+  category: StudioGeoEntityCategory,
+  defaultColor: string,
+): StudioGeoColorRule => ({
+  mode: 'fixed',
+  defaultColor,
+  statusColors: { ...DEFAULT_STATUS_COLORS[category] },
+});
+
+const normalizeColorRule = (
+  value: unknown,
+  fallback: StudioGeoColorRule,
+): StudioGeoColorRule => {
+  if (!value || typeof value !== 'object') return fallback;
+  const candidate = value as Partial<StudioGeoColorRule>;
+  const statusColors =
+    candidate.statusColors && typeof candidate.statusColors === 'object'
+      ? Object.fromEntries(
+          Object.entries(candidate.statusColors).filter(
+            (entry): entry is [string, string] => typeof entry[1] === 'string',
+          ),
+        )
+      : {};
+  return {
+    mode: candidate.mode === 'status' ? 'status' : 'fixed',
+    defaultColor:
+      typeof candidate.defaultColor === 'string' ? candidate.defaultColor : fallback.defaultColor,
+    statusColors: { ...fallback.statusColors, ...statusColors },
+  };
+};
+
+const normalizeVisualConfig = (
+  visualConfig: unknown,
+  category: StudioGeoEntityCategory,
+): StudioGeoVisualConfig | undefined => {
+  if (!visualConfig || typeof visualConfig !== 'object') return undefined;
+  const candidate = visualConfig as Record<string, unknown> & {
+    geometryKind?: unknown;
+    scaleBands?: Record<string, Record<string, unknown>>;
+  };
+  const bands = candidate.scaleBands ?? {};
+  if (candidate.geometryKind === 'POINT') {
+    const fallbackColor = defaultColorRule(category, category === 'LOCAL' ? '#8b5cf6' : '#10b981');
+    return {
+      geometryKind: 'POINT',
+      ...(typeof candidate.assetId === 'string' ? { assetId: candidate.assetId } : {}),
+      ...(typeof candidate.iconCode === 'string' ? { iconCode: candidate.iconCode } : {}),
+      color: normalizeColorRule(candidate.color, fallbackColor),
+      opacity: typeof candidate.opacity === 'number' ? candidate.opacity : 1,
+      scaleBands: Object.fromEntries(
+        SCALE_BAND_KEYS.map((key) => [
+          key,
+          {
+            visible: bands[key]?.visible,
+            sizePx: bands[key]?.sizePx,
+          },
+        ]),
+      ) as StudioGeoPointVisualConfig['scaleBands'],
+    };
+  }
+  if (candidate.geometryKind === 'LINE') {
+    const legacyColor =
+      typeof candidate.strokeColor === 'string' ? candidate.strokeColor : '#334155';
+    const legacyWidth = typeof candidate.strokeWidth === 'number' ? candidate.strokeWidth : 2.5;
+    return {
+      geometryKind: 'LINE',
+      stroke: normalizeColorRule(candidate.stroke, defaultColorRule(category, legacyColor)),
+      strokeStyle: candidate.strokeStyle as StudioGeoStrokeStyle,
+      opacity: typeof candidate.opacity === 'number' ? candidate.opacity : 0.9,
+      scaleBands: Object.fromEntries(
+        SCALE_BAND_KEYS.map((key) => [
+          key,
+          {
+            visible: bands[key]?.visible,
+            strokeWidth:
+              typeof bands[key]?.strokeWidth === 'number'
+                ? bands[key].strokeWidth
+                : legacyWidth,
+          },
+        ]),
+      ) as StudioGeoLineVisualConfig['scaleBands'],
+    };
+  }
+  if (candidate.geometryKind === 'POLYGON') {
+    const legacyStroke =
+      typeof candidate.strokeColor === 'string' ? candidate.strokeColor : '#2563eb';
+    const legacyFill = typeof candidate.fillColor === 'string' ? candidate.fillColor : '#3b82f6';
+    const legacyWidth = typeof candidate.strokeWidth === 'number' ? candidate.strokeWidth : 1.5;
+    return {
+      geometryKind: 'POLYGON',
+      stroke: normalizeColorRule(candidate.stroke, defaultColorRule(category, legacyStroke)),
+      strokeStyle: candidate.strokeStyle as StudioGeoStrokeStyle,
+      strokeOpacity: typeof candidate.strokeOpacity === 'number' ? candidate.strokeOpacity : 1,
+      fill: normalizeColorRule(candidate.fill, defaultColorRule(category, legacyFill)),
+      fillOpacity: typeof candidate.fillOpacity === 'number' ? candidate.fillOpacity : 0.25,
+      scaleBands: Object.fromEntries(
+        SCALE_BAND_KEYS.map((key) => [
+          key,
+          {
+            visible: bands[key]?.visible,
+            strokeWidth:
+              typeof bands[key]?.strokeWidth === 'number'
+                ? bands[key].strokeWidth
+                : legacyWidth,
+          },
+        ]),
+      ) as StudioGeoPolygonVisualConfig['scaleBands'],
+    };
+  }
+  return undefined;
+};
+
+const normalizeV2Node = (node: StudioGeoNode): StudioGeoNode => {
+  if (node.kind !== 'ENTITY' || node.visualConfig === undefined) return node;
+  const visualConfig = normalizeVisualConfig(node.visualConfig, node.entity.category);
+  return visualConfig ? { ...node, visualConfig } : node;
+};
+
 /**
- * Normalizes historical v1 snapshots at the control-plane boundary. It is deliberately
- * deterministic so a v1 publication remains readable until an editor saves it as v2.
+ * Normalizes historical snapshots and additive visual contracts at the control-plane boundary.
+ * It is deliberately deterministic so publications remain readable until the editor saves them.
  */
 export const normalizeStudioGeoSnapshot = (snapshot: Record<string, unknown>): StudioGeoSnapshot => {
   const candidate = snapshot as Partial<StudioGeoSnapshot & StudioGeoSnapshotV1>;
   if (candidate.schemaVersion === 2 && Array.isArray(candidate.nodes)) {
-    return { schemaVersion: 2, nodes: [...candidate.nodes] as StudioGeoNode[] };
+    return {
+      schemaVersion: 2,
+      nodes: (candidate.nodes as StudioGeoNode[]).map(normalizeV2Node),
+    };
   }
   const groups = Array.isArray(candidate.groups) ? candidate.groups : [];
   const layers = Array.isArray(candidate.layers) ? candidate.layers : [];
@@ -286,59 +445,93 @@ export const CANONICAL_STUDIO_GEO_SNAPSHOT: StudioGeoSnapshot = {
 const SCALE_BAND_KEYS: StudioGeoScaleBandKey[] = [
   'le5m', 'le10m', 'le20m', 'le50m', 'le100m', 'le500m', 'le1km', 'gt1km',
 ];
-const STROKE_STYLES = new Set(['solid', 'dashed', 'dotted']);
+const STROKE_STYLES = new Set(['solid', 'dashed', 'dotted', 'animated-dotted']);
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
-const visualConfigIssues = (visualConfig: unknown, path: string): StudioValidationIssue[] => {
+const colorRuleIssues = (
+  value: unknown,
+  category: StudioGeoEntityCategory,
+  path: string,
+): StudioValidationIssue[] => {
+  if (!value || typeof value !== 'object') {
+    return [{ severity: 'error', code: 'STUDIO_GEO_COLOR_RULE_INVALID', message: 'A regra de cor é inválida.', path }];
+  }
+  const rule = value as Partial<StudioGeoColorRule>;
+  const issues: StudioValidationIssue[] = [];
+  if (rule.mode !== 'fixed' && rule.mode !== 'status') {
+    issues.push({ severity: 'error', code: 'STUDIO_GEO_COLOR_MODE_INVALID', message: 'O modo de cor deve ser fixo ou por status.', path: `${path}.mode` });
+  }
+  if (!nonEmpty(rule.defaultColor) || !COLOR_PATTERN.test(rule.defaultColor)) {
+    issues.push({ severity: 'error', code: 'STUDIO_GEO_COLOR_INVALID', message: 'A cor padrão deve usar o formato hexadecimal #RRGGBB.', path: `${path}.defaultColor` });
+  }
+  if (!rule.statusColors || typeof rule.statusColors !== 'object') {
+    issues.push({ severity: 'error', code: 'STUDIO_GEO_STATUS_COLORS_INVALID', message: 'As cores por status são inválidas.', path: `${path}.statusColors` });
+  } else {
+    const allowed = new Set(Object.keys(DEFAULT_STATUS_COLORS[category]));
+    for (const [status, color] of Object.entries(rule.statusColors)) {
+      if (!allowed.has(status) || typeof color !== 'string' || !COLOR_PATTERN.test(color)) {
+        issues.push({ severity: 'error', code: 'STUDIO_GEO_STATUS_COLOR_INVALID', message: `A cor do status ${status} é inválida para esta entidade.`, path: `${path}.statusColors.${status}` });
+      }
+    }
+  }
+  return issues;
+};
+
+const validOpacity = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+
+const visualConfigIssues = (
+  visualConfig: unknown,
+  category: StudioGeoEntityCategory,
+  path: string,
+): StudioValidationIssue[] => {
   if (visualConfig === undefined) return [];
   if (!visualConfig || typeof visualConfig !== 'object') {
     return [{ severity: 'error', code: 'STUDIO_GEO_VISUAL_CONFIG_INVALID', message: 'A configuração visual é inválida.', path }];
   }
   const config = visualConfig as Partial<StudioGeoVisualConfig> & Record<string, unknown>;
+  const issues: StudioValidationIssue[] = [];
   if (config.geometryKind === 'POINT') {
-    const bands = config.scaleBands;
+    const point = config as Partial<StudioGeoPointVisualConfig>;
+    issues.push(...colorRuleIssues(point.color, category, `${path}.color`));
+    if (!validOpacity(point.opacity)) issues.push({ severity: 'error', code: 'STUDIO_GEO_POINT_OPACITY_INVALID', message: 'A opacidade do ponto deve ficar entre 0 e 1.', path: `${path}.opacity` });
+    const bands = point.scaleBands;
     if (!bands || typeof bands !== 'object') {
-      return [{ severity: 'error', code: 'STUDIO_GEO_POINT_SCALE_BANDS_INVALID', message: 'Um ponto deve configurar todas as faixas de escala.', path: `${path}.scaleBands` }];
-    }
-    const issues: StudioValidationIssue[] = [];
-    for (const key of SCALE_BAND_KEYS) {
-      const band = (bands as Record<string, unknown>)[key];
-      if (!band || typeof band !== 'object' || typeof (band as { visible?: unknown }).visible !== 'boolean' || !Number.isFinite((band as { sizePx?: unknown }).sizePx) || (band as { sizePx: number }).sizePx < 8 || (band as { sizePx: number }).sizePx > 64) {
-        issues.push({ severity: 'error', code: 'STUDIO_GEO_POINT_SCALE_BAND_INVALID', message: `A faixa ${key} deve ter visibilidade e tamanho entre 8 e 64 px.`, path: `${path}.scaleBands.${key}` });
+      issues.push({ severity: 'error', code: 'STUDIO_GEO_POINT_SCALE_BANDS_INVALID', message: 'Um ponto deve configurar todas as faixas de escala.', path: `${path}.scaleBands` });
+    } else {
+      for (const key of SCALE_BAND_KEYS) {
+        const band = (bands as Record<string, unknown>)[key];
+        if (!band || typeof band !== 'object' || typeof (band as { visible?: unknown }).visible !== 'boolean' || !Number.isFinite((band as { sizePx?: unknown }).sizePx) || (band as { sizePx: number }).sizePx < 8 || (band as { sizePx: number }).sizePx > 64) {
+          issues.push({ severity: 'error', code: 'STUDIO_GEO_POINT_SCALE_BAND_INVALID', message: `A faixa ${key} deve ter visibilidade e tamanho entre 8 e 64 px.`, path: `${path}.scaleBands.${key}` });
+        }
       }
     }
-    if (config.assetId !== undefined && !nonEmpty(config.assetId)) issues.push({ severity: 'error', code: 'STUDIO_GEO_VISUAL_ASSET_ID_INVALID', message: 'A referência de asset visual é inválida.', path: `${path}.assetId` });
-    if (config.iconCode !== undefined && !nonEmpty(config.iconCode)) issues.push({ severity: 'error', code: 'STUDIO_GEO_ICON_CODE_INVALID', message: 'O código do ícone é inválido.', path: `${path}.iconCode` });
+    if (point.assetId !== undefined && !nonEmpty(point.assetId)) issues.push({ severity: 'error', code: 'STUDIO_GEO_VISUAL_ASSET_ID_INVALID', message: 'A referência de asset visual é inválida.', path: `${path}.assetId` });
+    if (point.iconCode !== undefined && !nonEmpty(point.iconCode)) issues.push({ severity: 'error', code: 'STUDIO_GEO_ICON_CODE_INVALID', message: 'O código do ícone é inválido.', path: `${path}.iconCode` });
     return issues;
   }
   if (config.geometryKind === 'LINE' || config.geometryKind === 'POLYGON') {
-    const issues: StudioValidationIssue[] = [];
-    const strokeWidth = config.strokeWidth;
-    const strokeInvalid =
-      !nonEmpty(config.strokeColor) ||
-      !COLOR_PATTERN.test(config.strokeColor) ||
-      !Number.isFinite(strokeWidth) ||
-      typeof strokeWidth !== 'number' ||
-      strokeWidth <= 0 ||
-      strokeWidth > 10 ||
-      !STROKE_STYLES.has(String(config.strokeStyle));
-    const opacityInvalid =
-      config.geometryKind === 'LINE' &&
-      (typeof config.opacity !== 'number' || config.opacity < 0 || config.opacity > 1);
-    if (strokeInvalid || opacityInvalid) {
-      issues.push({ severity: 'error', code: 'STUDIO_GEO_STROKE_CONFIG_INVALID', message: 'A configuração de traço visual é inválida.', path });
+    const linear = config as Partial<StudioGeoLineVisualConfig | StudioGeoPolygonVisualConfig>;
+    issues.push(...colorRuleIssues(linear.stroke, category, `${path}.stroke`));
+    if (!STROKE_STYLES.has(String(linear.strokeStyle))) issues.push({ severity: 'error', code: 'STUDIO_GEO_STROKE_STYLE_INVALID', message: 'O estilo do traço é inválido.', path: `${path}.strokeStyle` });
+    if (config.geometryKind === 'LINE') {
+      const line = config as Partial<StudioGeoLineVisualConfig>;
+      if (!validOpacity(line.opacity)) issues.push({ severity: 'error', code: 'STUDIO_GEO_STROKE_OPACITY_INVALID', message: 'A opacidade da linha deve ficar entre 0 e 1.', path: `${path}.opacity` });
+    } else {
+      const polygon = config as Partial<StudioGeoPolygonVisualConfig>;
+      issues.push(...colorRuleIssues(polygon.fill, category, `${path}.fill`));
+      if (!validOpacity(polygon.strokeOpacity)) issues.push({ severity: 'error', code: 'STUDIO_GEO_STROKE_OPACITY_INVALID', message: 'A opacidade da borda deve ficar entre 0 e 1.', path: `${path}.strokeOpacity` });
+      if (!validOpacity(polygon.fillOpacity)) issues.push({ severity: 'error', code: 'STUDIO_GEO_FILL_OPACITY_INVALID', message: 'A opacidade do preenchimento deve ficar entre 0 e 1.', path: `${path}.fillOpacity` });
     }
-    if (config.geometryKind === 'POLYGON' && (!nonEmpty(config.fillColor) || !COLOR_PATTERN.test(config.fillColor) || typeof config.fillOpacity !== 'number' || config.fillOpacity < 0 || config.fillOpacity > 1)) {
-      issues.push({ severity: 'error', code: 'STUDIO_GEO_FILL_CONFIG_INVALID', message: 'A configuração de preenchimento visual é inválida.', path });
-    }
-    const bands = config.scaleBands;
+    const bands = linear.scaleBands;
     if (!bands || typeof bands !== 'object') {
       issues.push({ severity: 'error', code: 'STUDIO_GEO_LINE_SCALE_BANDS_INVALID', message: 'Uma linha ou polígono deve configurar todas as faixas de escala.', path: `${path}.scaleBands` });
     } else {
       for (const key of SCALE_BAND_KEYS) {
         const band = (bands as Record<string, unknown>)[key];
-        if (!band || typeof band !== 'object' || typeof (band as { visible?: unknown }).visible !== 'boolean') {
-          issues.push({ severity: 'error', code: 'STUDIO_GEO_LINE_SCALE_BAND_INVALID', message: `A faixa ${key} deve declarar visibilidade.`, path: `${path}.scaleBands.${key}` });
+        const width = band && typeof band === 'object' ? (band as { strokeWidth?: unknown }).strokeWidth : undefined;
+        if (!band || typeof band !== 'object' || typeof (band as { visible?: unknown }).visible !== 'boolean' || typeof width !== 'number' || !Number.isFinite(width) || width <= 0 || width > 10) {
+          issues.push({ severity: 'error', code: 'STUDIO_GEO_LINE_SCALE_BAND_INVALID', message: `A faixa ${key} deve declarar visibilidade e espessura entre 0 e 10 px.`, path: `${path}.scaleBands.${key}` });
         }
       }
     }
@@ -377,7 +570,13 @@ export class StudioGeoAdapter implements StudioDomainAdapter {
       if (node?.kind !== 'GROUP' && node?.kind !== 'ENTITY') issues.push({ severity: 'error', code: 'STUDIO_GEO_NODE_KIND_INVALID', message: 'O tipo do nó deve ser grupo ou entidade.', path: `${path}.kind` });
       if (node?.kind === 'ENTITY') {
         if (typeof node.defaultVisible !== 'boolean') issues.push({ severity: 'error', code: 'STUDIO_GEO_ENTITY_VISIBILITY_INVALID', message: 'A visibilidade padrão é obrigatória.', path: `${path}.defaultVisible` });
-        issues.push(...visualConfigIssues(node.visualConfig, `${path}.visualConfig`));
+        issues.push(
+          ...visualConfigIssues(
+            node.visualConfig,
+            node.entity?.category ?? 'RESOURCE',
+            `${path}.visualConfig`,
+          ),
+        );
         const reference = node.entity;
         if (!reference || !['LOCAL', 'COVERAGE', 'RESOURCE'].includes(reference.category) || !['location-model', 'spatial', 'resource-model'].includes(reference.sourceDomain) || !['GEOGRAPHIC_SITE_SPECIFICATION', 'SPATIAL_COVERAGE', 'GPON_AGGREGATE', 'RESOURCE_TYPE'].includes(reference.sourceType) || !nonEmpty(reference.sourceId)) {
           issues.push({ severity: 'error', code: 'STUDIO_GEO_ENTITY_REFERENCE_INVALID', message: 'A entidade deve referenciar uma fonte canônica elegível.', path: `${path}.entity` });
@@ -434,18 +633,31 @@ export class StudioGeoAdapter implements StudioDomainAdapter {
         const resourceType = resourceTypes.find(
           (type) => type.id === node.entity.sourceId || type.code === node.entity.sourceId,
         );
-        if (
-          !resourceType ||
-          resourceType.status !== 'active' ||
-          resourceType.nature !== 'PhysicalResource' ||
-          resourceType.mapPresence !== true ||
-          !resourceType.geometryKind ||
-          node.visualConfig?.geometryKind !== resourceType.geometryKind
-        ) {
-          throw new AppError('studio GEO resource must reference an active physical resource type with matching map geometry', {
-            code: 'STUDIO_GEO_RESOURCE_GEOMETRY_INVALID',
-            statusCode: 422,
-          });
+        // A causa precisa importa: o nó pode apontar para um tipo inexistente, inativo, lógico,
+        // sem presença no mapa, sem geometria canônica, ou com geometria divergente da publicada.
+        // Uma mensagem única para os seis casos obriga quem publica a inspecionar o catálogo à mão
+        // para descobrir qual nó travou a operação.
+        const reason = !resourceType
+          ? 'o tipo de recurso não existe no catálogo vigente'
+          : resourceType.status !== 'active'
+            ? `o tipo de recurso está com status "${resourceType.status}"`
+            : resourceType.nature !== 'PhysicalResource'
+              ? `o tipo de recurso tem natureza "${resourceType.nature}", não física`
+              : resourceType.mapPresence !== true
+                ? 'o tipo de recurso não está marcado como visível no mapa'
+                : !resourceType.geometryKind
+                  ? 'o tipo de recurso não tem geometria de mapa definida'
+                  : node.visualConfig?.geometryKind !== resourceType.geometryKind
+                    ? `a geometria configurada (${node.visualConfig?.geometryKind}) não corresponde à do tipo de recurso (${resourceType.geometryKind})`
+                    : null;
+        if (reason) {
+          throw new AppError(
+            `studio GEO: o nó "${node.label}" referencia "${node.entity.sourceId}" e não pode ser publicado — ${reason}.`,
+            {
+              code: 'STUDIO_GEO_RESOURCE_GEOMETRY_INVALID',
+              statusCode: 422,
+            },
+          );
         }
       }
       const visualAssetId =

@@ -24,10 +24,12 @@ import type {
 } from '../../services/geoCoverageApi';
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { coverageFill } from '../../utils/coverageColor';
-import type { StudioGeoPolygonVisualConfig } from '../../services/studioGeoApi';
-
-const lineDashFor = (style: StudioGeoPolygonVisualConfig['strokeStyle']): number[] =>
-  style === 'dashed' ? [6, 4] : style === 'dotted' ? [2, 3] : [];
+import type { ResolvedStudioGeoPolygonStyle } from '../../utils/studioGeoVisual';
+import {
+  animatedDashOffset,
+  prefersReducedMotion,
+  strokeDashPattern,
+} from '../../utils/studioGeoStroke';
 
 const EARTH_RADIUS_M = 6378137;
 const MAX_LAT = 85.05112878;
@@ -105,7 +107,10 @@ export function traceSmoothRing(sink: PathSink, points: Array<[number, number]>)
 }
 
 export type CoverageOverlayHandle = {
-  setData: (data: CoverageResponse | null, visualConfig?: StudioGeoPolygonVisualConfig) => void;
+  // `style` já vem resolvido pelo catálogo publicado (cor por status quando houver, opacidades,
+  // estilo e espessura da faixa de escala atual). Ausente apenas quando não há configuração
+  // publicada — aí vale o mapa de calor histórico por `availabilityRatio`.
+  setData: (data: CoverageResponse | null, style?: ResolvedStudioGeoPolygonStyle) => void;
   // Bairro sob a coordenada (para o balão de hover), ou null fora da mancha.
   hitTest: (lng: number, lat: number) => CoverageNeighborhood | null;
   destroy: () => void;
@@ -115,7 +120,32 @@ type Maps = GoogleMapsApi['maps'];
 
 export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): CoverageOverlayHandle {
   let data: CoverageResponse | null = null;
-  let visualConfig: StudioGeoPolygonVisualConfig | undefined;
+  let style: ResolvedStudioGeoPolygonStyle | undefined;
+
+  // Um único relógio para o tracejado animado da borda, ligado só enquanto houver mancha
+  // visível com `animated-dotted` — ver o mesmo padrão em InfraOverlay.
+  let animationStart = 0;
+  let animationFrame: number | null = null;
+
+  function syncAnimation(): void {
+    const wanted =
+      !!data &&
+      !!style &&
+      style.visible &&
+      style.strokeStyle === 'animated-dotted' &&
+      !prefersReducedMotion();
+    if (wanted && animationFrame === null) {
+      animationStart = performance.now();
+      const tick = () => {
+        animationFrame = requestAnimationFrame(tick);
+        overlay.draw();
+      };
+      animationFrame = requestAnimationFrame(tick);
+    } else if (!wanted && animationFrame !== null) {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+  }
 
   class CoverageOverlay extends maps.OverlayView {
     private canvas: HTMLCanvasElement | null = null;
@@ -163,7 +193,9 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
       canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
-      if (!data) return;
+      // Faixa de escala configurada como oculta esconde a mancha inteira, como em qualquer
+      // outra entidade visual.
+      if (!data || (style && !style.visible)) return;
 
       const toLocal = (lng: number, lat: number): [number, number] | null => {
         const pixel = projection.fromLatLngToDivPixel(new maps.LatLng(lat, lng));
@@ -204,8 +236,8 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
 
         const neighborhood = coverage.neighborhoods[area.neighborhoodIndex];
         const ratio = neighborhood?.availabilityRatio ?? 0;
-        context.fillStyle = visualConfig?.fillColor ?? coverageFill(ratio, 0, { solid: true });
-        context.globalAlpha = visualConfig?.fillOpacity ?? 1;
+        context.fillStyle = style?.fillColor ?? coverageFill(ratio, 0, { solid: true });
+        context.globalAlpha = style?.fillOpacity ?? 1;
 
         if (area.bounds) {
           const a = toLocal(area.bounds[0], area.bounds[1]);
@@ -238,13 +270,22 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
         }
         // evenodd desenha os buracos (anéis internos horários) como vazios.
         context.fill('evenodd');
-        if (visualConfig) {
-          context.globalAlpha = 1;
-          context.strokeStyle = visualConfig.strokeColor;
-          context.lineWidth = visualConfig.strokeWidth;
-          context.setLineDash(lineDashFor(visualConfig.strokeStyle));
+        if (style && style.strokeWidth > 0) {
+          context.globalAlpha = style.strokeOpacity;
+          context.strokeStyle = style.strokeColor;
+          context.lineWidth = style.strokeWidth;
+          context.setLineDash(strokeDashPattern(style.strokeStyle, style.strokeWidth));
+          context.lineDashOffset =
+            style.strokeStyle === 'animated-dotted' && !prefersReducedMotion()
+              ? -animatedDashOffset(
+                  performance.now() - animationStart,
+                  'animated-dotted',
+                  style.strokeWidth,
+                )
+              : 0;
           context.stroke();
           context.setLineDash([]);
+          context.lineDashOffset = 0;
         }
         context.globalAlpha = 1;
       }
@@ -255,16 +296,22 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
   overlay.setMap(map);
 
   return {
-    setData: (next, nextVisualConfig) => {
+    setData: (next, nextStyle) => {
       data = next;
-      visualConfig = nextVisualConfig;
+      style = nextStyle;
+      syncAnimation();
       overlay.draw();
     },
     hitTest: (lng, lat) => {
       if (!data) return null;
       return hitTestAreas(data, lng, lat);
     },
-    destroy: () => overlay.setMap(null),
+    destroy: () => {
+      data = null;
+      style = undefined;
+      syncAnimation();
+      overlay.setMap(null);
+    },
   };
 }
 

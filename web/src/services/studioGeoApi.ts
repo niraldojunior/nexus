@@ -45,30 +45,45 @@ export type StudioGeoScalePointConfig = StudioGeoScaleVisibility & {
   sizePx: number;
 };
 
+export type StudioGeoScaleStrokeConfig = StudioGeoScaleVisibility & {
+  strokeWidth: number;
+};
+
+export type StudioGeoColorMode = 'fixed' | 'status';
+
+export type StudioGeoColorRule = {
+  mode: StudioGeoColorMode;
+  defaultColor: string;
+  statusColors: Record<string, string>;
+};
+
+export type StudioGeoStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'animated-dotted';
+
 export type StudioGeoPointVisualConfig = {
   geometryKind: 'POINT';
   assetId?: string;
   iconCode?: string;
+  color: StudioGeoColorRule;
+  opacity: number;
   scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScalePointConfig>;
 };
 
 export type StudioGeoLineVisualConfig = {
   geometryKind: 'LINE';
-  strokeColor: string;
-  strokeWidth: number;
-  strokeStyle: 'solid' | 'dashed' | 'dotted';
+  stroke: StudioGeoColorRule;
+  strokeStyle: StudioGeoStrokeStyle;
   opacity: number;
-  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleStrokeConfig>;
 };
 
 export type StudioGeoPolygonVisualConfig = {
   geometryKind: 'POLYGON';
-  strokeColor: string;
-  strokeWidth: number;
-  strokeStyle: 'solid' | 'dashed' | 'dotted';
-  fillColor: string;
+  stroke: StudioGeoColorRule;
+  strokeStyle: StudioGeoStrokeStyle;
+  strokeOpacity: number;
+  fill: StudioGeoColorRule;
   fillOpacity: number;
-  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleVisibility>;
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleStrokeConfig>;
 };
 
 export type StudioGeoVisualConfig =

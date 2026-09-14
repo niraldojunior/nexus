@@ -10,15 +10,15 @@ import {
   GripVertical,
   Layers,
   Palette,
-  Pencil,
   MapPin,
   Route,
+  Ruler,
   Scan,
   Plus,
   Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '../../components/ui';
+import { Button, Modal } from '../../components/ui';
 import { getStudioStatus, saveStudioDraft } from '../../services/studioApi';
 import type {
   StudioGeoCatalog,
@@ -31,16 +31,15 @@ import { listGeoSiteSpecifications, type GeoSpec } from '../../services/geoApi';
 import { listModeledResourceTypes } from '../../services/resourceCatalogApi';
 import type { ResourceType } from '../../services/resourceApi';
 import { mapLayerTree, type MapLayerTreeNode } from '../../utils/mapLayers';
-import {
-  GeoNodeVisualConfigTab,
-  useStudioPointIconPreviewUrl,
-} from './geo/GeoNodeVisualConfigTab';
+import { useStudioPointIconPreviewUrl } from '../../hooks/useStudioPointIconPreviewUrl';
+import { GeoNodeIconColorTab } from './geo/GeoNodeIconColorTab';
+import { GeoNodeSizeTab } from './geo/GeoNodeSizeTab';
 import { GeoNodeIconPickerModal } from './geo/GeoNodeIconPickerModal';
 import {
-  defaultVisualConfigForEntity,
   defaultVisualConfigForGeometry,
   visualGeometryKindOf,
 } from '../../utils/studioGeoDefaults';
+import { normalizeStudioGeoVisualConfig, resolveStudioGeoColor } from '../../utils/studioGeoVisual';
 import {
   buildEligibleSites,
   buildEligibleResources,
@@ -81,13 +80,28 @@ const compactOrder = (nodes: StudioGeoNode[]): StudioGeoNode[] => {
   return nodes.map((node) => ({ ...node, sortOrder: order.get(node.id) ?? node.sortOrder }));
 };
 
-// Catálogos históricos podem omitir `visualConfig`. O editor já exibe o mesmo default via
-// `GeoNodeVisualConfigTab`; materializá-lo no snapshot garante que o catálogo publicado reflita
-// o que o Studio mostra e que o mapa aplique as faixas de escala a LOCAL, RESOURCE e COVERAGE.
+// Catálogos históricos podem omitir `visualConfig` inteiramente ou carregar um formato antigo
+// (POINT sem `color`/`opacity`, LINE/POLYGON com `strokeColor` solto). `normalizeStudioGeoVisualConfig`
+// já sabe migrar os dois casos para o contrato canônico atual — aplicar sempre, não só quando
+// ausente, evita que o editor (e o mapa) leiam um `visualConfig` parcialmente materializado.
 const materializeVisualConfigs = (nodes: StudioGeoNode[]): StudioGeoNode[] =>
   nodes.map((node) =>
-    node.kind === 'ENTITY' && !node.visualConfig
-      ? { ...node, visualConfig: defaultVisualConfigForEntity(node.entity, node.label) }
+    node.kind === 'ENTITY'
+      ? {
+          ...node,
+          // Quando o nó nunca teve `visualConfig` (catálogo antigo), `normalizeStudioGeoVisualConfig`
+          // não tem como saber a geometria certa sozinho — sem essa dica ele caía sempre em POINT,
+          // mesmo para um recurso do tipo Cabo/Duto. `visualGeometryKindOf` aplica a mesma heurística
+          // por nome que `defaultVisualConfigForEntity` já usava aqui antes da normalização ficar
+          // incondicional; a correção definitiva pela geometria real do ResourceType elegível
+          // continua acontecendo em `buildSnapshot`, ao salvar.
+          visualConfig: normalizeStudioGeoVisualConfig(
+            node.visualConfig,
+            node.entity,
+            node.label,
+            visualGeometryKindOf(node.visualConfig, node.entity, node.label),
+          ),
+        }
       : node,
   );
 
@@ -128,7 +142,16 @@ const isDescendant = (nodes: StudioGeoNode[], candidateId: string, ancestorId: s
 
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 
-type DetailTab = 'overview' | 'visual';
+type DetailTab = 'overview' | 'icon-color' | 'size';
+
+// Troca de categoria ou de Entidade Cadastrada é bloqueante quando já existe configuração
+// materializada: o `visualConfig` é recriado do zero na nova geometria, então ícone, cores,
+// transparência, estilo e tamanhos personalizados se perdem.
+type PendingEntityChange = {
+  nodeId: string;
+  entity: StudioGeoEntityNode['entity'];
+  visualConfig: StudioGeoVisualConfig | undefined;
+};
 
 type GeoTreePointIconProps = {
   node: StudioGeoEntityNode;
@@ -139,9 +162,18 @@ function GeoTreePointIcon({ node }: GeoTreePointIconProps) {
     node.visualConfig?.geometryKind === 'POINT'
       ? node.visualConfig
       : defaultVisualConfigForGeometry('POINT', node.entity, node.label);
-  const pointConfig =
-    visualConfig.geometryKind === 'POINT' ? visualConfig : undefined;
-  const previewUrl = useStudioPointIconPreviewUrl(node, pointConfig ?? null, 22);
+  const pointConfig = visualConfig.geometryKind === 'POINT' ? visualConfig : undefined;
+  const previewUrl = useStudioPointIconPreviewUrl(
+    node,
+    pointConfig ?? null,
+    22,
+    pointConfig
+      ? {
+          color: resolveStudioGeoColor(pointConfig.color, node.entity.category, null),
+          opacity: pointConfig.opacity,
+        }
+      : {},
+  );
 
   return previewUrl ? <img src={previewUrl} alt="" className="h-[22px] w-[22px] shrink-0" /> : null;
 }
@@ -164,6 +196,7 @@ export function StudioGeoExperience({
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [pendingEntityChange, setPendingEntityChange] = useState<PendingEntityChange | null>(null);
 
   // Drag and Drop States (espelhado de ResourceCatalogTree)
   const [draggedNode, setDraggedNode] = useState<StudioGeoNode | null>(null);
@@ -187,7 +220,8 @@ export function StudioGeoExperience({
         listModeledResourceTypes().catch(() => []),
       ]);
       const version = status.draftVersion ?? status.publishedVersion;
-      const next = normalize(version?.snapshot);
+      const loaded = normalize(version?.snapshot);
+      const next = { ...loaded, nodes: materializeVisualConfigs(loaded.nodes) };
       setSnapshot(next);
       setChecksum(status.draftVersion?.checksum);
       setSiteSpecs(specs);
@@ -404,20 +438,36 @@ export function StudioGeoExperience({
     setCreateMenuOpen(false);
   };
 
+  // Só a primeira definição da entidade de origem é direta. Depois disso, qualquer troca passa
+  // pelo diálogo bloqueante, porque o visual publicado é recriado nos defaults da nova entidade.
+  const requestEntityChange = (
+    node: StudioGeoEntityNode,
+    entity: StudioGeoEntityNode['entity'],
+    visualConfig: StudioGeoVisualConfig | undefined,
+  ) => {
+    const hadEntity = node.entity.sourceId !== '' && !!node.visualConfig;
+    const sameReference =
+      node.entity.sourceId === entity.sourceId && node.entity.category === entity.category;
+    if (sameReference) return;
+    if (!hadEntity) {
+      patchSelected({ entity, visualConfig } as Partial<StudioGeoNode>);
+      return;
+    }
+    setPendingEntityChange({ nodeId: node.id, entity, visualConfig });
+  };
+
   const handleEntityCategoryChange = (newCategory: StudioGeoEntityCategory) => {
     if (!selected || selected.kind !== 'ENTITY') return;
     const first = getEligibleListForCategory(newCategory)[0];
     if (first) {
-      patchSelected({
-        entity: referenceForEligibleOption(first),
-        visualConfig: visualConfigForEligibleOption(selected.visualConfig, first, selected.label),
-      } as Partial<StudioGeoNode>);
+      requestEntityChange(
+        selected,
+        referenceForEligibleOption(first),
+        defaultVisualConfigForGeometry(first.geometryKind, first.reference, selected.label),
+      );
       return;
     }
-    patchSelected({
-      entity: defaultEntityReference(newCategory),
-      visualConfig: undefined,
-    } as Partial<StudioGeoNode>);
+    requestEntityChange(selected, defaultEntityReference(newCategory), undefined);
   };
 
   const handleEntitySourceChange = (sourceId: string) => {
@@ -426,10 +476,21 @@ export function StudioGeoExperience({
       (item) => item.sourceId === sourceId || item.id === sourceId,
     );
     if (!found) return;
+    requestEntityChange(
+      selected,
+      referenceForEligibleOption(found),
+      defaultVisualConfigForGeometry(found.geometryKind, found.reference, selected.label),
+    );
+  };
+
+  const confirmEntityChange = () => {
+    if (!pendingEntityChange) return;
     patchSelected({
-      entity: referenceForEligibleOption(found),
-      visualConfig: visualConfigForEligibleOption(selected.visualConfig, found, selected.label),
+      entity: pendingEntityChange.entity,
+      visualConfig: pendingEntityChange.visualConfig,
     } as Partial<StudioGeoNode>);
+    setPendingEntityChange(null);
+    setActiveTab('overview');
   };
 
   const selectedEligibleOption =
@@ -452,15 +513,39 @@ export function StudioGeoExperience({
       : undefined;
   const selectedPointVisualConfig =
     selected?.kind === 'ENTITY' && selectedGeometryKind === 'POINT'
-      ? (selectedVisualConfig ?? defaultVisualConfigForGeometry('POINT', selected.entity, selected.label))
+      ? (selectedVisualConfig ??
+        defaultVisualConfigForGeometry('POINT', selected.entity, selected.label))
       : null;
   const selectedPointConfig =
     selectedPointVisualConfig?.geometryKind === 'POINT' ? selectedPointVisualConfig : null;
+
+  // Sem uma Entidade Cadastrada elegível não há geometria canônica a editar: as abas visuais
+  // ficam ocultas e a edição se limita a Geral.
+  const hasVisualEditor = !!(
+    selected?.kind === 'ENTITY' &&
+    selectedEligibleOption &&
+    selectedVisualConfig
+  );
+  const visualEditorConfig = hasVisualEditor ? selectedVisualConfig : undefined;
+
+  useEffect(() => {
+    if (!hasVisualEditor && activeTab !== 'overview') setActiveTab('overview');
+  }, [activeTab, hasVisualEditor]);
 
   const pointIconPreview = useStudioPointIconPreviewUrl(
     selected?.kind === 'ENTITY' ? selected : null,
     selectedPointConfig,
     32,
+    selectedPointConfig && selected?.kind === 'ENTITY'
+      ? {
+          color: resolveStudioGeoColor(
+            selectedPointConfig.color,
+            selected.entity.category,
+            null,
+          ),
+          opacity: selectedPointConfig.opacity,
+        }
+      : {},
   );
 
   // Drag and Drop Handlers (Padrão de ResourceCatalogTree)
@@ -819,28 +904,21 @@ export function StudioGeoExperience({
               <div className="px-4 pt-4 pb-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 min-w-0">
-                    <button
-                      type="button"
-                      disabled={!canMutate || selectedPointConfig?.geometryKind !== 'POINT'}
-                      onClick={() => selectedPointConfig?.geometryKind === 'POINT' && setIconPickerOpen(true)}
-                      title={canMutate && selectedPointConfig?.geometryKind === 'POINT' ? 'Trocar ícone do ponto' : undefined}
-                      className={`group/icon relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-app-border bg-app-accent-soft text-app-text ${canMutate && selectedPointConfig?.geometryKind === 'POINT' ? 'cursor-pointer hover:border-app-accent' : 'cursor-default'}`}
+                    {/* Representação puramente visual: a troca de ícone vive na aba Ícone & Cor. */}
+                    <div
+                      aria-hidden="true"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-app-border bg-app-accent-soft text-app-text"
                     >
                       {selected.kind === 'GROUP' ? (
                         <Folder className="h-5 w-5 text-amber-500" />
                       ) : selectedPointConfig?.geometryKind === 'POINT' && pointIconPreview ? (
-                        <img src={pointIconPreview} alt="Ícone do ponto" className="h-8 w-8" />
+                        <img src={pointIconPreview} alt="" className="h-8 w-8" />
                       ) : selectedGeometryKind === 'LINE' ? (
                         <Route className="h-5 w-5 text-sky-600" />
                       ) : (
                         <Scan className="h-5 w-5 text-emerald-600" />
                       )}
-                      {canMutate && selectedPointConfig?.geometryKind === 'POINT' && (
-                        <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-app-accent text-app-text shadow-sm">
-                          <Pencil className="h-2.5 w-2.5" />
-                        </span>
-                      )}
-                    </button>
+                    </div>
                     <div className="min-w-0">
                       <h3 className="font-bold leading-tight text-app-text truncate">
                         {selected.label}
@@ -889,19 +967,33 @@ export function StudioGeoExperience({
                     >
                       Geral
                     </button>
-                    {selected.kind === 'ENTITY' && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('visual')}
-                        className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
-                          activeTab === 'visual'
-                            ? 'bg-white text-app-text font-semibold shadow-sm'
-                            : 'text-app-muted hover:text-app-text'
-                        }`}
-                      >
-                        <Palette className="h-3.5 w-3.5" />
-                        Visual
-                      </button>
+                    {hasVisualEditor && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('icon-color')}
+                          className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                            activeTab === 'icon-color'
+                              ? 'bg-white text-app-text font-semibold shadow-sm'
+                              : 'text-app-muted hover:text-app-text'
+                          }`}
+                        >
+                          <Palette className="h-3.5 w-3.5" />
+                          Ícone &amp; Cor
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('size')}
+                          className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
+                            activeTab === 'size'
+                              ? 'bg-white text-app-text font-semibold shadow-sm'
+                              : 'text-app-muted hover:text-app-text'
+                          }`}
+                        >
+                          <Ruler className="h-3.5 w-3.5" />
+                          Tamanho
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -909,13 +1001,20 @@ export function StudioGeoExperience({
 
               {/* Conteúdo das Abas */}
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-                {activeTab === 'visual' && selected.kind === 'ENTITY' ? (
-                  <GeoNodeVisualConfigTab
-                    node={
-                      selectedVisualConfig
-                        ? { ...selected, visualConfig: selectedVisualConfig }
-                        : selected
+                {activeTab === 'icon-color' && selected.kind === 'ENTITY' && visualEditorConfig ? (
+                  <GeoNodeIconColorTab
+                    node={selected}
+                    visualConfig={visualEditorConfig}
+                    canEdit={canMutate}
+                    onChange={(updatedVisualConfig: StudioGeoVisualConfig) =>
+                      patchSelected({ visualConfig: updatedVisualConfig })
                     }
+                    onOpenIconPicker={() => setIconPickerOpen(true)}
+                  />
+                ) : activeTab === 'size' && selected.kind === 'ENTITY' && visualEditorConfig ? (
+                  <GeoNodeSizeTab
+                    node={selected}
+                    visualConfig={visualEditorConfig}
                     canEdit={canMutate}
                     onChange={(updatedVisualConfig: StudioGeoVisualConfig) =>
                       patchSelected({ visualConfig: updatedVisualConfig })
@@ -1027,7 +1126,6 @@ export function StudioGeoExperience({
       {selected?.kind === 'ENTITY' && selectedPointConfig?.geometryKind === 'POINT' && (
         <GeoNodeIconPickerModal
           isOpen={iconPickerOpen}
-          node={selected}
           pointConfig={selectedPointConfig}
           onClose={() => setIconPickerOpen(false)}
           onSelect={(selection) =>
@@ -1039,6 +1137,32 @@ export function StudioGeoExperience({
             })
           }
         />
+      )}
+
+      {pendingEntityChange && (
+        <Modal
+          onClose={() => setPendingEntityChange(null)}
+          width={480}
+          title={<h3>Trocar a entidade de origem?</h3>}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setPendingEntityChange(null)}>
+                Cancelar
+              </Button>
+              <Button variant="danger" onClick={confirmEntityChange}>
+                Trocar
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[0.86rem] text-app-text">
+            A configuração visual desta entidade será redefinida com os padrões da nova origem.
+          </p>
+          <p className="mt-2 text-[0.84rem] text-app-muted">
+            Ícone, cores, transparência, estilo de traço e tamanhos por escala configurados aqui
+            serão perdidos.
+          </p>
+        </Modal>
       )}
     </div>
   );

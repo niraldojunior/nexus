@@ -17,6 +17,7 @@ const resourceType = (overrides: Partial<ResourceType> = {}): ResourceType => ({
   status: 'active',
   nature: 'PhysicalResource',
   mapPresence: true,
+  geometryKind: 'POINT',
   ...overrides,
 });
 

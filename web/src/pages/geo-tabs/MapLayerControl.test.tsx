@@ -4,12 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MapLayerControl } from './MapLayerControl';
 import { ALL_MAP_LAYERS_VISIBLE, MAP_LAYER_CATALOG_FALLBACK } from '../../utils/mapLayers';
 import type { StudioGeoCatalog, StudioGeoPointVisualConfig } from '../../services/studioGeoApi';
+import { defaultColorRule } from '../../utils/studioGeoDefaults';
 
 // Faixas todas visíveis, exceto a de 50 m — usado para simular uma publicação do Studio GEO
 // que oculta uma entidade numa escala específica, genericamente (qualquer entidade, não só Poste).
 const pointConfigHiddenAt50m: StudioGeoPointVisualConfig = {
   geometryKind: 'POINT',
   iconCode: 'legacy.pole',
+  color: defaultColorRule('RESOURCE', '#10b981'),
+  opacity: 1,
   scaleBands: {
     le5m: { visible: true, sizePx: 18 },
     le10m: { visible: true, sizePx: 18 },

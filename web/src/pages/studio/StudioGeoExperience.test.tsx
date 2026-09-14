@@ -7,6 +7,7 @@ import * as geoApi from '../../services/geoApi';
 import * as resourceCatalogApi from '../../services/resourceCatalogApi';
 import type { StudioStatus } from '../../services/studioApi';
 import type { StudioGeoNode } from '../../services/studioGeoApi';
+import { defaultColorRule } from '../../utils/studioGeoDefaults';
 
 vi.mock('../../services/studioApi', () => ({
   getStudioStatus: vi.fn(),
@@ -166,6 +167,8 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
       visualConfig: {
         geometryKind: 'POINT',
         iconCode: 'CO',
+        color: defaultColorRule('LOCAL', '#8b5cf6'),
+        opacity: 1,
         scaleBands: {
           le5m: { visible: false, sizePx: 31 },
           le10m: { visible: true, sizePx: 30 },

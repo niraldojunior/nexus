@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectDetailPanel } from './ProjectDetailPanel';
 import type { GeoProject, ProjectArea } from '../../services/geoProjectApi';
@@ -6,6 +6,7 @@ import type { GeoTreeNode } from '../../services/geoTreeApi';
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
@@ -231,6 +232,139 @@ describe('ProjectDetailPanel', () => {
     renderPanel({ sites: [site()], sitesTotal: 1, hasMoreSites: false });
     openSites();
     expect(screen.queryByRole('button', { name: /carregar mais/i })).not.toBeInTheDocument();
+  });
+
+  it('carrega opções canônicas e cria um recurso físico pelo tipo e modelo selecionados', async () => {
+    const fetchMock = vi.fn((url: string, request?: RequestInit) => {
+      const body =
+        request?.method === 'POST'
+          ? { id: 'resource-1' }
+          : url.endsWith('/resource-creation-options')
+            ? {
+                catalog: { id: 'catalog-1', code: 'network', name: 'Rede' },
+                resourceTypes: [
+                  {
+                    id: 'physical-type',
+                    code: 'OLT',
+                    name: 'OLT',
+                    nature: 'PhysicalResource',
+                    infrastructureEligible: false,
+                  },
+                  {
+                    id: 'logical-type',
+                    code: 'VLAN',
+                    name: 'VLAN',
+                    nature: 'LogicalResource',
+                    infrastructureEligible: false,
+                  },
+                ],
+                resourceSpecifications: [
+                  { id: 'physical-spec', name: 'OLT XGS-PON', resourceTypeId: 'physical-type' },
+                  { id: 'logical-spec', name: 'VLAN empresarial', resourceTypeId: 'logical-type' },
+                ],
+              }
+            : { items: [], offset: 0, limit: 50, hasMore: false };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recursos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar recurso' }));
+
+    await screen.findByRole('option', { name: 'OLT' });
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'OLT Icaraí 01' } });
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'physical-type' } });
+    fireEvent.change(screen.getByLabelText('Modelo'), { target: { value: 'physical-spec' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        '/v1/geo/projects/prj-1/resources',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    const [, request] = fetchMock.mock.calls.find(
+      ([url, init]) => url === '/v1/geo/projects/prj-1/resources' && init?.method === 'POST',
+    ) as [string, RequestInit];
+    expect(JSON.parse(request.body as string)).toEqual({
+      '@type': 'PhysicalResource',
+      name: 'OLT Icaraí 01',
+      resourceSpecificationId: 'physical-spec',
+    });
+  });
+
+  it('infraestrutura mostra somente tipos elegíveis e não depende de categorias legadas', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const body = url.endsWith('/resource-creation-options')
+          ? {
+              catalog: { id: 'catalog-1', code: 'network', name: 'Rede' },
+              resourceTypes: [
+                {
+                  id: 'olt-type',
+                  code: 'OLT',
+                  name: 'OLT',
+                  nature: 'PhysicalResource',
+                  infrastructureEligible: false,
+                },
+                {
+                  id: 'cto-type',
+                  code: 'CTO',
+                  name: 'CTO',
+                  nature: 'PhysicalResource',
+                  infrastructureEligible: true,
+                },
+              ],
+              resourceSpecifications: [],
+            }
+          : { items: [], offset: 0, limit: 50, hasMore: false };
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }),
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Infraestrutura' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar infraestrutura' }));
+
+    await screen.findByRole('option', { name: 'CTO' });
+    expect(screen.queryByRole('option', { name: 'OLT' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Classe')).not.toBeInTheDocument();
+  });
+
+  it('sem catálogo ativo apresenta estado vazio sem quebrar a renderização', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const body = url.endsWith('/resource-creation-options')
+          ? { catalog: null, resourceTypes: [], resourceSpecifications: [] }
+          : { items: [], offset: 0, limit: 50, hasMore: false };
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }),
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recursos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar recurso' }));
+
+    expect(await screen.findByText('Não há catálogo de recursos ativo.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeDisabled();
   });
 
   it('sem manchas, a contagem usa sites.length (comportamento de sempre)', () => {

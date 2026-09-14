@@ -241,7 +241,16 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   );
   studioService.registerAdapter(new ReferenceDataStudioAdapter(referenceDataRepository));
   studioService.registerAdapter(
-    new StudioGeoAdapter(async (tenantId, assetId) => Boolean(await studioAssetRepository.get(tenantId, assetId))),
+    new StudioGeoAdapter(
+      async (tenantId, assetId) => Boolean(await studioAssetRepository.get(tenantId, assetId)),
+      async (tenantId) =>
+        await resourceService.listResourceTypes({
+          actorSub: 'studio-geo-adapter',
+          tenantId,
+          roles: ['studio.admin'],
+          traceId: 'studio-geo-adapter',
+        }),
+    ),
   );
   studioService.registerAdapter(new RulesWorkflowsStudioAdapter(db));
   studioService.registerAdapter(new TemplatesStudioAdapter(resourceService));

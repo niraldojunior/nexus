@@ -13,6 +13,9 @@ import {
   Trash2,
   Layers,
   Tag,
+  Circle,
+  Spline,
+  Pentagon,
 } from 'lucide-react';
 import type {
   ResourceCatalogNode,
@@ -31,6 +34,8 @@ import {
 import {
   deleteResourceSpecification,
   updateResourceType,
+  listResourceTypeRelationshipRules,
+  type ResourceGeometryKind,
   type ResourceSpecification,
 } from '../../../services/resourceApi';
 import {
@@ -97,9 +102,28 @@ type FormSnapshot = {
   icon: string | undefined;
   nature: 'PhysicalResource' | 'LogicalResource';
   mapPresence: boolean;
+  /** Geometria canônica das instâncias no mapa (issue #240); `undefined` enquanto não escolhida. */
+  geometryKind: ResourceGeometryKind | undefined;
 };
 
 const AUTOSAVE_DEBOUNCE_MS = 700;
+
+const GEOMETRY_OPTIONS: ReadonlyArray<{
+  value: ResourceGeometryKind;
+  label: string;
+  hint: string;
+  Icon: typeof MapPin;
+}> = [
+  { value: 'POINT', label: 'Ponto', hint: 'Postes, caixas, torres', Icon: Circle },
+  { value: 'LINE', label: 'Linha', hint: 'Cabos, dutos, trechos', Icon: Spline },
+  { value: 'POLYGON', label: 'Polígono', hint: 'Áreas e perímetros', Icon: Pentagon },
+];
+
+const GEOMETRY_LABELS: Readonly<Record<ResourceGeometryKind, string>> = {
+  POINT: 'Ponto',
+  LINE: 'Linha',
+  POLYGON: 'Polígono',
+};
 
 export function ResourceNodeDetail({
   catalogId,
@@ -137,6 +161,7 @@ export function ResourceNodeDetail({
   const [specModalReadOnly, setSpecModalReadOnly] = useState(false);
   const [specDeletingId, setSpecDeletingId] = useState<string | null>(null);
   const [specError, setSpecError] = useState<string | null>(null);
+  const [relationshipRulesCount, setRelationshipRulesCount] = useState<number>(0);
 
   // Estados locais para edição direta (inline), autosalvos — ver `scheduleSave`/`flush` abaixo.
   const [formName, setFormName] = useState(node.name);
@@ -144,6 +169,7 @@ export function ResourceNodeDetail({
   const [formDescription, setFormDescription] = useState(node.description || '');
   const [formNature, setFormNature] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
   const [formMapPresence, setFormMapPresence] = useState<boolean>(false);
+  const [formGeometryKind, setFormGeometryKind] = useState<ResourceGeometryKind | undefined>(undefined);
   const [formIcon, setFormIcon] = useState<string | undefined>(
     (node.metadata?.icon as string) || undefined,
   );
@@ -164,6 +190,7 @@ export function ResourceNodeDetail({
     icon: (node.metadata?.icon as string) || undefined,
     nature: 'PhysicalResource',
     mapPresence: false,
+    geometryKind: undefined,
   });
 
   // Revisão monotônica por nó — cada novo save incrementa; uma resposta de uma revisão antiga
@@ -194,6 +221,9 @@ export function ResourceNodeDetail({
 
     const initialMapPresence = false;
     setFormMapPresence(initialMapPresence);
+    // Mesma cautela da presença: a geometria canônica só existe no ResourceType, então até o
+    // contexto chegar o seletor fica sem escolha em vez de exibir um palpite.
+    setFormGeometryKind(undefined);
 
     formRef.current = {
       name: node.name,
@@ -202,6 +232,7 @@ export function ResourceNodeDetail({
       icon: (node.metadata?.icon as string) || undefined,
       nature: initialNature,
       mapPresence: initialMapPresence,
+      geometryKind: undefined,
     };
 
     if (debounceTimerRef.current) {
@@ -240,10 +271,13 @@ export function ResourceNodeDetail({
       void Promise.all([
         listResourceSpecifications({ resourceTypeId: node.resourceTypeId }).catch(() => []),
         getResourceTypeCatalogContext(node.resourceTypeId).catch(() => null),
-      ]).then(([specsRes, contextRes]) => {
+        listResourceTypeRelationshipRules(node.resourceTypeId).catch(() => []),
+      ]).then(([specsRes, contextRes, rulesRes]) => {
         if (!isMounted) return;
         setSpecifications(specsRes);
         setContext(contextRes);
+        const activeRules = rulesRes.filter((r) => r.lifecycleStatus === 'Active');
+        setRelationshipRulesCount(activeRules.length);
         setTypeCharacteristicRows(
           resourceCharacteristicRowsFrom(contextRes?.resourceType.resourceTypeCharacteristic),
         );
@@ -252,12 +286,20 @@ export function ResourceNodeDetail({
           const canonicalNature = contextRes.resourceType.nature ?? 'PhysicalResource';
           const canonicalMapPresence =
             canonicalNature === 'PhysicalResource' && contextRes.resourceType.mapPresence === true;
+          // Tipo lógico não carrega geometria; tipo físico fora do mapa preserva a que tinha, para
+          // que religar "Exibir no mapa" reaproveite a escolha anterior em vez de exigir uma nova.
+          const canonicalGeometryKind =
+            canonicalNature === 'PhysicalResource'
+              ? contextRes.resourceType.geometryKind
+              : undefined;
           setFormNature(canonicalNature);
           setFormMapPresence(canonicalMapPresence);
+          setFormGeometryKind(canonicalGeometryKind);
           formRef.current = {
             ...formRef.current,
             nature: canonicalNature,
             mapPresence: canonicalMapPresence,
+            geometryKind: canonicalGeometryKind,
           };
         }
       });
@@ -266,6 +308,7 @@ export function ResourceNodeDetail({
       setContext(null);
       setTypeCharacteristicRows([]);
       setTypeCharacteristicError(null);
+      setRelationshipRulesCount(0);
     }
 
     return () => {
@@ -324,8 +367,18 @@ export function ResourceNodeDetail({
         ...(node.kind === 'RESOURCE_TYPE'
           ? {
               nature: snapshot.nature,
+              // Presença sem geometria é a ativação ainda incompleta (checkbox marcado, seletor em
+              // aberto): mantém-se local até a escolha. Enviá-la aqui só renderia 422 — inclusive
+              // num autosave disparado por um campo de texto vizinho.
               mapPresence:
-                snapshot.nature === 'PhysicalResource' ? snapshot.mapPresence : false,
+                snapshot.nature === 'PhysicalResource' &&
+                snapshot.mapPresence &&
+                Boolean(snapshot.geometryKind),
+              // `null` é o comando explícito de limpeza (campo ausente preservaria o valor atual):
+              // é o que zera a geometria ao virar lógico. Um tipo físico fora do mapa reenvia a
+              // geometria que tinha, preservando-a para uma reativação futura.
+              geometryKind:
+                snapshot.nature === 'PhysicalResource' ? (snapshot.geometryKind ?? null) : null,
             }
           : {}),
       });
@@ -390,8 +443,39 @@ export function ResourceNodeDetail({
     if (patch.icon !== undefined) setFormIcon(patch.icon);
     if (patch.nature !== undefined) setFormNature(patch.nature);
     if (patch.mapPresence !== undefined) setFormMapPresence(patch.mapPresence);
+    if ('geometryKind' in patch) setFormGeometryKind(patch.geometryKind);
     setAutosaveState('dirty');
     void doSaveNow();
+  };
+
+  /**
+   * Alterna "Exibir no mapa". Ligar sem geometria conhecida não pode ir ao backend — a invariante
+   * exige o par no mesmo PATCH — então a ativação fica só no estado local até a escolha, que envia
+   * `mapPresence=true` + `geometryKind` de uma vez. Desligar preserva a geometria.
+   */
+  const handleMapPresenceToggle = (next: boolean) => {
+    if (next && !formGeometryKind) {
+      formRef.current = { ...formRef.current, mapPresence: true };
+      setFormMapPresence(true);
+      return;
+    }
+    handleImmediateChange({ mapPresence: next });
+  };
+
+  const handleGeometryChange = (value: ResourceGeometryKind) => {
+    handleImmediateChange({ geometryKind: value, mapPresence: true });
+  };
+
+  /**
+   * Virar lógico zera presença e geometria na mesma revisão — é o que o backend grava, e manter o
+   * valor no estado local faria a UI reoferecer uma geometria que já não existe no ResourceType.
+   */
+  const handleNatureChange = (next: 'PhysicalResource' | 'LogicalResource') => {
+    if (next === 'LogicalResource') {
+      handleImmediateChange({ nature: next, mapPresence: false, geometryKind: undefined });
+      return;
+    }
+    handleImmediateChange({ nature: next });
   };
 
   const handleSelectIcon = (newIcon: string) => {
@@ -626,6 +710,9 @@ export function ResourceNodeDetail({
                 }`}
               >
                 Relações
+                <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">
+                  {relationshipRulesCount}
+                </span>
               </button>
             )}
           </div>
@@ -649,7 +736,7 @@ export function ResourceNodeDetail({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={`grid grid-cols-1 gap-4 ${isGroup ? 'sm:grid-cols-2' : ''}`}>
                   <div>
                     <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                       Nome *
@@ -664,19 +751,21 @@ export function ResourceNodeDetail({
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-                      Código *
-                    </label>
-                    <input
-                      type="text"
-                      value={formCode}
-                      onChange={(e) => handleTextChange('code', e.target.value)}
-                      onBlur={() => void flush()}
-                      placeholder="Ex: OLT"
-                      className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
-                    />
-                  </div>
+                  {isGroup && (
+                    <div>
+                      <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                        Código *
+                      </label>
+                      <input
+                        type="text"
+                        value={formCode}
+                        onChange={(e) => handleTextChange('code', e.target.value)}
+                        onBlur={() => void flush()}
+                        placeholder="Ex: OLT"
+                        className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -702,7 +791,7 @@ export function ResourceNodeDetail({
                       <div className="inline-flex rounded-xl bg-black/[0.04] p-1 gap-1">
                         <button
                           type="button"
-                          onClick={() => handleImmediateChange({ nature: 'PhysicalResource' })}
+                          onClick={() => handleNatureChange('PhysicalResource')}
                           className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
                             formNature === 'PhysicalResource'
                               ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -714,7 +803,7 @@ export function ResourceNodeDetail({
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleImmediateChange({ nature: 'LogicalResource' })}
+                          onClick={() => handleNatureChange('LogicalResource')}
                           className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
                             formNature === 'LogicalResource'
                               ? 'bg-white text-app-text font-semibold shadow-sm'
@@ -733,7 +822,7 @@ export function ResourceNodeDetail({
                           <input
                             type="checkbox"
                             checked={formMapPresence}
-                            onChange={(e) => handleImmediateChange({ mapPresence: e.target.checked })}
+                            onChange={(e) => handleMapPresenceToggle(e.target.checked)}
                             className="mt-0.5 h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
                           />
                           <div className="text-left">
@@ -746,6 +835,58 @@ export function ResourceNodeDetail({
                             </span>
                           </div>
                         </label>
+
+                        {formMapPresence && (
+                          <div className="mt-3 pl-[26px]">
+                            <span className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                              Geometria do Recurso
+                            </span>
+                            <div className="flex flex-wrap gap-2">
+                              {GEOMETRY_OPTIONS.map(({ value, label, hint, Icon }) => {
+                                const selected = formGeometryKind === value;
+                                return (
+                                  <button
+                                    key={value}
+                                    type="button"
+                                    aria-pressed={selected}
+                                    onClick={() => handleGeometryChange(value)}
+                                    className={`flex items-start gap-2 rounded-[10px] border px-3 py-2 text-left transition ${
+                                      selected
+                                        ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border'
+                                        : 'border-app-border bg-white hover:border-app-accent/60'
+                                    }`}
+                                  >
+                                    <Icon
+                                      className={`mt-0.5 h-4 w-4 ${
+                                        value === 'POINT' ? 'fill-current' : ''
+                                      } ${
+                                        selected ? 'text-app-text' : 'text-app-muted'
+                                      }`}
+                                    />
+                                    <span>
+                                      <span
+                                        className={`block text-[0.84rem] ${
+                                          selected
+                                            ? 'font-semibold text-app-text'
+                                            : 'font-medium text-app-text'
+                                        }`}
+                                      >
+                                        {label}
+                                      </span>
+                                      <span className="block text-[0.72rem] text-app-muted">{hint}</span>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {!formGeometryKind && (
+                              <p className="mt-2 flex items-center gap-1.5 text-[0.76rem] text-app-muted">
+                                <AlertCircle className="h-3.5 w-3.5" />
+                                Selecione a geometria para concluir a exibição no mapa.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -784,6 +925,19 @@ export function ResourceNodeDetail({
                       </span>
                       <p className="text-[0.95rem] font-semibold text-app-text mt-1">
                         {context?.resourceType.mapPresence === true ? 'Sim' : 'Não'}
+                      </p>
+                    </div>
+                  )}
+
+                  {!isGroup && !isLogical && context?.resourceType.mapPresence === true && (
+                    <div className="rounded-[10px] border border-app-border p-4">
+                      <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                        Geometria no Mapa
+                      </span>
+                      <p className="text-[0.95rem] font-semibold text-app-text mt-1">
+                        {context.resourceType.geometryKind
+                          ? GEOMETRY_LABELS[context.resourceType.geometryKind]
+                          : '—'}
                       </p>
                     </div>
                   )}
@@ -1022,6 +1176,7 @@ export function ResourceNodeDetail({
             resourceTypeId={node.resourceTypeId}
             canEdit={canEdit}
             isEditing={isEditing}
+            onActiveRulesCountChange={setRelationshipRulesCount}
           />
         )}
         {activeTab === 'relations' && !isGroup && !node.resourceTypeId && (

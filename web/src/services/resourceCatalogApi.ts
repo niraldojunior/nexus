@@ -101,6 +101,7 @@ export type CreateResourceCatalogNodeInput = {
   /** Campos aplicáveis somente a folhas RESOURCE_TYPE. */
   nature?: NonNullable<ResourceType['nature']>;
   mapPresence?: boolean;
+  geometryKind?: ResourceType['geometryKind'];
   resourceTypeCharacteristic?: ResourceType['resourceTypeCharacteristic'];
   parentNodeId?: string;
   sortOrder?: number;
@@ -116,6 +117,7 @@ export type UpdateResourceCatalogNodeInput = {
   /** Campos aplicáveis somente a folhas RESOURCE_TYPE. */
   nature?: NonNullable<ResourceType['nature']>;
   mapPresence?: boolean;
+  geometryKind?: ResourceType['geometryKind'] | null;
   resourceTypeCharacteristic?: ResourceType['resourceTypeCharacteristic'];
 };
 

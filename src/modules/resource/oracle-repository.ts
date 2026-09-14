@@ -488,9 +488,10 @@ export class OracleResourceRepository implements IResourceRepository {
       status: 'active' | 'inactive';
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
+      geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
        FROM tmf_resource_type
        WHERE tenant_id = ? OR tenant_id = ?
        ORDER BY code, id`,
@@ -514,9 +515,10 @@ export class OracleResourceRepository implements IResourceRepository {
       status: 'active' | 'inactive';
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
+      geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
          FROM tmf_resource_type WHERE id = ? AND (tenant_id = ? OR tenant_id = ?)`,
       [id, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
@@ -539,9 +541,10 @@ export class OracleResourceRepository implements IResourceRepository {
       status: 'active' | 'inactive';
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
+      geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
          FROM tmf_resource_type WHERE code = ? AND (tenant_id = ? OR tenant_id = ?)`,
       [code, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
@@ -554,8 +557,8 @@ export class OracleResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_type
-       (id, tenant_id, code, name, description, status, map_presence, nature, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          code = excluded.code,
          name = excluded.name,
@@ -563,6 +566,7 @@ export class OracleResourceRepository implements IResourceRepository {
          status = excluded.status,
          map_presence = excluded.map_presence,
          nature = excluded.nature,
+         geometry_kind = excluded.geometry_kind,
          characteristics = excluded.characteristics,
          updated_at = excluded.updated_at`,
       [
@@ -574,6 +578,7 @@ export class OracleResourceRepository implements IResourceRepository {
         resourceType.status,
         resourceType.mapPresence ? 1 : 0,
         resourceType.nature,
+        resourceType.geometryKind ?? null,
         JSON.stringify(resourceType.resourceTypeCharacteristic ?? []),
         now,
         now,
@@ -2153,6 +2158,7 @@ export class OracleResourceRepository implements IResourceRepository {
       status: 'active' | 'inactive';
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
+      geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
       characteristics?: string | null;
     },
     categoryCode?: string,
@@ -2168,6 +2174,7 @@ export class OracleResourceRepository implements IResourceRepository {
       status: row.status,
       nature: row.nature ?? 'PhysicalResource',
       mapPresence: Number(row.map_presence ?? 0) === 1,
+      ...(row.geometry_kind ? { geometryKind: row.geometry_kind } : {}),
       resourceTypeCharacteristic: JSON.parse(row.characteristics || '[]'),
       tenantId: row.tenant_id,
     };

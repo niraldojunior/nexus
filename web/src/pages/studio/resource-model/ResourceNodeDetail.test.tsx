@@ -146,7 +146,65 @@ describe('ResourceNodeDetail', () => {
     expect(textarea).toBeInTheDocument();
   });
 
-  it('reads and persists map visibility through the canonical ResourceType fields', async () => {
+  it('hides the generated code for resource types and preserves it when the name changes', async () => {
+    const user = userEvent.setup();
+    const onUpdateNode = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResourceNodeDetail
+        catalogId="cat-1"
+        node={mockLeafNode}
+        canEdit={true}
+        isEditing={true}
+        wasActiveAtBaseline={true}
+        onImpact={vi.fn()}
+        onReactivate={vi.fn()}
+        onUpdateNode={onUpdateNode}
+      />,
+    );
+
+    expect(screen.queryByText('Código *')).not.toBeInTheDocument();
+
+    const nameInput = screen.getByDisplayValue('Optical Line Terminal');
+    await user.clear(nameInput);
+    await user.type(nameInput, 'OLT Atualizada');
+    await user.tab();
+
+    await waitFor(() => {
+      expect(onUpdateNode).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'OLT Atualizada', code: 'leaf-olt' }),
+      );
+    });
+  });
+
+  it('keeps the code field editable for groups', () => {
+    const groupNode: ResourceCatalogNode = {
+      ...mockLeafNode,
+      id: 'grp-1',
+      code: 'grupo-acesso',
+      name: 'Acesso',
+      kind: 'GROUP',
+      resourceTypeId: undefined,
+    };
+    render(
+      <ResourceNodeDetail
+        catalogId="cat-1"
+        node={groupNode}
+        canEdit={true}
+        isEditing={true}
+        wasActiveAtBaseline={true}
+        onImpact={vi.fn()}
+        onReactivate={vi.fn()}
+        onUpdateNode={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Código *')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('grupo-acesso')).toBeInTheDocument();
+  });
+
+  it('keeps map visibility local until a geometry is chosen, then persists both together', async () => {
+    // Ligar "Exibir no mapa" sem geometria não pode chegar ao backend como PATCH inválido — a
+    // invariante do service exige o par mapPresence+geometryKind na mesma revisão (issue #240).
     const user = userEvent.setup();
     const onUpdateNode = vi.fn().mockResolvedValue(undefined);
     render(
@@ -166,15 +224,50 @@ describe('ResourceNodeDetail', () => {
     await waitFor(() => expect(checkbox).not.toBeChecked());
     await user.click(checkbox);
 
+    expect(checkbox).toBeChecked();
+    expect(onUpdateNode).not.toHaveBeenCalled();
+
+    await user.click(await screen.findByRole('button', { name: /Ponto/ }));
+
     await waitFor(() => {
       expect(onUpdateNode).toHaveBeenCalledWith(
         expect.objectContaining({
           nature: 'PhysicalResource',
           mapPresence: true,
+          geometryKind: 'POINT',
           metadata: expect.not.objectContaining({
             nature: expect.anything(),
             mapPresence: expect.anything(),
           }),
+        }),
+      );
+    });
+  });
+
+  it('clears geometry when nature switches to logical, in the same save', async () => {
+    const user = userEvent.setup();
+    const onUpdateNode = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ResourceNodeDetail
+        catalogId="cat-1"
+        node={mockLeafNode}
+        canEdit={true}
+        isEditing={true}
+        wasActiveAtBaseline={true}
+        onImpact={vi.fn()}
+        onReactivate={vi.fn()}
+        onUpdateNode={onUpdateNode}
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Recurso Lógico' }));
+
+    await waitFor(() => {
+      expect(onUpdateNode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nature: 'LogicalResource',
+          mapPresence: false,
+          geometryKind: null,
         }),
       );
     });
@@ -216,6 +309,7 @@ describe('ResourceNodeDetail', () => {
       expect(screen.getByRole('button', { name: /^Características/ })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /^Especificações/ })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /^Relações/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Relações/ })).toHaveTextContent('0');
     });
 
     // Clica na aba Características

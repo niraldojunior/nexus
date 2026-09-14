@@ -27,6 +27,11 @@ import {
 import { replaceQuestionBinds } from './question-binds.js';
 import { checksumMigrationBatch, findColumnDrift, MIGRATION_BATCHES } from './schema.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
+import {
+  resolveResourceTypeGeometry,
+  studioGeoGeometryIndex,
+  type ResourceTypeGeometryCandidate,
+} from '../../modules/resource/geometry-backfill.js';
 
 export type OracleConnectionConfig = {
   connectString: string;
@@ -257,6 +262,9 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'resource-type-leaf-identity') {
         await this.applyResourceTypeLeafIdentityMigration(connection);
       }
+      if (batch.name === 'resource-type-geometry-kind') {
+        await this.applyResourceTypeGeometryKindMigration(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -415,6 +423,14 @@ export class OracleDatabase implements DatabaseClient {
         [duplicate.resource_type_id],
         QUERY_OPTIONS,
       );
+      // `geometry_kind` nasce no lote v18, posterior a este. Num namespace novo a coluna ainda não
+      // existe quando este callback roda, então lemos à parte e toleramos a ausência; o próprio v18
+      // repõe a geometria dos clones pelo ledger logo em seguida.
+      const clonedGeometryKind = await this.optionalResourceTypeGeometryKind(
+        connection,
+        types,
+        duplicate.resource_type_id,
+      );
       const source = original.rows?.[0];
       if (!source) throw new Error(`ResourceType ${duplicate.resource_type_id} referenced by catalog node is missing`);
 
@@ -441,10 +457,12 @@ export class OracleDatabase implements DatabaseClient {
             cloneCode = `${baseCode}-${suffix}`;
             suffix += 1;
           }
+          const geometryColumn = clonedGeometryKind === undefined ? '' : ', geometry_kind';
+          const geometryValue = clonedGeometryKind === undefined ? '' : ', :10';
           await connection.execute(
             `INSERT INTO ${types}
-             (id, tenant_id, code, name, description, status, map_presence, nature, characteristics, created_at, updated_at)
-             VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+             (id, tenant_id, code, name, description, status, map_presence, nature, characteristics${geometryColumn}, created_at, updated_at)
+             VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9${geometryValue}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
             [
               cloneId,
               leaf.tenant_id,
@@ -455,6 +473,7 @@ export class OracleDatabase implements DatabaseClient {
               source.map_presence,
               source.nature ?? 'PhysicalResource',
               source.characteristics,
+              ...(clonedGeometryKind === undefined ? [] : [clonedGeometryKind]),
             ],
             { autoCommit: true },
           );
@@ -491,6 +510,206 @@ export class OracleDatabase implements DatabaseClient {
       `CREATE UNIQUE INDEX ${prefix}idx_tmf_resource_catalog_node_active_type
        ON ${nodes}(CASE WHEN kind = 'RESOURCE_TYPE' AND status = 'active' THEN resource_type_id END)`,
     );
+  }
+
+  /**
+   * Geometria canônica do ResourceType (issue #240).
+   *
+   * Três operações, todas idempotentes e retomáveis — o lote só é registrado depois que o método
+   * retorna, e cada passo verifica o estado antes de escrever. Um boot interrompido no meio
+   * reexecuta tudo sem efeito colateral.
+   *
+   * 1. Amplia o CHECK de `geo_map_feature.shape` para aceitar `polygon`. A constraint original é
+   *    anônima no SQL canônico, logo o Oracle a nomeou `SYS_C######`; descobrimos pelo texto em
+   *    `user_constraints` e recriamos com nome determinístico, para que uma futura ampliação não
+   *    precise repetir a descoberta.
+   * 2. Propaga a geometria do tipo original para os clones criados pelo lote v15. A cópia não pode
+   *    viver no callback de v15: num namespace novo, v15 roda antes de v18 criar a coluna e o
+   *    SELECT estouraria ORA-00904. O ledger de clones existe exatamente para correções desse tipo.
+   * 3. Faz o backfill dos tipos físicos visíveis ainda sem geometria, pela cascata determinística
+   *    de `geometry-backfill.ts`. Ausência ou contradição de evidência aborta a migration com os
+   *    códigos afetados — nenhum valor arbitrário é escolhido, e o lote não é marcado.
+   */
+  private async applyResourceTypeGeometryKindMigration(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    await this.widenGeoMapFeatureShapeCheck(connection);
+
+    const types = prefixed('tmf_resource_type', prefix);
+    const ledger = prefixed('tmf_resource_type_clone_ledger', prefix);
+    await connection.execute(
+      `UPDATE ${types} clone
+          SET geometry_kind = (
+                SELECT original.geometry_kind
+                  FROM ${ledger} entry
+                  JOIN ${types} original ON original.id = entry.original_resource_type_id
+                 WHERE entry.cloned_resource_type_id = clone.id
+              )
+        WHERE clone.geometry_kind IS NULL
+          AND EXISTS (SELECT 1 FROM ${ledger} entry WHERE entry.cloned_resource_type_id = clone.id)`,
+      [],
+      { autoCommit: true },
+    );
+
+    // Só tipos fisicamente visíveis (map_presence explicitamente 1) e operacionalmente alcançáveis
+    // (ao menos um nó ativo no catálogo) precisam de geometria agora. Tipos com map_presence NULL
+    // (bootstrap sem backfill) e tipos cujos nós estão todos inativos ficam fora — o usuário os
+    // resolve via Modelagem de Recursos quando/se reativar.
+    const nodes = prefixed('tmf_resource_catalog_node', prefix);
+    const pending = await connection.execute<{ id: string; code: string }>(
+      `SELECT id AS "id", code AS "code"
+         FROM ${types}
+        WHERE geometry_kind IS NULL
+          AND status = 'active'
+          AND COALESCE(nature, 'PhysicalResource') = 'PhysicalResource'
+          AND map_presence = 1
+          AND EXISTS (
+            SELECT 1 FROM ${nodes} n
+             WHERE n.resource_type_id = ${types}.id AND n.status = 'active'
+          )`,
+      [],
+      QUERY_OPTIONS,
+    );
+    const candidates = pending.rows ?? [];
+    if (candidates.length === 0) return;
+
+    const studioGeoIndex = await this.publishedStudioGeoGeometryIndex(connection);
+    const locationTypes = await this.locationGeometryTypesByResourceType(connection);
+    const unresolved: string[] = [];
+    for (const candidate of candidates) {
+      const input: ResourceTypeGeometryCandidate = {
+        id: candidate.id,
+        code: candidate.code,
+        locationGeometryTypes: locationTypes.get(candidate.id) ?? [],
+      };
+      const evidence = resolveResourceTypeGeometry(input, studioGeoIndex);
+      if (!evidence) {
+        unresolved.push(candidate.code);
+        continue;
+      }
+      await connection.execute(
+        `UPDATE ${types} SET geometry_kind = :1, updated_at = CURRENT_TIMESTAMP WHERE id = :2`,
+        [evidence.geometryKind, candidate.id],
+        { autoCommit: true },
+      );
+    }
+    if (unresolved.length > 0) {
+      throw new Error(
+        `ResourceType geometry backfill has no deterministic evidence for visible types: ${unresolved.join(', ')}. ` +
+          'Defina a geometria na Modelagem de Recursos ou retire o tipo do mapa antes de migrar.',
+      );
+    }
+  }
+
+  private async widenGeoMapFeatureShapeCheck(connection: Connection): Promise<void> {
+    const table = prefixed('geo_map_feature', this.config.objectPrefix);
+    const constraintName = `${this.config.objectPrefix}geo_map_feature_shape_ck`;
+    const existing = await connection.execute<{ constraint_name: string; search_condition: string }>(
+      `SELECT constraint_name AS "constraint_name", search_condition AS "search_condition"
+         FROM user_constraints
+        WHERE table_name = :1 AND constraint_type = 'C' AND search_condition IS NOT NULL`,
+      [table.toUpperCase()],
+      QUERY_OPTIONS,
+    );
+    for (const row of existing.rows ?? []) {
+      const condition = row.search_condition ?? '';
+      if (!/\bshape\b/i.test(condition) || !/'point'/i.test(condition)) continue;
+      if (/'polygon'/i.test(condition)) return;
+      await connection.execute(`ALTER TABLE ${table} DROP CONSTRAINT ${row.constraint_name}`);
+    }
+    await executeOracleDdl(
+      connection,
+      `ALTER TABLE ${table} ADD CONSTRAINT ${constraintName}
+       CHECK (shape IN ('point', 'line', 'polygon'))`,
+    );
+  }
+
+  /**
+   * Índice de geometria das publicações vigentes de `studio-geo`, unificado entre tenants. Um
+   * `sourceId` que apareça com geometrias diferentes é descartado: divergência entre publicações é
+   * ausência de evidência, e o tipo correspondente cai para a próxima fonte da cascata.
+   */
+  private async publishedStudioGeoGeometryIndex(
+    connection: Connection,
+  ): Promise<Map<string, 'POINT' | 'LINE' | 'POLYGON'>> {
+    const workspace = prefixed('studio_workspace', this.config.objectPrefix);
+    const version = prefixed('studio_version', this.config.objectPrefix);
+    const published = await connection.execute<{ snapshot: string | null }>(
+      `SELECT v.snapshot AS "snapshot"
+         FROM ${workspace} w
+         JOIN ${version} v ON v.id = w.published_version_id
+        WHERE w.domain = 'studio-geo'`,
+      [],
+      QUERY_OPTIONS,
+    );
+    const merged = new Map<string, 'POINT' | 'LINE' | 'POLYGON'>();
+    const conflicting = new Set<string>();
+    for (const row of published.rows ?? []) {
+      if (!row.snapshot) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(row.snapshot);
+      } catch {
+        // Snapshot ilegível não é evidência; o tipo cai para a próxima fonte da cascata.
+        continue;
+      }
+      for (const [sourceId, geometryKind] of studioGeoGeometryIndex(parsed)) {
+        if (conflicting.has(sourceId)) continue;
+        const known = merged.get(sourceId);
+        if (known && known !== geometryKind) {
+          merged.delete(sourceId);
+          conflicting.add(sourceId);
+          continue;
+        }
+        merged.set(sourceId, geometryKind);
+      }
+    }
+    return merged;
+  }
+
+  /** `geometry_type` distintos das instâncias vivas de cada ResourceType, para a inferência final. */
+  private async locationGeometryTypesByResourceType(
+    connection: Connection,
+  ): Promise<Map<string, string[]>> {
+    const prefix = this.config.objectPrefix;
+    const resources = prefixed('tmf_physical_resource', prefix);
+    const specifications = prefixed('tmf_resource_specification', prefix);
+    const locations = prefixed('tmf_geographic_location', prefix);
+    const result = await connection.execute<{ resource_type_id: string; geometry_type: string | null }>(
+      `SELECT DISTINCT rs.resource_type_id AS "resource_type_id", l.geometry_type AS "geometry_type"
+         FROM ${resources} r
+         JOIN ${specifications} rs
+           ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         JOIN ${locations} l ON l.id = r.place_id
+        WHERE r.status <> 'terminated' AND rs.resource_type_id IS NOT NULL`,
+      [],
+      QUERY_OPTIONS,
+    );
+    const index = new Map<string, string[]>();
+    for (const row of result.rows ?? []) {
+      const known = index.get(row.resource_type_id);
+      if (known) known.push(row.geometry_type ?? '');
+      else index.set(row.resource_type_id, [row.geometry_type ?? '']);
+    }
+    return index;
+  }
+
+  /** `undefined` quando a coluna ainda não existe (namespace novo, antes do lote v18). */
+  private async optionalResourceTypeGeometryKind(
+    connection: Connection,
+    types: string,
+    resourceTypeId: string,
+  ): Promise<string | null | undefined> {
+    try {
+      const result = await connection.execute<{ geometry_kind: string | null }>(
+        `SELECT geometry_kind AS "geometry_kind" FROM ${types} WHERE id = :1`,
+        [resourceTypeId],
+        QUERY_OPTIONS,
+      );
+      return result.rows?.[0]?.geometry_kind ?? null;
+    } catch (error) {
+      if (/ORA-00904/.test(String((error as { message?: string })?.message ?? error))) return undefined;
+      throw error;
+    }
   }
 
   private async repointResourceTypeReferences(

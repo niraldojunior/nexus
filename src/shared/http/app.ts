@@ -30,12 +30,16 @@ import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-c
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import type { GeoService } from '../../modules/geo/service.js';
+import { isProjectInfrastructureResourceType } from '../../modules/geo/project-resource-classification.js';
 import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
 import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
 import type { PartyRoleTypeCharacteristicValueType } from '../../modules/party/party-role-type-characteristic-repository.js';
-import type { CreatePartyRoleTypeInput, UpdatePartyRoleTypeInput } from '../../modules/party/party-role-type-repository.js';
+import type {
+  CreatePartyRoleTypeInput,
+  UpdatePartyRoleTypeInput,
+} from '../../modules/party/party-role-type-repository.js';
 import {
   createNexusRuntime,
   DEFAULT_RUNTIME_USER,
@@ -810,11 +814,20 @@ const routeRequest = async ({
   }
 
   if (url.pathname.startsWith('/v1/studio/')) {
-    await routeStudioRequest({ request, response, config, studioService: runtime.studioService, url });
+    await routeStudioRequest({
+      request,
+      response,
+      config,
+      studioService: runtime.studioService,
+      url,
+    });
     return;
   }
 
-  if (url.pathname === '/v1/party-role-types' || /^\/v1\/party-role-types\/[^/]+$/.test(url.pathname)) {
+  if (
+    url.pathname === '/v1/party-role-types' ||
+    /^\/v1\/party-role-types\/[^/]+$/.test(url.pathname)
+  ) {
     await routePartyRoleTypeRequest({ request, response, config, runtime, url });
     return;
   }
@@ -824,7 +837,10 @@ const routeRequest = async ({
     return;
   }
 
-  if (url.pathname === '/v1/reference-data/sets' || /^\/v1\/reference-data\/sets\/[^/]+$/.test(url.pathname)) {
+  if (
+    url.pathname === '/v1/reference-data/sets' ||
+    /^\/v1\/reference-data\/sets\/[^/]+$/.test(url.pathname)
+  ) {
     await routeReferenceDataSetRequest({ request, response, config, runtime, url });
     return;
   }
@@ -872,7 +888,8 @@ const routePublishedGeoLayerCatalogRequest = async ({
   runtime: NexusRuntime;
   url: URL;
 }): Promise<void> => {
-  if (request.method !== 'GET') throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
+  if (request.method !== 'GET')
+    throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   const context = await buildRequestContext(request, config);
   requireRoles(context, GEO_PROJECT_READ_ROLES);
   let published: Awaited<ReturnType<typeof runtime.studioService.getPublishedVersion>>;
@@ -884,7 +901,9 @@ const routePublishedGeoLayerCatalogRequest = async ({
     published = undefined;
   }
   const snapshot = published?.snapshot;
-  const hasPublishedSnapshot = Boolean(snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot));
+  const hasPublishedSnapshot = Boolean(
+    snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot),
+  );
   const catalog: StudioGeoCatalog = hasPublishedSnapshot
     ? {
         ...normalizeStudioGeoSnapshot(snapshot as Record<string, unknown>),
@@ -942,7 +961,11 @@ const routeStudioAssetRequest = async ({
     }
     if (request.method === 'POST') {
       requireRoles(context, STUDIO_EDIT_ROLES);
-      return sendJson(response, 201, await runtime.studioAssetService.create(await readBody(request), context));
+      return sendJson(
+        response,
+        201,
+        await runtime.studioAssetService.create(await readBody(request), context),
+      );
     }
   }
   if (idMatch?.[1]) {
@@ -950,11 +973,18 @@ const routeStudioAssetRequest = async ({
     if (request.method === 'GET') {
       requireRoles(context, STUDIO_READ_ROLES);
       const asset = await runtime.studioAssetService.get(id, context);
-      if (!asset) throw new AppError('studio asset not found', { code: 'STUDIO_ASSET_NOT_FOUND', statusCode: 404 });
+      if (!asset)
+        throw new AppError('studio asset not found', {
+          code: 'STUDIO_ASSET_NOT_FOUND',
+          statusCode: 404,
+        });
       response.statusCode = 200;
       response.setHeader('content-type', STUDIO_ASSET_MIME_TYPE);
       response.setHeader('x-content-type-options', 'nosniff');
-      response.setHeader('content-security-policy', "default-src 'none'; style-src 'none'; sandbox");
+      response.setHeader(
+        'content-security-policy',
+        "default-src 'none'; style-src 'none'; sandbox",
+      );
       response.setHeader('ETag', asset.checksum);
       response.end(asset.content);
       return;
@@ -1041,7 +1071,10 @@ const routeStudioRequest = async ({
     requireRoles(context, STUDIO_EDIT_ROLES);
     const body = (await readBody(request)) as { snapshot?: unknown };
     if (!body.snapshot || Array.isArray(body.snapshot) || typeof body.snapshot !== 'object') {
-      throw new AppError('snapshot is required', { code: 'STUDIO_SNAPSHOT_REQUIRED', statusCode: 400 });
+      throw new AppError('snapshot is required', {
+        code: 'STUDIO_SNAPSHOT_REQUIRED',
+        statusCode: 400,
+      });
     }
     const version = await studioService.saveDraft(
       domain,
@@ -1134,7 +1167,9 @@ const routeStudioRequest = async ({
       });
     }
 
-    const batchInput: Partial<Record<StudioDomain, { snapshot: Record<string, unknown>; ifMatch?: string }>> = {};
+    const batchInput: Partial<
+      Record<StudioDomain, { snapshot: Record<string, unknown>; ifMatch?: string }>
+    > = {};
     for (const [targetDomainStr, resultSnapshot] of Object.entries(computedPlan.resultSnapshots)) {
       const targetDomain = targetDomainStr as StudioDomain;
       const targetIfMatch = body.targetDrafts?.[targetDomain]?.ifMatch;
@@ -1220,7 +1255,11 @@ const routePartyRoleTypeRequest = async ({
           statusCode: 409,
         });
       }
-      return sendJson(response, 201, await runtime.partyRoleTypeRepository.create(context.tenantId, input));
+      return sendJson(
+        response,
+        201,
+        await runtime.partyRoleTypeRepository.create(context.tenantId, input),
+      );
     }
   }
 
@@ -1237,7 +1276,11 @@ const routePartyRoleTypeRequest = async ({
       });
     }
     if (request.method === 'DELETE') {
-      return sendJson(response, 200, await runtime.partyRoleTypeRepository.deactivate(context.tenantId, id));
+      return sendJson(
+        response,
+        200,
+        await runtime.partyRoleTypeRepository.deactivate(context.tenantId, id),
+      );
     }
     const input = parsePartyRoleTypeInput(await readBody(request), current);
     const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
@@ -1254,7 +1297,11 @@ const routePartyRoleTypeRequest = async ({
     return sendJson(
       response,
       200,
-      await runtime.partyRoleTypeRepository.update(context.tenantId, id, input as UpdatePartyRoleTypeInput),
+      await runtime.partyRoleTypeRepository.update(
+        context.tenantId,
+        id,
+        input as UpdatePartyRoleTypeInput,
+      ),
     );
   }
 
@@ -1320,7 +1367,7 @@ const parsePartyRoleTypeCharacteristicPayload = (
 
   const allowedValues =
     body.allowedValues === undefined
-      ? currentAllowedValues ?? []
+      ? (currentAllowedValues ?? [])
       : Array.isArray(body.allowedValues)
         ? body.allowedValues.map((value) => String(value).trim()).filter(Boolean)
         : [];
@@ -1347,9 +1394,7 @@ const routePartyRoleTypeCharacteristicRequest = async ({
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
-  const collectionMatch = url.pathname.match(
-    /^\/v1\/party-role-types\/([^/]+)\/characteristics$/,
-  );
+  const collectionMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)\/characteristics$/);
   if (collectionMatch?.[1]) {
     const roleName = decodeURIComponent(collectionMatch[1]);
     if (request.method === 'GET') {
@@ -1420,7 +1465,9 @@ const routePartyRoleTypeCharacteristicRequest = async ({
           ? await runtime.partyRoleTypeCharacteristicRepository.deactivate(context.tenantId, id)
           : await runtime.partyRoleTypeCharacteristicRepository.update(context.tenantId, id, {
               ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
-              ...(body.group !== undefined ? { group: body.group ? String(body.group) : null } : {}),
+              ...(body.group !== undefined
+                ? { group: body.group ? String(body.group) : null }
+                : {}),
               ...(body.description !== undefined
                 ? { description: body.description ? String(body.description) : null }
                 : {}),
@@ -1486,20 +1533,31 @@ const routeReferenceDataSetRequest = async ({
   if (url.pathname === '/v1/reference-data/sets') {
     if (request.method === 'GET') {
       requireRoles(context, INVENTORY_READ_ROLES);
-      return sendJson(response, 200, await runtime.referenceDataRepository.listSets(context.tenantId));
+      return sendJson(
+        response,
+        200,
+        await runtime.referenceDataRepository.listSets(context.tenantId),
+      );
     }
     if (request.method === 'POST') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
       await runtime.studioService.assertActiveDraft('reference-data', context);
       const input = parseReferenceDataSetInput(await readBody(request));
-      const conflict = await runtime.referenceDataRepository.getSetByKey(context.tenantId, input.key);
+      const conflict = await runtime.referenceDataRepository.getSetByKey(
+        context.tenantId,
+        input.key,
+      );
       if (conflict) {
         throw new AppError('reference data set key already exists', {
           code: 'REFERENCE_DATA_SET_CONFLICT',
           statusCode: 409,
         });
       }
-      return sendJson(response, 201, await runtime.referenceDataRepository.createSet(context.tenantId, input));
+      return sendJson(
+        response,
+        201,
+        await runtime.referenceDataRepository.createSet(context.tenantId, input),
+      );
     }
   }
 
@@ -1516,11 +1574,18 @@ const routeReferenceDataSetRequest = async ({
       });
     }
     if (request.method === 'DELETE') {
-      return sendJson(response, 200, await runtime.referenceDataRepository.deactivateSet(context.tenantId, id));
+      return sendJson(
+        response,
+        200,
+        await runtime.referenceDataRepository.deactivateSet(context.tenantId, id),
+      );
     }
     const input = parseReferenceDataSetInput(await readBody(request));
     if (input.key !== current.key) {
-      const conflict = await runtime.referenceDataRepository.getSetByKey(context.tenantId, input.key);
+      const conflict = await runtime.referenceDataRepository.getSetByKey(
+        context.tenantId,
+        input.key,
+      );
       if (conflict && conflict.id !== current.id) {
         throw new AppError('reference data set key already exists', {
           code: 'REFERENCE_DATA_SET_CONFLICT',
@@ -1528,7 +1593,11 @@ const routeReferenceDataSetRequest = async ({
         });
       }
     }
-    return sendJson(response, 200, await runtime.referenceDataRepository.updateSet(context.tenantId, id, input));
+    return sendJson(
+      response,
+      200,
+      await runtime.referenceDataRepository.updateSet(context.tenantId, id, input),
+    );
   }
 
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
@@ -1545,7 +1614,11 @@ const parseReferenceDataValueInput = (
       statusCode: 400,
     });
   }
-  return { key, label, ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}) };
+  return {
+    key,
+    label,
+    ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
+  };
 };
 
 const routeReferenceDataValueRequest = async ({
@@ -1574,7 +1647,11 @@ const routeReferenceDataValueRequest = async ({
     }
     if (request.method === 'GET') {
       requireRoles(context, INVENTORY_READ_ROLES);
-      return sendJson(response, 200, await runtime.referenceDataRepository.listValues(context.tenantId, setId));
+      return sendJson(
+        response,
+        200,
+        await runtime.referenceDataRepository.listValues(context.tenantId, setId),
+      );
     }
     if (request.method === 'POST') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
@@ -1917,7 +1994,10 @@ const routeGeoRequest = async ({
       let updatedProject = current;
 
       if (hasMetadataUpdate) {
-        const afterMeta = await runtime.geoProjectRepository.update(geoContext.tenantId, projectId, {
+        const afterMeta = await runtime.geoProjectRepository.update(
+          geoContext.tenantId,
+          projectId,
+          {
           ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
           ...(body.description !== undefined
             ? { description: body.description ? String(body.description) : null }
@@ -1925,9 +2005,13 @@ const routeGeoRequest = async ({
           ...(body.iconDataUrl !== undefined
             ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
             : {}),
-        });
+          },
+        );
         if (!afterMeta) {
-          throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+          throw new AppError('project not found', {
+            code: 'GEO_PROJECT_NOT_FOUND',
+            statusCode: 404,
+          });
         }
         updatedProject = afterMeta;
       }
@@ -1985,6 +2069,67 @@ const routeGeoRequest = async ({
     }
   }
 
+  // Opções agregadas do modal de criação: o Projeto escolhe somente tipos modelados no catálogo
+  // ativo, sem fanout HTTP entre catálogo, árvore e specifications no frontend.
+  const projectResourceCreationOptionsMatch = url.pathname.match(
+    /^\/v1\/geo\/projects\/([^/]+)\/resource-creation-options$/,
+  );
+  if (request.method === 'GET' && projectResourceCreationOptionsMatch?.[1]) {
+    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    const projectId = decodeURIComponent(projectResourceCreationOptionsMatch[1]);
+    const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+    if (!project || project.archivedAt) {
+      throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+    }
+    const catalogs = await runtime.resourceService.listResourceCatalogs(
+      { status: 'active' },
+      geoContext,
+    );
+    const catalog = catalogs.find((item) => item.isDefault) ?? catalogs[0];
+    if (!catalog) {
+      return sendJson(response, 200, {
+        catalog: null,
+        resourceTypes: [],
+        resourceSpecifications: [],
+      });
+    }
+    const source = await runtime.resourceService.getResourceModelSnapshotSource(
+      catalog.id,
+      geoContext,
+    );
+    const modeledTypeIds = new Set(
+      source.nodes.flatMap((node) =>
+        node.kind === 'RESOURCE_TYPE' && node.status === 'active' && node.resourceTypeId
+          ? [node.resourceTypeId]
+          : [],
+      ),
+    );
+    const resourceTypes = source.resourceTypes
+      .filter((item) => item.status === 'active' && modeledTypeIds.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        nature: item.nature,
+        infrastructureEligible: isProjectInfrastructureResourceType(item.code),
+      }));
+    const resourceTypeIds = new Set(resourceTypes.map((item) => item.id));
+    const resourceSpecifications = (
+      await loadAllResourceSpecifications(runtime.resourceService, geoContext)
+    )
+      .filter((item) => resourceTypeIds.has(item.resourceTypeId))
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        resourceTypeId: item.resourceTypeId,
+      }));
+    return sendJson(response, 200, {
+      catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+      resourceTypes,
+      resourceSpecifications,
+    });
+  }
+
   // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
   // scripts/build-project-areas.mjs — não há geração pela API, só leitura do que o script já
   // gravou (mesmo modelo somente-leitura da cobertura GPON, GET /v1/geo/coverage).
@@ -2000,20 +2145,13 @@ const routeGeoRequest = async ({
         100,
       );
       const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
+      const view = url.searchParams.get('view') === 'infrastructure' ? 'infrastructure' : 'all';
       const links = await runtime.geoProjectRepository.listResourceLinks(
         geoContext.tenantId,
         projectId,
-        { limit, offset },
+        { limit, offset, view },
       );
-      const nodes = await geoTreeService.resourcesByIds(links.map((link) => link.resourceId));
-      const items =
-        url.searchParams.get('view') === 'infrastructure'
-          ? nodes.filter((node) =>
-              ['Pole', 'Duct', 'Manhole', 'CTO', 'DIO', 'Splitter'].includes(
-                node.resourceType ?? '',
-              ),
-            )
-          : nodes;
+      const items = await geoTreeService.resourcesByIds(links.map((link) => link.resourceId));
       return sendJson(response, 200, { items, offset, limit, hasMore: links.length === limit });
     }
     if (request.method === 'POST') {
@@ -3439,7 +3577,10 @@ const routeResourceRequest = async ({
       context,
     );
     const portIds = view.groups.flatMap((group) => group.ports.map((port) => port.resource.id));
-    const activeServicePortIds = await serviceService.listActiveSupportingResourceIds(portIds, context);
+    const activeServicePortIds = await serviceService.listActiveSupportingResourceIds(
+      portIds,
+      context,
+    );
     return sendJson(response, 200, {
       ...view,
       groups: view.groups.map((group) => ({
@@ -3469,7 +3610,11 @@ const routeResourceRequest = async ({
   }
   if (request.method === 'POST' && url.pathname === '/v1/resource/relationship-types/bootstrap') {
     requireRoles(context, CATALOG_ADMIN_ROLES);
-    return sendJson(response, 200, resourceService.ensureBootstrapResourceRelationshipTypes(context));
+    return sendJson(
+      response,
+      200,
+      resourceService.ensureBootstrapResourceRelationshipTypes(context),
+    );
   }
 
   const resourceRelationshipTypeMatch = url.pathname.match(
@@ -3488,7 +3633,9 @@ const routeResourceRequest = async ({
         response,
         201,
         resourceService.createResourceRelationshipType(
-          (await readBody(request)) as Parameters<typeof resourceService.createResourceRelationshipType>[0],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.createResourceRelationshipType
+          >[0],
           context,
         ),
       );
@@ -3499,7 +3646,9 @@ const routeResourceRequest = async ({
         200,
         resourceService.updateResourceRelationshipType(
           code,
-          (await readBody(request)) as Parameters<typeof resourceService.updateResourceRelationshipType>[1],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.updateResourceRelationshipType
+          >[1],
           context,
         ),
       );
@@ -3535,7 +3684,9 @@ const routeResourceRequest = async ({
         201,
         resourceService.createResourceTypeRelationshipRule(
           resourceTypeId,
-          (await readBody(request)) as Parameters<typeof resourceService.createResourceTypeRelationshipRule>[1],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.createResourceTypeRelationshipRule
+          >[1],
           context,
         ),
       );
@@ -3547,7 +3698,9 @@ const routeResourceRequest = async ({
         resourceService.updateResourceTypeRelationshipRule(
           resourceTypeId,
           ruleId,
-          (await readBody(request)) as Parameters<typeof resourceService.updateResourceTypeRelationshipRule>[2],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.updateResourceTypeRelationshipRule
+          >[2],
           context,
         ),
       );
@@ -3618,7 +3771,9 @@ const routeResourceRequest = async ({
         200,
         await resourceService.reorderResourceCatalogNodes(
           catalogId,
-          (await readBody(request)) as Parameters<typeof resourceService.reorderResourceCatalogNodes>[1],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.reorderResourceCatalogNodes
+          >[1],
           context,
         ),
       );
@@ -3643,7 +3798,9 @@ const routeResourceRequest = async ({
         201,
         resourceService.createResourceCatalogNode(
           catalogId,
-          (await readBody(request)) as Parameters<typeof resourceService.createResourceCatalogNode>[1],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.createResourceCatalogNode
+          >[1],
           context,
         ),
       );
@@ -3662,13 +3819,19 @@ const routeResourceRequest = async ({
         resourceService.updateResourceCatalogNode(
           catalogId,
           nodeId,
-          (await readBody(request)) as Parameters<typeof resourceService.updateResourceCatalogNode>[2],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.updateResourceCatalogNode
+          >[2],
           context,
         ),
       );
     }
     if (nodeId && !action && request.method === 'DELETE') {
-      return sendJson(response, 200, resourceService.deleteResourceCatalogNode(catalogId, nodeId, context));
+      return sendJson(
+        response,
+        200,
+        resourceService.deleteResourceCatalogNode(catalogId, nodeId, context),
+      );
     }
     if (nodeId && action === 'move' && request.method === 'POST') {
       return sendJson(
@@ -3677,13 +3840,19 @@ const routeResourceRequest = async ({
         resourceService.moveResourceCatalogNode(
           catalogId,
           nodeId,
-          (await readBody(request)) as Parameters<typeof resourceService.moveResourceCatalogNode>[2],
+          (await readBody(request)) as Parameters<
+            typeof resourceService.moveResourceCatalogNode
+          >[2],
           context,
         ),
       );
     }
     if (nodeId && action === 'path' && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.getResourceCatalogNodePath(catalogId, nodeId, context));
+      return sendJson(
+        response,
+        200,
+        resourceService.getResourceCatalogNodePath(catalogId, nodeId, context),
+      );
     }
     if (nodeId && action === 'impact' && request.method === 'GET') {
       return sendJson(
@@ -3733,7 +3902,11 @@ const routeResourceRequest = async ({
 
   if (route.kind === 'resourceCatalog') {
     if (!route.id && request.method === 'GET') {
-      return sendJson(response, 200, resourceService.listResourceCatalogs(parseResourceCatalogQuery(url.searchParams), context));
+      return sendJson(
+        response,
+        200,
+        resourceService.listResourceCatalogs(parseResourceCatalogQuery(url.searchParams), context),
+      );
     }
     if (!route.id && request.method === 'POST') {
       return sendJson(
@@ -5126,7 +5299,10 @@ const parseCreateResourceSpecificationInput = (
       statusCode: 400,
     });
   }
-  return { ...body, resourceTypeId: body.resourceTypeId.trim() } as CreateResourceSpecificationInput;
+  return {
+    ...body,
+    resourceTypeId: body.resourceTypeId.trim(),
+  } as CreateResourceSpecificationInput;
 };
 
 const parseUpdateResourceSpecificationInput = (
@@ -5167,6 +5343,7 @@ const parseUpdateResourceTypeInput = (
     'status',
     'nature',
     'mapPresence',
+    'geometryKind',
     'resourceTypeCharacteristic',
   ]);
   const unexpected = Object.keys(body).find((field) => !editable.has(field));
@@ -5204,6 +5381,18 @@ const parseUpdateResourceTypeInput = (
   if (body.mapPresence !== undefined && typeof body.mapPresence !== 'boolean') {
     throw new AppError('mapPresence must be boolean', {
       code: 'RESOURCE_TYPE_MAP_PRESENCE_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (
+    body.geometryKind !== undefined &&
+    body.geometryKind !== null &&
+    body.geometryKind !== 'POINT' &&
+    body.geometryKind !== 'LINE' &&
+    body.geometryKind !== 'POLYGON'
+  ) {
+    throw new AppError('geometryKind must be POINT, LINE, POLYGON or null', {
+      code: 'RESOURCE_TYPE_GEOMETRY_KIND_INVALID',
       statusCode: 400,
     });
   }

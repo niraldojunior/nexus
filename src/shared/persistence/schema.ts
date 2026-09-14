@@ -514,7 +514,7 @@ export const MIGRATIONS_SQL = `
     tile_x INTEGER NOT NULL,
     tile_y INTEGER NOT NULL,
     entity_id TEXT NOT NULL,
-    shape TEXT NOT NULL CHECK(shape IN ('point', 'line')),
+    shape TEXT NOT NULL CHECK(shape IN ('point', 'line', 'polygon')),
     feature_kind TEXT NOT NULL CHECK(feature_kind IN ('resource', 'site')),
     entity_type TEXT NOT NULL,
     type_code TEXT,
@@ -996,6 +996,10 @@ export const SCHEMA_SQL = `
         -- ALTER seguinte vira no-op (coluna já existe) e o namespace fica com VARCHAR2 em vez de
         -- NUMBER, estourando ORA-00932 no primeiro JOIN que compara com o literal 1.
         map_presence INTEGER,
+        -- Geometria canônica das instâncias no mapa (issue #240). Nullable: tipo lógico e tipo
+        -- físico fora do mapa não declaram geometria. A coerência com nature/map_presence é
+        -- invariante de domínio (ResourceService), não CHECK — o banco só guarda o domínio léxico.
+        geometry_kind TEXT CHECK(geometry_kind IN ('POINT', 'LINE', 'POLYGON')),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(tenant_id, code),
@@ -1974,6 +1978,17 @@ const MIGRATIONS_SQL_V17_ENVIRONMENT_PROFILE = `
   UPDATE tmf_geographic_site_spec_containment_rule SET is_protected = 0 WHERE is_protected <> 0;
 `;
 
+// Geometria canônica do ResourceType (issue #240). A autoria da geometria sai da Experiência do
+// Mapa e passa a viver no tipo; a Experiência do Mapa herda. O DDL aditivo é portável, mas as duas
+// operações restantes exigem o adapter: (a) o CHECK de `geo_map_feature.shape` é anônimo, então no
+// Oracle o nome é gerado pelo sistema (SYS_C######) e só pode ser descoberto em `user_constraints`;
+// (b) o backfill precisa ler o snapshot publicado do Studio GEO e recusar tipos sem evidência, o
+// que não se expressa em SQL portável. Ver `applyResourceTypeGeometryKindMigration`.
+const MIGRATIONS_SQL_V18_RESOURCE_TYPE_GEOMETRY_KIND = `
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS geometry_kind TEXT
+    CHECK(geometry_kind IN ('POINT', 'LINE', 'POLYGON'));
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2035,6 +2050,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 17,
     name: 'environment-profile-and-unprotected-geo-specs',
     sql: MIGRATIONS_SQL_V17_ENVIRONMENT_PROFILE,
+  },
+  {
+    version: 18,
+    name: 'resource-type-geometry-kind',
+    sql: MIGRATIONS_SQL_V18_RESOURCE_TYPE_GEOMETRY_KIND,
   },
 ];
 

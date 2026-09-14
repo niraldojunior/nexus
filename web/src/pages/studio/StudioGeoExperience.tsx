@@ -91,6 +91,30 @@ const materializeVisualConfigs = (nodes: StudioGeoNode[]): StudioGeoNode[] =>
       : node,
   );
 
+const visualConfigForEligibleOption = (
+  current: StudioGeoVisualConfig | undefined,
+  option: EligibleOption | undefined,
+  label: string,
+): StudioGeoVisualConfig | undefined => {
+  if (!option) return current;
+  return current?.geometryKind === option.geometryKind
+    ? current
+    : defaultVisualConfigForGeometry(option.geometryKind, option.reference, label);
+};
+
+const referenceForEligibleOption = (option: EligibleOption): StudioGeoEntityNode['entity'] => ({
+  category: option.category,
+  sourceDomain: option.sourceDomain,
+  sourceType: option.sourceType,
+  sourceId: option.sourceId,
+});
+
+const optionForEntity = (
+  entity: StudioGeoEntityNode['entity'],
+  eligible: EligibleOption[],
+): EligibleOption | undefined =>
+  eligible.find((option) => option.sourceId === entity.sourceId || option.id === entity.sourceId);
+
 const isDescendant = (nodes: StudioGeoNode[], candidateId: string, ancestorId: string): boolean => {
   let current = nodes.find((node) => node.id === candidateId);
   const visited = new Set<string>();
@@ -191,10 +215,20 @@ export function StudioGeoExperience({
     wasEditing.current = isEditing;
   }, [isEditing, load]);
 
-  const buildSnapshot = useCallback(
-    async () => ({ schemaVersion: 2, nodes: materializeVisualConfigs(compactOrder(snapshot.nodes)) }),
-    [snapshot],
-  );
+  const buildSnapshot = useCallback(async () => {
+    const eligibleByCategory: Record<StudioGeoEntityCategory, EligibleOption[]> = {
+      LOCAL: buildEligibleSites(siteSpecs),
+      RESOURCE: buildEligibleResources(resourceTypes),
+      COVERAGE: buildEligibleCoverages(siteSpecs),
+    };
+    const nodes = materializeVisualConfigs(compactOrder(snapshot.nodes)).map((node) => {
+      if (node.kind !== 'ENTITY') return node;
+      const option = optionForEntity(node.entity, eligibleByCategory[node.entity.category]);
+      const visualConfig = visualConfigForEligibleOption(node.visualConfig, option, node.label);
+      return visualConfig ? { ...node, visualConfig } : node;
+    });
+    return { schemaVersion: 2, nodes };
+  }, [resourceTypes, siteSpecs, snapshot]);
 
   const captureDraft = useCallback(async () => {
     const status = await getStudioStatus('studio-geo');
@@ -344,6 +378,8 @@ export function StudioGeoExperience({
         ],
       }));
     } else {
+      const entity = defaultEntityReference('RESOURCE');
+      const option = optionForEntity(entity, eligibleResources);
       const node: StudioGeoEntityNode = {
         id,
         kind: 'ENTITY',
@@ -352,7 +388,10 @@ export function StudioGeoExperience({
         sortOrder: 9999,
         active: true,
         defaultVisible: true,
-        entity: defaultEntityReference('RESOURCE'),
+        entity,
+        ...(option
+          ? { visualConfig: defaultVisualConfigForGeometry(option.geometryKind, option.reference, 'Nova Entidade') }
+          : {}),
       };
       setSnapshot((current) => ({ ...current, nodes: [...current.nodes, node] }));
     }
@@ -367,69 +406,53 @@ export function StudioGeoExperience({
 
   const handleEntityCategoryChange = (newCategory: StudioGeoEntityCategory) => {
     if (!selected || selected.kind !== 'ENTITY') return;
-    const list = getEligibleListForCategory(newCategory);
-    const first = list[0];
+    const first = getEligibleListForCategory(newCategory)[0];
     if (first) {
       patchSelected({
-        entity: {
-          category: first.category,
-          sourceDomain: first.sourceDomain,
-          sourceType: first.sourceType,
-          sourceId: first.sourceId,
-        },
+        entity: referenceForEligibleOption(first),
+        visualConfig: visualConfigForEligibleOption(selected.visualConfig, first, selected.label),
       } as Partial<StudioGeoNode>);
-    } else {
-      patchSelected({
-        entity: {
-          category: newCategory,
-          sourceDomain:
-            newCategory === 'LOCAL'
-              ? 'location-model'
-              : newCategory === 'RESOURCE'
-                ? 'resource-model'
-                : 'spatial',
-          sourceType:
-            newCategory === 'LOCAL'
-              ? 'GEOGRAPHIC_SITE_SPECIFICATION'
-              : newCategory === 'RESOURCE'
-                ? 'RESOURCE_TYPE'
-                : 'SPATIAL_COVERAGE',
-          sourceId: '',
-        },
-      } as Partial<StudioGeoNode>);
+      return;
     }
+    patchSelected({
+      entity: defaultEntityReference(newCategory),
+      visualConfig: undefined,
+    } as Partial<StudioGeoNode>);
   };
 
   const handleEntitySourceChange = (sourceId: string) => {
     if (!selected || selected.kind !== 'ENTITY') return;
-    const list = getEligibleListForCategory(selected.entity.category);
-    const found = list.find((item) => item.sourceId === sourceId || item.id === sourceId);
+    const found = getEligibleListForCategory(selected.entity.category).find(
+      (item) => item.sourceId === sourceId || item.id === sourceId,
+    );
     if (!found) return;
     patchSelected({
-      entity: {
-        category: found.category,
-        sourceDomain: found.sourceDomain,
-        sourceType: found.sourceType,
-        sourceId: found.sourceId,
-      },
+      entity: referenceForEligibleOption(found),
+      visualConfig: visualConfigForEligibleOption(selected.visualConfig, found, selected.label),
     } as Partial<StudioGeoNode>);
   };
 
+  const selectedEligibleOption =
+    selected?.kind === 'ENTITY'
+      ? optionForEntity(selected.entity, getEligibleListForCategory(selected.entity.category))
+      : undefined;
   const selectedGeometryKind =
     selected?.kind === 'ENTITY'
-      ? visualGeometryKindOf(selected.visualConfig, selected.entity, selected.label)
+      ? (selectedEligibleOption?.geometryKind ??
+        visualGeometryKindOf(selected.visualConfig, selected.entity, selected.label))
       : null;
 
-  const handleGeometryKindChange = (geometryKind: StudioGeoVisualConfig['geometryKind']) => {
-    if (!selected || selected.kind !== 'ENTITY') return;
-    patchSelected({
-      visualConfig: defaultVisualConfigForGeometry(geometryKind, selected.entity, selected.label),
-    });
-  };
-
+  const selectedVisualConfig =
+    selected?.kind === 'ENTITY'
+      ? (visualConfigForEligibleOption(
+          selected.visualConfig,
+          selectedEligibleOption,
+          selected.label,
+        ) ?? selected.visualConfig)
+      : undefined;
   const selectedPointVisualConfig =
     selected?.kind === 'ENTITY' && selectedGeometryKind === 'POINT'
-      ? (selected.visualConfig ?? defaultVisualConfigForGeometry('POINT', selected.entity, selected.label))
+      ? (selectedVisualConfig ?? defaultVisualConfigForGeometry('POINT', selected.entity, selected.label))
       : null;
   const selectedPointConfig =
     selectedPointVisualConfig?.geometryKind === 'POINT' ? selectedPointVisualConfig : null;
@@ -888,7 +911,11 @@ export function StudioGeoExperience({
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
                 {activeTab === 'visual' && selected.kind === 'ENTITY' ? (
                   <GeoNodeVisualConfigTab
-                    node={selected}
+                    node={
+                      selectedVisualConfig
+                        ? { ...selected, visualConfig: selectedVisualConfig }
+                        : selected
+                    }
                     canEdit={canMutate}
                     onChange={(updatedVisualConfig: StudioGeoVisualConfig) =>
                       patchSelected({ visualConfig: updatedVisualConfig })
@@ -957,33 +984,6 @@ export function StudioGeoExperience({
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-[0.78rem] font-semibold text-app-text mb-1.5">
-                            Geometria no Mapa
-                          </label>
-                          <div className="grid grid-cols-3 gap-2">
-                            {([
-                              ['POINT', 'Ponto', MapPin],
-                              ['LINE', 'Linha', Route],
-                              ['POLYGON', 'Região', Scan],
-                            ] as const).map(([geometryKind, label, Icon]) => (
-                              <button
-                                key={geometryKind}
-                                type="button"
-                                disabled={!canMutate}
-                                onClick={() => handleGeometryKindChange(geometryKind)}
-                                className={`flex items-center justify-center gap-1.5 rounded-[10px] border py-2 text-[0.8rem] font-medium transition ${
-                                  selectedGeometryKind === geometryKind
-                                    ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
-                                    : 'border-app-border bg-white text-app-muted hover:text-app-text'
-                                }`}
-                              >
-                                <Icon className="h-3.5 w-3.5" />
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
 
                         <div>
                           <label className="block text-[0.78rem] font-semibold text-app-text mb-1">

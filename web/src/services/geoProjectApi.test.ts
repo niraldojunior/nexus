@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchProjectSites, projectIdOfNode } from './geoProjectApi';
+import {
+  fetchProjectResourceCreationOptions,
+  fetchProjectSites,
+  projectIdOfNode,
+} from './geoProjectApi';
 import type { GeoTreeNode } from './geoTreeApi';
 
 afterEach(() => vi.restoreAllMocks());
@@ -73,6 +77,39 @@ describe('fetchProjectSites', () => {
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toContain(`/v1/geo/projects/project-1/sites?`);
     expect(url).toContain('minLng=-44');
+  });
+});
+
+describe('fetchProjectResourceCreationOptions', () => {
+  it('deduplica a consulta do catálogo em voo para o mesmo projeto', async () => {
+    let resolveResponse: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveResponse = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = fetchProjectResourceCreationOptions('project-1');
+    const second = fetchProjectResourceCreationOptions('project-1');
+
+    expect(second).toBe(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/geo/projects/project-1/resource-creation-options',
+      expect.any(Object),
+    );
+
+    resolveResponse?.(
+      jsonResponse({
+        catalog: { id: 'catalog-1', code: 'network', name: 'Rede' },
+        resourceTypes: [],
+        resourceSpecifications: [],
+      }),
+    );
+
+    await expect(first).resolves.toMatchObject({ catalog: { id: 'catalog-1' } });
   });
 });
 

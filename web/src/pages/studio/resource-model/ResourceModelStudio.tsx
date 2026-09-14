@@ -331,6 +331,9 @@ export function ResourceModelStudio({
                   status: type.status,
                   nature: type.nature,
                   mapPresence: type.mapPresence,
+                  // Só declara a geometria quando ela existe: o campo ausente é o que faz o
+                  // adapter preservar o estado vivo ao materializar um snapshot histórico.
+                  ...(type.geometryKind ? { geometryKind: type.geometryKind } : {}),
                   resourceTypeCharacteristic: type.resourceTypeCharacteristic,
                 },
               }

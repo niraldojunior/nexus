@@ -25,6 +25,7 @@ const eventService = {
 };
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z"/></svg>';
+const noResourceTypes = async () => [];
 
 test('Studio SVG sanitizer accepts a self-contained SVG and rejects active content', () => {
   assert.equal(sanitizeStudioSvg(svg), svg);
@@ -53,7 +54,7 @@ test('Studio assets are tenant-scoped and soft-retired', async () => {
 });
 
 test('Studio GEO adapter validates canonical hierarchy and rejects duplicate entity references', async () => {
-  const adapter = new StudioGeoAdapter(async () => true);
+  const adapter = new StudioGeoAdapter(async () => true, noResourceTypes);
   const valid = await adapter.validate(CANONICAL_STUDIO_GEO_SNAPSHOT);
   assert.equal(valid.valid, true);
 
@@ -71,7 +72,10 @@ test('Studio GEO adapter validates canonical hierarchy and rejects duplicate ent
 });
 
 test('Studio GEO validates visual point configuration and its published asset reference', async () => {
-  const adapter = new StudioGeoAdapter(async (tenantId, assetId) => tenantId === 'vtal' && assetId === 'asset-ok');
+  const adapter = new StudioGeoAdapter(
+    async (tenantId, assetId) => tenantId === 'vtal' && assetId === 'asset-ok',
+    noResourceTypes,
+  );
   const base = CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.find((node) => node.kind === 'ENTITY');
   assert.ok(base);
   const snapshot = {
@@ -113,7 +117,7 @@ test('Studio GEO validates visual point configuration and its published asset re
 
 test('Studio GEO bootstrap publishes only once and keeps the published snapshot isolated from draft', async () => {
   const studio = new StudioService(new StudioRepository(), eventService as never);
-  studio.registerAdapter(new StudioGeoAdapter(async () => true));
+  studio.registerAdapter(new StudioGeoAdapter(async () => true, noResourceTypes));
   const first = await studio.ensurePublishedBootstrap('studio-geo', CANONICAL_STUDIO_GEO_SNAPSHOT, context);
   const second = await studio.ensurePublishedBootstrap('studio-geo', { groups: [], layers: [] }, context);
   assert.equal(first.id, second.id);

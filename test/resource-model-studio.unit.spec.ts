@@ -915,7 +915,7 @@ test('ResourceService.updateResourceType: rejects model characteristic with dive
       ctoType.id,
       {
         resourceTypeCharacteristic: [
-          { name: 'model', value: '123', valueType: 'number', group: 'commercial' },
+          { name: 'model', value: '123', valueType: 'integer', group: 'commercial' },
         ],
       },
       context,

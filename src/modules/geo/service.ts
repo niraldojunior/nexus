@@ -1799,13 +1799,15 @@ export class GeoService {
     return await this.repository.getRelationshipType(normalizeRelationshipCode(code));
   }
 
+  // GeographicLocation é compartilhado entre tenants (issue #244), como Party — a leitura por id
+  // não escopa por tenant, só listLocations/listAddresses continuam filtrando.
   public async getLocation(
     id: string,
     context?: RequestContext,
   ): Promise<GeographicLocation | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return await this.repository.getLocation(id, { tenantId: ctx.tenantId });
+    return await this.repository.getLocation(id);
   }
   public async getAddress(
     id: string,
@@ -1813,7 +1815,7 @@ export class GeoService {
   ): Promise<GeographicAddress | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return await this.repository.getAddress(id, { tenantId: ctx.tenantId });
+    return await this.repository.getAddress(id);
   }
   public async getSite(id: string, context?: RequestContext): Promise<GeographicSite | undefined> {
     const ctx = this.resolveContext(context);
@@ -2522,14 +2524,14 @@ export class GeoService {
     });
   }
 
+  // `context` fica na assinatura por estabilidade de API (chamado de ~10 pontos com `ctx` à
+  // mão), mas não é mais repassado ao repositório: GeographicLocation/Address são compartilhados
+  // entre tenants (issue #244), a leitura por id nunca escopa por tenant.
   private async getLocationOrThrow(
     id: string,
-    context?: RequestContext,
+    _context?: RequestContext,
   ): Promise<GeographicLocation> {
-    const location = await this.repository.getLocation(
-      id,
-      context ? { tenantId: context.tenantId } : undefined,
-    );
+    const location = await this.repository.getLocation(id);
     if (!location)
       throw new AppError('geographic location not found', {
         code: 'GEO_LOCATION_NOT_FOUND',
@@ -2540,12 +2542,9 @@ export class GeoService {
 
   private async getAddressOrThrow(
     id: string,
-    context?: RequestContext,
+    _context?: RequestContext,
   ): Promise<GeographicAddress> {
-    const address = await this.repository.getAddress(
-      id,
-      context ? { tenantId: context.tenantId } : undefined,
-    );
+    const address = await this.repository.getAddress(id);
     if (!address)
       throw new AppError('geographic address not found', {
         code: 'GEO_ADDRESS_NOT_FOUND',

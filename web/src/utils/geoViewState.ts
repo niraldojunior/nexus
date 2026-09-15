@@ -18,6 +18,11 @@ import type { DraftAddress } from './googleMaps';
 
 export type MapCamera = { lat: number; lng: number; zoom: number };
 
+/** Coordenadas centrais aproximadas do Brasil para enquadramento nacional no primeiro acesso. */
+export const BRAZIL_CENTER: { lat: number; lng: number } = { lat: -14.235, lng: -51.9253 };
+/** Nível de zoom para visualizar o território brasileiro por completo no primeiro acesso. */
+export const BRAZIL_DEFAULT_ZOOM = 4;
+
 // `site`/`resource` guardam só o id (refId, uuid) — nunca o `GeoTreeNode` inteiro, que é
 // pesado e pode estar desatualizado. A re-hidratação usa `fetchTreeNode('site:<id>' |
 // 'resource:<id>')` (services/geoTreeApi.ts), o mesmo endpoint que já completa a seleção
@@ -306,7 +311,7 @@ function contextIdentity(context: GeoViewContext): string {
 // (um link compartilhado ou um F5 devem refletir exatamente aquela URL); o storage completa o
 // payload rico do endereço (`DraftAddress`) só quando a identidade bate — caso contrário o
 // `DraftAddress` salvo pertence a outra seleção e seria enganoso reusá-lo. Sem URL nem storage,
-// devolve `null`: quem chama cai no default de sempre (`DEFAULT_CENTER`/zoom 15, sem contexto).
+// devolve `null`: quem chama cai no default de sempre (`BRAZIL_CENTER`/`BRAZIL_DEFAULT_ZOOM`, sem contexto).
 export function resolveInitialViewState(
   environmentId: string,
   search: string = typeof window !== 'undefined' ? window.location.search : '',

@@ -1,7 +1,25 @@
+import { createElement, StrictMode, type ReactNode } from 'react';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useGeoViewState } from './useGeoViewState';
+import { useGeoViewState, type UseGeoViewState } from './useGeoViewState';
 import { readStoredViewState } from '../utils/geoViewState';
+
+// O app real monta sob React.StrictMode (web/src/main.tsx), que invoca cada render DUAS vezes.
+// TODA esta suíte roda sob StrictMode de propósito: a regressão de viewport que ela existe para
+// travar (o mapa voltando ao Brasil em vez do último lugar navegado) passava em 100% dos testes
+// justamente porque nenhum deles exercitava o double-invoke — o ajuste em fase de render de
+// useGeoViewState era gated por um ref que a primeira invocação já satisfazia. Não monte um
+// renderHook sem este wrapper aqui.
+const strictModeWrapper = ({ children }: { children: ReactNode }) =>
+  createElement(StrictMode, null, children);
+
+const renderViewState = <P extends { environmentId: string | null }>(
+  initialProps: P,
+): ReturnType<typeof renderHook<UseGeoViewState, P>> =>
+  renderHook<UseGeoViewState, P>(({ environmentId }) => useGeoViewState(environmentId), {
+    initialProps,
+    wrapper: strictModeWrapper,
+  });
 
 const CAMERA_1 = { lat: -22.9068, lng: -43.1075, zoom: 15 };
 const CAMERA_2 = { lat: -22.91, lng: -43.11, zoom: 17 };
@@ -25,7 +43,7 @@ afterEach(() => {
 
 describe('useGeoViewState', () => {
   it('sem environmentId, não restaura nem persiste', () => {
-    const { result } = renderHook(() => useGeoViewState(null));
+    const { result } = renderViewState({ environmentId: null as string | null });
     act(() => {
       result.current.reportCamera(CAMERA_1);
       vi.advanceTimersByTime(500);
@@ -35,7 +53,7 @@ describe('useGeoViewState', () => {
   });
 
   it('agrupa múltiplos reportCamera num único commit no ambiente atual', () => {
-    const { result } = renderHook(() => useGeoViewState(ENVIRONMENT_A));
+    const { result } = renderViewState({ environmentId: ENVIRONMENT_A as string | null });
     act(() => {
       result.current.reportCamera(CAMERA_1);
       result.current.reportCamera({ ...CAMERA_1, zoom: 16 });
@@ -48,7 +66,7 @@ describe('useGeoViewState', () => {
   });
 
   it('setContext agenda um commit junto da câmera', () => {
-    const { result } = renderHook(() => useGeoViewState(ENVIRONMENT_A));
+    const { result } = renderViewState({ environmentId: ENVIRONMENT_A as string | null });
     act(() => {
       result.current.reportCamera(CAMERA_1);
       result.current.setContext({ kind: 'site', siteId: 'abc' });
@@ -57,11 +75,24 @@ describe('useGeoViewState', () => {
     expect(currentSearchParams().get('site')).toBe('abc');
   });
 
+  // Reproduz o fluxo real de GeoPage: no primeiro render, `environmentId` é `null`
+  // (useMapLayerCatalog ainda carregando — ver EMPTY_PENDING_CATALOG); só depois de um
+  // efeito assíncrono resolver o catálogo é que o ambiente real chega. Os outros testes desta
+  // suíte montam o hook já com um environmentId concreto, o que nunca exercita essa transição
+  // null → real. Se a restauração via URL (`ll`/`z`) só funcionasse no `useState` inicial (que
+  // roda com environmentId ainda null) e não no ramo de correção em fase de render, isto pegaria.
+  it('URL com ll/z é restaurada quando o environmentId chega depois (null → real, como em GeoPage)', () => {
+    window.history.replaceState({}, '', `/geo?ll=${CAMERA_1.lat},${CAMERA_1.lng}&z=${CAMERA_1.zoom}`);
+    const { result, rerender } = renderViewState({ environmentId: null as string | null });
+    expect(result.current.initialView).toBeNull();
+
+    rerender({ environmentId: ENVIRONMENT_A });
+
+    expect(result.current.initialView?.camera).toEqual(CAMERA_1);
+  });
+
   it('troca de ambiente restaura somente seu estado e não grava no anterior', () => {
-    const { result, rerender } = renderHook(
-      ({ environmentId }) => useGeoViewState(environmentId),
-      { initialProps: { environmentId: ENVIRONMENT_A } },
-    );
+    const { result, rerender } = renderViewState({ environmentId: ENVIRONMENT_A as string | null });
     act(() => {
       result.current.reportCamera(CAMERA_1);
       vi.advanceTimersByTime(500);
@@ -79,7 +110,7 @@ describe('useGeoViewState', () => {
   });
 
   it('flush imediato quando a aba fica oculta', () => {
-    const { result } = renderHook(() => useGeoViewState(ENVIRONMENT_A));
+    const { result } = renderViewState({ environmentId: ENVIRONMENT_A as string | null });
     act(() => result.current.reportCamera(CAMERA_1));
     Object.defineProperty(document, 'hidden', { configurable: true, value: true });
     act(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -91,7 +122,7 @@ describe('useGeoViewState', () => {
     const setItemSpy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
-    const { result } = renderHook(() => useGeoViewState(ENVIRONMENT_A));
+    const { result } = renderViewState({ environmentId: ENVIRONMENT_A as string | null });
     act(() => {
       result.current.reportCamera(CAMERA_1);
       vi.advanceTimersByTime(500);

@@ -1367,59 +1367,71 @@ export class OracleResourceRepository implements IResourceRepository {
     );
     if (!row) return undefined;
 
-    const resource = this.mapPhysicalResource(row, await this.listResourceRelationships(id));
-    const specification = await this.getResourceSpecification(row.resource_specification_id, scope);
-    if (!specification) return undefined;
     const tenantId = scope?.tenantId ?? row.tenant_id ?? 'default';
 
-    const statusCatalogEntry = row.status_code
-      ? await this.getResourceStatusCatalogEntry(row.status_code, tenantId)
-      : undefined;
-    const parentRow = await this.db.get<{
-      id: string;
-      name: string;
-      resource_type: string;
-      relationship_type: string;
-    }>(
-      `SELECT p.id, p.name, prt.code AS resource_type, rr.relationship_type
-         FROM tmf_resource_relationship rr
-         JOIN tmf_physical_resource p ON p.id = rr.resource_from_id
-         JOIN tmf_resource_specification ps
-           ON ps.id = p.resource_specification_id AND ps.tenant_id = p.tenant_id
-         JOIN tmf_resource_type prt
-           ON prt.id = ps.resource_type_id
-        WHERE rr.resource_to_id = ?
-          AND rr.relationship_type IN ('containsAsChild', 'connectedTo')
-          AND p.tenant_id = ?
-        ORDER BY CASE WHEN rr.relationship_type = 'containsAsChild' THEN 0 ELSE 1 END, p.name
-        LIMIT 1`,
-      [id, tenantId],
-    );
-    const childRow = await this.db.get<{ count: number }>(
-      `SELECT COUNT(*) AS count
-         FROM tmf_resource_relationship rr
-         JOIN tmf_physical_resource c ON c.id = rr.resource_to_id
-        WHERE rr.resource_from_id = ? AND rr.relationship_type = 'containsAsChild'
-          AND c.tenant_id = ?`,
-      [id, tenantId],
-    );
+    const [
+      relationships,
+      specification,
+      statusCatalogEntry,
+      parentRow,
+      childRow,
+      place,
+      servingSite,
+      project,
+    ] = await Promise.all([
+      this.listResourceRelationships(id),
+      this.getResourceSpecification(row.resource_specification_id, scope),
+      row.status_code
+        ? this.getResourceStatusCatalogEntry(row.status_code, tenantId)
+        : Promise.resolve(undefined),
+      this.db.get<{
+        id: string;
+        name: string;
+        resource_type: string;
+        relationship_type: string;
+      }>(
+        `SELECT p.id, p.name, prt.code AS resource_type, rr.relationship_type
+           FROM tmf_resource_relationship rr
+           JOIN tmf_physical_resource p ON p.id = rr.resource_from_id
+           JOIN tmf_resource_specification ps
+             ON ps.id = p.resource_specification_id AND ps.tenant_id = p.tenant_id
+           JOIN tmf_resource_type prt
+             ON prt.id = ps.resource_type_id
+          WHERE rr.resource_to_id = ?
+            AND rr.relationship_type IN ('containsAsChild', 'connectedTo')
+            AND p.tenant_id = ?
+          ORDER BY CASE WHEN rr.relationship_type = 'containsAsChild' THEN 0 ELSE 1 END, p.name
+          LIMIT 1`,
+        [id, tenantId],
+      ),
+      this.db.get<{ count: number }>(
+        `SELECT COUNT(*) AS count
+           FROM tmf_resource_relationship rr
+           JOIN tmf_physical_resource c ON c.id = rr.resource_to_id
+          WHERE rr.resource_from_id = ? AND rr.relationship_type = 'containsAsChild'
+            AND c.tenant_id = ?`,
+        [id, tenantId],
+      ),
+      row.place_id
+        ? this.resolveDetailPlace(row.place_id, row.place_type, tenantId)
+        : Promise.resolve(undefined),
+      row.serving_site_id
+        ? this.db.get<{ id: string; name: string }>(
+            `SELECT id, name FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
+            [row.serving_site_id, tenantId],
+          )
+        : Promise.resolve(undefined),
+      row.project_id
+        ? this.db.get<{ id: string; name: string }>(
+            `SELECT id, name FROM geo_project WHERE id = ? AND tenant_id = ?`,
+            [row.project_id, tenantId],
+          )
+        : Promise.resolve(undefined),
+    ]);
 
-    const place = row.place_id
-      ? await this.resolveDetailPlace(row.place_id, row.place_type, tenantId)
-      : undefined;
+    if (!specification) return undefined;
+    const resource = this.mapPhysicalResource(row, relationships);
     const location = await this.resolveDetailLocation(row, place, tenantId);
-    const servingSite = row.serving_site_id
-      ? await this.db.get<{ id: string; name: string }>(
-          `SELECT id, name FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
-          [row.serving_site_id, tenantId],
-        )
-      : undefined;
-    const project = row.project_id
-      ? await this.db.get<{ id: string; name: string }>(
-          `SELECT id, name FROM geo_project WHERE id = ? AND tenant_id = ?`,
-          [row.project_id, tenantId],
-        )
-      : undefined;
 
     const characteristicValue = (name: string): string | undefined => {
       const value = specification.resourceSpecificationCharacteristic.find(

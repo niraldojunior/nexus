@@ -144,7 +144,10 @@ a:hover { color: var(--text-secondary); }
   border-radius: var(--radius-lg);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
-.vt-composer:focus-within { border-color: var(--border); box-shadow: 0 4px 16px rgba(46,45,57,0.10); }
+.vt-composer:focus-within {
+  border-color: var(--vt-yellow);
+  box-shadow: var(--focus-shadow);
+}
 .vt-composer textarea, .vt-composer input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent; resize: none;
   font: var(--fw-regular) var(--fs-body-relaxed)/var(--lh-normal) var(--font-ui);
@@ -239,7 +242,10 @@ a:hover { color: var(--text-secondary); }
   box-shadow: var(--shadow-float);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
-.vt-searchbar:focus-within { border-color: var(--border); box-shadow: 0 4px 16px rgba(46,45,57,0.10); }
+.vt-searchbar:focus-within {
+  border-color: var(--vt-yellow);
+  box-shadow: var(--focus-shadow);
+}
 .vt-searchbar input {
   flex: 1;
   min-width: 0;

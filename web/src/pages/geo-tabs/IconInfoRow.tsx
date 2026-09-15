@@ -18,7 +18,7 @@ export function IconInfoRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5 py-1" title={hint}>
+    <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1" title={hint}>
       <span
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-0 bg-transparent text-app-muted shadow-none ring-0"
         aria-hidden="true"

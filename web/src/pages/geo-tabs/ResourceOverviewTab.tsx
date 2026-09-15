@@ -7,37 +7,31 @@ import {
   Building2,
   Calendar,
   CalendarClock,
-  Cpu,
   Crosshair,
   Database,
-  Factory,
   FileText,
   Fingerprint,
   FolderKanban,
   Hash,
   Layers,
   MapPin,
-  Radio,
   Tag,
   Wrench,
 } from 'lucide-react';
 import {
   getResourceTypeCatalogContext,
-  listResourceSpecifications,
   listResourceStatusCatalog,
-  listResourceTypes,
   type PhysicalResourceDetail,
   type PhysicalResourcePayload,
-  type ResourceSpecification,
   type ResourceStatusCatalogEntry,
-  type ResourceType,
 } from '../../services/resourceApi';
 import { PlacePicker } from '../../components/PlacePicker';
 import { useResourceSearch } from '../../hooks/useResourceSearch';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { IconInfoRow } from './IconInfoRow';
 import { InlineEditRow } from './InlineEditRow';
-import { ResourceModelCascadeFields } from './ResourceModelCascadeFields';
+import { ResourceDefinitionCard } from './ResourceDefinitionCard';
+import { ResourceDefinitionModal } from './ResourceDefinitionModal';
 import { TonePill } from './TonePill';
 import { formatCoordinatePoint } from './CoordinateStreetView';
 import { formatDateBR } from '../../utils/helpers';
@@ -97,9 +91,6 @@ export function ResourceOverviewTab({
   const { resource, specification, statusCatalogEntry, parent, place, location, servingSite, project } =
     detail;
 
-  // Calculado cedo (antes dos hooks de estado abaixo) porque o `useState(notes ?? '')` da
-  // Observação precisa do valor já pronto na primeira renderização — mesmo padrão de
-  // `site.note` em SiteOverviewTab, que é prop e por isso não tem esse problema de ordem.
   const notes =
     resource.characteristic?.find((c) => c.name === 'notes' || c.name === 'observacao')
       ?.value as string | undefined;
@@ -121,6 +112,9 @@ export function ResourceOverviewTab({
   const [editingAsset, setEditingAsset] = useState(false);
   const [assetDraft, setAssetDraft] = useState('');
 
+  // Modal para troca da definição do recurso (Caminho → Tipo → Fabricante → Especificação)
+  const [isDefinitionModalOpen, setIsDefinitionModalOpen] = useState(false);
+
   const commitAdmin = async (value: string) => {
     setEditingAdmin(false);
     if (value === resource.administrativeState) return;
@@ -139,14 +133,12 @@ export function ResourceOverviewTab({
     await onPatch({ usageState: value as PhysicalResourcePayload['usageState'] });
   };
 
-  // Catálogo granular (43 códigos, filtrado por resourceType — status-catalog.ts) buscado sob
-  // demanda ao abrir o editor, não a cada render (o backend serializa requisições).
   const startEditStatusCode = () => {
     setEditingStatusCode(true);
     if (statusCatalog || statusCatalogLoading) return;
     setStatusCatalogLoading(true);
-    void listResourceStatusCatalog(resource.resourceType)
-      .then((entries) => setStatusCatalog([...entries].sort((a, b) => a.sortOrder - b.sortOrder)))
+    listResourceStatusCatalog()
+      .then(setStatusCatalog)
       .finally(() => setStatusCatalogLoading(false));
   };
 
@@ -156,43 +148,14 @@ export function ResourceOverviewTab({
     await onPatch({ statusCode: code });
   };
 
-  // Cascata de Especificação (Tipo de Recurso → Especificação, issue #186 — extensão, reduzida de
-  // 4 para 2 níveis na issue #247: ResourceLayer/"Topologia" foi removido fisicamente do backend
-  // na Fase B do cutover da issue #188, ver getResourceTypeCatalogContext abaixo). Reaponta
-  // `resourceSpecificationId`; Fabricante/Tipo do recurso continuam somente-leitura porque são
-  // derivados da Specification escolhida (atualizam sozinhos após o PATCH recarregar o painel).
-  // Catálogo buscado sob demanda, mesmo padrão lazy de startEditStatusCode acima.
-  const [editingModel, setEditingModel] = useState(false);
-  const [modelCatalog, setModelCatalog] = useState<{
-    types: ResourceType[];
-    specifications: ResourceSpecification[];
-  } | null>(null);
-  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
-
-  const startEditModel = () => {
-    setEditingModel(true);
-    if (modelCatalog || modelCatalogLoading) return;
-    setModelCatalogLoading(true);
-    void Promise.all([
-      listResourceTypes(),
-      listResourceSpecifications({ limit: 500, offset: 0, includeEnded: false }),
-    ])
-      .then(([types, specifications]) => setModelCatalog({ types, specifications }))
-      .finally(() => setModelCatalogLoading(false));
-  };
-
-  const commitModel = (specificationId: string) => {
-    setEditingModel(false);
+  const commitModel = async (specificationId: string) => {
     if (specificationId === specification.id) return;
-    void onPatch({ resourceSpecificationId: specificationId });
+    await onPatch({ resourceSpecificationId: specificationId });
   };
 
-  // "Path" (linha somente-leitura e cabeçalho da cascata de edição): posição do Tipo de Recurso
-  // na árvore dinâmica de catálogo, ex. "Telecom \ Rede de Acesso \ GPON \ Distribuição". Vem de
-  // uma rota já existente (issue #188) — não precisa de dado novo no backend, só de consumo aqui.
+  // "Path" (posição do Tipo de Recurso na árvore de catálogo), ex. "Telecom \ Rede de Acesso \ GPON \ Distribuição".
   // O último nó da cadeia é o próprio Tipo de Recurso (kind RESOURCE_TYPE) — descartado aqui
-  // porque já aparece, com nome completo, no campo "Tipo de Recurso" logo abaixo; mostrá-lo de
-  // novo no Path seria redundante.
+  // porque já aparece no campo "Tipo de Recurso" ao lado.
   const [modelPath, setModelPath] = useState<string | null>(null);
   useEffect(() => {
     const resourceTypeId = specification.resourceTypeId;
@@ -289,9 +252,12 @@ export function ResourceOverviewTab({
 
   // Observações vivem em `characteristic` (nome legado `observacao` ou o atual `notes`) e o
   // PATCH substitui o array inteiro (service.ts) — nunca enviar um array parcial, ou o grupo
-  // `_origin` (C5, irrecuperável) some junto. Mesmo padrão de rascunho/blur de
-  // SiteOverviewTab.commitNote.
+  // `_origin` (C5, irrecuperável) some junto. Sincroniza rascunho com resource.id.
   const [notesDraft, setNotesDraft] = useState(notes ?? '');
+  useEffect(() => {
+    setNotesDraft(notes ?? '');
+  }, [resource.id, notes]);
+
   const notesRef = useAutoResizeTextarea(notesDraft, 160);
   const commitNotes = () => {
     const next = notesDraft.trim();
@@ -323,7 +289,7 @@ export function ResourceOverviewTab({
     resource.characteristic?.find((c) => c.name === 'substatus')?.value as string | undefined;
 
   return (
-    <div className="grid gap-1">
+    <div className="grid gap-1 pr-2">
       {canEdit ? (
         <InlineEditRow
           label="Estado"
@@ -352,7 +318,7 @@ export function ResourceOverviewTab({
               onChange={(event) => void commitStatusCode(event.target.value)}
               onBlur={() => setEditingStatusCode(false)}
               aria-label="Estado"
-              className="geo-input"
+              className="geo-input geo-input-inline"
             >
               <option value="">—</option>
               {statusCatalog.map((entry) => (
@@ -403,7 +369,7 @@ export function ResourceOverviewTab({
             onChange={(event) => void commitAdmin(event.target.value)}
             onBlur={() => setEditingAdmin(false)}
             aria-label="Estado administrativo"
-            className="geo-input"
+            className="geo-input geo-input-inline"
           >
             {Object.entries(ADMIN_STATE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -452,7 +418,7 @@ export function ResourceOverviewTab({
             onChange={(event) => void commitOp(event.target.value)}
             onBlur={() => setEditingOp(false)}
             aria-label="Estado operacional"
-            className="geo-input"
+            className="geo-input geo-input-inline"
           >
             {Object.entries(OP_STATE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -501,7 +467,7 @@ export function ResourceOverviewTab({
             onChange={(event) => void commitUsage(event.target.value)}
             onBlur={() => setEditingUsage(false)}
             aria-label="Estado de uso"
-            className="geo-input"
+            className="geo-input geo-input-inline"
           >
             {Object.entries(USAGE_STATE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -546,53 +512,30 @@ export function ResourceOverviewTab({
             }}
             placeholder="Etiqueta física…"
             aria-label="Etiqueta física"
-            className="geo-input"
+            className="geo-input geo-input-inline"
           />
         </InlineEditRow>
       ) : (
         <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label ?? '—'} />
       )}
 
-      {canEdit ? (
-        <InlineEditRow
-          label="Especificação"
-          icon={Cpu}
-          editing={editingModel}
-          onActivate={startEditModel}
-          value={model ?? '—'}
-        >
-          {modelCatalogLoading || !modelCatalog ? (
-            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[0.82rem] text-app-muted">
-              Carregando catálogo…
-            </div>
-          ) : (
-            <ResourceModelCascadeFields
-              types={modelCatalog.types}
-              specifications={modelCatalog.specifications}
-              currentSpecification={specification}
-              modelPath={modelPath}
-              onCommit={commitModel}
-              onCancel={() => setEditingModel(false)}
-            />
-          )}
-        </InlineEditRow>
-      ) : (
-        <IconInfoRow icon={Cpu} hint="Especificação" value={model ?? '—'} />
+      {/* Agrupador consolidado das 4 informações de definição do recurso (Item 4) */}
+      <ResourceDefinitionCard
+        path={modelPath}
+        resourceTypeName={specification.resourceTypeName || resource.resourceType || null}
+        specificationName={model ?? specification.name ?? null}
+        manufacturerName={manufacturer ? (manufacturer.name ?? manufacturer.id) : null}
+        canEdit={canEdit}
+        onOpenEdit={() => setIsDefinitionModalOpen(true)}
+      />
+
+      {isDefinitionModalOpen && (
+        <ResourceDefinitionModal
+          currentSpecification={specification}
+          onCommit={commitModel}
+          onClose={() => setIsDefinitionModalOpen(false)}
+        />
       )}
-
-      <IconInfoRow
-        icon={Factory}
-        hint="Fabricante"
-        value={manufacturer ? (manufacturer.name ?? manufacturer.id) : '—'}
-      />
-
-      <IconInfoRow
-        icon={Boxes}
-        hint="Tipo do recurso"
-        value={specification.resourceTypeName || resource.resourceType || '—'}
-      />
-
-      <IconInfoRow icon={Radio} hint="Path" value={modelPath ?? '—'} />
 
       {canEdit ? (
         <InlineEditRow
@@ -612,7 +555,7 @@ export function ResourceOverviewTab({
               }}
               placeholder="Digite o nome do recurso pai…"
               aria-label="Buscar recurso pai"
-              className="geo-input"
+              className="geo-input geo-input-inline"
             />
             <div className="fixed inset-0 z-40" onClick={() => setEditingParent(false)} />
             <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
@@ -627,7 +570,7 @@ export function ResourceOverviewTab({
               ) : null}
               {parentMatches.length === 0 ? (
                 <p className="px-3 py-2 text-[0.8rem] text-app-muted">
-                  {parentQuery.trim() ? 'Nenhum recurso encontrado.' : 'Digite para buscar um recurso…'}
+                  {parentQuery.trim() ? 'Nenhum recurso encontrado' : 'Comece a digitar para buscar'}
                 </p>
               ) : (
                 parentMatches.map((candidate) => (
@@ -635,10 +578,10 @@ export function ResourceOverviewTab({
                     key={candidate.id}
                     type="button"
                     onClick={() => selectParent(candidate.id)}
-                    className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-[0.82rem] text-app-text transition hover:bg-app-accent-soft"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-[0.82rem] text-app-text transition hover:bg-app-accent-soft"
                   >
-                    <span className="min-w-0 flex-1 truncate">{candidate.name}</span>
-                    <span className="shrink-0 text-[0.7rem] text-app-muted">
+                    <span className="truncate">{candidate.name ?? candidate.id}</span>
+                    <span className="shrink-0 text-[0.72rem] text-app-muted">
                       {candidate.resourceType ?? ''}
                     </span>
                   </button>
@@ -648,11 +591,8 @@ export function ResourceOverviewTab({
           </div>
         </InlineEditRow>
       ) : parent ? (
-        <div className="flex min-w-0 items-center gap-2.5 py-1" title="Recurso Pai">
-          <span
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-0 bg-transparent text-app-muted shadow-none ring-0"
-            aria-hidden="true"
-          >
+        <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1" title="Recurso Pai">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
             <Boxes className="h-[18px] w-[18px]" />
           </span>
           <span className="sr-only">Recurso Pai</span>
@@ -661,12 +601,12 @@ export function ResourceOverviewTab({
               <button
                 type="button"
                 onClick={() => onOpenResource(parent.id)}
-                className="truncate text-left text-[0.84rem] font-medium text-app-accent hover:underline"
+                className="truncate text-left text-[0.84rem] text-app-accent-dark transition hover:underline"
               >
                 {parent.name ?? parent.id}
               </button>
             ) : (
-              <span className="break-words text-[0.84rem] leading-snug text-app-text">
+              <span className="truncate text-[0.84rem] text-app-text">
                 {parent.name ?? parent.id}
               </span>
             )}
@@ -734,7 +674,7 @@ export function ResourceOverviewTab({
             }}
             placeholder="Nº do imobilizado (SAP)…"
             aria-label="Imobilizado (SAP)"
-            className="geo-input font-mono"
+            className="geo-input geo-input-inline font-mono"
           />
         </InlineEditRow>
       ) : (
@@ -760,7 +700,7 @@ export function ResourceOverviewTab({
             }}
             placeholder="Nº de série…"
             aria-label="Nº de série"
-            className="geo-input font-mono"
+            className="geo-input geo-input-inline font-mono"
           />
         </InlineEditRow>
       ) : (
@@ -786,7 +726,7 @@ export function ResourceOverviewTab({
             }}
             placeholder="Part Number…"
             aria-label="Part Number"
-            className="geo-input font-mono"
+            className="geo-input geo-input-inline font-mono"
           />
         </InlineEditRow>
       ) : (
@@ -805,24 +745,26 @@ export function ResourceOverviewTab({
         <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem ?? '—'} />
 
         {canEdit ? (
-          <div className="flex min-w-0 items-start gap-2.5 py-1" title="Observações">
+          <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1" title="Observações">
             <span
-              className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+              className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
               aria-hidden="true"
             >
               <FileText className="h-[18px] w-[18px]" />
             </span>
             <span className="sr-only">Observações</span>
-            <textarea
-              ref={notesRef}
-              value={notesDraft}
-              onChange={(event) => setNotesDraft(event.target.value)}
-              onBlur={commitNotes}
-              placeholder="Adicione uma observação para este recurso…"
-              rows={1}
-              aria-label="Observações do recurso"
-              className="-mx-1.5 -my-1 w-full resize-none rounded-[8px] border border-transparent bg-transparent px-1.5 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
-            />
+            <div className="min-w-0 flex-1">
+              <textarea
+                ref={notesRef}
+                value={notesDraft}
+                onChange={(event) => setNotesDraft(event.target.value)}
+                onBlur={commitNotes}
+                placeholder="Adicione uma observação para este recurso…"
+                rows={1}
+                aria-label="Observações do recurso"
+                className="w-full resize-none rounded-[8px] border border-transparent bg-transparent px-1.5 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
+              />
+            </div>
           </div>
         ) : (
           <IconInfoRow icon={FileText} hint="Observações" value={notes ?? '—'} />

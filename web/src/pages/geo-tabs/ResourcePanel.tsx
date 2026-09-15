@@ -40,7 +40,6 @@ import { SchematicTab } from './SchematicTab';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
 import { ResourcePortsTab } from './ResourcePortsTab';
-import { ResourceCoverageTab } from './ResourceCoverageTab';
 import { PortOverviewTab } from './PortOverviewTab';
 import { PortServiceTab } from './PortServiceTab';
 import type { DropSimulation } from './ViabilityTab';
@@ -122,14 +121,13 @@ export function ResourcePanel({
   const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
   const { service: portService, hasActiveService, loading: portServiceLoading, error: portServiceError } = usePortService(resourceId, isPort);
   const [tab, setTab] = useState<
-    'overview' | 'subresources' | 'ports' | 'service' | 'coverage' | 'schematic' | 'history'
+    'overview' | 'subresources' | 'ports' | 'service' | 'schematic' | 'history'
   >('overview');
   // CTO ganha aba "Portas" no lugar de "Recursos internos" (issue #171 Fase 3) — quem
   // materializa o splitter/porta contidos é o piloto Niterói/Icaraí; qualquer outro tipo
   // de recurso mantém o comportamento de sempre. Só entra em vigor com `onOpenPort`
   // (o caller decide se sabe empilhar a Porta; sem isso, cai no fallback de sempre).
   const isCto = Boolean(onOpenPort) && node.resourceType === 'CTO';
-  const hasPointGeometry = node.geometry?.type === 'Point';
   // ONT alimentada pelo drop ativo — só existe quando a fiação física segue conectada,
   // mesmo em churn (sem RFS/CFS ativos). Entra na lista de "Recursos atendidos" da Porta.
   const activeDropOnt = portDetail?.drops.find((drop) => drop.active)?.ont;
@@ -178,11 +176,13 @@ export function ResourcePanel({
     };
   }, [isPort, portDetail, hasActiveService]);
 
-  const eyebrow = resourceIconFor({
-    resourceType: node.resourceType ?? detail?.specification.resourceType ?? '',
-    name: node.label,
-    sublabel: node.sublabel,
-  }).label;
+  const eyebrow =
+    detail?.specification?.resourceTypeName ??
+    resourceIconFor({
+      resourceType: node.resourceType ?? '',
+      name: node.label,
+      sublabel: node.sublabel,
+    }).label;
   const title = node.label;
 
   const resourcePoint = streetViewTargetsForGeometry(node.geometry)[0]?.point;
@@ -226,7 +226,7 @@ export function ResourcePanel({
       <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
         <PanelBarButton
           icon={InfoIcon}
-          label="Visão geral"
+          label="Geral"
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
@@ -252,14 +252,6 @@ export function ResourcePanel({
             label="Serviço"
             active={tab === 'service'}
             onClick={() => setTab('service')}
-          />
-        ) : null}
-        {!isPort && hasPointGeometry ? (
-          <PanelBarButton
-            icon={Layers3}
-            label="Cobertura"
-            active={tab === 'coverage'}
-            onClick={() => setTab('coverage')}
           />
         ) : null}
         {!isPort ? (
@@ -451,10 +443,6 @@ export function ResourcePanel({
         ) : portServiceError ? (
           <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">{portServiceError}</div>
         ) : null
-      ) : null}
-
-      {tab === 'coverage' && !isPort && hasPointGeometry ? (
-        <ResourceCoverageTab resourceId={resourceId} />
       ) : null}
 
       {tab === 'schematic' ? (

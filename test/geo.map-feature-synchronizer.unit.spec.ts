@@ -85,6 +85,26 @@ test('candidatesSql exige o tenant da entidade sem exigir o tenant da Location c
   );
 });
 
+// Regressão do bug relatado: trocar o Endereço de um recurso via PlacePicker grava um
+// GeographicAddress (ou GeographicSite) em `place_id`, não uma GeographicLocation direta. Um JOIN
+// direto `l.id = r.place_id` não acha linha e o recurso some do mapa ao fechar o painel (caso
+// relatado: CDOE-3952). A resolução tem que espelhar resolveDetailLocation
+// (oracle-repository.ts) — mesma régua usada por viewportBlock em tree-service.ts.
+test('candidatesSql resolve a Location por Site ou Address quando place_id não aponta direto', () => {
+  assert.match(
+    CANDIDATES_SQL,
+    /LEFT JOIN tmf_geographic_site place_site\s+ON place_site\.id = r\.place_id AND place_site\.tenant_id = r\.tenant_id/,
+  );
+  assert.match(
+    CANDIDATES_SQL,
+    /LEFT JOIN tmf_geographic_address place_address\s+ON place_address\.id = r\.place_id/,
+  );
+  assert.match(
+    CANDIDATES_SQL,
+    /JOIN tmf_geographic_location l\s+ON l\.id = COALESCE\(place_site\.geographic_location_id, place_address\.geographic_location_id, r\.place_id\)/,
+  );
+});
+
 test('candidatesSql restringe site a category = Site, fora de projeto em curso', () => {
   assert.match(CANDIDATES_SQL, /spec\.category = 'Site'/);
   assert.doesNotMatch(CANDIDATES_SQL, /'SubSite'/);

@@ -70,7 +70,7 @@ V.tal Nexus sits inside this holding as the network-inventory backbone.
 
 **Animation.** Restrained and short. Standard ease `cubic-bezier(0.4,0,0.2,1)`; `120ms` for hovers and state swaps, `180ms` for panel and sidebar transitions. Nothing translates on hover. Remaining motifs: a radar **pulse** ring on live status dots, the switch knob sliding, a spinner for async viability checks. No lift, no bounce, no parallax, no decorative loops.
 
-**Hover / press.** Hover is a background and border shift, nothing more: cards go to `--surface-card-hover` + `--border-strong`; buttons swap fill; nav items and table rows take `--surface-muted`. Active nav is ink text on the `--sidebar-item-active` yellow wash. Focus on buttons/controls draws `--focus-shadow`, a 3px yellow ring, via `:focus-visible` — but the composer and search bar (`.vt-composer`, `.vt-searchbar`) opt out of the yellow ring on their inner input and use a soft neutral shadow on the container instead (`0 4px 16px rgba(46,45,57,.10)`); a double yellow outline read as noisy on a text field the user is about to type into.
+**Hover / press.** Hover is a background and border shift, nothing more: cards go to `--surface-card-hover` + `--border-strong`; buttons swap fill; nav items and table rows take `--surface-muted`. Active nav is ink text on the `--sidebar-item-active` yellow wash. Focus on inputs, buttons and controls draws `--focus-shadow`, a 3px/4px yellow ring, via `:focus-visible` / `:focus-within` / `:focus` — giving a consistent brand glow across textboxes, comboboxes, composers, and buttons.
 
 **Transparency & blur.** Sparse. White dropdowns and modals over a dark scrim; sidebar uses white-alpha tints for nav states. No heavy glassmorphism on content.
 

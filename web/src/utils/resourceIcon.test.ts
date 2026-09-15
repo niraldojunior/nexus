@@ -26,6 +26,18 @@ describe('resourceTypeCode', () => {
     expect(resourceTypeCode({ name: 'PatchCord LC-LC 3m' })).toBe('PatchCord');
   });
 
+  it('normaliza o prefixo de categoria do catálogo (category:CDOE)', () => {
+    expect(resourceTypeCode({ resourceType: 'category:CDOE' })).toBe('CTO');
+    expect(resourceTypeCode({ resourceType: 'category:Splitter' })).toBe('Splitter');
+    expect(resourceTypeCode('category:OLT')).toBe('OLT');
+  });
+
+  it('reconhece alias CDOE e mapeia para a família CTO', () => {
+    expect(resourceTypeCode({ name: 'CDOE-12532' })).toBe('CTO');
+    expect(resourceTypeCode({ resourceType: 'CDOE' })).toBe('CTO');
+    expect(resourceTypeCode({ resourceSpecification: { name: 'CDOE 16 FO' } })).toBe('CTO');
+  });
+
   it('devolve o fallback quando não há nada para classificar', () => {
     expect(resourceTypeCode(undefined)).toBe('__fallback');
     expect(resourceTypeCode({ name: 'Coisa sem tipo' })).toBe('__fallback');

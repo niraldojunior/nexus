@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import type {
@@ -12,13 +12,13 @@ const mocks = vi.hoisted(() => ({
   listResourceTypes: vi.fn(),
   listResourceSpecifications: vi.fn(),
   getResourceTypeCatalogContext: vi.fn(),
+  listResourceCatalogs: vi.fn(),
+  getResourceCatalogTree: vi.fn(),
+  getResourceModelSnapshotSource: vi.fn(),
 }));
 
 vi.mock('../../hooks/useResourceSearch', () => ({ useResourceSearch: mocks.useResourceSearch }));
 
-// A cascata de Especificação (Tipo de Recurso→Especificação) busca o catálogo sob demanda, e o
-// "Path" (issue #247) vem de getResourceTypeCatalogContext — só essas 3 funções são mockadas, o
-// resto do módulo real (tipos, helpers) permanece intacto.
 vi.mock('../../services/resourceApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/resourceApi')>();
   return {
@@ -29,8 +29,17 @@ vi.mock('../../services/resourceApi', async (importOriginal) => {
   };
 });
 
-// Catálogo de apoio para a cascata: "CTO" e "Splitter", 2 fabricantes no CTO (Furukawa com 2
-// modelos, Nokia com 1) — cobre filtragem nos 2 níveis funcionais.
+vi.mock('../../services/resourceCatalogApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/resourceCatalogApi')>();
+  return {
+    ...actual,
+    listResourceCatalogs: mocks.listResourceCatalogs,
+    getResourceCatalogTree: mocks.getResourceCatalogTree,
+    getResourceModelSnapshotSource: mocks.getResourceModelSnapshotSource,
+    listResourceSpecifications: mocks.listResourceSpecifications,
+  };
+});
+
 const CASCADE_TYPES: ResourceType[] = [
   { '@type': 'ResourceType', id: 'type-cto', href: '', code: 'CTO', name: 'CTO', categoryCode: 'Infrastructure.Passive', status: 'active' },
   { '@type': 'ResourceType', id: 'type-splitter', href: '', code: 'Splitter', name: 'Splitter', categoryCode: 'Infrastructure.Passive', status: 'active' },
@@ -74,8 +83,6 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
   },
 ];
 
-// PlacePicker tem cobertura própria (busca de local via usePlaceSearch/usePlaceLabel) — aqui só
-// interessa confirmar que ResourceOverviewTab liga onChange -> onPatch({placeId, placeType}).
 vi.mock('../../components/PlacePicker', () => ({
   PlacePicker: ({
     onChange,
@@ -88,22 +95,61 @@ vi.mock('../../components/PlacePicker', () => ({
   ),
 }));
 
-// O último nó ("CDOE") é o próprio Tipo de Recurso (kind RESOURCE_TYPE) — o Path descarta esse
-// nó porque ele já aparece, por extenso, no campo "Tipo de Recurso" ao lado.
 const CATALOG_CONTEXT = {
   resourceType: { id: 'type-cto', code: 'CTO', name: 'CTO' },
   catalogPaths: [
     {
       catalog: { id: 'catalog-1', code: 'default', name: 'Catálogo padrão' },
       nodes: [
-        { id: 'node-1', code: 'telecom', name: 'Telecom', kind: 'GROUP' },
-        { id: 'node-2', code: 'rede-acesso', name: 'Rede de Acesso', kind: 'GROUP' },
-        { id: 'node-3', code: 'gpon', name: 'GPON', kind: 'GROUP' },
-        { id: 'node-4', code: 'distribuicao', name: 'Distribuição', kind: 'GROUP' },
-        { id: 'node-5', code: 'CDOE', name: 'CDOE', kind: 'RESOURCE_TYPE' },
+        { id: 'node-1', code: 'telecom', name: 'Telecom', kind: 'GROUP' as const },
+        { id: 'node-2', code: 'rede-acesso', name: 'Rede de Acesso', kind: 'GROUP' as const },
+        { id: 'node-3', code: 'gpon', name: 'GPON', kind: 'GROUP' as const },
+        { id: 'node-4', code: 'distribuicao', name: 'Distribuição', kind: 'GROUP' as const },
+        { id: 'node-5', code: 'CDOE', name: 'CDOE', kind: 'RESOURCE_TYPE' as const },
       ],
     },
   ],
+};
+
+const CATALOG_SNAPSHOT = {
+  catalog: { id: 'catalog-1', name: 'Padrão', code: 'DEFAULT', status: 'active', isDefault: true },
+  nodes: [
+    {
+      id: 'node-1',
+      catalogId: 'catalog-1',
+      code: 'telecom',
+      name: 'Telecom',
+      kind: 'GROUP' as const,
+      status: 'active' as const,
+      sortOrder: 1,
+      children: [
+        {
+          id: 'node-cto',
+          catalogId: 'catalog-1',
+          code: 'CTO',
+          name: 'CTO',
+          kind: 'RESOURCE_TYPE' as const,
+          resourceTypeId: 'type-cto',
+          resourceType: CASCADE_TYPES[0],
+          status: 'active' as const,
+          sortOrder: 1,
+        },
+        {
+          id: 'node-splitter',
+          catalogId: 'catalog-1',
+          code: 'Splitter',
+          name: 'Splitter',
+          kind: 'RESOURCE_TYPE' as const,
+          resourceTypeId: 'type-splitter',
+          resourceType: CASCADE_TYPES[1],
+          status: 'active' as const,
+          sortOrder: 2,
+        },
+      ],
+    },
+  ],
+  resourceTypes: CASCADE_TYPES,
+  relationshipRules: [],
 };
 
 beforeEach(() => {
@@ -111,6 +157,9 @@ beforeEach(() => {
   mocks.listResourceTypes.mockResolvedValue(CASCADE_TYPES);
   mocks.listResourceSpecifications.mockResolvedValue(CASCADE_SPECIFICATIONS);
   mocks.getResourceTypeCatalogContext.mockResolvedValue(CATALOG_CONTEXT);
+  mocks.listResourceCatalogs.mockResolvedValue([CATALOG_SNAPSHOT.catalog]);
+  mocks.getResourceCatalogTree.mockResolvedValue(CATALOG_SNAPSHOT.nodes);
+  mocks.getResourceModelSnapshotSource.mockResolvedValue(CATALOG_SNAPSHOT);
 });
 
 afterEach(() => {
@@ -118,6 +167,9 @@ afterEach(() => {
   mocks.listResourceTypes.mockReset();
   mocks.listResourceSpecifications.mockReset();
   mocks.getResourceTypeCatalogContext.mockReset();
+  mocks.listResourceCatalogs.mockReset();
+  mocks.getResourceCatalogTree.mockReset();
+  mocks.getResourceModelSnapshotSource.mockReset();
 });
 
 const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResourceDetail => ({
@@ -348,7 +400,7 @@ describe('ResourceOverviewTab', () => {
     expect(onPatch).toHaveBeenCalledWith({ administrativeState: 'locked' });
   });
 
-  it('sem canEdit, não mostra nenhum alvo de edição', () => {
+  it('sem canEdit, não mostra nenhum alvo de edição no card e nas linhas', () => {
     render(
       <ResourceOverviewTab
         detail={detail()}
@@ -359,6 +411,7 @@ describe('ResourceOverviewTab', () => {
     );
 
     expect(screen.queryByLabelText(/^Editar /)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Editar definição do recurso')).not.toBeInTheDocument();
   });
 
   it('Observações: editar preserva o grupo _origin (C5) — reenvia o array inteiro', () => {
@@ -437,44 +490,26 @@ describe('ResourceOverviewTab', () => {
     expect(onPatch).toHaveBeenCalledWith({ placeId: 'site-2', placeType: 'GeographicSite' });
   });
 
-  it('Especificação: abre a busca sob demanda e pré-carrega os 2 níveis com os valores atuais, sem tocar em resource-layers', async () => {
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={vi.fn()} onChangeParent={vi.fn()} />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Editar Especificação'));
-
-    expect(await screen.findByLabelText('Especificação')).toHaveValue('spec-cto');
-    expect(screen.getByLabelText('Tipo de Recurso')).toHaveValue('type-cto');
-    expect(screen.getByLabelText('Path')).toHaveTextContent(
-      'Telecom \\ Rede de Acesso \\ GPON \\ Distribuição',
-    );
-    expect(mocks.listResourceSpecifications).toHaveBeenCalledTimes(1);
-  });
-
-  it('Especificação: só o select de Especificação chama onPatch — trocar Tipo de Recurso é filtro puro', async () => {
+  it('Definição do recurso: clicar no card abre o modal com a árvore e permite trocar a especificação', async () => {
     const onPatch = vi.fn().mockResolvedValue(undefined);
     render(
       <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByLabelText('Editar Especificação'));
-    await screen.findByLabelText('Especificação');
+    fireEvent.click(screen.getByLabelText('Editar definição do recurso'));
 
-    fireEvent.change(screen.getByLabelText('Especificação'), { target: { value: 'spec-cto-nokia' } });
-    expect(onPatch).toHaveBeenCalledWith({ resourceSpecificationId: 'spec-cto-nokia' });
-  });
+    // Espera o modal carregar os dados
+    expect(await screen.findByText('1. Caminho e Tipo de Recurso no Catálogo')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Definição do recurso' })).toBeInTheDocument();
 
-  it('Especificação: trocar Tipo de Recurso reseta Especificação para a primeira opção compatível', async () => {
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={vi.fn()} onChangeParent={vi.fn()} />,
-    );
+    // Seleciona outra especificação e salva
+    const specSelect = await screen.findByLabelText('Especificação');
+    fireEvent.change(specSelect, { target: { value: 'spec-cto-nokia' } });
 
-    fireEvent.click(screen.getByLabelText('Editar Especificação'));
-    await screen.findByLabelText('Especificação');
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alteração' }));
 
-    fireEvent.change(screen.getByLabelText('Tipo de Recurso'), { target: { value: 'type-splitter' } });
-
-    expect(screen.getByLabelText('Especificação')).toHaveValue('spec-splitter');
+    await waitFor(() => {
+      expect(onPatch).toHaveBeenCalledWith({ resourceSpecificationId: 'spec-cto-nokia' });
+    });
   });
 });

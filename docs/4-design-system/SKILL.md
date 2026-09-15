@@ -9,7 +9,7 @@ Read the `readme.md` file within this skill, and explore the other available fil
 If creating visual artifacts (slides, mocks, throwaway prototypes, etc), copy assets out and create static HTML files for the user to view: link `styles.css` for tokens, load Lucide from CDN for icons, and reuse the component patterns. If working on production code, copy assets and read the rules here to become an expert in designing with the V.tal brand (Inter + Montserrat, V.tal Yellow `#FFD919` on a light-corporate surface system, soft shadows + golden glow, Lucide iconography).
 
 Key facts to honor:
-- Brand accent V.tal Yellow `#FFD919` is used sparingly (primary actions, active nav, focus glow on buttons/controls, one hero KPI) — never as a flood fill. Pair it with ink `#181919`. Text inputs (composer, search bar) are the exception: their focus state is a soft neutral shadow, not a yellow ring.
+- Brand accent V.tal Yellow `#FFD919` is used sparingly (primary actions, active nav, focus ring on inputs/buttons/controls, one hero KPI) — never as a flood fill. Pair it with ink `#181919`.
 - Portuguese (Brazil), precise telco vocabulary, impersonal system voice, no emoji.
 - Element classes are color-coded (OLT, splitter, CTO, pole, cable, site).
 

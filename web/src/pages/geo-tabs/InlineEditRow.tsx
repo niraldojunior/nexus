@@ -24,18 +24,21 @@ export function InlineEditRow({
   readOnlyNote?: string;
 }) {
   return (
-    <div className="flex min-w-0 items-start gap-2.5 py-1" title={Icon ? label : undefined}>
+    <div
+      className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1"
+      title={Icon ? label : undefined}
+    >
       {Icon ? (
-        <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
           <Icon className="h-[18px] w-[18px]" />
         </span>
       ) : (
-        <div className="min-w-0 basis-[82px] break-words pt-1.5 text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted">
+        <div className="min-w-0 basis-[82px] break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.06em] text-app-muted">
           {label}
         </div>
       )}
       {Icon ? <span className="sr-only">{label}</span> : null}
-      <div className="min-w-0 flex-1">
+      <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 flex-1 flex-col justify-center">
         {editing ? (
           children
         ) : (

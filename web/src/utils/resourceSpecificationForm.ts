@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import type { Party } from '../services/partyApi';
 import type {
-  ResourceLayer,
   ResourceSpecification,
   ResourceSpecificationPayload,
   ResourceType,
@@ -443,109 +442,45 @@ export function buildPhysicalModelOptions(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Combo em cascata para editar o Modelo de um recurso já cadastrado (ResourceOverviewTab,
-// issue #186 — extensão). Diferente de buildTypeOptions/buildPhysicalModelOptions acima (que
-// partem de category/resourceType escolhidos num formulário de catálogo em branco), aqui o ponto
-// de partida é a Specification já vinculada ao recurso, e cada nível filtra estritamente pelas
-// specs restantes do nível anterior — não pelo catálogo completo de tipos/categorias, que inclui
-// combinações sem nenhuma spec cadastrada. Os 4 níveis são: Topologia (resourceLayerId) → Tipo de
-// equipamento (resourceType) → Fornecedor (relatedParty role=manufacturer) → Modelo (a própria
-// ResourceSpecification).
+// Combo em cascata para editar a Especificação de um recurso já cadastrado (ResourceOverviewTab,
+// issue #186 — extensão; reduzida de 4 para 2 níveis na issue #247). Diferente de
+// buildTypeOptions/buildPhysicalModelOptions acima (que partem de category/resourceType
+// escolhidos num formulário de catálogo em branco), aqui o ponto de partida é a Specification já
+// vinculada ao recurso, e cada nível filtra estritamente pelas specs restantes do nível anterior —
+// não pelo catálogo completo de tipos, que inclui tipos sem nenhuma spec cadastrada. Os 2 níveis
+// são: Tipo de Recurso (resourceTypeId) → Especificação (a própria ResourceSpecification). O
+// terceiro nível de contexto, "Path" (posição do Tipo na árvore de catálogo), não é construído
+// aqui — vem de getResourceTypeCatalogContext (resourceApi.ts), consumido direto pelo chamador.
+//
+// Nível 1 — Topologia (resourceLayerId) e nível "Fornecedor" (relatedParty role=manufacturer) que
+// existiam aqui foram removidos: ResourceLayer foi removido fisicamente do backend na Fase B do
+// cutover da issue #188, e o agrupamento por fabricante não faz parte do desenho de 3 campos
+// (Path/Tipo de Recurso/Especificação) definido para esta cascata.
 export type ModelCascadeOption = { id: string; label: string };
 
-// Buckets sintéticos: specs sem `resourceLayerId`/sem `relatedParty` de fabricante não são specs
-// inválidas (o catálogo não exige nenhum dos dois campos), então precisam de um balde selecionável
-// em vez de sumir da cascata.
-export const NO_RESOURCE_LAYER_OPTION: ModelCascadeOption = {
-  id: '__no-layer__',
-  label: 'Sem topologia',
-};
-export const NO_MANUFACTURER_OPTION: ModelCascadeOption = {
-  id: '__no-manufacturer__',
-  label: 'Sem fabricante',
-};
-
-function specLayerBucketId(spec: ResourceSpecification): string {
-  return spec.resourceLayerId || NO_RESOURCE_LAYER_OPTION.id;
-}
-
-function specManufacturerBucketId(spec: ResourceSpecification): string {
-  const manufacturerParty = spec.relatedParty?.find((party) => party.role === 'manufacturer');
-  return manufacturerParty?.id || NO_MANUFACTURER_OPTION.id;
-}
-
-// Nível 1 — Topologia: só as camadas que de fato têm alguma spec apontando para elas (não o
-// catálogo de ResourceLayer inteiro, que pode ter camadas sem nenhum equipamento cadastrado).
-export function buildModelLayerOptions(
-  layers: ResourceLayer[],
-  specs: ResourceSpecification[],
-): ModelCascadeOption[] {
-  const usedLayerIds = new Set(specs.map((spec) => specLayerBucketId(spec)));
-  const options = layers
-    .filter((layer) => usedLayerIds.has(layer.id))
-    .map((layer) => ({ id: layer.id, label: layer.name }))
-    .sort((left, right) => left.label.localeCompare(right.label));
-  if (usedLayerIds.has(NO_RESOURCE_LAYER_OPTION.id)) options.push(NO_RESOURCE_LAYER_OPTION);
-  return options;
-}
-
-// Nível 2 — Tipo de equipamento: tipos distintos entre as specs da topologia escolhida. Não
-// reaproveita buildTypeOptions (que filtra por categoryCode) porque aqui o filtro é por
-// resourceLayerId, um eixo ortogonal à categoria (C11 — mesma lógica de `siteRole` vs `category`).
+// Nível 1 — Tipo de Recurso: só os tipos que de fato têm alguma spec apontando para eles (não o
+// catálogo de ResourceType inteiro, que pode ter tipos sem nenhuma spec cadastrada).
 export function buildModelTypeOptions(
   specs: ResourceSpecification[],
   types: ResourceType[],
-  layerBucketId: string,
 ): ModelCascadeOption[] {
-  const inLayer = specs.filter((spec) => specLayerBucketId(spec) === layerBucketId);
-  const usedTypeCodes = new Set(inLayer.map((spec) => spec.resourceType));
-  return [...usedTypeCodes]
-    .map((code) => {
-      const type = types.find((item) => item.code === code);
-      return { id: code, label: type ? resourceTypeOptionLabel(type) : code };
-    })
+  const usedTypeIds = new Set(
+    specs.map((spec) => spec.resourceTypeId).filter((id): id is string => Boolean(id)),
+  );
+  return types
+    .filter((type) => usedTypeIds.has(type.id))
+    .map((type) => ({ id: type.id, label: resourceTypeOptionLabel(type) }))
     .sort((left, right) => left.label.localeCompare(right.label));
 }
 
-// Nível 3 — Fornecedor: fabricantes distintos entre as specs de Topologia+Tipo já escolhidos.
-export function buildModelManufacturerOptions(
-  specs: ResourceSpecification[],
-  layerBucketId: string,
-  typeCode: string,
-): ModelCascadeOption[] {
-  const inScope = specs.filter(
-    (spec) => specLayerBucketId(spec) === layerBucketId && spec.resourceType === typeCode,
-  );
-  const seen = new Map<string, ModelCascadeOption>();
-  for (const spec of inScope) {
-    const manufacturerParty = spec.relatedParty?.find((party) => party.role === 'manufacturer');
-    const bucketId = specManufacturerBucketId(spec);
-    if (!seen.has(bucketId)) {
-      seen.set(
-        bucketId,
-        bucketId === NO_MANUFACTURER_OPTION.id
-          ? NO_MANUFACTURER_OPTION
-          : { id: bucketId, label: manufacturerParty?.name ?? bucketId },
-      );
-    }
-  }
-  return [...seen.values()].sort((left, right) => left.label.localeCompare(right.label));
-}
-
-// Nível 4 — Modelo: as specs restantes depois dos 3 filtros acima são, elas mesmas, as opções.
+// Nível 2 — Especificação: as specs restantes depois do filtro por Tipo de Recurso são, elas
+// mesmas, as opções.
 export function buildModelSpecificationOptions(
   specs: ResourceSpecification[],
-  layerBucketId: string,
-  typeCode: string,
-  manufacturerBucketId: string,
+  resourceTypeId: string,
 ): ResourceSpecification[] {
   return specs
-    .filter(
-      (spec) =>
-        specLayerBucketId(spec) === layerBucketId &&
-        spec.resourceType === typeCode &&
-        specManufacturerBucketId(spec) === manufacturerBucketId,
-    )
+    .filter((spec) => spec.resourceTypeId === resourceTypeId)
     .sort((left, right) => readSpecificationModel(left).localeCompare(readSpecificationModel(right)));
 }
 

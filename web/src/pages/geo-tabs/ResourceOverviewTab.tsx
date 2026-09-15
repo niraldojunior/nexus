@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -22,13 +22,12 @@ import {
   Wrench,
 } from 'lucide-react';
 import {
-  listResourceLayers,
+  getResourceTypeCatalogContext,
   listResourceSpecifications,
   listResourceStatusCatalog,
   listResourceTypes,
   type PhysicalResourceDetail,
   type PhysicalResourcePayload,
-  type ResourceLayer,
   type ResourceSpecification,
   type ResourceStatusCatalogEntry,
   type ResourceType,
@@ -157,13 +156,14 @@ export function ResourceOverviewTab({
     await onPatch({ statusCode: code });
   };
 
-  // Cascata de Modelo (Topologia → Tipo → Fornecedor → Modelo, issue #186 — extensão). Reaponta
-  // `resourceSpecificationId`; Fabricante/Tipo do recurso/Topologia continuam somente-leitura
-  // porque são derivados da Specification escolhida (atualizam sozinhos após o PATCH recarregar
-  // o painel). Catálogo buscado sob demanda, mesmo padrão lazy de startEditStatusCode acima.
+  // Cascata de Especificação (Tipo de Recurso → Especificação, issue #186 — extensão, reduzida de
+  // 4 para 2 níveis na issue #247: ResourceLayer/"Topologia" foi removido fisicamente do backend
+  // na Fase B do cutover da issue #188, ver getResourceTypeCatalogContext abaixo). Reaponta
+  // `resourceSpecificationId`; Fabricante/Tipo do recurso continuam somente-leitura porque são
+  // derivados da Specification escolhida (atualizam sozinhos após o PATCH recarregar o painel).
+  // Catálogo buscado sob demanda, mesmo padrão lazy de startEditStatusCode acima.
   const [editingModel, setEditingModel] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<{
-    layers: ResourceLayer[];
     types: ResourceType[];
     specifications: ResourceSpecification[];
   } | null>(null);
@@ -174,11 +174,10 @@ export function ResourceOverviewTab({
     if (modelCatalog || modelCatalogLoading) return;
     setModelCatalogLoading(true);
     void Promise.all([
-      listResourceLayers(),
       listResourceTypes(),
       listResourceSpecifications({ limit: 500, offset: 0, includeEnded: false }),
     ])
-      .then(([layers, types, specifications]) => setModelCatalog({ layers, types, specifications }))
+      .then(([types, specifications]) => setModelCatalog({ types, specifications }))
       .finally(() => setModelCatalogLoading(false));
   };
 
@@ -187,6 +186,31 @@ export function ResourceOverviewTab({
     if (specificationId === specification.id) return;
     void onPatch({ resourceSpecificationId: specificationId });
   };
+
+  // "Path" (linha somente-leitura e cabeçalho da cascata de edição): posição do Tipo de Recurso
+  // na árvore dinâmica de catálogo, ex. "Telecom \ Rede de Acesso \ GPON \ Distribuição". Vem de
+  // uma rota já existente (issue #188) — não precisa de dado novo no backend, só de consumo aqui.
+  const [modelPath, setModelPath] = useState<string | null>(null);
+  useEffect(() => {
+    const resourceTypeId = specification.resourceTypeId;
+    if (!resourceTypeId) {
+      setModelPath(null);
+      return;
+    }
+    let cancelled = false;
+    void getResourceTypeCatalogContext(resourceTypeId)
+      .then((context) => {
+        if (cancelled) return;
+        const nodes = context.catalogPaths[0]?.nodes ?? [];
+        setModelPath(nodes.length ? nodes.map((node) => node.name).join(' \\ ') : null);
+      })
+      .catch(() => {
+        if (!cancelled) setModelPath(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [specification.resourceTypeId]);
 
   const startEditLabel = () => {
     setLabelDraft(resource.label ?? '');
@@ -279,16 +303,6 @@ export function ResourceOverviewTab({
 
   const manufacturer = specification.manufacturer;
   const model = specification.model;
-  const resourceLayer = specification.resourceLayer;
-  // `specification.resourceLayerId` já vem herdado do spread da spec completa (oracle-
-  // repository.ts getPhysicalResourceDetail), mas o fallback pro id do `resourceLayer` aninhado
-  // cobre qualquer serialização futura que só populee o objeto. Variável separada (não literal
-  // inline na prop) para não disparar excess-property-check dos campos extras de detail
-  // (resourceTypeName/manufacturer/model/resourceLayer) contra o tipo ResourceSpecification.
-  const modelCascadeSpecification = {
-    ...specification,
-    resourceLayerId: specification.resourceLayerId ?? specification.resourceLayer?.id,
-  };
   const placeFormatted = formatPlaceAddress(place);
   const coordinates =
     location?.geometryType === 'Point' && location.geometry?.type === 'Point'
@@ -536,7 +550,7 @@ export function ResourceOverviewTab({
 
       {canEdit ? (
         <InlineEditRow
-          label="Modelo"
+          label="Especificação"
           icon={Cpu}
           editing={editingModel}
           onActivate={startEditModel}
@@ -548,17 +562,17 @@ export function ResourceOverviewTab({
             </div>
           ) : (
             <ResourceModelCascadeFields
-              layers={modelCatalog.layers}
               types={modelCatalog.types}
               specifications={modelCatalog.specifications}
-              currentSpecification={modelCascadeSpecification}
+              currentSpecification={specification}
+              modelPath={modelPath}
               onCommit={commitModel}
               onCancel={() => setEditingModel(false)}
             />
           )}
         </InlineEditRow>
       ) : (
-        <IconInfoRow icon={Cpu} hint="Modelo" value={model ?? '—'} />
+        <IconInfoRow icon={Cpu} hint="Especificação" value={model ?? '—'} />
       )}
 
       <IconInfoRow
@@ -573,7 +587,7 @@ export function ResourceOverviewTab({
         value={specification.resourceTypeName || resource.resourceType || '—'}
       />
 
-      <IconInfoRow icon={Radio} hint="Topologia" value={resourceLayer?.name ?? '—'} />
+      <IconInfoRow icon={Radio} hint="Path" value={modelPath ?? '—'} />
 
       {canEdit ? (
         <InlineEditRow

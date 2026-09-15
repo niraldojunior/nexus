@@ -1482,29 +1482,6 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_mcp_confirmation_operation ON mcp_confirmation(domain, operation);
       CREATE INDEX IF NOT EXISTS idx_mcp_confirmation_expires ON mcp_confirmation(expires_at);
 
-      -- ========== CATALOGS: Extensible ==========
-
-      -- Catalog: Relationship Types (reutilizável)
-      CREATE TABLE IF NOT EXISTS tmf_relationship_type_catalog (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        description TEXT,
-        applicable_to_entity_types TEXT,
-        valid_for_start DATETIME,
-        valid_for_end DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      -- Catalog: Characteristic Groups (reutilizável)
-      CREATE TABLE IF NOT EXISTS tmf_characteristic_group_catalog (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        description TEXT,
-        applicable_to_entity_types TEXT,
-        allowed_characteristics TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
       -- ========== MODULE 1: GPON COVERAGE (mapa de calor por bairro, REQ-MOD01-014) ==========
 
       -- Projeção de leitura da cobertura GPON: a grade de calor derivada da posição das

@@ -88,6 +88,8 @@ vi.mock('../../components/PlacePicker', () => ({
   ),
 }));
 
+// O último nó ("CDOE") é o próprio Tipo de Recurso (kind RESOURCE_TYPE) — o Path descarta esse
+// nó porque ele já aparece, por extenso, no campo "Tipo de Recurso" ao lado.
 const CATALOG_CONTEXT = {
   resourceType: { id: 'type-cto', code: 'CTO', name: 'CTO' },
   catalogPaths: [
@@ -97,7 +99,8 @@ const CATALOG_CONTEXT = {
         { id: 'node-1', code: 'telecom', name: 'Telecom', kind: 'GROUP' },
         { id: 'node-2', code: 'rede-acesso', name: 'Rede de Acesso', kind: 'GROUP' },
         { id: 'node-3', code: 'gpon', name: 'GPON', kind: 'GROUP' },
-        { id: 'node-4', code: 'distribuicao', name: 'Distribuição', kind: 'RESOURCE_TYPE' },
+        { id: 'node-4', code: 'distribuicao', name: 'Distribuição', kind: 'GROUP' },
+        { id: 'node-5', code: 'CDOE', name: 'CDOE', kind: 'RESOURCE_TYPE' },
       ],
     },
   ],

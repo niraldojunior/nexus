@@ -190,6 +190,9 @@ export function ResourceOverviewTab({
   // "Path" (linha somente-leitura e cabeçalho da cascata de edição): posição do Tipo de Recurso
   // na árvore dinâmica de catálogo, ex. "Telecom \ Rede de Acesso \ GPON \ Distribuição". Vem de
   // uma rota já existente (issue #188) — não precisa de dado novo no backend, só de consumo aqui.
+  // O último nó da cadeia é o próprio Tipo de Recurso (kind RESOURCE_TYPE) — descartado aqui
+  // porque já aparece, com nome completo, no campo "Tipo de Recurso" logo abaixo; mostrá-lo de
+  // novo no Path seria redundante.
   const [modelPath, setModelPath] = useState<string | null>(null);
   useEffect(() => {
     const resourceTypeId = specification.resourceTypeId;
@@ -201,7 +204,9 @@ export function ResourceOverviewTab({
     void getResourceTypeCatalogContext(resourceTypeId)
       .then((context) => {
         if (cancelled) return;
-        const nodes = context.catalogPaths[0]?.nodes ?? [];
+        const nodes = (context.catalogPaths[0]?.nodes ?? []).filter(
+          (node) => node.kind !== 'RESOURCE_TYPE',
+        );
         setModelPath(nodes.length ? nodes.map((node) => node.name).join(' \\ ') : null);
       })
       .catch(() => {

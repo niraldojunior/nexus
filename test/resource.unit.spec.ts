@@ -177,6 +177,23 @@ test('ResourceRepository clones stored entities and filters across resource kind
     }).length,
     1,
   );
+  // Filtros de relatedParty (RF-004, issue #251)
+  assert.equal(
+    repository.listPhysicalResources({ relatedPartyId: 'party-1' }).length,
+    1,
+  );
+  assert.equal(
+    repository.listPhysicalResources({ relatedPartyId: 'missing-party' }).length,
+    0,
+  );
+  assert.equal(
+    repository.listPhysicalResources({ relatedPartyRole: 'vendor' }).length,
+    0,
+  );
+  assert.equal(
+    repository.listPhysicalResources({ relatedPartyId: 'party-1', relatedPartyRole: 'vendor' }).length,
+    0,
+  );
   assert.equal(
     repository.listLogicalResources({
       kind: 'LogicalResource',

@@ -229,6 +229,22 @@ const buildResourceConditions = (
     conditions.push('r.place_id = ?');
     params.push(query.placeId);
   }
+  if (query?.relatedPartyId && query?.relatedPartyRole) {
+    conditions.push(
+      `JSON_EXISTS(r.related_party, '$[*]?(@.id == $pid && @.role == $prole)' PASSING ? AS "pid", ? AS "prole" FALSE ON ERROR)`,
+    );
+    params.push(query.relatedPartyId, query.relatedPartyRole);
+  } else if (query?.relatedPartyId) {
+    conditions.push(
+      `JSON_EXISTS(r.related_party, '$[*]?(@.id == $pid)' PASSING ? AS "pid" FALSE ON ERROR)`,
+    );
+    params.push(query.relatedPartyId);
+  } else if (query?.relatedPartyRole) {
+    conditions.push(
+      `JSON_EXISTS(r.related_party, '$[*]?(@.role == $prole)' PASSING ? AS "prole" FALSE ON ERROR)`,
+    );
+    params.push(query.relatedPartyRole);
+  }
   if (query?.tenantId) {
     conditions.push('r.tenant_id = ?');
     params.push(query.tenantId);

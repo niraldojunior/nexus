@@ -105,6 +105,7 @@ export type ResourceQuery = {
   resourceTypeIn?: string[];
   placeId?: string;
   relatedPartyId?: string;
+  relatedPartyRole?: string;
   kind?: ResourceKind;
   limit?: number;
   offset?: number;

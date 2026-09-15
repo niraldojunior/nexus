@@ -28,6 +28,7 @@ test.skipIf(!oracleConfigured)(
   async () => {
     const client = await getOracleTestClient();
     const repository = new OracleResourceRepository(client);
+    await repository.initialize();
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
@@ -159,6 +160,7 @@ test.skipIf(!oracleConfigured)(
   async () => {
     const client = await getOracleTestClient();
     const repository = new OracleResourceRepository(client);
+    await repository.initialize();
     const appendEvent = vi.fn(() => undefined);
     const service = new ResourceService(repository, { appendEvent } as never);
 
@@ -176,5 +178,83 @@ test.skipIf(!oracleConfigured)(
     assert.equal(persisted?.resourceSpecificationCharacteristic[0]?.name, 'stockable');
     assert.equal(persisted?.relatedParty.length, 1);
     assert.equal(persisted?.relatedParty[0]?.role, 'manufacturer');
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Oracle resource repository filters resources by relatedPartyId and relatedPartyRole (RF-004, issue #251)',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleResourceRepository(client);
+    await repository.initialize();
+    const appendEvent = vi.fn(() => undefined);
+
+    const partyVendor1 = { id: 'party-v1', '@referredType': 'Organization', name: 'Vendor One' };
+    const partyVendor2 = { id: 'party-v2', '@referredType': 'Organization', name: 'Vendor Two' };
+
+    const service = new ResourceService(repository, { appendEvent } as never, {
+      lookupParty: (id) =>
+        id === partyVendor1.id
+          ? partyVendor1
+          : id === partyVendor2.id
+            ? partyVendor2
+            : undefined,
+      lookupPartyRoles: async (_partyId) => [
+        { name: 'vendor', status: 'active' },
+      ],
+    });
+
+    const spec = await service.createResourceSpecification({
+      name: 'OLT Spec',
+      resourceTypeId: 'rt-olt',
+    });
+
+    const resWithVendor1 = await service.createPhysicalResource({
+      name: 'OLT-V1',
+      resourceSpecificationId: spec.id,
+      relatedParty: [{ id: partyVendor1.id, '@referredType': 'Organization', role: 'vendor' }],
+    });
+
+    const resWithVendor2 = await service.createPhysicalResource({
+      name: 'OLT-V2',
+      resourceSpecificationId: spec.id,
+      relatedParty: [{ id: partyVendor2.id, '@referredType': 'Organization', role: 'vendor' }],
+    });
+
+    await service.createPhysicalResource({
+      name: 'OLT-NoVendor',
+      resourceSpecificationId: spec.id,
+    });
+
+    // 1. Filtro por relatedPartyId
+    const forVendor1 = await repository.listPhysicalResources({ relatedPartyId: partyVendor1.id });
+    assert.equal(forVendor1.length, 1);
+    assert.equal(forVendor1[0]?.id, resWithVendor1.id);
+    assert.equal(await repository.countPhysicalResources({ relatedPartyId: partyVendor1.id }), 1);
+
+    // 2. Filtro por relatedPartyRole
+    const allVendors = await repository.listPhysicalResources({ relatedPartyRole: 'vendor' });
+    assert.equal(allVendors.length, 2);
+    assert.equal(await repository.countPhysicalResources({ relatedPartyRole: 'vendor' }), 2);
+
+    // 3. Filtro por ambos
+    const specificVendor = await repository.listPhysicalResources({
+      relatedPartyId: partyVendor2.id,
+      relatedPartyRole: 'vendor',
+    });
+    assert.equal(specificVendor.length, 1);
+    assert.equal(specificVendor[0]?.id, resWithVendor2.id);
+    assert.equal(
+      await repository.countPhysicalResources({
+        relatedPartyId: partyVendor2.id,
+        relatedPartyRole: 'vendor',
+      }),
+      1,
+    );
+
+    // 4. Party inexistente retorna vazio
+    const none = await repository.listPhysicalResources({ relatedPartyId: 'party-nonexistent' });
+    assert.equal(none.length, 0);
+    assert.equal(await repository.countPhysicalResources({ relatedPartyId: 'party-nonexistent' }), 0);
   },
 );

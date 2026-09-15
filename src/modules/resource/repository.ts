@@ -851,10 +851,13 @@ const filterResource = (resource: Resource, query?: ResourceQuery): boolean => {
   }
   if (query.placeId && resource.place?.id !== query.placeId) return false;
   if (query.kind && resource['@type'] !== query.kind) return false;
-  if (
-    query.relatedPartyId &&
-    !resource.relatedParty.some((item) => item.id === query.relatedPartyId)
-  )
-    return false;
+  if (query.relatedPartyId || query.relatedPartyRole) {
+    const hasMatch = resource.relatedParty.some((item) => {
+      if (query.relatedPartyId && item.id !== query.relatedPartyId) return false;
+      if (query.relatedPartyRole && item.role !== query.relatedPartyRole) return false;
+      return true;
+    });
+    if (!hasMatch) return false;
+  }
   return true;
 };

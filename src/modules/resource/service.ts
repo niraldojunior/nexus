@@ -1660,9 +1660,10 @@ export class ResourceService {
       administrativeState: input.administrativeState ?? 'unlocked',
       operationalState: input.operationalState ?? 'enabled',
       usageState: input.usageState ?? 'idle',
-      relatedParty: await normalizeRelatedParties(
+      relatedParty: await normalizePhysicalResourceRelatedParties(
         input.relatedParty,
         this.dependencies.lookupParty,
+        this.dependencies.lookupPartyRoles,
       ),
       resourceRelationship: [],
       characteristic: input.characteristic ?? [],
@@ -1732,7 +1733,11 @@ export class ResourceService {
       operationalState: input.operationalState ?? current.operationalState,
       usageState: input.usageState ?? current.usageState,
       relatedParty: input.relatedParty
-        ? await normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
+        ? await normalizePhysicalResourceRelatedParties(
+            input.relatedParty,
+            this.dependencies.lookupParty,
+            this.dependencies.lookupPartyRoles,
+          )
         : current.relatedParty,
       resourceRelationship: current.resourceRelationship,
       characteristic: input.characteristic ?? current.characteristic,
@@ -2440,6 +2445,44 @@ const normalizeSpecificationRelatedParties = async (
     if (!roles.some((role) => role.name === 'manufacturer' && role.status === 'active')) {
       throw new AppError('manufacturer party must have an active manufacturer role', {
         code: 'RESOURCE_SPEC_MANUFACTURER_ROLE_INVALID',
+        statusCode: 409,
+      });
+    }
+  }
+  return parties;
+};
+
+// RN-002 (issue #251): uma instância de PhysicalResource pode ter um `vendor` de aquisição,
+// mas NUNCA um `manufacturer` direto — fabricante é fato do tipo (ResourceSpecification), e
+// aceitar na instância reabriria a duplicação desnormalizada que eliminamos ao fechar a #171.
+const normalizePhysicalResourceRelatedParties = async (
+  relatedParty: RelatedParty[] | undefined,
+  lookupParty?: ResourceServiceDependencies['lookupParty'],
+  lookupPartyRoles?: ResourceServiceDependencies['lookupPartyRoles'],
+): Promise<RelatedParty[]> => {
+  const parties = await normalizeRelatedParties(relatedParty, lookupParty);
+  const manufacturers = parties.filter((party) => party.role === 'manufacturer');
+  if (manufacturers.length > 0) {
+    throw new AppError(
+      'manufacturer cannot be assigned directly to a physical resource instance; it must be inherited from the specification',
+      {
+        code: 'PHYSICAL_RESOURCE_MANUFACTURER_FORBIDDEN',
+        statusCode: 400,
+      },
+    );
+  }
+  const vendors = parties.filter((party) => party.role === 'vendor');
+  if (vendors.length > 1) {
+    throw new AppError('only one vendor can be related to a physical resource', {
+      code: 'PHYSICAL_RESOURCE_VENDOR_DUPLICATE',
+      statusCode: 409,
+    });
+  }
+  if (vendors.length === 1 && lookupPartyRoles) {
+    const roles = await lookupPartyRoles(vendors[0]!.id);
+    if (!roles.some((role) => role.name === 'vendor' && role.status === 'active')) {
+      throw new AppError('vendor party must have an active vendor role', {
+        code: 'PHYSICAL_RESOURCE_VENDOR_ROLE_INVALID',
         statusCode: 409,
       });
     }

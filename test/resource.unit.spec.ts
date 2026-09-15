@@ -801,3 +801,117 @@ test('ResourceTypeCatalogContext returns consolidated paths and specifications f
     ['grp-access', 'leaf-olt'],
   );
 });
+
+test('ResourceService: validates vendor and forbids manufacturer on PhysicalResource instance (RN-002, issue #251)', async () => {
+  const repository = new ResourceRepository();
+  const partyVendor = {
+    id: 'party-vendor-1',
+    '@referredType': 'Organization',
+    href: '/party/party-vendor-1',
+    name: 'Distribuidora Telecom',
+  };
+  const partyOther = {
+    id: 'party-other-1',
+    '@referredType': 'Organization',
+    href: '/party/party-other-1',
+    name: 'Outra Empresa',
+  };
+  const partyManufacturer = {
+    id: 'party-mfg-1',
+    '@referredType': 'Organization',
+    href: '/party/party-mfg-1',
+    name: 'Huawei Brasil',
+  };
+
+  const partyRolesMap: Record<string, Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>> = {
+    'party-vendor-1': [{ name: 'vendor', status: 'active' }],
+    'party-other-1': [{ name: 'supplier', status: 'active' }],
+    'party-mfg-1': [{ name: 'manufacturer', status: 'active' }],
+  };
+
+  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never, {
+    lookupParty: (id) =>
+      id === partyVendor.id
+        ? partyVendor
+        : id === partyOther.id
+          ? partyOther
+          : id === partyManufacturer.id
+            ? partyManufacturer
+            : undefined,
+    lookupPartyRoles: async (partyId) => partyRolesMap[partyId] ?? [],
+  });
+
+  const spec = await service.createResourceSpecification({
+    name: 'OLT MA5800',
+    resourceTypeId: 'rt-olt',
+  });
+
+  // 1. Rejeita fabricante direto na instância (400)
+  await assert.rejects(
+    service.createPhysicalResource({
+      name: 'OLT-01',
+      resourceSpecificationId: spec.id,
+      relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'PHYSICAL_RESOURCE_MANUFACTURER_FORBIDDEN' &&
+      error.statusCode === 400,
+  );
+
+  // 2. Rejeita mais de 1 vendor (409)
+  await assert.rejects(
+    service.createPhysicalResource({
+      name: 'OLT-01',
+      resourceSpecificationId: spec.id,
+      relatedParty: [
+        { id: partyVendor.id, '@referredType': 'Organization', role: 'vendor' },
+        { id: partyOther.id, '@referredType': 'Organization', role: 'vendor' },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'PHYSICAL_RESOURCE_VENDOR_DUPLICATE' &&
+      error.statusCode === 409,
+  );
+
+  // 3. Rejeita vendor cuja party não tenha papel de vendor ativo (409)
+  await assert.rejects(
+    service.createPhysicalResource({
+      name: 'OLT-01',
+      resourceSpecificationId: spec.id,
+      relatedParty: [{ id: partyOther.id, '@referredType': 'Organization', role: 'vendor' }],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'PHYSICAL_RESOURCE_VENDOR_ROLE_INVALID' &&
+      error.statusCode === 409,
+  );
+
+  // 4. Aceita vendor válido
+  const created = await service.createPhysicalResource({
+    name: 'OLT-01',
+    resourceSpecificationId: spec.id,
+    relatedParty: [{ id: partyVendor.id, '@referredType': 'Organization', role: 'vendor' }],
+  });
+  assert.equal(created.relatedParty?.length, 1);
+  assert.equal(created.relatedParty?.[0]?.role, 'vendor');
+  assert.equal(created.relatedParty?.[0]?.id, partyVendor.id);
+
+  // 5. Update: rejeita fabricante em updatePhysicalResource
+  await assert.rejects(
+    service.updatePhysicalResource(created.id, {
+      relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'PHYSICAL_RESOURCE_MANUFACTURER_FORBIDDEN' &&
+      error.statusCode === 400,
+  );
+
+  // 6. Update: aceita troca de vendor
+  const updated = await service.updatePhysicalResource(created.id, {
+    relatedParty: [],
+  });
+  assert.equal(updated.relatedParty?.length, 0);
+});

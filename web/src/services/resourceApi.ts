@@ -110,6 +110,7 @@ export type ResourceBase = {
   operationalState?: 'enabled' | 'disabled';
   usageState?: 'idle' | 'active' | 'busy' | 'unknown';
   place?: ResourceReference;
+  relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
   validFor?: TimePeriod;
   characteristic?: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
 };
@@ -229,6 +230,7 @@ export type PhysicalResourcePayload = {
   assetReference?: string;
   serialNumber?: string;
   partNumber?: string;
+  relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
   characteristic?: PhysicalResource['characteristic'];
   validFor?: TimePeriod;
 };

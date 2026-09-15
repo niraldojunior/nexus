@@ -16,6 +16,7 @@ import {
   Layers,
   MapPin,
   Tag,
+  Truck,
   Wrench,
 } from 'lucide-react';
 import {
@@ -25,6 +26,7 @@ import {
   type PhysicalResourcePayload,
   type ResourceStatusCatalogEntry,
 } from '../../services/resourceApi';
+import { listPartyRoles, type PartyRole } from '../../services/partyApi';
 import { PlacePicker } from '../../components/PlacePicker';
 import { useResourceSearch } from '../../hooks/useResourceSearch';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
@@ -249,6 +251,37 @@ export function ResourceOverviewTab({
     if (!parent) return;
     void onChangeParent(null);
   };
+
+  // Vendor (RN-002, issue #251) — fornecedor de aquisição da instância de recurso
+  // (distinto do fabricante, que é herdado da especificação).
+  const [editingVendor, setEditingVendor] = useState(false);
+  const [vendorOptions, setVendorOptions] = useState<PartyRole[]>([]);
+  const startEditVendor = () => {
+    setEditingVendor(true);
+    if (vendorOptions.length === 0) {
+      void listPartyRoles({ name: 'vendor', status: 'active', limit: 200, offset: 0 }).then(
+        (roles) => setVendorOptions(roles),
+      );
+    }
+  };
+  const commitVendor = (partyId: string) => {
+    setEditingVendor(false);
+    const existingParties = (resource.relatedParty ?? []).filter((p) => p.role !== 'vendor');
+    const selectedVendor = vendorOptions.find((role) => role.partyId === partyId);
+    const nextRelatedParty = selectedVendor
+      ? [
+          ...existingParties,
+          {
+            id: selectedVendor.partyId,
+            '@referredType': selectedVendor.party['@referredType'],
+            role: 'vendor',
+            name: selectedVendor.party.name,
+          },
+        ]
+      : existingParties;
+    void onPatch({ relatedParty: nextRelatedParty });
+  };
+  const currentVendor = resource.relatedParty?.find((party) => party.role === 'vendor');
 
   // Observações vivem em `characteristic` (nome legado `observacao` ou o atual `notes`) e o
   // PATCH substitui o array inteiro (service.ts) — nunca enviar um array parcial, ou o grupo
@@ -534,6 +567,38 @@ export function ResourceOverviewTab({
           currentSpecification={specification}
           onCommit={commitModel}
           onClose={() => setIsDefinitionModalOpen(false)}
+        />
+      )}
+
+      {canEdit ? (
+        <InlineEditRow
+          label="Vendor (aquisição)"
+          icon={Truck}
+          editing={editingVendor}
+          onActivate={startEditVendor}
+          value={currentVendor ? (currentVendor.name ?? currentVendor.id) : <span className="whitespace-nowrap">Nenhum</span>}
+        >
+          <select
+            autoFocus
+            value={currentVendor?.id ?? ''}
+            onChange={(event) => commitVendor(event.target.value)}
+            onBlur={() => setEditingVendor(false)}
+            aria-label="Vendor (aquisição)"
+            className="geo-input geo-input-inline"
+          >
+            <option value="">Nenhum (não informado)</option>
+            {vendorOptions.map((role) => (
+              <option key={role.partyId} value={role.partyId}>
+                {role.party.name}
+              </option>
+            ))}
+          </select>
+        </InlineEditRow>
+      ) : (
+        <IconInfoRow
+          icon={Truck}
+          hint="Vendor (aquisição)"
+          value={currentVendor ? (currentVendor.name ?? currentVendor.id) : '—'}
         />
       )}
 

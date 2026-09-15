@@ -115,6 +115,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const partyRoleTypeCharacteristicRepository = new PartyRoleTypeCharacteristicRepository(db);
   if (!isEmptyEnvironment) {
     await partyRoleTypeRepository.ensureSupplierSeed(DEFAULT_TENANT_ID);
+    await partyRoleTypeRepository.ensureVendorSeed(DEFAULT_TENANT_ID);
     await partyRoleTypeCharacteristicRepository.ensureManufacturerCnpjSeed(DEFAULT_TENANT_ID);
   }
   const referenceDataRepository = new OracleReferenceDataRepository(db);

@@ -23,6 +23,7 @@ import type {
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import { RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
 
 export class ResourceRepository implements IResourceRepository {
   private readonly resourceTypes = new Map<string, ResourceType>();
@@ -410,7 +411,7 @@ export class ResourceRepository implements IResourceRepository {
       return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     };
     const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
-    const model = characteristicValue('model');
+    const model = characteristicValue(MODEL_CHARACTERISTIC.name);
     return {
       '@type': 'PhysicalResourceDetail',
       // O repositório em memória não persiste timestamps; os testes unitários recebem um instante

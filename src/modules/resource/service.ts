@@ -60,6 +60,7 @@ import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js'
 import type { RequestContext } from '../../shared/http/request-context.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { recordMutation } from '../../shared/persistence/audit-outbox.js';
+import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -2381,7 +2382,11 @@ const resolveResourceTypeMapConfiguration = (
 // mesmo conceito TMF (`Characteristic[]`), então a mesma lista de nomes proibidos vale nos dois
 // níveis: `manufacturer`/`networkType` já são campos de primeira classe (relatedParty/categoryCode),
 // não fazem sentido como characteristic solto em nenhum dos dois.
-const assertCanonicalCharacteristics = <T extends { name: string }>(characteristics: T[]): T[] => {
+const assertCanonicalCharacteristics = <
+  T extends { name: string; valueType?: string; group?: string },
+>(
+  characteristics: T[],
+): T[] => {
   const forbidden = characteristics.find(
     (characteristic) =>
       characteristic.name === 'manufacturer' || characteristic.name === 'networkType',
@@ -2391,6 +2396,28 @@ const assertCanonicalCharacteristics = <T extends { name: string }>(characterist
       code: 'RESOURCE_SPEC_CHARACTERISTIC_FORBIDDEN',
       statusCode: 400,
     });
+  }
+  // `model` é characteristic legítima (ao contrário de manufacturer/networkType acima), mas seu
+  // valueType/group precisam ser consistentes em toda declaração — senão a leitura via
+  // characteristicValue(MODEL_CHARACTERISTIC.name) silenciosamente não acha nada em specs onde
+  // alguém digitou `Model`, `valueType: 'number'` ou um `group` diferente (issue #251).
+  const divergentModel = characteristics.find((characteristic) => {
+    if (characteristic.name !== MODEL_CHARACTERISTIC.name) return false;
+    const valueTypeDiverges =
+      characteristic.valueType !== undefined &&
+      characteristic.valueType !== MODEL_CHARACTERISTIC.valueType;
+    const groupDiverges =
+      characteristic.group !== undefined && characteristic.group !== MODEL_CHARACTERISTIC.group;
+    return valueTypeDiverges || groupDiverges;
+  });
+  if (divergentModel) {
+    throw new AppError(
+      `model characteristic must use valueType "${MODEL_CHARACTERISTIC.valueType}" and group "${MODEL_CHARACTERISTIC.group}"`,
+      {
+        code: 'RESOURCE_SPEC_CHARACTERISTIC_MODEL_INVALID',
+        statusCode: 400,
+      },
+    );
   }
   return characteristics;
 };

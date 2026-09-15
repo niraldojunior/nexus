@@ -36,6 +36,7 @@ import {
   getResourceTypeByCode,
 } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
@@ -1440,7 +1441,7 @@ export class OracleResourceRepository implements IResourceRepository {
       return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     };
     const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
-    const model = characteristicValue('model');
+    const model = characteristicValue(MODEL_CHARACTERISTIC.name);
 
     return {
       '@type': 'PhysicalResourceDetail',

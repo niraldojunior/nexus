@@ -11,6 +11,7 @@ import type {
   ResourceQuery,
   UpdatePhysicalResourceInput,
 } from '../resource/index.js';
+import { MODEL_CHARACTERISTIC } from '../resource/canonical-characteristics.js';
 import type { CreateServiceInput, ServiceQuery } from '../service/index.js';
 import type { AddressInput } from '../geo/index.js';
 import { haversineMeters } from '../geo/coverage-grid.js';
@@ -2887,10 +2888,10 @@ const buildEquipmentModelCharacteristics = (input: {
 }): Characteristic[] => {
   const characteristics: Characteristic[] = [
     {
-      name: 'model',
+      name: MODEL_CHARACTERISTIC.name,
       value: input.model.trim(),
-      valueType: 'string' as const,
-      group: 'commercial',
+      valueType: MODEL_CHARACTERISTIC.valueType,
+      group: MODEL_CHARACTERISTIC.group,
     },
   ];
 

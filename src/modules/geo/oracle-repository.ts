@@ -64,6 +64,9 @@ export class OracleGeoRepository implements IGeoRepository {
     return this.db.transaction(async () => await fn());
   }
 
+  // `tenant_id` só entra no INSERT, nunca no DO UPDATE: GeographicLocation é compartilhado entre
+  // tenants (issue #244) e um upsert vindo de outro tenant não pode "roubar" a posse de uma
+  // location já existente — o dono original é preservado.
   public async upsertLocation(location: GeographicLocation): Promise<GeographicLocation> {
     const now = new Date().toISOString();
 
@@ -74,7 +77,6 @@ export class OracleGeoRepository implements IGeoRepository {
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       tenant_id = excluded.tenant_id,
        geometry_type = excluded.geometry_type,
        geometry = excluded.geometry,
        spatial_ref = excluded.spatial_ref,
@@ -109,22 +111,20 @@ export class OracleGeoRepository implements IGeoRepository {
     return (await this.getLocation(location.id))!;
   }
 
+  // `scope` é aceito por compatibilidade de assinatura (IGeoRepository), mas ignorado aqui de
+  // propósito: GeographicLocation é entidade compartilhada entre tenants (issue #244), assim
+  // como Party (ver party-repository-interface.ts) — a leitura por id nunca filtra por tenant,
+  // só a listagem (listLocations) continua escopada.
   public async getLocation(
     id: string,
-    scope?: GeoTenantScope,
+    _scope?: GeoTenantScope,
   ): Promise<GeographicLocation | undefined> {
-    const conditions = ['id = ?'];
-    const params: Array<string | number> = [id];
-    if (scope?.tenantId) {
-      conditions.push('tenant_id = ?');
-      params.push(scope.tenantId);
-    }
     const row = await this.db.get<GeographicLocationRow>(
       `SELECT id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               source_system, source_ref, accuracy_level,
               valid_for_start, valid_for_end, characteristics
-       FROM tmf_geographic_location WHERE ${conditions.join(' AND ')}`,
-      params,
+       FROM tmf_geographic_location WHERE id = ?`,
+      [id],
     );
 
     if (!row) return undefined;
@@ -169,6 +169,9 @@ export class OracleGeoRepository implements IGeoRepository {
     return (await this.getAddress(address.id))!;
   }
 
+  // Mesmo racional de upsertLocation: `tenant_id` não entra no DO UPDATE — GeographicAddress é
+  // compartilhado entre tenants (issue #244), o dono original não pode ser trocado por um upsert
+  // de outro tenant.
   private async upsertAddressWithoutSearchColumns(
     address: GeographicAddress,
     now: string,
@@ -180,7 +183,6 @@ export class OracleGeoRepository implements IGeoRepository {
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-       tenant_id = excluded.tenant_id,
        street_type = excluded.street_type,
        street_name = excluded.street_name,
        street_nr = excluded.street_nr,
@@ -219,21 +221,17 @@ export class OracleGeoRepository implements IGeoRepository {
     );
   }
 
+  // Mesmo racional de getLocation acima: GeographicAddress é compartilhado entre tenants
+  // (issue #244), `scope` é ignorado na leitura por id.
   public async getAddress(
     id: string,
-    scope?: GeoTenantScope,
+    _scope?: GeoTenantScope,
   ): Promise<GeographicAddress | undefined> {
-    const conditions = ['id = ?'];
-    const params: Array<string | number> = [id];
-    if (scope?.tenantId) {
-      conditions.push('tenant_id = ?');
-      params.push(scope.tenantId);
-    }
     const row = await this.db.get<GeographicAddressRow>(
       `SELECT id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end, characteristics
-       FROM tmf_geographic_address WHERE ${conditions.join(' AND ')}`,
-      params,
+       FROM tmf_geographic_address WHERE id = ?`,
+      [id],
     );
 
     return row ? this.mapAddressRow(row) : undefined;

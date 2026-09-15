@@ -59,9 +59,10 @@ export class GeoRepository implements IGeoRepository {
     return cloneLocation(stored);
   }
 
-  public getLocation(id: string, scope?: GeoTenantScope): GeographicLocation | undefined {
+  // `scope` é ignorado de propósito: GeographicLocation é compartilhado entre tenants
+  // (issue #244), a leitura por id nunca filtra — só listLocations continua escopada.
+  public getLocation(id: string, _scope?: GeoTenantScope): GeographicLocation | undefined {
     const location = this.locations.get(id);
-    if (location && !matchesTenant(location.tenantId, scope?.tenantId)) return undefined;
     return location ? cloneLocation(location) : undefined;
   }
 
@@ -85,9 +86,9 @@ export class GeoRepository implements IGeoRepository {
     return cloneAddress(stored);
   }
 
-  public getAddress(id: string, scope?: GeoTenantScope): GeographicAddress | undefined {
+  // Mesmo racional de getLocation acima: GeographicAddress compartilhado (issue #244).
+  public getAddress(id: string, _scope?: GeoTenantScope): GeographicAddress | undefined {
     const address = this.addresses.get(id);
-    if (address && !matchesTenant(address.tenantId, scope?.tenantId)) return undefined;
     return address ? cloneAddress(address) : undefined;
   }
 

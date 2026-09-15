@@ -1741,9 +1741,13 @@ export class OracleResourceRepository implements IResourceRepository {
     return { id, '@referredType': referredType ?? 'GeographicLocation' };
   }
 
+  // GeographicAddress é compartilhado entre tenants por design (issue #244, mesmo racional de
+  // src/modules/geo/oracle-repository.ts) — um Site/Resource particular de um tenant pode
+  // referenciar um endereço gravado sob outro tenant. `tenantId` fica no parâmetro só para
+  // simetria com o restante da classe; a query não filtra por ele.
   private async fetchAddressStreetFields(
     addressId: string,
-    tenantId: string,
+    _tenantId: string,
   ): Promise<
     | {
         streetType?: string;
@@ -1768,8 +1772,8 @@ export class OracleResourceRepository implements IResourceRepository {
       source_system: string | null;
     }>(
       `SELECT street_type, street_name, street_nr, locality, city, state_or_province, postcode, source_system
-         FROM tmf_geographic_address WHERE id = ? AND tenant_id = ?`,
-      [addressId, tenantId],
+         FROM tmf_geographic_address WHERE id = ?`,
+      [addressId],
     );
     if (!address) return undefined;
     return {
@@ -1792,12 +1796,15 @@ export class OracleResourceRepository implements IResourceRepository {
     let locationId: string | null = null;
     if (row.place_type === 'GeographicLocation') locationId = row.place_id;
     else if (row.place_type === 'GeographicAddress' && row.place_id) {
+      // Address é compartilhado entre tenants (issue #244) — sem filtro de tenant, como em
+      // fetchAddressStreetFields acima.
       const address = await this.db.get<{ geographic_location_id: string | null }>(
-        `SELECT geographic_location_id FROM tmf_geographic_address WHERE id = ? AND tenant_id = ?`,
-        [row.place_id, tenantId],
+        `SELECT geographic_location_id FROM tmf_geographic_address WHERE id = ?`,
+        [row.place_id],
       );
       locationId = address?.geographic_location_id ?? null;
     } else if (row.place_type === 'GeographicSite' && row.place_id) {
+      // Site continua particular de um tenant — filtro mantido.
       const site = await this.db.get<{ geographic_location_id: string | null }>(
         `SELECT geographic_location_id FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
         [row.place_id, tenantId],
@@ -1809,9 +1816,10 @@ export class OracleResourceRepository implements IResourceRepository {
     }
     if (!locationId) return undefined;
 
+    // Location é compartilhado entre tenants (issue #244) — sem filtro de tenant.
     const geo = await this.db.get<{ geometry_type: GeoGeometryType; geometry: string }>(
-      `SELECT geometry_type, geometry FROM tmf_geographic_location WHERE id = ? AND tenant_id = ?`,
-      [locationId, tenantId],
+      `SELECT geometry_type, geometry FROM tmf_geographic_location WHERE id = ?`,
+      [locationId],
     );
     return {
       id: locationId,

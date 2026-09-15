@@ -228,7 +228,7 @@ export function SitePanel({
   ) : detail.site ? (
     <div className="grid gap-4">
       <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
-        <PanelBarButton icon={InfoIcon} label="Visão Geral" active={tab === 'overview'} onClick={() => setTab('overview')} />
+        <PanelBarButton icon={InfoIcon} label="Geral" active={tab === 'overview'} onClick={() => setTab('overview')} />
         <PanelBarButton icon={Building2} label="Sub-locais" active={tab === 'subsites'} onClick={() => setTab('subsites')} />
         <PanelBarButton icon={Boxes} label="Recursos" active={tab === 'resources'} onClick={() => setTab('resources')} />
         <PanelBarButton icon={HistoryIcon} label="Histórico" active={tab === 'history'} onClick={() => setTab('history')} />

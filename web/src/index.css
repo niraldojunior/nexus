@@ -118,6 +118,10 @@ button {
 }
 
 :root {
+  /* Altura de conteúdo unificada para as linhas dos painéis Geo (leitura e inline-edit):
+     acomoda o ícone h-6 (24px) e o texto em 32px exatos, sem zigue-zague vertical. */
+  --geo-row-content-h: 32px;
+
   /* Um degrau abaixo de --neutral-500 (#BCC1D6, cinza médio da marca — escuro
      demais para hairline): usado só nos textboxes (composer, busca) e nas
      tabelas de Configuração/Studio, onde --border-strong ainda ficava sutil
@@ -145,22 +149,18 @@ button {
     opacity: 0.85;
   }
 
-  /* Bordas mais presentes nos componentes de entrada: o hairline padrão
-     (--border #E8E8EE) some sobre o canvas branco. Inputs de texto e busca
-     usam --border-input-strong no estado de repouso; cards interativos ficam
-     um degrau abaixo, em --border-strong. */
+  /* Bordas nos componentes de entrada: no repouso usam --border-input-strong;
+     no foco (:focus-within), acompanham o anel amarelo padrão do sistema. */
   .vt-composer,
   .vt-searchbar,
   .vt-searchbar-flat {
     border-color: var(--border-input-strong);
   }
-  /* O tema base recua para --border (hairline claro) no :focus-within — pensado
-     para quando a borda de repouso já era --border. Como o repouso agora é mais
-     escuro, o foco precisa reafirmar --border-input-strong (senão a borda
-     clareia justamente quando o usuário está digitando). */
   .vt-composer:focus-within,
-  .vt-searchbar:focus-within {
-    border-color: var(--border-input-strong);
+  .vt-searchbar:focus-within,
+  .vt-searchbar-flat:focus-within {
+    border-color: var(--vt-yellow);
+    box-shadow: 0 0 0 4px rgba(255, 217, 25, 0.2);
   }
   .vt-card-interactive {
     border-color: var(--border-strong);
@@ -270,19 +270,30 @@ button {
     @apply border-app-border bg-white text-app-text shadow-soft hover:border-app-accent-border hover:bg-app-accent-soft;
   }
 
-  /* Textbox padrão do sistema (config de Usuários, formulários de Infraestrutura Civil
-     etc.): 10% menor que o tamanho original, com a mesma borda mais presente das
-     tabelas (--border-input-strong) e o mesmo par borda/sombra do composer de Nova
-     Conversa e da busca de Histórico de conversas (.vt-composer/.vt-searchbar-flat)
-     — sem sombra em repouso, sombra flutuante só ao focar, borda que não clareia. */
+  /* Textbox padrão do sistema (config de Usuários, formulários de Infraestrutura Civil,
+     painéis Geo etc.): borda --border-input-strong em repouso e anel amarelo no foco,
+     uniformizado com comboboxes e botões. */
   .geo-input {
-    @apply h-[39.6px] w-full rounded-[14.4px] border bg-white px-[10.8px] text-[0.81rem] font-medium text-app-text transition;
+    @apply h-[39.6px] w-full rounded-[14px] border bg-white px-[10.8px] text-[0.81rem] font-medium text-app-text transition;
     border-color: var(--border-input-strong);
     box-shadow: none;
   }
   .geo-input:focus {
-    border-color: var(--border-input-strong);
-    box-shadow: 0 4px 16px rgba(46, 45, 57, 0.1);
+    border-color: var(--vt-yellow);
+    box-shadow: 0 0 0 4px rgba(255, 217, 25, 0.2);
+  }
+
+  /* Variante compacta para linhas inline de painéis de detalhe (ResourceOverviewTab etc.):
+     mesma altura e padding das linhas somente-leitura (32px), evitando deslocamento
+     vertical dos campos abaixo ao entrar/sair de edição. */
+  .geo-input-inline {
+    height: var(--geo-row-content-h, 32px) !important;
+    min-height: var(--geo-row-content-h, 32px);
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+    border-radius: 8px;
+    font-size: 0.81rem;
+    line-height: 1.25;
   }
 
   .geo-combobox {
@@ -303,7 +314,7 @@ select.geo-input {
   cursor: pointer;
   height: 2.42rem;
   border-radius: 14px;
-  border-color: #c8d2e1;
+  border-color: var(--border-input-strong);
   background-color: #ffffff;
   padding-left: 0.66rem;
   font-size: 0.79rem;
@@ -356,6 +367,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus,
 button:focus-visible {
   outline: none;

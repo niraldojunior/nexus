@@ -68,10 +68,13 @@ function LayerEntitySample({ node }: { node: StudioGeoEntityNode }) {
 
   if (pointConfig) {
     const color = pointColor as string;
+    // +20% em cima do +20% já aplicado (16px → 19px → 23px, ~44% acima do original) a
+    // pedido do usuário, para os ícones do seletor de camadas lerem melhor a olho nu —
+    // mesmo fator aplicado às amostras de LINE e POLYGON abaixo.
     return previewUrl ? (
-      <img src={previewUrl} alt="" className="h-4 w-4 shrink-0" />
+      <img src={previewUrl} alt="" className="h-[23px] w-[23px] shrink-0" />
     ) : (
-      <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span className="h-[23px] w-[23px] shrink-0 rounded-full" style={{ backgroundColor: color }} />
     );
   }
 
@@ -81,12 +84,12 @@ function LayerEntitySample({ node }: { node: StudioGeoEntityNode }) {
       STROKE_STYLE_OPTIONS.find((option) => option.value === config.strokeStyle)?.dashArray ??
       'none';
     return (
-      <svg width="16" height="14" className="shrink-0" aria-hidden="true">
+      <svg width="23" height="20" className="shrink-0" aria-hidden="true">
         <line
-          x1="1"
-          y1="7"
-          x2="15"
-          y2="7"
+          x1="1.5"
+          y1="10"
+          x2="21.5"
+          y2="10"
           stroke={strokeColor}
           strokeWidth={2}
           strokeOpacity={config.opacity}
@@ -101,13 +104,13 @@ function LayerEntitySample({ node }: { node: StudioGeoEntityNode }) {
   const fillColor = resolveStudioGeoColor(config.fill, node.entity.category, null);
   const strokeColor = resolveStudioGeoColor(config.stroke, node.entity.category, null);
   return (
-    <svg width="16" height="16" className="shrink-0" aria-hidden="true">
+    <svg width="23" height="23" className="shrink-0" aria-hidden="true">
       <rect
-        x="1.5"
-        y="1.5"
-        width="13"
-        height="13"
-        rx="3"
+        x="2.2"
+        y="2.2"
+        width="18.6"
+        height="18.6"
+        rx="4.3"
         fill={fillColor}
         fillOpacity={config.fillOpacity}
         stroke={strokeColor}
@@ -208,7 +211,9 @@ export function MapLayerControl({
       return (
         <div
           key={node.id}
-          className="flex items-center gap-2 py-1 pl-1"
+          // py-1 (4px) reduzido +10% (3.6px) na mesma leva do gap abaixo — a folga vertical de
+          // cada linha de camada também é "espaço entre uma camada e outra" a olho nu.
+          className="flex items-center gap-2 py-[3.6px] pl-1"
           style={{ paddingLeft: `${depth * 14 + 4}px` }}
           title={hint ?? node.hint ?? undefined}
         >
@@ -280,8 +285,11 @@ export function MapLayerControl({
         </div>
 
         {isExpanded && node.children.length > 0 && (
+          // gap-1 (4px) reduzido 10% (3.6px) e depois mais 10% (3.24px) a pedido do usuário,
+          // para as camadas dentro de um grupo expandido ficarem visualmente mais próximas
+          // umas das outras.
           <div
-            className={`mt-1.5 flex flex-col gap-1 border-t border-app-border/60 pt-1.5 ${
+            className={`mt-1.5 flex flex-col gap-[3.24px] border-t border-app-border/60 pt-1.5 ${
               !hasMultipleChildren ? 'justify-end' : ''
             }`}
           >

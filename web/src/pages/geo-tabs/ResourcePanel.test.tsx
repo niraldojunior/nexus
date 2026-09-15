@@ -54,11 +54,6 @@ vi.mock('./ResourcePortsTab', () => ({
     </button>
   ),
 }));
-vi.mock('./ResourceCoverageTab', () => ({
-  ResourceCoverageTab: ({ resourceId }: { resourceId: string }) => (
-    <div>Cobertura de {resourceId}</div>
-  ),
-}));
 
 const node: GeoTreeNode = {
   id: 'resource:cto-1',
@@ -174,28 +169,12 @@ describe('ResourcePanel', () => {
     renderPanel();
 
     expect(mocks.useResourceDetail).toHaveBeenCalledWith('cto-1');
-    expect(screen.getByRole('button', { name: 'Visão geral' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Geral' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Recursos internos' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Esquemático' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Histórico' })).toBeInTheDocument();
-    expect(screen.getByText('Detalhe da CTO')).toBeInTheDocument();
-  });
-
-  it('mostra Cobertura para Resource com geometria Point e a monta sob demanda', () => {
-    renderPanel();
-
-    expect(screen.getByRole('button', { name: 'Cobertura' })).toBeInTheDocument();
-    expect(screen.queryByText('Cobertura de cto-1')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cobertura' }));
-    expect(screen.getByText('Cobertura de cto-1')).toBeInTheDocument();
-  });
-
-  it('não mostra Cobertura para Resource sem geometria Point', () => {
-    renderPanel({
-      node: { ...node, id: 'resource:cabo-1', refId: 'cabo-1', geometry: undefined },
-    });
-
     expect(screen.queryByRole('button', { name: 'Cobertura' })).not.toBeInTheDocument();
+    expect(screen.getByText('Detalhe da CTO')).toBeInTheDocument();
   });
 
   it('abre a aba Histórico', () => {
@@ -236,7 +215,6 @@ describe('ResourcePanel', () => {
     expect(mocks.usePortDetail).toHaveBeenCalledWith('porta-1', true);
     expect(screen.getByText('Detalhe da porta')).toBeInTheDocument();
     expect(screen.queryByText('Street View')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cobertura' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Serviço' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Recursos internos/ })).not.toBeInTheDocument();

@@ -164,7 +164,7 @@ export function AddressDetailPanel({
       <div className="mb-4 flex flex-wrap gap-1 border-b border-app-border pb-3">
         <PanelBarButton
           icon={InfoIcon}
-          label="Visão geral"
+          label="Geral"
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />

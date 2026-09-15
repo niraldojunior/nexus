@@ -1533,6 +1533,12 @@ const VIEWPORT_LINE_WHERE = `
        AND (v->>1)::float8 BETWEEN ? AND ?
   )`;
 
+// `l` resolve a geometria mesmo quando `place_id` aponta para um GeographicSite ou
+// GeographicAddress (não só para a Location direta): mesma régua de resolveDetailLocation
+// (oracle-repository.ts) e de candidatesSql (map-feature-synchronizer.ts) — um recurso cujo
+// Endereço foi trocado para um GeographicAddress via PlacePicker precisa continuar achável
+// no viewport, ou some do mapa ao fechar o painel (issue reportada: CDOE sumindo após editar
+// Endereço).
 const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
   const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
   const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
@@ -1544,7 +1550,12 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM ${table} r
-    JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN tmf_geographic_site place_site
+      ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
+    LEFT JOIN tmf_geographic_address place_address
+      ON place_address.id = r.place_id
+    JOIN tmf_geographic_location l
+      ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
     LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
     LEFT JOIN tmf_resource_type rt
       ON rt.id = rs.resource_type_id

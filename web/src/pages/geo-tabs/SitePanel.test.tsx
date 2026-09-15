@@ -117,7 +117,7 @@ describe('SitePanel', () => {
   it('modo consulta: mostra nome editável e as 4 abas do painel unificado', () => {
     renderPanel();
     expect(screen.getByLabelText('Nome do local')).toHaveValue('CDO Rua Miguel de Frias, 380');
-    expect(screen.getByRole('button', { name: 'Visão Geral' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Geral' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sub-locais' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Recursos' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Histórico' })).toBeInTheDocument();

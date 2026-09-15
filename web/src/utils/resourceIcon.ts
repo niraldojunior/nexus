@@ -628,6 +628,8 @@ const CODE_ALIAS: Record<string, string> = {
   cpe: 'CPE',
   olt: 'OLT',
   cto: 'CTO',
+  cdoe: 'CTO',
+  cdoi: 'CTO',
   dio: 'DIO',
   porta: 'Port',
   port: 'Port',
@@ -744,16 +746,21 @@ export function resourceTypeLabel(code: string): string {
 }
 
 export function resourceTypeCode(resource: IconResourceLike | string | undefined): string {
-  const direct = typeof resource === 'string' ? resource : resource?.resourceType;
+  const directRaw = typeof resource === 'string' ? resource : resource?.resourceType;
+  // O catálogo pode emitir codes qualificados com prefixo de categoria (ex.: 'category:CDOE',
+  // issue #230). Normaliza removendo o prefixo antes do lookup em ICONS / CODE_ALIAS.
+  const direct = directRaw ? directRaw.replace(/^[a-z_]+:/i, '') : directRaw;
   if (direct && ICONS[direct]) return direct;
 
   const haystack = (
     typeof resource === 'string'
       ? resource
-      : [resource?.resourceType, resource?.resourceSpecification?.name, resource?.name]
+      : [resource?.resourceType, resource?.resourceSpecification?.name, resource?.sublabel, resource?.name]
           .filter(Boolean)
           .join(' ')
-  ).toLowerCase();
+  )
+    .replace(/^[a-z_]+:/i, '')
+    .toLowerCase();
 
   if (!haystack) return '__fallback';
   // Do alias mais específico para o mais genérico, para "PatchCord" não cair em "cord".

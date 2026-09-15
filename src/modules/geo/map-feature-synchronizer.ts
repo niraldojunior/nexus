@@ -85,7 +85,12 @@ export function candidatesSql(idPlaceholders: string): string {
              ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
            JOIN tmf_resource_type rt
              ON rt.id = rs.resource_type_id
-           JOIN tmf_geographic_location l ON l.id = r.place_id
+           LEFT JOIN tmf_geographic_site place_site
+             ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
+           LEFT JOIN tmf_geographic_address place_address
+             ON place_address.id = r.place_id
+           JOIN tmf_geographic_location l
+             ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
           WHERE r.id IN (${idPlaceholders}) AND r.tenant_id = ? AND r.status <> 'terminated'
             AND ${excludeInternalResourceTypesSql('rt')}
             AND COALESCE(rt.map_presence, 1) = 1

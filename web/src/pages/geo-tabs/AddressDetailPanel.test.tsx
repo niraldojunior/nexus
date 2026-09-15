@@ -219,7 +219,7 @@ describe('AddressDetailPanel', () => {
     expect(bodyWrapper).not.toHaveClass('overflow-x-hidden');
   });
 
-  it('alterna entre Visão geral e Viabilidade', async () => {
+  it('alterna entre Geral e Viabilidade', async () => {
     const address: DraftAddress = {
       street: 'R. Dr. Paulo César',
       streetNr: '155',
@@ -230,18 +230,18 @@ describe('AddressDetailPanel', () => {
 
     render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
 
-    // Nasce na Visão geral.
+    // Nasce na Geral.
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
     expect(screen.getByText(/Nenhuma CDO num raio de 300 m/)).toBeInTheDocument();
     expect(screen.queryByText('Google Maps')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Geral' }));
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
   });
 
-  it('no mobile, a aba Viabilidade oculta o Street View e a Visão geral o traz de volta', async () => {
+  it('no mobile, a aba Viabilidade oculta o Street View e a Geral o traz de volta', async () => {
     const address: DraftAddress = {
       street: 'R. Dr. Paulo César',
       streetNr: '155',
@@ -252,14 +252,14 @@ describe('AddressDetailPanel', () => {
 
     render(<AddressDetailPanel isMobile address={address} onClose={vi.fn()} />);
 
-    // Na Visão geral a foto (mockada como indisponível) mostra o placeholder do hero.
+    // Na Geral a foto (mockada como indisponível) mostra o placeholder do hero.
     expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
 
     // Na Viabilidade a foto some para o mapa ganhar a tela.
     await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
     expect(screen.queryByText('Sem imagem de Street View')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Geral' }));
     expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
   });
 

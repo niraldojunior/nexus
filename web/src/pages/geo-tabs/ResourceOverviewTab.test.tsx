@@ -1,40 +1,45 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import type {
   PhysicalResourceDetail,
-  ResourceLayer,
   ResourceSpecification,
   ResourceType,
 } from '../../services/resourceApi';
 
 const mocks = vi.hoisted(() => ({
   useResourceSearch: vi.fn(),
-  listResourceLayers: vi.fn(),
   listResourceTypes: vi.fn(),
   listResourceSpecifications: vi.fn(),
+  getResourceTypeCatalogContext: vi.fn(),
+  listResourceCatalogs: vi.fn(),
+  getResourceCatalogTree: vi.fn(),
+  getResourceModelSnapshotSource: vi.fn(),
 }));
 
 vi.mock('../../hooks/useResourceSearch', () => ({ useResourceSearch: mocks.useResourceSearch }));
 
-// A cascata de Modelo (Topologia→Tipo→Fornecedor→Modelo) busca o catálogo sob demanda — só as
-// 3 funções que ela chama são mockadas, o resto do módulo real (tipos, helpers) permanece intacto.
 vi.mock('../../services/resourceApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/resourceApi')>();
   return {
     ...actual,
-    listResourceLayers: mocks.listResourceLayers,
     listResourceTypes: mocks.listResourceTypes,
+    listResourceSpecifications: mocks.listResourceSpecifications,
+    getResourceTypeCatalogContext: mocks.getResourceTypeCatalogContext,
+  };
+});
+
+vi.mock('../../services/resourceCatalogApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/resourceCatalogApi')>();
+  return {
+    ...actual,
+    listResourceCatalogs: mocks.listResourceCatalogs,
+    getResourceCatalogTree: mocks.getResourceCatalogTree,
+    getResourceModelSnapshotSource: mocks.getResourceModelSnapshotSource,
     listResourceSpecifications: mocks.listResourceSpecifications,
   };
 });
 
-// Catálogo de apoio para a cascata: 2 topologias, "CTO" e "Splitter" na GPON, 2 fabricantes na
-// GPON/CTO (Furukawa com 2 modelos, Nokia com 1) — cobre filtragem em todos os 4 níveis.
-const CASCADE_LAYERS: ResourceLayer[] = [
-  { '@type': 'ResourceLayer', id: 'resource-layer-gpon-network', href: '', code: 'gpon_network', name: 'Rede GPON', status: 'active' },
-  { '@type': 'ResourceLayer', id: 'resource-layer-p2p', href: '', code: 'p2p', name: 'Rede P2P', status: 'active' },
-];
 const CASCADE_TYPES: ResourceType[] = [
   { '@type': 'ResourceType', id: 'type-cto', href: '', code: 'CTO', name: 'CTO', categoryCode: 'Infrastructure.Passive', status: 'active' },
   { '@type': 'ResourceType', id: 'type-splitter', href: '', code: 'Splitter', name: 'Splitter', categoryCode: 'Infrastructure.Passive', status: 'active' },
@@ -45,7 +50,7 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     name: 'CTO 8 portas',
     category: 'Infrastructure.Passive',
     resourceType: 'CTO',
-    resourceLayerId: 'resource-layer-gpon-network',
+    resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FDT 8' }],
     relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
   },
@@ -54,7 +59,7 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     name: 'CTO 16 portas',
     category: 'Infrastructure.Passive',
     resourceType: 'CTO',
-    resourceLayerId: 'resource-layer-gpon-network',
+    resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FDT 16' }],
     relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
   },
@@ -63,7 +68,7 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     name: 'CTO Nokia',
     category: 'Infrastructure.Passive',
     resourceType: 'CTO',
-    resourceLayerId: 'resource-layer-gpon-network',
+    resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FlexBox' }],
     relatedParty: [{ id: 'party-nokia', name: 'Nokia', '@referredType': 'Organization', role: 'manufacturer' }],
   },
@@ -72,23 +77,12 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     name: 'Splitter 1x8',
     category: 'Infrastructure.Passive',
     resourceType: 'Splitter',
-    resourceLayerId: 'resource-layer-gpon-network',
+    resourceTypeId: 'type-splitter',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'SP1x8' }],
-    relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
-  },
-  {
-    id: 'spec-cto-p2p',
-    name: 'CTO P2P',
-    category: 'Infrastructure.Passive',
-    resourceType: 'CTO',
-    resourceLayerId: 'resource-layer-p2p',
-    resourceSpecificationCharacteristic: [{ name: 'model', value: 'P2P Box' }],
     relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
   },
 ];
 
-// PlacePicker tem cobertura própria (busca de local via usePlaceSearch/usePlaceLabel) — aqui só
-// interessa confirmar que ResourceOverviewTab liga onChange -> onPatch({placeId, placeType}).
 vi.mock('../../components/PlacePicker', () => ({
   PlacePicker: ({
     onChange,
@@ -101,18 +95,81 @@ vi.mock('../../components/PlacePicker', () => ({
   ),
 }));
 
+const CATALOG_CONTEXT = {
+  resourceType: { id: 'type-cto', code: 'CTO', name: 'CTO' },
+  catalogPaths: [
+    {
+      catalog: { id: 'catalog-1', code: 'default', name: 'Catálogo padrão' },
+      nodes: [
+        { id: 'node-1', code: 'telecom', name: 'Telecom', kind: 'GROUP' as const },
+        { id: 'node-2', code: 'rede-acesso', name: 'Rede de Acesso', kind: 'GROUP' as const },
+        { id: 'node-3', code: 'gpon', name: 'GPON', kind: 'GROUP' as const },
+        { id: 'node-4', code: 'distribuicao', name: 'Distribuição', kind: 'GROUP' as const },
+        { id: 'node-5', code: 'CDOE', name: 'CDOE', kind: 'RESOURCE_TYPE' as const },
+      ],
+    },
+  ],
+};
+
+const CATALOG_SNAPSHOT = {
+  catalog: { id: 'catalog-1', name: 'Padrão', code: 'DEFAULT', status: 'active', isDefault: true },
+  nodes: [
+    {
+      id: 'node-1',
+      catalogId: 'catalog-1',
+      code: 'telecom',
+      name: 'Telecom',
+      kind: 'GROUP' as const,
+      status: 'active' as const,
+      sortOrder: 1,
+      children: [
+        {
+          id: 'node-cto',
+          catalogId: 'catalog-1',
+          code: 'CTO',
+          name: 'CTO',
+          kind: 'RESOURCE_TYPE' as const,
+          resourceTypeId: 'type-cto',
+          resourceType: CASCADE_TYPES[0],
+          status: 'active' as const,
+          sortOrder: 1,
+        },
+        {
+          id: 'node-splitter',
+          catalogId: 'catalog-1',
+          code: 'Splitter',
+          name: 'Splitter',
+          kind: 'RESOURCE_TYPE' as const,
+          resourceTypeId: 'type-splitter',
+          resourceType: CASCADE_TYPES[1],
+          status: 'active' as const,
+          sortOrder: 2,
+        },
+      ],
+    },
+  ],
+  resourceTypes: CASCADE_TYPES,
+  relationshipRules: [],
+};
+
 beforeEach(() => {
   mocks.useResourceSearch.mockReturnValue({ options: [], searching: false });
-  mocks.listResourceLayers.mockResolvedValue(CASCADE_LAYERS);
   mocks.listResourceTypes.mockResolvedValue(CASCADE_TYPES);
   mocks.listResourceSpecifications.mockResolvedValue(CASCADE_SPECIFICATIONS);
+  mocks.getResourceTypeCatalogContext.mockResolvedValue(CATALOG_CONTEXT);
+  mocks.listResourceCatalogs.mockResolvedValue([CATALOG_SNAPSHOT.catalog]);
+  mocks.getResourceCatalogTree.mockResolvedValue(CATALOG_SNAPSHOT.nodes);
+  mocks.getResourceModelSnapshotSource.mockResolvedValue(CATALOG_SNAPSHOT);
 });
 
 afterEach(() => {
   cleanup();
-  mocks.listResourceLayers.mockReset();
   mocks.listResourceTypes.mockReset();
   mocks.listResourceSpecifications.mockReset();
+  mocks.getResourceTypeCatalogContext.mockReset();
+  mocks.listResourceCatalogs.mockReset();
+  mocks.getResourceCatalogTree.mockReset();
+  mocks.getResourceModelSnapshotSource.mockReset();
 });
 
 const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResourceDetail => ({
@@ -141,20 +198,14 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
     name: 'CTO 8 portas',
     category: 'Outside Plant',
     resourceType: 'CTO',
+    resourceTypeId: 'type-cto',
     resourceTypeName: 'CTO',
-    resourceLayerId: 'resource-layer-gpon-network',
     manufacturer: {
       id: 'party-furukawa',
       name: 'Furukawa',
       '@referredType': 'Organization',
     },
     model: 'FDT 8',
-    resourceLayer: {
-      id: 'resource-layer-gpon-network',
-      code: 'gpon_network',
-      name: 'Rede GPON',
-      '@referredType': 'ResourceLayer',
-    },
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FDT 8' }],
     relatedParty: [
       { id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' },
@@ -191,7 +242,7 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
 });
 
 describe('ResourceOverviewTab', () => {
-  it('prioriza os atributos de catálogo e mostra os estados SID localizados', () => {
+  it('prioriza os atributos de catálogo e mostra os estados SID localizados', async () => {
     render(
       <ResourceOverviewTab
         detail={detail()}
@@ -203,7 +254,7 @@ describe('ResourceOverviewTab', () => {
 
     expect(screen.getByText('Furukawa')).toBeInTheDocument();
     expect(screen.getByText('FDT 8')).toBeInTheDocument();
-    expect(screen.getByText('Rede GPON')).toBeInTheDocument();
+    expect(await screen.findByText('Telecom \\ Rede de Acesso \\ GPON \\ Distribuição')).toBeInTheDocument();
     expect(screen.getByText('Desbloqueado')).toBeInTheDocument();
     expect(screen.getByText('Habilitado')).toBeInTheDocument();
     expect(screen.getByText('Em Uso')).toBeInTheDocument();
@@ -349,7 +400,7 @@ describe('ResourceOverviewTab', () => {
     expect(onPatch).toHaveBeenCalledWith({ administrativeState: 'locked' });
   });
 
-  it('sem canEdit, não mostra nenhum alvo de edição', () => {
+  it('sem canEdit, não mostra nenhum alvo de edição no card e nas linhas', () => {
     render(
       <ResourceOverviewTab
         detail={detail()}
@@ -360,6 +411,7 @@ describe('ResourceOverviewTab', () => {
     );
 
     expect(screen.queryByLabelText(/^Editar /)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Editar definição do recurso')).not.toBeInTheDocument();
   });
 
   it('Observações: editar preserva o grupo _origin (C5) — reenvia o array inteiro', () => {
@@ -438,50 +490,26 @@ describe('ResourceOverviewTab', () => {
     expect(onPatch).toHaveBeenCalledWith({ placeId: 'site-2', placeType: 'GeographicSite' });
   });
 
-  it('Modelo: abre a busca sob demanda e pré-carrega os 4 níveis com os valores atuais', async () => {
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={vi.fn()} onChangeParent={vi.fn()} />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Editar Modelo'));
-
-    expect(await screen.findByLabelText('Modelo')).toHaveValue('spec-cto');
-    expect(screen.getByLabelText('Topologia')).toHaveValue('resource-layer-gpon-network');
-    expect(screen.getByLabelText('Tipo de equipamento')).toHaveValue('CTO');
-    expect(screen.getByLabelText('Fornecedor')).toHaveValue('party-furukawa');
-    expect(mocks.listResourceLayers).toHaveBeenCalledTimes(1);
-    expect(mocks.listResourceSpecifications).toHaveBeenCalledTimes(1);
-  });
-
-  it('Modelo: trocar Fornecedor só filtra o nível de Modelo — nenhum onPatch até o nível 4 confirmar', async () => {
+  it('Definição do recurso: clicar no card abre o modal com a árvore e permite trocar a especificação', async () => {
     const onPatch = vi.fn().mockResolvedValue(undefined);
     render(
       <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByLabelText('Editar Modelo'));
-    await screen.findByLabelText('Modelo');
+    fireEvent.click(screen.getByLabelText('Editar definição do recurso'));
 
-    fireEvent.change(screen.getByLabelText('Fornecedor'), { target: { value: 'party-nokia' } });
-    expect(onPatch).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Modelo')).toHaveValue('spec-cto-nokia');
+    // Espera o modal carregar os dados
+    expect(await screen.findByText('1. Caminho e Tipo de Recurso no Catálogo')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Definição do recurso' })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Modelo'), { target: { value: 'spec-cto-nokia' } });
-    expect(onPatch).toHaveBeenCalledWith({ resourceSpecificationId: 'spec-cto-nokia' });
-  });
+    // Seleciona outra especificação e salva
+    const specSelect = await screen.findByLabelText('Especificação');
+    fireEvent.change(specSelect, { target: { value: 'spec-cto-nokia' } });
 
-  it('Modelo: trocar Topologia reseta Tipo/Fornecedor/Modelo para a primeira opção compatível', async () => {
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={vi.fn()} onChangeParent={vi.fn()} />,
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alteração' }));
 
-    fireEvent.click(screen.getByLabelText('Editar Modelo'));
-    await screen.findByLabelText('Modelo');
-
-    fireEvent.change(screen.getByLabelText('Topologia'), { target: { value: 'resource-layer-p2p' } });
-
-    expect(screen.getByLabelText('Tipo de equipamento')).toHaveValue('CTO');
-    expect(screen.getByLabelText('Fornecedor')).toHaveValue('party-furukawa');
-    expect(screen.getByLabelText('Modelo')).toHaveValue('spec-cto-p2p');
+    await waitFor(() => {
+      expect(onPatch).toHaveBeenCalledWith({ resourceSpecificationId: 'spec-cto-nokia' });
+    });
   });
 });

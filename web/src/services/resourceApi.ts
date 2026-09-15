@@ -82,6 +82,10 @@ export type ResourceSpecification = {
   category: string;
   resourceType: string;
   resourceLayerId?: string;
+  // Campo atual (Fase B do cutover, issue #188) — `category`/`resourceType`(string)/`resourceLayerId`
+  // acima são legado e o backend não os envia mais (ver mapSpec em oracle-repository.ts); código
+  // novo deve ler `resourceTypeId` e casar com `ResourceType.id` via listResourceTypes().
+  resourceTypeId?: string;
   description?: string;
   validFor?: TimePeriod;
   resourceSpecificationCharacteristic: ResourceCharacteristic[];
@@ -315,6 +319,34 @@ export async function listResourceCategories(): Promise<ResourceCategory[]> {
 
 export async function listResourceTypes(): Promise<ResourceType[]> {
   return await requestJson<ResourceType[]>('/tmf-api/resourceCatalogManagement/v4/resourceType');
+}
+
+export type ResourceCatalogPathEntry = {
+  id: string;
+  code: string;
+  name: string;
+  kind: 'GROUP' | 'RESOURCE_TYPE';
+};
+
+export type ResourceCatalogPath = {
+  catalog: { id: string; code: string; name: string };
+  nodes: ResourceCatalogPathEntry[];
+};
+
+export type ResourceTypeCatalogContext = {
+  resourceType: Pick<ResourceType, 'id' | 'code' | 'name'>;
+  catalogPaths: ResourceCatalogPath[];
+};
+
+// Path do Tipo de Recurso na árvore dinâmica de catálogo (issue #188) — usado para exibir onde o
+// Tipo está posicionado (ex.: "Telecom \ Rede de Acesso \ GPON \ Distribuição") sem depender do
+// ResourceLayer legado, removido fisicamente na Fase B do cutover.
+export async function getResourceTypeCatalogContext(
+  resourceTypeId: string,
+): Promise<ResourceTypeCatalogContext> {
+  return await requestJson<ResourceTypeCatalogContext>(
+    `/v1/resource-types/${encodeURIComponent(resourceTypeId)}/catalog-context`,
+  );
 }
 
 export async function listResourceLayers(): Promise<ResourceLayer[]> {

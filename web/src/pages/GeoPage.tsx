@@ -260,9 +260,9 @@ const SITE_MARKER_Z = 1500;
 
 // Stub de GeoTreeNode a partir de uma feature do InfraOverlay (canvas do mapa, Fase 3 da
 // issue #69) — clique/hover sobre o canvas não tem um GeoTreeNode pronto, só o essencial que o
-// índice de tile carrega. Serve para hover e como alvo da reidratação; o painel de Recurso só
-// abre depois de `selectNodeFromInfraOverlay` confirmar o nó canônico (`detail` completo e,
-// pra cabo, a rota inteira — não só o trecho recortado neste tile).
+// índice de tile carrega. Serve para hover e para abrir o painel na hora; a reidratação
+// (`fetchTreeNode`) corrige o nó em segundo plano com o canônico (`detail` completo e, pra cabo,
+// a rota inteira — não só o trecho recortado neste tile). Ver selectNodeFromInfraOverlay.
 function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
   const node: GeoTreeNode = {
     id: mapTileFeatureNodeId(feature),
@@ -1372,10 +1372,15 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
 
   // Clique/hover resolvido pelo InfraOverlay (canvas do mapa, Fase 3 da issue #69): a feature
   // do índice de tile não tem `detail` nem (pra cabo) a rota inteira — ver mapTileFeatureToNode.
-  // Site pode abrir pelo stub: o SitePanel busca o detalhe por id e sua geometria no índice já é
-  // completa. Recurso, porém, só abre após reidratar: uma entrada órfã do índice não pode cair no
-  // ResourcePanel (que depende do agregado físico e da rota canônica), nem um LogicalResource
-  // pode ser encaminhado a esse agregado físico.
+  //
+  // O painel abre de forma otimista, direto do stub, e a reidratação (`fetchTreeNode`) corre em
+  // paralelo só para corrigir o nó — nunca como porteiro. Esperar a hidratação antes de abrir
+  // (como se fazia até o commit 58b6362) custava ~4s de percepção: o backend de dev atende
+  // requisições em série (AGENTS.md §3), então esse `await` empurrava uma requisição inteira à
+  // frente da que realmente enche o painel (useResourceDetail, disparada só na montagem do
+  // ResourcePanel). Os dois casos que motivaram o porteiro continuam cobertos: LogicalResource é
+  // barrado na hora pelo `referredType` que o próprio índice de tile já traz, e a entrada órfã
+  // (recurso encerrado entre o build do índice e o clique) fecha o painel quando o 404 chega.
   const selectNodeFromInfraOverlay = useCallback(
     (feature: MapTileFeature) => {
       const stub = mapTileFeatureToNode(feature);
@@ -1383,6 +1388,17 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         selectNode(stub, 'map');
         return;
       }
+      // O índice de tile já classifica a entidade (mapTileFeatureToNode copia `entityType`), então
+      // um LogicalResource nem chega a abrir o ResourcePanel — que depende do agregado físico.
+      if (stub.referredType && stub.referredType !== 'PhysicalResource') {
+        setSelectedNode(null);
+        setDetailOpen(false);
+        setSearchSelection(null);
+        setError('Este tipo de recurso ainda não possui painel de detalhe no mapa.');
+        return;
+      }
+      setError(null);
+      selectNode(stub, 'map');
       const token = ++hydrateTokenRef.current;
       void fetchTreeNode(stub.id)
         .then((hydrated) => {
@@ -1394,8 +1410,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             setError('Este tipo de recurso ainda não possui painel de detalhe no mapa.');
             return;
           }
-          setError(null);
-          selectNode(hydrated, 'map');
+          // Só reencaminha se o canônico de fato acrescenta algo (rota inteira do cabo,
+          // hasChildren real): reexecutar selectNode à toa remonta o painel e joga fora o
+          // detalhe que já está carregando.
+          setSelectedNode((current) => (current?.id === stub.id ? hydrated : current));
         })
         .catch((reason) => {
           if (hydrateTokenRef.current !== token) return;

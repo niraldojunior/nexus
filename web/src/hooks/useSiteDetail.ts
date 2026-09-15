@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchSiteOrigin,
+  getGeoAddress,
+  getGeoLocation,
   getJson,
   type GeoAddress,
   type GeoLocation,
@@ -36,8 +38,8 @@ const inFlight = new Map<string, Promise<SiteDetailBundle>>();
 async function fetchSiteDetail(siteId: string): Promise<SiteDetailBundle> {
   const site = await getJson<GeoSite>(`/v1/geo/sites/${siteId}`);
   const [address, location, origin] = await Promise.all([
-    site.address?.id ? getJson<GeoAddress>(`/v1/geo/addresses/${site.address.id}`) : null,
-    site.place?.id ? getJson<GeoLocation>(`/v1/geo/locations/${site.place.id}`) : null,
+    site.address?.id ? getGeoAddress(site.address.id).then((res) => res ?? null).catch(() => null) : null,
+    site.place?.id ? getGeoLocation(site.place.id).then((res) => res ?? null).catch(() => null) : null,
     fetchSiteOrigin(siteId).catch(() => null),
   ]);
   return { site, address, location, origin };

@@ -245,7 +245,7 @@ describe('GoogleMapPanel', () => {
     expect(options).not.toHaveProperty('tiltInteractionEnabled');
   });
 
-  it('sem initialView, o mapa nasce no centro/zoom padrão (regressão)', async () => {
+  it('sem initialView, o mapa nasce no centro/zoom padrão nacional (primeiro acesso)', async () => {
     render(
       <GoogleMapPanel
         nodes={[]}
@@ -267,8 +267,10 @@ describe('GoogleMapPanel', () => {
 
     await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
     const options = googleMocks.mapCtor.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(options.center).toEqual({ lat: -22.9068, lng: -43.1075 });
-    expect(options.zoom).toBe(15);
+    // Sem estado salvo (primeiro acesso), o mapa nasce enquadrando o Brasil inteiro, não mais
+    // fixo em Icaraí/Niterói (ver BRAZIL_CENTER/BRAZIL_DEFAULT_ZOOM em utils/geoViewState.ts).
+    expect(options.center).toEqual({ lat: -14.235, lng: -51.9253 });
+    expect(options.zoom).toBe(4);
   });
 
   it('com initialView, o mapa nasce já na câmera restaurada (issue #182)', async () => {

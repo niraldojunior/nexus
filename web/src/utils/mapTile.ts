@@ -50,11 +50,24 @@ export function tileBounds(z: number, x: number, y: number): TileBoundsRect {
   };
 }
 
+// Teto de tiles por viewport. MAP_TILE_ZOOM é fixo (16) independente do zoom que a pessoa
+// usuária está vendo — um viewport de escala nacional/estadual (ex.: BRAZIL_DEFAULT_ZOOM em
+// geoViewState.ts) cruza uma faixa de tiles z16 grande o bastante para o duplo laço abaixo
+// alocar dezenas de milhões de entradas e estourar a memória da aba (Out of Memory). Acima do
+// teto, a viewport é ampla demais para infra passiva por tile fazer sentido — devolve vazio, o
+// mesmo caminho de "nada requisitado" que useMapTiles já trata sem fetch (a pessoa usuária dá
+// zoom para revelar Caixas/Cabos, exatamente como Sites já fazem via faixa de escala própria).
+export const MAX_TILES_PER_VIEWPORT = 2000;
+
 // Todos os tiles cujo retângulo intersecta um bbox lng/lat — a viewport do mapa vira esta
-// lista, e o hook busca só os que ainda não estão no cache local (ver useMapTiles).
+// lista, e o hook busca só os que ainda não estão no cache local (ver useMapTiles). Devolve
+// vazio (sem alocar a grade) se a contagem estourar MAX_TILES_PER_VIEWPORT — ver comentário ali.
 export function tilesForBounds(bounds: TileBoundsRect, z: number = MAP_TILE_ZOOM): Tile[] {
   const nwTile = lngLatToTile(bounds.minLng, bounds.maxLat, z);
   const seTile = lngLatToTile(bounds.maxLng, bounds.minLat, z);
+  const width = seTile.x - nwTile.x + 1;
+  const height = seTile.y - nwTile.y + 1;
+  if (width * height > MAX_TILES_PER_VIEWPORT) return [];
   const tiles: Tile[] = [];
   for (let x = nwTile.x; x <= seTile.x; x += 1) {
     for (let y = nwTile.y; y <= seTile.y; y += 1) {

@@ -73,7 +73,12 @@ import { coverageSwatch, coverageSwatchDataUrl } from '../utils/coverageColor';
 import { projectAreaSwatchDataUrl } from '../utils/projectAreaColor';
 import type { CoverageNeighborhood, CoverageResponse } from '../services/geoCoverageApi';
 import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../utils/mapCamera';
-import type { GeoViewContext, MapCamera } from '../utils/geoViewState';
+import {
+  BRAZIL_CENTER,
+  BRAZIL_DEFAULT_ZOOM,
+  type GeoViewContext,
+  type MapCamera,
+} from '../utils/geoViewState';
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils/deviceLocation';
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -501,8 +506,9 @@ const DROP_SIMULATION_Z = 1500;
 // Passo do pontilhado em movimento. 60 ms dá fluidez sem custar frame de mapa.
 const DROP_DASH_INTERVAL_MS = 60;
 
-// Espessura por hierarquia da planta: o feeder é o tronco, o drop é o capilar.
-const DEFAULT_CENTER = { lat: -22.9068, lng: -43.1075 };
+// Centro e zoom nacionais: exibem todo o território brasileiro no primeiro acesso do usuário.
+const DEFAULT_CENTER = BRAZIL_CENTER;
+const DEFAULT_ZOOM = BRAZIL_DEFAULT_ZOOM;
 // Aguarda a janela nativa de duplo clique antes de tratar clique simples no mapa.
 const MAP_SINGLE_CLICK_DELAY_MS = 500;
 
@@ -1097,7 +1103,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           setFocusRequest({ point, scaleMeters });
         }
       }
-      tree.revealNode(node.id, { expandSelf: node.hasChildren });
+      if (from === 'map') {
+        window.setTimeout(() => {
+          tree.revealNode(node.id, { expandSelf: node.hasChildren });
+        }, 80);
+      } else {
+        tree.revealNode(node.id, { expandSelf: node.hasChildren });
+      }
       if (node.kind === 'site' || node.kind === 'resource') {
         setDetailOpen(true);
         // Nome e identidade do item vão para a barra como seleção confirmada.
@@ -2503,7 +2515,7 @@ export function GoogleMapPanel({
           center: initialViewRef.current
             ? { lat: initialViewRef.current.lat, lng: initialViewRef.current.lng }
             : DEFAULT_CENTER,
-          zoom: initialViewRef.current?.zoom ?? 15,
+          zoom: initialViewRef.current?.zoom ?? DEFAULT_ZOOM,
           mapTypeId: selectedBaseLayer.googleMapTypeId,
           mapTypeControl: false,
           fullscreenControl: false,

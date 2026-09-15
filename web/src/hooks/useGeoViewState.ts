@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   geoViewSearchParams,
+  readStoredViewState,
   resolveInitialViewState,
   writeGeoViewParams,
   writeStoredViewState,
@@ -26,28 +27,62 @@ export type UseGeoViewState = {
   setContext: (context: GeoViewContext) => void;
 };
 
+// Estado da restauração, indexado pelo ambiente a que ele pertence. Precisa ser `useState` (e
+// não refs) porque é o GATE do ajuste em fase de render abaixo: sob `React.StrictMode`
+// (web/src/main.tsx) cada render é invocado DUAS vezes, e um gate baseado em ref seria
+// satisfeito pela primeira invocação — a segunda não reentraria e o `setState` da primeira iria
+// embora junto com o render descartado, deixando `initialView` nulo para sempre. Com o gate em
+// state, as duas invocações leem o mesmo valor, fazem o mesmo trabalho (idempotente) e o
+// re-render acontece.
+type ResolvedView = {
+  /** Ambiente a que `view` corresponde — `null` enquanto o catálogo não resolveu. */
+  environmentId: string | null;
+  view: GeoViewState | null;
+  /**
+   * Se algum ambiente concreto já foi resolvido antes. A partir do segundo, os parâmetros da
+   * URL pertencem ao ambiente ANTERIOR e não devem ser reusados — só o localStorage do novo.
+   */
+  hasResolvedEnvironment: boolean;
+};
+
+const resolveFor = (environmentId: string | null, previous: ResolvedView | null): ResolvedView => {
+  const hadEnvironment = previous?.hasResolvedEnvironment ?? false;
+  const view = environmentId
+    ? hadEnvironment
+      ? readStoredViewState(environmentId)
+      : resolveInitialViewState(environmentId)
+    : null;
+  return {
+    environmentId,
+    view,
+    hasResolvedEnvironment: hadEnvironment || environmentId !== null,
+  };
+};
+
 export function useGeoViewState(environmentId: string | null): UseGeoViewState {
-  const [initialView, setInitialView] = useState<GeoViewState | null>(() =>
-    environmentId ? resolveInitialViewState(environmentId) : null,
-  );
+  const [resolved, setResolved] = useState<ResolvedView>(() => resolveFor(environmentId, null));
   const environmentIdRef = useRef(environmentId);
-  const cameraRef = useRef<MapCamera | null>(initialView?.camera ?? null);
-  const contextRef = useRef<GeoViewContext>(initialView?.context ?? { kind: 'none' });
+  const cameraRef = useRef<MapCamera | null>(resolved.view?.camera ?? null);
+  const contextRef = useRef<GeoViewContext>(resolved.view?.context ?? { kind: 'none' });
   const lastCommittedRef = useRef<string | null>(null);
   const timerRef = useRef<number | undefined>(undefined);
 
   // O catálogo chega depois do primeiro render. Quando sua identidade muda, troca todo o estado
-  // efêmero antes de o painel com key própria criar o mapa daquele ambiente.
-  if (environmentIdRef.current !== environmentId) {
+  // efêmero antes de o painel com key própria criar o mapa daquele ambiente. As escritas em ref
+  // aqui são idempotentes de propósito (mesmos valores nas duas invocações do StrictMode) — o
+  // gate é `resolved.environmentId`, nunca um dos refs.
+  if (resolved.environmentId !== environmentId) {
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
+    const next = resolveFor(environmentId, resolved);
     environmentIdRef.current = environmentId;
-    const restored = environmentId ? resolveInitialViewState(environmentId) : null;
-    cameraRef.current = restored?.camera ?? null;
-    contextRef.current = restored?.context ?? { kind: 'none' };
+    cameraRef.current = next.view?.camera ?? null;
+    contextRef.current = next.view?.context ?? { kind: 'none' };
     lastCommittedRef.current = null;
     timerRef.current = undefined;
-    setInitialView(restored);
+    setResolved(next);
   }
+
+  const initialView = resolved.environmentId === environmentId ? resolved.view : null;
 
   const commit = useCallback(() => {
     if (timerRef.current !== undefined) {

@@ -243,7 +243,6 @@
         resource_specification_id VARCHAR2(36 CHAR) NOT NULL,
         resource_type VARCHAR2(255 CHAR) NOT NULL,
         status VARCHAR2(255 CHAR) NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
-        geographic_location_id VARCHAR2(36 CHAR),
         serial_number VARCHAR2(255 CHAR) UNIQUE,
         part_number VARCHAR2(255 CHAR),
         valid_for_start TIMESTAMP(6) WITH TIME ZONE,
@@ -252,11 +251,9 @@
         characteristics CLOB,
         created_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (resource_specification_id) REFERENCES tmf_resource_specification(id),
-        FOREIGN KEY (geographic_location_id) REFERENCES tmf_geographic_location(id)
+        FOREIGN KEY (resource_specification_id) REFERENCES tmf_resource_specification(id)
       );
       CREATE INDEX idx_tmf_physical_resource_spec ON tmf_physical_resource(resource_specification_id);
-      CREATE INDEX idx_tmf_physical_resource_location ON tmf_physical_resource(geographic_location_id);
       CREATE INDEX idx_tmf_physical_resource_status ON tmf_physical_resource(status);
       CREATE INDEX idx_tmf_physical_resource_serial ON tmf_physical_resource(serial_number);
 

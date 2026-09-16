@@ -1042,10 +1042,11 @@ export const SCHEMA_SQL = `
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
         -- Motivo granular do status, resolvido em tmf_resource_status_catalog (issue #171).
         status_code TEXT,
-        geographic_location_id TEXT,
-        -- place sempre aponta para um GeographicSite (C2); geographic_location_id permanece para
-        -- compatibilidade de carga/mapa. O endereço do tipo de place é necessário nas leituras
-        -- TMF e deve existir já no CREATE TABLE, não só na migration de bases antigas.
+        -- place sempre aponta para um GeographicSite (C2). O endereço do tipo de place é
+        -- necessário nas leituras TMF e deve existir já no CREATE TABLE, não só na migration de
+        -- bases antigas. 'geographic_location_id' (coluna morta, nunca lida/escrita pelo
+        -- repositório — issue #254) foi removida; bases pré-existentes usam
+        -- drop-physical-resource-geographic-location-id-column.ts para o DROP físico.
         place_id TEXT,
         place_type TEXT,
         administrative_state TEXT,
@@ -1064,11 +1065,9 @@ export const SCHEMA_SQL = `
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (resource_specification_id) REFERENCES tmf_resource_specification(id),
-        FOREIGN KEY (geographic_location_id) REFERENCES tmf_geographic_location(id)
+        FOREIGN KEY (resource_specification_id) REFERENCES tmf_resource_specification(id)
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_spec ON tmf_physical_resource(resource_specification_id);
-      CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_location ON tmf_physical_resource(geographic_location_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_status ON tmf_physical_resource(status);
       CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_serial ON tmf_physical_resource(serial_number);
 

@@ -383,7 +383,6 @@ async function upsertResource(
     resource_specification_id: specId,
     resource_type: item.mapping.resourceType!,
     status: 'active',
-    geographic_location_id: locationId,
     place_id: locationId,
     place_type: locationId ? 'GeographicLocation' : null,
     administrative_state: 'unlocked',

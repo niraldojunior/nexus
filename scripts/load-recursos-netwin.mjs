@@ -655,12 +655,10 @@ async function main() {
         status,
         status_code: resolveStatusCode(substatus) ?? null,
         // `place_id`/`place_type` são as colunas que o repositório de recursos
-        // realmente lê (vêm de migration); `geographic_location_id` é a coluna
-        // original e continua preenchida pelo índice/FK de geo. Gravar só a
-        // segunda deixa o recurso sem lugar no mapa e na árvore de Locais.
+        // realmente lê. `geographic_location_id` era um espelho morto (nunca lido
+        // pelo app) e foi removida de tmf_physical_resource (issue #254).
         place_id: locId,
         place_type: 'GeographicLocation',
-        geographic_location_id: locId,
         serving_site_id: siteBySigla.get(b.sigla) ?? null,
         characteristics: JSON.stringify(
           originChars(
@@ -713,7 +711,6 @@ async function main() {
         status_code: resolveStatusCode(substatus) ?? null,
         place_id: locId,
         place_type: 'GeographicLocation',
-        geographic_location_id: locId,
         serving_site_id: siteBySigla.get(s.sigla) ?? null,
         characteristics: JSON.stringify(
           originChars(
@@ -776,7 +773,6 @@ async function main() {
       'status_code',
       'place_id',
       'place_type',
-      'geographic_location_id',
       'serving_site_id',
       'characteristics',
     ];
@@ -801,7 +797,6 @@ async function main() {
         status_code: resolveStatusCode(substatus) ?? null,
         place_id: caixa?.locationId ?? null,
         place_type: caixa?.locationId ? 'GeographicLocation' : null,
-        geographic_location_id: caixa?.locationId ?? null,
         serving_site_id: siteBySigla.get(s.sigla) ?? null,
         characteristics: JSON.stringify(
           originChars(

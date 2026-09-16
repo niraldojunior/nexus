@@ -36,6 +36,9 @@ import type {
   ResourceStatusCatalogEntry,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceConnectionsView,
+  ResourceComponentsView,
+  ResourceRelationshipCardinality,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
   UpdateResourceFunctionSpecificationInput,
@@ -341,6 +344,58 @@ export class ResourceService {
         symmetric: true,
         allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
       },
+      // Fixação física — caixa montada num poste (recurso) ou numa sala/central (site).
+      {
+        code: 'mountedOn',
+        name: 'Montado em',
+        inverseCode: 'supports',
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
+      },
+      {
+        code: 'supports',
+        name: 'Suporta',
+        inverseCode: 'mountedOn',
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
+      },
+      // Alimentação de rede entre recursos (ex.: CDO alimentada por fibra).
+      {
+        code: 'fedBy',
+        name: 'Alimentado por',
+        inverseCode: 'feeds',
+        allowedTargetKinds: ['RESOURCE_TYPE'],
+      },
+      {
+        code: 'feeds',
+        name: 'Alimenta',
+        inverseCode: 'fedBy',
+        allowedTargetKinds: ['RESOURCE_TYPE'],
+      },
+      // Atendimento derivado (ex.: CDO atende CDO downstream).
+      {
+        code: 'serves',
+        name: 'Atende',
+        inverseCode: 'servedBy',
+        allowedTargetKinds: ['RESOURCE_TYPE'],
+      },
+      {
+        code: 'servedBy',
+        name: 'Atendido por',
+        inverseCode: 'serves',
+        allowedTargetKinds: ['RESOURCE_TYPE'],
+      },
+      // Terminação física (ex.: fibra termina numa porta/splitter).
+      {
+        code: 'terminatesOn',
+        name: 'Termina em',
+        inverseCode: 'terminates',
+        allowedTargetKinds: ['RESOURCE_TYPE'],
+      },
+      {
+        code: 'terminates',
+        name: 'Termina',
+        inverseCode: 'terminatesOn',
+        allowedTargetKinds: ['RESOURCE_TYPE'],
+      },
     ];
     return await this.repository.transaction(async () => {
       let created = 0;
@@ -518,6 +573,7 @@ export class ResourceService {
     input: CreateResourceTypeRelationshipRuleInput,
     context?: RequestContext,
   ): Promise<ResourceTypeRelationshipRule> {
+    this.assertCardinality(input.cardinality);
     const source = await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
     const tenantId = tenantOf(context);
     const relationshipType = await this.getResourceRelationshipTypeOrThrow(
@@ -593,6 +649,9 @@ export class ResourceService {
     input: UpdateResourceTypeRelationshipRuleInput,
     context?: RequestContext,
   ): Promise<ResourceTypeRelationshipRule> {
+    if (input.cardinality !== undefined && input.cardinality !== null) {
+      this.assertCardinality(input.cardinality);
+    }
     await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
     const current = await this.repository.getResourceTypeRelationshipRule(ruleId, scopeOf(context));
     if (!current || current.sourceResourceTypeId !== resourceTypeId) {
@@ -601,8 +660,59 @@ export class ResourceService {
         statusCode: 404,
       });
     }
+    const relationshipTypeCode = input.relationshipTypeCode ?? current.relationshipTypeCode;
+    const targetKind = input.targetKind ?? current.targetKind;
+    const targetId = input.targetId ?? current.targetId;
+    const relationshipType = await this.getResourceRelationshipTypeOrThrow(
+      relationshipTypeCode,
+      context,
+    );
+    if (relationshipType.lifecycleStatus !== 'Active') {
+      throw new AppError('resource relationship type is retired', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_RETIRED',
+        statusCode: 409,
+      });
+    }
+    if (!relationshipType.allowedTargetKinds.includes(targetKind)) {
+      throw new AppError('target kind is not allowed by resource relationship type', {
+        code: 'RESOURCE_RELATIONSHIP_TARGET_KIND_NOT_ALLOWED',
+        statusCode: 409,
+      });
+    }
+    if (targetKind === 'RESOURCE_TYPE') {
+      await this.getResourceTypeByIdOrThrow(targetId, context);
+    } else {
+      const geoSpec = await this.dependencies.lookupGeoSiteSpecification?.(targetId);
+      if (!geoSpec) {
+        throw new AppError('geographic site specification not found', {
+          code: 'RESOURCE_TYPE_RELATIONSHIP_RULE_GEO_TARGET_NOT_FOUND',
+          statusCode: 404,
+        });
+      }
+    }
+    const activeRules = await this.repository.listResourceTypeRelationshipRules(resourceTypeId, {
+      tenantId: tenantOf(context),
+      includeRetired: false,
+    });
+    if (
+      activeRules.some(
+        (rule) =>
+          rule.id !== current.id &&
+          rule.relationshipTypeCode === relationshipTypeCode &&
+          rule.targetKind === targetKind &&
+          rule.targetId === targetId,
+      )
+    ) {
+      throw new AppError('resource type relationship rule already exists', {
+        code: 'RESOURCE_TYPE_RELATIONSHIP_RULE_DUPLICATE',
+        statusCode: 409,
+      });
+    }
     const stored = await this.repository.upsertResourceTypeRelationshipRule({
       ...current,
+      relationshipTypeCode,
+      targetKind,
+      targetId,
       ...(input.cardinality !== undefined
         ? input.cardinality
           ? { cardinality: input.cardinality }
@@ -639,6 +749,41 @@ export class ResourceService {
       });
     }
     return relationshipType;
+  }
+
+  private assertCardinality(cardinality?: ResourceRelationshipCardinality): void {
+    if (!cardinality) return;
+    if (typeof cardinality !== 'object') {
+      throw new AppError('cardinality must be a valid object', {
+        code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
+        statusCode: 400,
+      });
+    }
+    const { maxSourcePerTarget, maxTargetPerSource } = cardinality;
+    if (maxSourcePerTarget !== undefined) {
+      if (
+        typeof maxSourcePerTarget !== 'number' ||
+        !Number.isInteger(maxSourcePerTarget) ||
+        maxSourcePerTarget < 1
+      ) {
+        throw new AppError('cardinality must be a positive integer', {
+          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
+          statusCode: 400,
+        });
+      }
+    }
+    if (maxTargetPerSource !== undefined) {
+      if (
+        typeof maxTargetPerSource !== 'number' ||
+        !Number.isInteger(maxTargetPerSource) ||
+        maxTargetPerSource < 1
+      ) {
+        throw new AppError('cardinality must be a positive integer', {
+          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
+          statusCode: 400,
+        });
+      }
+    }
   }
 
   // --- Árvore dinâmica de catálogo (issue #188) -------------------------------------------------
@@ -1849,6 +1994,42 @@ export class ResourceService {
       throw new AppError('port not found', { code: 'RESOURCE_PORT_NOT_FOUND', statusCode: 404 });
     }
     return detail;
+  }
+
+  /** Visão das relações não-estruturais (não contenção) incidentes no recurso nos dois sentidos. */
+  public async getResourceConnectionsView(
+    resourceId: string,
+    context?: RequestContext,
+  ): Promise<ResourceConnectionsView> {
+    await this.getResourceOrThrow(resourceId, context);
+    const connections = await this.repository.listResourceConnections(
+      resourceId,
+      scopeOf(context),
+    );
+    return {
+      '@type': 'ResourceConnectionsView',
+      resourceId,
+      connections,
+    };
+  }
+
+  /** Visão recursiva de contenção (containsAsChild) com detalhes de nós e portas. */
+  public async getResourceComponentsView(
+    resourceId: string,
+    options?: { maxDepth?: number },
+    context?: RequestContext,
+  ): Promise<ResourceComponentsView> {
+    await this.getResourceOrThrow(resourceId, context);
+    const result = await this.repository.listResourceComponents(resourceId, {
+      scope: scopeOf(context),
+      ...(options?.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
+    });
+    return {
+      '@type': 'ResourceComponentsView',
+      resourceId,
+      components: result.components,
+      truncated: result.truncated,
+    };
   }
 
   /** Histórico de mutações do recurso (issue #171), alimentado pelo audit/outbox existente. */

@@ -668,6 +668,113 @@ test('ResourceService.updateResourceType: persists resourceTypeCharacteristic (i
   assert.equal(reloaded?.resourceTypeCharacteristic?.length, 2);
 });
 
+test('ResourceModelStudioAdapter: updates relationship rule cardinality when changed in snapshot', async () => {
+  const { adapter, resourceService } = createTestServices();
+  await resourceService.ensureBootstrapResourceRelationshipTypes(context);
+
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-rules-diff', name: 'Catálogo Regras Diff' },
+    context,
+  );
+  const group = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'group-rules-diff', name: 'Grupo', kind: 'GROUP', sortOrder: 0 },
+    context,
+  );
+  const leafCto = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    {
+      code: 'node-cto-rules-diff',
+      name: 'CDOE Regras',
+      kind: 'RESOURCE_TYPE',
+      parentNodeId: group.id,
+      sortOrder: 0,
+      mapPresence: true,
+      geometryKind: 'POINT',
+    },
+    context,
+  );
+  const leafPort = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    {
+      code: 'node-port-rules-diff',
+      name: 'Porta Regras',
+      kind: 'RESOURCE_TYPE',
+      parentNodeId: group.id,
+      sortOrder: 1,
+      mapPresence: false,
+    },
+    context,
+  );
+  assert.ok(leafCto.resourceTypeId);
+  assert.ok(leafPort.resourceTypeId);
+
+  // Cria regra inicial: CDOE containsAsChild Porta (máx 8)
+  const initialRule = await resourceService.createResourceTypeRelationshipRule(
+    leafCto.resourceTypeId,
+    {
+      relationshipTypeCode: 'containsAsChild',
+      targetKind: 'RESOURCE_TYPE',
+      targetId: leafPort.resourceTypeId,
+      cardinality: { maxTargetPerSource: 8 },
+    },
+    context,
+  );
+  assert.equal(initialRule.cardinality?.maxTargetPerSource, 8);
+
+  const source = await resourceService.getResourceModelSnapshotSource(catalog.id, context, true);
+  const snapshot: ResourceModelSnapshot = {
+    catalog: {
+      id: catalog.id,
+      code: catalog.code,
+      name: catalog.name,
+    },
+    nodes: source.nodes.map((node) => {
+      const isCto = node.id === leafCto.id;
+      return {
+        id: node.id,
+        code: node.code,
+        name: node.name,
+        kind: node.kind,
+        ...(node.resourceTypeId !== undefined ? { resourceTypeId: node.resourceTypeId } : {}),
+        parentNodeId: node.parentNodeId ?? null,
+        sortOrder: node.sortOrder,
+        status: node.status,
+        relationshipRules: isCto
+          ? [
+              {
+                relationshipTypeCode: 'containsAsChild',
+                targetKind: 'RESOURCE_TYPE' as const,
+                targetId: leafPort.resourceTypeId!,
+                cardinality: { maxTargetPerSource: 16 }, // alterado de 8 para 16
+              },
+            ]
+          : [],
+      };
+    }),
+  };
+
+  const updateRuleSpy = vi.spyOn(resourceService, 'updateResourceTypeRelationshipRule');
+  const createRuleSpy = vi.spyOn(resourceService, 'createResourceTypeRelationshipRule');
+
+  await adapter.materialize(snapshot as never, { tenantId: context.tenantId });
+
+  // Não deve criar nova regra (tripla já existente)
+  assert.equal(createRuleSpy.mock.calls.length, 0);
+  // Deve emitir update da cardinalidade
+  assert.equal(updateRuleSpy.mock.calls.length, 1);
+  assert.deepEqual(updateRuleSpy.mock.calls[0]?.[2], {
+    cardinality: { maxTargetPerSource: 16 },
+  });
+
+  const updatedRules = await resourceService.listResourceTypeRelationshipRules(
+    leafCto.resourceTypeId,
+    context,
+  );
+  const currentRule = updatedRules.find((r) => r.id === initialRule.id);
+  assert.equal(currentRule?.cardinality?.maxTargetPerSource, 16);
+});
+
 test('ResourceService.updateResourceType: geometryKind is required, preserved and explicitly clearable (issue #240)', async () => {
   const { resourceService } = createTestServices();
   const catalog = await resourceService.createResourceCatalog(

@@ -8,7 +8,6 @@ import type {
 } from '../../services/resourceApi';
 
 const mocks = vi.hoisted(() => ({
-  useResourceSearch: vi.fn(),
   listResourceTypes: vi.fn(),
   listResourceSpecifications: vi.fn(),
   getResourceTypeCatalogContext: vi.fn(),
@@ -16,8 +15,6 @@ const mocks = vi.hoisted(() => ({
   getResourceCatalogTree: vi.fn(),
   getResourceModelSnapshotSource: vi.fn(),
 }));
-
-vi.mock('../../hooks/useResourceSearch', () => ({ useResourceSearch: mocks.useResourceSearch }));
 
 vi.mock('../../services/resourceApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/resourceApi')>();
@@ -83,18 +80,6 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
   },
 ];
 
-vi.mock('../../components/PlacePicker', () => ({
-  PlacePicker: ({
-    onChange,
-  }: {
-    onChange: (place: { id: string; '@referredType': string } | null) => void;
-  }) => (
-    <button type="button" onClick={() => onChange({ id: 'site-2', '@referredType': 'GeographicSite' })}>
-      Selecionar Estação Icaraí
-    </button>
-  ),
-}));
-
 const CATALOG_CONTEXT = {
   resourceType: { id: 'type-cto', code: 'CTO', name: 'CTO' },
   catalogPaths: [
@@ -153,7 +138,6 @@ const CATALOG_SNAPSHOT = {
 };
 
 beforeEach(() => {
-  mocks.useResourceSearch.mockReturnValue({ options: [], searching: false });
   mocks.listResourceTypes.mockResolvedValue(CASCADE_TYPES);
   mocks.listResourceSpecifications.mockResolvedValue(CASCADE_SPECIFICATIONS);
   mocks.getResourceTypeCatalogContext.mockResolvedValue(CATALOG_CONTEXT);
@@ -248,7 +232,6 @@ describe('ResourceOverviewTab', () => {
         detail={detail()}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -278,7 +261,6 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -293,7 +275,6 @@ describe('ResourceOverviewTab', () => {
         detail={detail()}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -306,7 +287,6 @@ describe('ResourceOverviewTab', () => {
         detail={detail({ place: undefined })}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -321,7 +301,6 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -336,7 +315,6 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -344,10 +322,18 @@ describe('ResourceOverviewTab', () => {
     expect(badge.className).toContain('text-status-red');
   });
 
-  it('mostra "—" para campos ausentes em vez de ocultar a linha', () => {
+  it('oculta campos vazios para quem não pode editar', () => {
     render(
       <ResourceOverviewTab
         detail={detail({
+          resource: {
+            ...detail().resource,
+            label: undefined,
+            assetReference: undefined,
+            serialNumber: undefined,
+            partNumber: undefined,
+            characteristic: [],
+          },
           place: undefined,
           location: undefined,
           servingSite: undefined,
@@ -356,41 +342,28 @@ describe('ResourceOverviewTab', () => {
         })}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
+    expect(screen.queryByText('Projeto de implantação')).not.toBeInTheDocument();
   });
 
-  it('abre o recurso pai quando o usuário clica na referência', () => {
-    const onOpenResource = vi.fn();
+  it('mantém disponível para edição um campo vazio quando há permissão', () => {
     render(
       <ResourceOverviewTab
-        detail={detail({
-          parent: {
-            id: 'parent-1',
-            name: 'Splitter S8',
-            '@referredType': 'PhysicalResource',
-            relationshipType: 'containsAsChild',
-          },
-        })}
-        canEdit={false}
+        detail={detail({ resource: { ...detail().resource, serialNumber: undefined } })}
+        canEdit
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
-        onOpenResource={onOpenResource}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Splitter S8' }));
-    expect(onOpenResource).toHaveBeenCalledWith('parent-1');
+    expect(screen.getByLabelText('Editar Nº de série')).toBeInTheDocument();
   });
 
   it('com canEdit, editar o estado administrativo chama onPatch com o novo valor', () => {
     const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
-    );
+    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
 
     fireEvent.click(screen.getByLabelText('Editar Estado administrativo'));
     fireEvent.change(screen.getByLabelText('Estado administrativo'), {
@@ -406,7 +379,6 @@ describe('ResourceOverviewTab', () => {
         detail={detail()}
         canEdit={false}
         onPatch={vi.fn()}
-        onChangeParent={vi.fn()}
       />,
     );
 
@@ -416,9 +388,7 @@ describe('ResourceOverviewTab', () => {
 
   it('Observações: editar preserva o grupo _origin (C5) — reenvia o array inteiro', () => {
     const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
-    );
+    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
 
     const note = screen.getByLabelText('Observações do recurso');
     fireEvent.change(note, { target: { value: 'porta trocada em campo' } });
@@ -432,69 +402,9 @@ describe('ResourceOverviewTab', () => {
     });
   });
 
-  it('Recurso Pai: escolher um candidato chama onChangeParent com o novo id', async () => {
-    mocks.useResourceSearch.mockReturnValue({
-      options: [{ id: 'splitter-2', name: 'Splitter S9', resourceType: 'Splitter' }],
-      searching: false,
-    });
-    const onChangeParent = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ResourceOverviewTab
-        detail={detail()}
-        canEdit
-        onPatch={vi.fn()}
-        onChangeParent={onChangeParent}
-      />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Editar Recurso Pai'));
-    fireEvent.change(screen.getByLabelText('Buscar recurso pai'), { target: { value: 'Splitter' } });
-    fireEvent.click(await screen.findByText('Splitter S9'));
-
-    expect(onChangeParent).toHaveBeenCalledWith('splitter-2');
-  });
-
-  it('Recurso Pai: com pai atual, "Remover recurso pai" chama onChangeParent(null)', () => {
-    const onChangeParent = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ResourceOverviewTab
-        detail={detail({
-          parent: {
-            id: 'parent-1',
-            name: 'Splitter S8',
-            '@referredType': 'PhysicalResource',
-            relationshipType: 'containsAsChild',
-          },
-        })}
-        canEdit
-        onPatch={vi.fn()}
-        onChangeParent={onChangeParent}
-      />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Editar Recurso Pai'));
-    fireEvent.click(screen.getByText('Remover recurso pai'));
-
-    expect(onChangeParent).toHaveBeenCalledWith(null);
-  });
-
-  it('Endereço: selecionar um local no PlacePicker chama onPatch com placeId/placeType', () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
-    );
-
-    fireEvent.click(screen.getByLabelText('Editar Endereço'));
-    fireEvent.click(screen.getByText('Selecionar Estação Icaraí'));
-
-    expect(onPatch).toHaveBeenCalledWith({ placeId: 'site-2', placeType: 'GeographicSite' });
-  });
-
   it('Definição do recurso: clicar no card abre o modal com a árvore e permite trocar a especificação', async () => {
     const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} onChangeParent={vi.fn()} />,
-    );
+    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
 
     fireEvent.click(screen.getByLabelText('Editar definição do recurso'));
 

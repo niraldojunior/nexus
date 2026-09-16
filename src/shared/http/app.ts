@@ -3592,6 +3592,49 @@ const routeResourceRequest = async ({
       })),
     });
   }
+  const resourceConnectionsMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/connections$/);
+  if (request.method === 'GET' && resourceConnectionsMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    const view = await resourceService.getResourceConnectionsView(
+      decodeURIComponent(resourceConnectionsMatch[1]),
+      context,
+    );
+    return sendJson(response, 200, view);
+  }
+  const resourceComponentsMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/components$/);
+  if (request.method === 'GET' && resourceComponentsMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    const maxDepthParam = url.searchParams.get('maxDepth');
+    const maxDepth = maxDepthParam ? parseInt(maxDepthParam, 10) : undefined;
+    const view = await resourceService.getResourceComponentsView(
+      decodeURIComponent(resourceComponentsMatch[1]),
+      { ...(maxDepth && !Number.isNaN(maxDepth) ? { maxDepth } : {}) },
+      context,
+    );
+    const portIds = view.components
+      .filter((c) => c.resourceType === 'Port')
+      .map((c) => c.id);
+    const activeServicePortIds =
+      portIds.length > 0
+        ? await serviceService.listActiveSupportingResourceIds(portIds, context)
+        : new Set<string>();
+
+    return sendJson(response, 200, {
+      ...view,
+      components: view.components.map((c) => {
+        if (c.resourceType === 'Port' && c.portInfo) {
+          return {
+            ...c,
+            portInfo: {
+              ...c.portInfo,
+              hasActiveService: activeServicePortIds.has(c.id),
+            },
+          };
+        }
+        return c;
+      }),
+    });
+  }
   const resourcePortDetailMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)\/port-detail$/);
   if (request.method === 'GET' && resourcePortDetailMatch?.[1]) {
     requireRoles(context, INVENTORY_READ_ROLES);

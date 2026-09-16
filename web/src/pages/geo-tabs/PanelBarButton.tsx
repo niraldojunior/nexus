@@ -22,7 +22,7 @@ export const PanelBarButton = forwardRef<
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`flex min-w-[64px] flex-col items-center gap-1 rounded-[14px] px-2 py-1.5 text-center transition ${
+      className={`flex w-[72px] shrink-0 flex-col items-center gap-1 rounded-[14px] px-2 py-1.5 text-center transition ${
         active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
       }`}
     >
@@ -38,7 +38,7 @@ export const PanelBarButton = forwardRef<
           </span>
         ) : null}
       </span>
-      <span className="whitespace-nowrap text-[0.66rem] font-semibold leading-tight">{label}</span>
+      <span className="text-[0.66rem] font-semibold leading-tight">{label}</span>
     </button>
   );
 });

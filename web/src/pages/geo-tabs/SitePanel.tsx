@@ -28,6 +28,7 @@ import { StreetViewHero } from '../../components/StreetViewHero';
 import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
 import { Modal } from './Modal';
 import { PanelBarButton } from './PanelBarButton';
+import { usePanelExit } from './usePanelExit';
 import { SiteOverviewTab } from './SiteOverviewTab';
 import { SiteSubSitesTab } from './SiteSubSitesTab';
 import { SiteResourcesTab } from './SiteResourcesTab';
@@ -106,6 +107,7 @@ export function SitePanel({
   onRemoveFromProject,
 }: SitePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
+  const { isClosing, requestExit } = usePanelExit(isMobile);
   const [stack, setStack] = useState<string[]>(mode === 'view' && siteId ? [siteId] : []);
   const currentSiteId = stack.length > 0 ? stack[stack.length - 1] : null;
   const detail = useSiteDetail(currentSiteId ?? null);
@@ -150,7 +152,7 @@ export function SitePanel({
       setTab('overview');
       return;
     }
-    (onBack ?? onClose)();
+    requestExit(onBack ?? onClose);
   };
 
   const handleOpenSubSite = (subSiteId: string) => {
@@ -195,7 +197,9 @@ export function SitePanel({
       : null;
 
   const header = isCreating ? (
-    <CreateHeader onClose={() => (onRequestClose ? onRequestClose(createDirty) : onClose())} />
+    <CreateHeader
+      onClose={() => requestExit(() => (onRequestClose ? onRequestClose(createDirty) : onClose()))}
+    />
   ) : detail.site ? (
     <ViewHeader
       site={detail.site}
@@ -203,7 +207,7 @@ export function SitePanel({
       canEdit={canEdit}
       onPatch={patchCurrentSite}
       onBack={handleBack}
-      onClose={onClose}
+      onClose={() => requestExit(onClose)}
     />
   ) : null;
 
@@ -342,7 +346,7 @@ export function SitePanel({
 
   return (
     <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`geo-detail-panel ${isClosing ? 'geo-detail-panel-exit' : ''} ${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       <OverlayScrollArea className="overflow-x-hidden" hostClassName="min-h-0">
         {!isCreating ? <StreetViewHero marker={heroMarker} /> : null}

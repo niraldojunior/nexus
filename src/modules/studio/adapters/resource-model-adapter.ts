@@ -198,9 +198,9 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         }
 
         // Regras de relação embutidas (plano §4.4) — checagem estrutural mínima; a validação
-        // semântica completa (RelationshipType Active, targetKind permitido, duplicata,
-        // cardinalidade) já é feita pelo service ao materializar, com AppError se o snapshot
-        // trapacear a validação do Studio.
+        // semântica (RelationshipType Active, targetKind permitido, duplicata, formato da
+        // cardinalidade como inteiro >= 1) é feita pelo service ao materializar. A cardinalidade
+        // é apenas declarativa neste estágio — a restrição não é aplicada a instâncias no inventário.
         const rules = node.relationshipRules ?? [];
         for (let r = 0; r < rules.length; r++) {
           const rule = rules[r];
@@ -593,9 +593,10 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         }
       }
 
-      // Diff de regras: cria as que faltam, retira as ativas que não estão mais no snapshot.
-      // Casamento por (relationshipTypeCode, targetKind, targetId) — mesma tripla que o service
-      // usa para rejeitar duplicata em `createResourceTypeRelationshipRule`.
+      // Diff de regras: cria as que faltam, atualiza cardinalidade se diferir, e retira as
+      // ativas que não estão mais no snapshot. Casamento por (relationshipTypeCode, targetKind,
+      // targetId) — mesma tripla que o service usa para rejeitar duplicata em
+      // `createResourceTypeRelationshipRule`.
       const snapshotRules = snapNode.relationshipRules ?? [];
       const snapshotKeys = new Set(snapshotRules.map(ruleKey));
       const currentActiveByKey = new Map(
@@ -605,7 +606,9 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
       );
 
       for (const rule of snapshotRules) {
-        if (!currentActiveByKey.has(ruleKey(rule))) {
+        const key = ruleKey(rule);
+        const current = currentActiveByKey.get(key);
+        if (!current) {
           await this.resourceService.createResourceTypeRelationshipRule(
             typeId,
             {
@@ -617,6 +620,26 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
             },
             reqContext,
           );
+        } else {
+          const snapCard = rule.cardinality;
+          const currCard = current.cardinality;
+          const snapMaxTarget = snapCard?.maxTargetPerSource;
+          const currMaxTarget = currCard?.maxTargetPerSource;
+          const snapMaxSource = snapCard?.maxSourcePerTarget;
+          const currMaxSource = currCard?.maxSourcePerTarget;
+          const cardinalityChanged =
+            snapMaxTarget !== currMaxTarget || snapMaxSource !== currMaxSource;
+
+          if (cardinalityChanged) {
+            await this.resourceService.updateResourceTypeRelationshipRule(
+              typeId,
+              current.id,
+              {
+                cardinality: snapCard ?? null,
+              },
+              reqContext,
+            );
+          }
         }
       }
       for (const [key, current] of currentActiveByKey) {

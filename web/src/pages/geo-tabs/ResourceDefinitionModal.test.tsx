@@ -140,8 +140,10 @@ describe('ResourceDefinitionModal', () => {
     const manufacturerSelect = screen.getByLabelText('Filtrar por Fabricante');
     fireEvent.change(manufacturerSelect, { target: { value: 'Nokia' } });
 
-    const specSelect = screen.getByLabelText('Especificação');
-    expect(specSelect).toHaveValue('spec-b');
+    await waitFor(() => {
+      const specSelect = screen.getByLabelText('Especificação');
+      expect(specSelect).toHaveValue('spec-b');
+    });
   });
 
   it('salvar chama onCommit com o id da nova especificação e fecha o modal', async () => {

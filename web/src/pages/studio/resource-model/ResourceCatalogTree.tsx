@@ -22,7 +22,7 @@ export type ResourceCatalogTreeProps = {
   showSearch: boolean;
   selectedNodeId: string | null;
   onSelectNode: (node: ResourceCatalogNode | null) => void;
-  onAddChild: (parentNode: ResourceCatalogNode) => void;
+  onAddChild: (parentNode: ResourceCatalogNode, anchorRect?: DOMRect) => void;
   onImpactNode: (node: ResourceCatalogNode) => void;
   /** Callback para mover ou reordenar um nó diretamente via arrastar e soltar na árvore. */
   onDirectMove?: (
@@ -384,7 +384,8 @@ export function ResourceCatalogTree({
                   title="Adicionar filho"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onAddChild(node);
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    onAddChild(node, rect);
                   }}
                   className="rounded p-1 text-app-muted hover:bg-white hover:text-app-text"
                 >

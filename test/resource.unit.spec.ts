@@ -785,6 +785,16 @@ test('ResourceCatalog and ResourceCatalogNode domain operations, ordering and tr
   // Soft delete de folha permitido
   const deletedLeaf = await service.deleteResourceCatalogNode(catalog.id, nodeSplitter.id);
   assert.equal(deletedLeaf.status, 'inactive');
+
+  // Cascade node -> ResourceType (par 1:1, ver `oracle-repository.ts#seedResourceCatalog`):
+  // inativar o nó precisa inativar o ResourceType vinculado, senão ele continua selecionável
+  // em combos que filtram só por `status === 'active'` (ex.: relações do Resource Modeling,
+  // issue reportada pelo usuário com o tipo "_LIXO").
+  assert.ok(nodeSplitter.resourceTypeId);
+  const linkedType = (await service.listResourceTypes()).find(
+    (type) => type.id === nodeSplitter.resourceTypeId,
+  );
+  assert.equal(linkedType?.status, 'inactive');
 });
 
 test('ResourceTypeCatalogContext returns consolidated paths and specifications for a type', async () => {

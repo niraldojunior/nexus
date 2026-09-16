@@ -246,4 +246,42 @@ describe('ResourceModelStudio', () => {
     // O nó inativo de publicação anterior não deve ser renderizado na árvore
     expect(screen.queryByText('Grupo Antigo Excluído')).not.toBeInTheDocument();
   });
+
+  it('creates a new child node when clicking + on a tree node in edit mode', async () => {
+    const user = userEvent.setup();
+    const createdNode = {
+      '@type': 'ResourceCatalogNode' as const,
+      id: 'leaf-new',
+      href: '/v1/resource-catalogs/cat-1/nodes/leaf-new',
+      catalogId: 'cat-1',
+      code: 'novo-tipo-1',
+      name: 'Novo Tipo de Recurso',
+      kind: 'RESOURCE_TYPE' as const,
+      status: 'active' as const,
+      parentNodeId: 'grp-1',
+      sortOrder: 1,
+      tenantId: 'vtal',
+    };
+    vi.mocked(resourceCatalogApi.createResourceCatalogNode).mockResolvedValue(createdNode);
+
+    render(<ResourceModelStudio canEdit={true} canAdmin={true} isEditing={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Acesso')).toBeInTheDocument();
+    });
+
+    const addChildBtn = screen.getByTitle('Adicionar filho');
+    await user.click(addChildBtn);
+
+    const resourceTypeOption = screen.getByRole('menuitem', { name: /Tipo de Recurso/ });
+    await user.click(resourceTypeOption);
+
+    expect(resourceCatalogApi.createResourceCatalogNode).toHaveBeenCalledWith(
+      'cat-1',
+      expect.objectContaining({
+        kind: 'RESOURCE_TYPE',
+        parentNodeId: 'grp-1',
+      }),
+    );
+  });
 });

@@ -436,12 +436,21 @@ export class OracleResourceRepository implements IResourceRepository {
    * previsíveis (`rt-olt`, `rt-cto` etc.).
    */
   private async seedResourceCatalog(): Promise<void> {
-    const existing = await this.db.all<{ id: string; code: string }>(
-      `SELECT id, code FROM tmf_resource_type`,
+    const existing = await this.db.all<{ id: string; code: string; status: 'active' | 'inactive' }>(
+      `SELECT id, code, status FROM tmf_resource_type`,
     );
     const existingIds = new Set(existing.map((type) => type.id));
     const missing = RESOURCE_TYPES.filter((type) => !existingIds.has(type.id));
-    if (missing.length === 0) return;
+    const canonicalIdByCode = new Map(RESOURCE_TYPES.map((type) => [type.code, type.id]));
+    // Linhas legadas: mesmo código de um tipo canônico, mas com outro id, ainda ativas. Precisa
+    // rodar em TODO boot — não só quando `missing` não está vazio — porque uma base já seedada em
+    // execuções anteriores nunca mais teria `missing.length > 0`, e a limpeza ficaria inalcançável
+    // para sempre (bug original: o `return` abaixo saía antes de chegar aqui).
+    const legacyDuplicates = existing.filter((legacy) => {
+      const canonicalId = canonicalIdByCode.get(legacy.code);
+      return canonicalId && canonicalId !== legacy.id && legacy.status === 'active';
+    });
+    if (missing.length === 0 && legacyDuplicates.length === 0) return;
 
     const now = new Date().toISOString();
     await this.db.transaction(async () => {
@@ -463,13 +472,13 @@ export class OracleResourceRepository implements IResourceRepository {
         );
       }
 
-      // Uma base anterior pode ter IDs aleatórios por tenant para o mesmo código. Só no cutover
-      // (quando inserimos IDs canônicos ausentes) repontamos as referências em lote pequeno;
-      // inicializações subsequentes não percorrem essas tabelas.
-      const canonicalIdByCode = new Map(RESOURCE_TYPES.map((type) => [type.code, type.id]));
-      for (const legacy of existing) {
-        const canonicalId = canonicalIdByCode.get(legacy.code);
-        if (!canonicalId || canonicalId === legacy.id) continue;
+      // Uma base anterior pode ter IDs aleatórios por tenant para o mesmo código. Repontamos as
+      // referências das linhas legadas para o id canônico e inativamos a linha legada — ela fica
+      // órfã (nada mais referencia legacy.id), mas continuaria em `tmf_resource_type` com o mesmo
+      // código/nome do canônico e apareceria como entrada ativa duplicada em `listResourceTypes()`
+      // (combo de relações) se não for inativada.
+      for (const legacy of legacyDuplicates) {
+        const canonicalId = canonicalIdByCode.get(legacy.code)!;
         for (const table of [
           'tmf_resource_specification',
           'tmf_resource_catalog_node',
@@ -480,6 +489,9 @@ export class OracleResourceRepository implements IResourceRepository {
             [canonicalId, legacy.id],
           );
         }
+        await this.db.run(`UPDATE tmf_resource_type SET status = 'inactive' WHERE id = ?`, [
+          legacy.id,
+        ]);
       }
     });
   }
@@ -512,7 +524,7 @@ export class OracleResourceRepository implements IResourceRepository {
       `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
        FROM tmf_resource_type
        WHERE tenant_id = ? OR tenant_id = ?
-       ORDER BY code, id`,
+       ORDER BY name, code, id`,
       [tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
     const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(tenantId);

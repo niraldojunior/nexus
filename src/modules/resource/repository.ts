@@ -147,6 +147,7 @@ export class ResourceRepository implements IResourceRepository {
   public listResourceTypes(scope?: ResourceTenantScope): ResourceType[] {
     return [...this.resourceTypes.values()]
       .filter((resourceType) => sameTenant(resourceType.tenantId, scope?.tenantId))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
       .map(cloneResourceType);
   }
 

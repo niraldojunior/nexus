@@ -159,13 +159,22 @@ test.skipIf(!oracleConfigured)(
               role: 'owner',
             },
           ],
-          manufacturer: 'Huawei',
-          model: 'MA5800',
           serialNumber: 'SN-OLT-001',
         },
       );
       assert.equal(physicalResource.statusCode, 201);
       assert.equal((physicalResource.body as { '@type': string })['@type'], 'PhysicalResource');
+
+      const logicalSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'VLAN Spec',
+          resourceTypeId: 'rt-vlan',
+        },
+      );
+      assert.equal(logicalSpec.statusCode, 201);
 
       const logicalResource = await requestJson(
         port,
@@ -174,7 +183,7 @@ test.skipIf(!oracleConfigured)(
         {
           '@type': 'LogicalResource',
           name: 'VLAN 100',
-          resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+          resourceSpecificationId: (logicalSpec.body as { id: string }).id,
           supportingPhysicalResourceId: (physicalResource.body as { id: string }).id,
           relatedParty: [
             {
@@ -185,7 +194,7 @@ test.skipIf(!oracleConfigured)(
           ],
         },
       );
-      assert.equal(logicalResource.statusCode, 201);
+      assert.equal(logicalResource.statusCode, 201, JSON.stringify(logicalResource.body));
       assert.equal((logicalResource.body as { '@type': string })['@type'], 'LogicalResource');
 
       const activated = await requestJson(

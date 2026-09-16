@@ -153,7 +153,7 @@ Implementa **ResourceFunctionSpecification (TMF634)**
 
 Implementa **PhysicalResource (TMF639)** — instância
 
-- Campos: id, href, name, resourceSpecificationId (FK), resourceType, status, geographicLocationId (FK), manufacturer, model, serialNumber, partNumber, validFor (JSON), relatedParty (JSON), characteristics (JSON), created_at, updated_at
+- Campos: id, href, name, resourceSpecificationId (FK), resourceType, status, geographicLocationId (FK), serialNumber, partNumber, validFor (JSON), relatedParty (JSON), characteristics (JSON), created_at, updated_at
 - Índices: resourceSpecificationId, geographicLocationId, status, serialNumber (unique)
 
 #### Tabela: `tmf_logical_resource`

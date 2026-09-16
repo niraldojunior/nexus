@@ -50,8 +50,6 @@ export const TABLE_NAMES = [
   'research_session',
   'research_message',
   'mcp_confirmation',
-  'tmf_relationship_type_catalog',
-  'tmf_characteristic_group_catalog',
   'geo_gpon_coverage_cell',
   'geo_gpon_coverage_area',
   'geo_map_feature',

@@ -448,14 +448,15 @@ export class OracleResourceRepository implements IResourceRepository {
       for (const type of missing) {
         await this.db.run(
           `INSERT INTO tmf_resource_type
-           (id, tenant_id, code, name, description, status, created_at, updated_at)
-           VALUES (?, 'default', ?, ?, ?, ?, ?, ?)`,
+           (id, tenant_id, code, name, description, status, nature, created_at, updated_at)
+           VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?)`,
           [
             type.id,
             type.code,
             type.name,
             type.description ?? null,
             type.status,
+            type.nature,
             now,
             now,
           ],

@@ -244,8 +244,6 @@
         resource_type VARCHAR2(255 CHAR) NOT NULL,
         status VARCHAR2(255 CHAR) NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'suspended', 'terminated')),
         geographic_location_id VARCHAR2(36 CHAR),
-        manufacturer VARCHAR2(255 CHAR),
-        model VARCHAR2(255 CHAR),
         serial_number VARCHAR2(255 CHAR) UNIQUE,
         part_number VARCHAR2(255 CHAR),
         valid_for_start TIMESTAMP(6) WITH TIME ZONE,

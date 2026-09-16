@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Link2, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, Link2, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import {
   ensureBootstrapResourceRelationshipTypes,
   listResourceRelationshipTypes,
@@ -8,6 +8,7 @@ import {
   updateResourceTypeRelationshipRule,
   type ResourceRelationshipType,
   type ResourceRelationshipTargetKind,
+  type ResourceRelationshipCardinality,
   type ResourceTypeRelationshipRule,
 } from '../../../services/resourceApi';
 import { listResourceTypes as listCatalogResourceTypes } from '../../../services/resourceCatalogApi';
@@ -26,6 +27,37 @@ const targetKindLabel: Record<ResourceRelationshipTargetKind, string> = {
   RESOURCE_TYPE: 'Tipo de Recurso',
   GEOGRAPHIC_SITE_SPECIFICATION: 'Tipo de Local',
 };
+
+const relationshipTypePresentation = [
+  ['containsAsChild', 'Contém', 'Contém (ex. CDO → Splitter)'],
+  ['supports', 'Suporta', 'Suporta (ex. Poste → CDO)'],
+  ['connectedTo', 'Conectado à', 'Conectado à (ex. Fibra → Fibra)'],
+  ['mountedOn', 'Montado em', 'Montado em (ex. CDO → Poste)'],
+  ['containedBy', 'É contido por', 'É contido por (ex. Splitter → CDO)'],
+  ['fedBy', 'Alimenta', 'Alimenta (ex. CDO → Fibra)'],
+  ['feeds', 'É Alimentado por', 'É Alimentado por (ex. Fibra → CDO)'],
+  ['serves', 'Atende', 'Atende (ex. CDO → CDO downstream)'],
+  ['servedBy', 'Atendido por', 'Atendido por (ex. CDO → CDO upstream)'],
+  ['terminatesOn', 'Termina', 'Termina (ex. Fibra → porta/splitter)'],
+] as const;
+
+const relationshipPresentationByCode = new Map<string, {
+  order: number;
+  shortLabel: string;
+  selectLabel: string;
+}>(
+  relationshipTypePresentation.map(([code, shortLabel, selectLabel], order) => [
+    code,
+    { order, shortLabel, selectLabel },
+  ]),
+);
+
+function cardinalityLabel(rule: ResourceTypeRelationshipRule): string {
+  const max = rule.cardinality?.maxTargetPerSource;
+  if (max === 1) return 'exatamente 1';
+  if (typeof max === 'number' && max > 1) return `máx ${max}`;
+  return 'sem restrição';
+}
 
 // Rede de segurança: `tmf_resource_type` pode conter linhas legadas com o mesmo `code` de um
 // tipo canônico (cutover de ID, ver `oracle-repository.ts#seedResourceCatalog`). Mantém apenas a
@@ -57,9 +89,12 @@ export function ResourceRelationshipRulesPanel({
   const [error, setError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [formRelationshipCode, setFormRelationshipCode] = useState('');
   const [formTargetKind, setFormTargetKind] = useState<ResourceRelationshipTargetKind>('RESOURCE_TYPE');
   const [formTargetId, setFormTargetId] = useState('');
+  const [formCardinalityMode, setFormCardinalityMode] = useState<'none' | 'max' | 'one'>('none');
+  const [formCardinalityMax, setFormCardinalityMax] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
@@ -68,9 +103,9 @@ export function ResourceRelationshipRulesPanel({
     setLoading(true);
     setError(null);
     try {
-      await ensureBootstrapResourceRelationshipTypes().catch(() => undefined);
+      const typesPromise = listResourceRelationshipTypes();
       const [typesRes, resourceTypesRes, geoSpecsRes, rulesRes] = await Promise.all([
-        listResourceRelationshipTypes(),
+        typesPromise,
         listCatalogResourceTypes(),
         listGeoSiteSpecifications(),
         listResourceTypeRelationshipRules(resourceTypeId),
@@ -79,6 +114,12 @@ export function ResourceRelationshipRulesPanel({
       setResourceTypes(resourceTypesRes);
       setGeoSpecs(geoSpecsRes);
       setRules(rulesRes);
+      void ensureBootstrapResourceRelationshipTypes()
+        .then(async () => {
+          const refreshedTypes = await listResourceRelationshipTypes();
+          setRelationshipTypes(refreshedTypes.filter((t) => t.lifecycleStatus === 'Active'));
+        })
+        .catch(() => undefined);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar relações.');
     } finally {
@@ -99,6 +140,20 @@ export function ResourceRelationshipRulesPanel({
   const geoSpecById = useMemo(() => new Map(geoSpecs.map((s) => [s.id, s])), [geoSpecs]);
   const relationshipTypeByCode = useMemo(
     () => new Map(relationshipTypes.map((t) => [t.code, t])),
+    [relationshipTypes],
+  );
+  const selectRelationshipTypes = useMemo(
+    () =>
+      relationshipTypes
+        .filter((type) => type.code !== 'terminates')
+        .sort((a, b) => {
+          const aPresentation = relationshipPresentationByCode.get(a.code);
+          const bPresentation = relationshipPresentationByCode.get(b.code);
+          if (aPresentation && bPresentation) return aPresentation.order - bPresentation.order;
+          if (aPresentation) return -1;
+          if (bPresentation) return 1;
+          return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
+        }),
     [relationshipTypes],
   );
 
@@ -123,9 +178,32 @@ export function ResourceRelationshipRulesPanel({
           .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
 
   const handleOpenCreate = () => {
-    setFormRelationshipCode(relationshipTypes[0]?.code ?? '');
-    setFormTargetKind(relationshipTypes[0]?.allowedTargetKinds[0] ?? 'RESOURCE_TYPE');
+    setEditingRuleId(null);
+    setFormRelationshipCode(selectRelationshipTypes[0]?.code ?? '');
+    setFormTargetKind(selectRelationshipTypes[0]?.allowedTargetKinds[0] ?? 'RESOURCE_TYPE');
     setFormTargetId('');
+    setFormCardinalityMode('none');
+    setFormCardinalityMax('');
+    setFormError(null);
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (rule: ResourceTypeRelationshipRule) => {
+    setEditingRuleId(rule.id);
+    setFormRelationshipCode(rule.relationshipTypeCode);
+    setFormTargetKind(rule.targetKind);
+    setFormTargetId(rule.targetId);
+    const max = rule.cardinality?.maxTargetPerSource;
+    if (max === 1) {
+      setFormCardinalityMode('one');
+      setFormCardinalityMax('');
+    } else if (typeof max === 'number' && max > 1) {
+      setFormCardinalityMode('max');
+      setFormCardinalityMax(String(max));
+    } else {
+      setFormCardinalityMode('none');
+      setFormCardinalityMax('');
+    }
     setFormError(null);
     setModalOpen(true);
   };
@@ -140,18 +218,48 @@ export function ResourceRelationshipRulesPanel({
       setFormError('Selecione um alvo para a relação.');
       return;
     }
+
+    let cardinality: ResourceRelationshipCardinality | undefined;
+    if (formCardinalityMode === 'one') {
+      cardinality = { maxTargetPerSource: 1 };
+    } else if (formCardinalityMode === 'max') {
+      const parsed = parseInt(formCardinalityMax.trim(), 10);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        setFormError('Informe uma quantidade máxima válida (número inteiro >= 1).');
+        return;
+      }
+      cardinality = { maxTargetPerSource: parsed };
+    }
+
     setFormSaving(true);
     setFormError(null);
     try {
-      const created = await createResourceTypeRelationshipRule(resourceTypeId, {
-        relationshipTypeCode: formRelationshipCode,
-        targetKind: formTargetKind,
-        targetId: formTargetId,
-      });
-      setRules((prev) => [...prev, created]);
+      if (editingRuleId) {
+        const updated = await updateResourceTypeRelationshipRule(resourceTypeId, editingRuleId, {
+          relationshipTypeCode: formRelationshipCode,
+          targetKind: formTargetKind,
+          targetId: formTargetId,
+          cardinality: cardinality ?? null,
+        });
+        setRules((prev) => prev.map((r) => (r.id === editingRuleId ? updated : r)));
+      } else {
+        const created = await createResourceTypeRelationshipRule(resourceTypeId, {
+          relationshipTypeCode: formRelationshipCode,
+          targetKind: formTargetKind,
+          targetId: formTargetId,
+          cardinality,
+        });
+        setRules((prev) => [...prev, created]);
+      }
       setModalOpen(false);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Falha ao criar relação.');
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : editingRuleId
+            ? 'Falha ao atualizar relação.'
+            : 'Falha ao criar relação.',
+      );
     } finally {
       setFormSaving(false);
     }
@@ -232,29 +340,58 @@ export function ResourceRelationshipRulesPanel({
         <div className="divide-y divide-app-border rounded-[18px] border border-app-border overflow-hidden">
           {activeRules.map((rule) => {
             const relType = relationshipTypeByCode.get(rule.relationshipTypeCode);
+            const presentation = relationshipPresentationByCode.get(rule.relationshipTypeCode);
+            const relationAndTarget = `${presentation?.shortLabel ?? relType?.name ?? rule.relationshipTypeCode} ${targetName(rule)}`;
             return (
               <div
                 key={rule.id}
-                className="group px-3.5 py-2.5 flex items-center justify-between gap-3"
+                role={canMutate ? 'button' : undefined}
+                tabIndex={canMutate ? 0 : undefined}
+                onClick={canMutate ? () => handleOpenEdit(rule) : undefined}
+                onKeyDown={
+                  canMutate
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleOpenEdit(rule);
+                        }
+                      }
+                    : undefined
+                }
+                className={`group min-h-12 px-3.5 py-2.5 transition flex items-center justify-between gap-3 ${
+                  canMutate ? 'cursor-pointer hover:bg-black/[0.02] focus:outline-none' : ''
+                }`}
               >
-                <div className="min-w-0">
-                  <h4 className="text-[0.88rem] font-semibold text-app-text truncate">
-                    {relType?.name ?? rule.relationshipTypeCode}
-                  </h4>
-                  <p className="text-[0.78rem] text-app-muted truncate">
-                    {targetKindLabel[rule.targetKind]} · {targetName(rule)}
-                  </p>
-                </div>
+                <p className="min-w-0 truncate whitespace-nowrap text-[0.88rem] text-app-text">
+                  <strong className="font-semibold">{relationAndTarget}</strong>{' '}
+                  <span className="font-normal">({cardinalityLabel(rule)})</span>
+                </p>
                 {canMutate && (
-                  <button
-                    type="button"
-                    title="Inativar relação"
-                    onClick={() => handleRetire(rule)}
-                    disabled={retiringId === rule.id}
-                    className="hidden group-hover:flex rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 shrink-0"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      title="Editar relação"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleOpenEdit(rule);
+                      }}
+                      className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft hover:text-app-text"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Inativar relação"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleRetire(rule);
+                      }}
+                      disabled={retiringId === rule.id}
+                      className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -283,7 +420,7 @@ export function ResourceRelationshipRulesPanel({
 
       {modalOpen && (
         <Modal
-          title="Adicionar relação"
+          title={editingRuleId ? 'Editar relação' : 'Adicionar relação'}
           onClose={() => setModalOpen(false)}
           footer={
             <>
@@ -297,7 +434,7 @@ export function ResourceRelationshipRulesPanel({
                 size="sm"
                 disabled={formSaving}
               >
-                {formSaving ? 'Salvando…' : 'Adicionar'}
+                {formSaving ? 'Salvando…' : editingRuleId ? 'Salvar' : 'Adicionar'}
               </Button>
             </>
           }
@@ -314,10 +451,11 @@ export function ResourceRelationshipRulesPanel({
             )}
 
             <div>
-              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+              <label htmlFor="form-rule-relationship-type" className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                 Tipo de relação
               </label>
               <select
+                id="form-rule-relationship-type"
                 value={formRelationshipCode}
                 onChange={(e) => {
                   const code = e.target.value;
@@ -326,11 +464,11 @@ export function ResourceRelationshipRulesPanel({
                   setFormTargetKind(kinds[0] ?? 'RESOURCE_TYPE');
                   setFormTargetId('');
                 }}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-black/[0.03] disabled:text-app-muted"
               >
-                {relationshipTypes.map((t) => (
+                {selectRelationshipTypes.map((t) => (
                   <option key={t.code} value={t.code}>
-                    {t.name}
+                    {relationshipPresentationByCode.get(t.code)?.selectLabel ?? t.name}
                   </option>
                 ))}
               </select>
@@ -350,7 +488,7 @@ export function ResourceRelationshipRulesPanel({
                         setFormTargetKind(kind);
                         setFormTargetId('');
                       }}
-                      className={`rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
+                      className={`rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition disabled:opacity-60 ${
                         formTargetKind === kind
                           ? 'bg-white text-app-text font-semibold shadow-sm'
                           : 'text-app-muted hover:text-app-text'
@@ -364,13 +502,14 @@ export function ResourceRelationshipRulesPanel({
             )}
 
             <div>
-              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+              <label htmlFor="form-rule-target-id" className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                 {targetKindLabel[formTargetKind]}
               </label>
               <select
+                id="form-rule-target-id"
                 value={formTargetId}
                 onChange={(e) => setFormTargetId(e.target.value)}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-black/[0.03] disabled:text-app-muted"
               >
                 <option value="">Selecione…</option>
                 {targetOptions.map((opt) => (
@@ -379,6 +518,66 @@ export function ResourceRelationshipRulesPanel({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                Quantidade permitida
+              </label>
+              <div className="inline-flex rounded-xl bg-black/[0.04] p-1 gap-1 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setFormCardinalityMode('none')}
+                  className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
+                    formCardinalityMode === 'none'
+                      ? 'bg-white text-app-text font-semibold shadow-sm'
+                      : 'text-app-muted hover:text-app-text'
+                  }`}
+                >
+                  Sem restrição
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormCardinalityMode('one')}
+                  className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
+                    formCardinalityMode === 'one'
+                      ? 'bg-white text-app-text font-semibold shadow-sm'
+                      : 'text-app-muted hover:text-app-text'
+                  }`}
+                >
+                  Exatamente 1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormCardinalityMode('max')}
+                  className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
+                    formCardinalityMode === 'max'
+                      ? 'bg-white text-app-text font-semibold shadow-sm'
+                      : 'text-app-muted hover:text-app-text'
+                  }`}
+                >
+                  No máximo N
+                </button>
+              </div>
+
+              {formCardinalityMode === 'max' && (
+                <div className="mt-1">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    autoFocus
+                    placeholder="Ex.: 8"
+                    value={formCardinalityMax}
+                    onChange={(e) => setFormCardinalityMax(e.target.value)}
+                    aria-label="Quantidade máxima"
+                    className="w-32 rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent font-mono"
+                  />
+                  <p className="text-[0.76rem] text-app-muted mt-1">
+                    Número máximo de instâncias deste alvo que um recurso de origem pode conter ou ligar.
+                  </p>
+                </div>
+              )}
             </div>
           </form>
         </Modal>

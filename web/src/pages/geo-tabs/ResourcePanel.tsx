@@ -6,20 +6,14 @@ import {
   Info as InfoIcon,
   Layers3,
   Loader2,
-  Waypoints,
+  Network,
   X,
 } from 'lucide-react';
 import { useResourceDetail } from '../../hooks/useResourceDetail';
-import { useResourceChildren } from '../../hooks/useResourceChildren';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
-import {
-  addResourceRelationship,
-  removeResourceRelationship,
-  updateResource,
-  type PhysicalResourcePayload,
-} from '../../services/resourceApi';
+import { updateResource, type PhysicalResourcePayload } from '../../services/resourceApi';
 import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { ResourceIcon } from '../../components/ResourceIcon';
@@ -36,10 +30,11 @@ import { StreetViewHero } from '../../components/StreetViewHero';
 import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
 import { PanelBarButton } from './PanelBarButton';
 import { CoordinateStreetView } from './CoordinateStreetView';
-import { SchematicTab } from './SchematicTab';
+import { usePanelExit } from './usePanelExit';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
-import { ResourcePortsTab } from './ResourcePortsTab';
+import { ResourceComponentsTab } from './ResourceComponentsTab';
+import { ResourceConnectionsView } from './ResourceConnectionsView';
 import { PortOverviewTab } from './PortOverviewTab';
 import { PortServiceTab } from './PortServiceTab';
 import type { DropSimulation } from './ViabilityTab';
@@ -80,6 +75,7 @@ export function ResourcePanel({
   onPortDropPreview,
 }: ResourcePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
+  const { isClosing, requestExit } = usePanelExit(isMobile);
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
   const { detail, loading: detailLoading, error: detailError, reload } = useResourceDetail(resourceId);
   // Diferente do Site (SitePanel.tsx patchCurrentSite), o backend recusa conflitos como
@@ -95,39 +91,12 @@ export function ResourcePanel({
       setPatchError(err instanceof Error ? err.message : 'Não foi possível salvar a alteração.');
     }
   };
-  // Trocar o Recurso Pai não é PATCH — é a relação `containsAsChild` dedicada (ver
-  // resourceApi.ts). As duas chamadas não são transacionais: POST antes de DELETE para nunca
-  // deixar o recurso órfão se a segunda falhar (plano da issue #186, Fase 3.2).
-  const changeParent = async (newParentId: string | null) => {
-    setPatchError(null);
-    const oldParentId = detail?.parent?.id ?? null;
-    try {
-      if (newParentId) {
-        await addResourceRelationship(newParentId, {
-          id: resourceId,
-          relationshipType: 'containsAsChild',
-        });
-      }
-      if (oldParentId && oldParentId !== newParentId) {
-        await removeResourceRelationship(oldParentId, resourceId, 'containsAsChild');
-      }
-      await reload();
-    } catch (err) {
-      setPatchError(err instanceof Error ? err.message : 'Não foi possível trocar o recurso pai.');
-    }
-  };
-  const { children, loading: childrenLoading } = useResourceChildren(node);
   const isPort = node.resourceType === 'Port';
   const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
   const { service: portService, hasActiveService, loading: portServiceLoading, error: portServiceError } = usePortService(resourceId, isPort);
   const [tab, setTab] = useState<
-    'overview' | 'subresources' | 'ports' | 'service' | 'schematic' | 'history'
+    'overview' | 'components' | 'connections' | 'service' | 'history'
   >('overview');
-  // CTO ganha aba "Portas" no lugar de "Recursos internos" (issue #171 Fase 3) — quem
-  // materializa o splitter/porta contidos é o piloto Niterói/Icaraí; qualquer outro tipo
-  // de recurso mantém o comportamento de sempre. Só entra em vigor com `onOpenPort`
-  // (o caller decide se sabe empilhar a Porta; sem isso, cai no fallback de sempre).
-  const isCto = Boolean(onOpenPort) && node.resourceType === 'CTO';
   // ONT alimentada pelo drop ativo — só existe quando a fiação física segue conectada,
   // mesmo em churn (sem RFS/CFS ativos). Entra na lista de "Recursos atendidos" da Porta.
   const activeDropOnt = portDetail?.drops.find((drop) => drop.active)?.ont;
@@ -194,7 +163,7 @@ export function ResourcePanel({
     <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
       <button
         type="button"
-        onClick={onBack}
+        onClick={() => requestExit(onBack)}
         className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
         aria-label="Voltar para a hierarquia"
       >
@@ -210,7 +179,7 @@ export function ResourcePanel({
       </div>
       <button
         type="button"
-        onClick={onClose}
+        onClick={() => requestExit(onClose)}
         className="shrink-0 rounded-full p-2 text-app-muted hover:bg-app-accent-soft"
         aria-label="Fechar painel de recurso"
       >
@@ -230,36 +199,35 @@ export function ResourcePanel({
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
-        {isCto ? (
+        {isPort ? (
           <PanelBarButton
-            icon={Waypoints}
-            label="Portas"
-            active={tab === 'ports'}
-            onClick={() => setTab('ports')}
+            icon={Boxes}
+            label="Recursos atendidos"
+            badge={(portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0)}
+            active={tab === 'components'}
+            onClick={() => setTab('components')}
           />
         ) : (
           <PanelBarButton
             icon={Boxes}
-            label={isPort ? 'Recursos atendidos' : 'Recursos internos'}
-            badge={isPort ? (portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0) : children.length}
-            active={tab === 'subresources'}
-            onClick={() => setTab('subresources')}
+            label="Componentes"
+            badge={detail?.childCount}
+            active={tab === 'components'}
+            onClick={() => setTab('components')}
           />
         )}
+        <PanelBarButton
+          icon={Network}
+          label="Conexões"
+          active={tab === 'connections'}
+          onClick={() => setTab('connections')}
+        />
         {isPort && hasActiveService ? (
           <PanelBarButton
             icon={Layers3}
             label="Serviço"
             active={tab === 'service'}
             onClick={() => setTab('service')}
-          />
-        ) : null}
-        {!isPort ? (
-          <PanelBarButton
-            icon={Waypoints}
-            label="Esquemático"
-            active={tab === 'schematic'}
-            onClick={() => setTab('schematic')}
           />
         ) : null}
         <PanelBarButton
@@ -291,13 +259,7 @@ export function ResourcePanel({
                 {patchError}
               </div>
             ) : null}
-            <ResourceOverviewTab
-              detail={detail}
-              canEdit={canEdit}
-              onPatch={patchResource}
-              onChangeParent={changeParent}
-              onOpenResource={onOpenResource}
-            />
+            <ResourceOverviewTab detail={detail} canEdit={canEdit} onPatch={patchResource} />
             {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"
                 em ResourceOverviewTab — este bloco só entra para geometria de linha
                 (cabos/dutos), com o par Início/Fim. */}
@@ -323,113 +285,68 @@ export function ResourcePanel({
         ) : null
       ) : null}
 
-      {tab === 'subresources' && isPort ? (
-        <div>
-          {portDetailLoading ? (
-            <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-              Carregando drops conectados…
-            </div>
-          ) : portDetail?.drops.length || activeDropOnt ? (
-            <div className="grid gap-2">
-              {portDetail?.drops.map((drop) => (
-                <button
-                  key={drop.resource.id}
-                  type="button"
-                  onClick={() => onOpenResource(drop.resource.id)}
-                  className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-                >
-                  <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="badge" size={26} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{drop.resource.name}</span>
-                    <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
-                  </span>
-                </button>
-              ))}
-              {activeDropOnt ? (
-                <button
-                  key={activeDropOnt.id}
-                  type="button"
-                  onClick={() => onOpenResource(activeDropOnt.id)}
-                  className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-                >
-                  <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{activeDropOnt.name}</span>
-                    <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
-                  </span>
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              Esta porta não possui drops conectados.
-            </div>
-          )}
-        </div>
+      {tab === 'components' ? (
+        isPort ? (
+          <div>
+            {portDetailLoading ? (
+              <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                Carregando drops conectados…
+              </div>
+            ) : portDetail?.drops.length || activeDropOnt ? (
+              <div className="grid gap-2">
+                {portDetail?.drops.map((drop) => (
+                  <button
+                    key={drop.resource.id}
+                    type="button"
+                    onClick={() => onOpenResource(drop.resource.id)}
+                    className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  >
+                    <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="badge" size={26} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{drop.resource.name}</span>
+                      <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
+                    </span>
+                  </button>
+                ))}
+                {activeDropOnt ? (
+                  <button
+                    key={activeDropOnt.id}
+                    type="button"
+                    onClick={() => onOpenResource(activeDropOnt.id)}
+                    className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  >
+                    <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{activeDropOnt.name}</span>
+                      <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+                Esta porta não possui drops conectados.
+              </div>
+            )}
+          </div>
+        ) : (
+          <ResourceComponentsTab
+            resourceId={resourceId}
+            onOpenResource={onOpenResource}
+            onOpenPort={onOpenPort}
+          />
+        )
       ) : null}
 
-      {tab === 'subresources' && !isPort ? (
-        <div>
-          {childrenLoading ? (
-            <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-              Carregando recursos internos…
-            </div>
-          ) : children.length ? (
-            <div className="grid gap-2">
-              {children.map((child) => (
-                <button
-                  key={child.id}
-                  type="button"
-                  onClick={() => (child.refId ? onOpenResource(child.refId) : undefined)}
-                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-                >
-                  <ResourceIcon
-                    resource={{
-                      resourceType: child.resourceType ?? '',
-                      status: child.status,
-                      name: child.label,
-                      sublabel: child.sublabel,
-                    }}
-                    variant="badge"
-                    size={26}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
-                      {child.label}
-                    </span>
-                    <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted">
-                      {[
-                        resourceIconFor({
-                          resourceType: child.resourceType ?? '',
-                          status: child.status,
-                          name: child.label,
-                          sublabel: child.sublabel,
-                        }).label,
-                        child.detail?.model,
-                        child.detail?.serialNumber,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
-                    Abrir
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-              Este recurso ainda não possui recursos internos.
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {tab === 'ports' && isCto ? (
-        <ResourcePortsTab ctoNode={node} onOpenPort={onOpenPort!} />
+      {tab === 'connections' ? (
+        <ResourceConnectionsView
+          resourceId={resourceId}
+          nodeId={node.id}
+          onOpenResource={onOpenResource}
+          onSimulate={onDropSimulation}
+          onPreview={onPreview}
+        />
       ) : null}
 
       {tab === 'service' && isPort ? (
@@ -443,10 +360,6 @@ export function ResourcePanel({
         ) : portServiceError ? (
           <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">{portServiceError}</div>
         ) : null
-      ) : null}
-
-      {tab === 'schematic' ? (
-        <SchematicTab nodeId={node.id} onSimulate={onDropSimulation} onPreview={onPreview} />
       ) : null}
 
       {tab === 'history' ? <ResourceHistoryTab resourceId={resourceId} /> : null}
@@ -465,7 +378,7 @@ export function ResourcePanel({
 
   return (
     <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`geo-detail-panel ${isClosing ? 'geo-detail-panel-exit' : ''} ${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       <OverlayScrollArea className="overflow-x-hidden">
         {!isPort ? <StreetViewHero marker={heroMarker} /> : null}

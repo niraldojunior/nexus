@@ -169,6 +169,11 @@ export type UpdateResourceTypeInput = {
   resourceTypeCharacteristic?: ResourceCharacteristic[];
 };
 
+export type ResourceRelationshipCardinality = {
+  maxSourcePerTarget?: number;
+  maxTargetPerSource?: number;
+};
+
 export type ResourceRelationshipTargetKind = 'RESOURCE_TYPE' | 'GEOGRAPHIC_SITE_SPECIFICATION';
 
 export type ResourceRelationshipType = {
@@ -180,7 +185,7 @@ export type ResourceRelationshipType = {
   inverseCode: string;
   symmetric: boolean;
   allowedTargetKinds: ResourceRelationshipTargetKind[];
-  cardinality?: { maxSourcePerTarget?: number; maxTargetPerSource?: number };
+  cardinality?: ResourceRelationshipCardinality;
   lifecycleStatus: 'Active' | 'Retired';
 };
 
@@ -192,7 +197,7 @@ export type ResourceTypeRelationshipRule = {
   relationshipTypeCode: string;
   targetKind: ResourceRelationshipTargetKind;
   targetId: string;
-  cardinality?: { maxSourcePerTarget?: number; maxTargetPerSource?: number };
+  cardinality?: ResourceRelationshipCardinality;
   lifecycleStatus: 'Active' | 'Retired';
   validFor?: TimePeriod;
 };
@@ -207,10 +212,10 @@ export type ResourceRelationshipTypeInput = {
 };
 
 export type ResourceTypeRelationshipRuleInput = {
-  relationshipTypeCode: string;
-  targetKind: ResourceRelationshipTargetKind;
-  targetId: string;
-  cardinality?: ResourceTypeRelationshipRule['cardinality'];
+  relationshipTypeCode?: string;
+  targetKind?: ResourceRelationshipTargetKind;
+  targetId?: string;
+  cardinality?: ResourceRelationshipCardinality | null;
   validFor?: TimePeriod;
 };
 
@@ -455,12 +460,15 @@ export async function updateResourceTypeRelationshipRule(
   resourceTypeId: string,
   ruleId: string,
   payload: Partial<
-    Pick<ResourceTypeRelationshipRuleInput, 'cardinality' | 'validFor'>
+    Pick<
+      ResourceTypeRelationshipRuleInput,
+      'relationshipTypeCode' | 'targetKind' | 'targetId' | 'cardinality' | 'validFor'
+    >
   > & { lifecycleStatus?: ResourceTypeRelationshipRule['lifecycleStatus'] },
 ): Promise<ResourceTypeRelationshipRule> {
   return await requestJson<ResourceTypeRelationshipRule>(
     `/v1/resource-types/${encodeURIComponent(resourceTypeId)}/relationship-rules/${encodeURIComponent(ruleId)}`,
-    { method: 'PATCH', body: cleanObject(payload) },
+    { method: 'PATCH', body: cleanUpdatePayload(payload) },
   );
 }
 
@@ -712,6 +720,74 @@ export type ResourcePortsView = {
 
 export async function fetchResourcePorts(ctoId: string): Promise<ResourcePortsView> {
   return await requestJson<ResourcePortsView>(`/v1/resources/${encodeURIComponent(ctoId)}/ports`);
+}
+
+export type ResourceConnection = {
+  '@type': 'ResourceConnection';
+  direction: 'outgoing' | 'incoming';
+  relationshipType: string;
+  resource: {
+    id: string;
+    name: string;
+    resourceType?: string;
+    status?: string;
+    '@type': 'PhysicalResource' | 'LogicalResource';
+  };
+  validFor?: TimePeriod;
+};
+
+export type ResourceConnectionsView = {
+  '@type': 'ResourceConnectionsView';
+  resourceId: string;
+  connections: ResourceConnection[];
+};
+
+export type ResourceComponentPortInfo = {
+  role?: string;
+  index?: number;
+  administrativeState?: string;
+  operationalState?: string;
+  usageState?: string;
+  hasActiveService?: boolean;
+  activeDropOnt?: { id: string; name?: string; resourceType?: string; '@referredType'?: string };
+  dropCount?: number;
+};
+
+export type ResourceComponentNode = {
+  '@type': 'ResourceComponentNode';
+  id: string;
+  name: string;
+  resourceType?: string;
+  status?: string;
+  kind: 'PhysicalResource' | 'LogicalResource';
+  parentId: string | null;
+  depth: number;
+  model?: string;
+  serialNumber?: string;
+  portInfo?: ResourceComponentPortInfo;
+};
+
+export type ResourceComponentsView = {
+  '@type': 'ResourceComponentsView';
+  resourceId: string;
+  components: ResourceComponentNode[];
+  truncated: boolean;
+};
+
+export async function fetchResourceConnections(resourceId: string): Promise<ResourceConnectionsView> {
+  return await requestJson<ResourceConnectionsView>(
+    `/v1/resources/${encodeURIComponent(resourceId)}/connections`,
+  );
+}
+
+export async function fetchResourceComponents(
+  resourceId: string,
+  options?: { maxDepth?: number },
+): Promise<ResourceComponentsView> {
+  const query = options?.maxDepth ? `?maxDepth=${encodeURIComponent(options.maxDepth)}` : '';
+  return await requestJson<ResourceComponentsView>(
+    `/v1/resources/${encodeURIComponent(resourceId)}/components${query}`,
+  );
 }
 
 export async function fetchResourcePortDetail(portId: string): Promise<ResourcePortDetail> {

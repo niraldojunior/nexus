@@ -25,6 +25,7 @@ import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
 import { IconInfoRow } from './IconInfoRow';
 import { PanelBarButton } from './PanelBarButton';
+import { usePanelExit } from './usePanelExit';
 import { PrecisionBadge } from './PrecisionBadge';
 import { ViabilityTab, type DropSimulation } from './ViabilityTab';
 import { useGeonetAddress } from '../../hooks/useGeonetAddress';
@@ -86,6 +87,7 @@ export function AddressDetailPanel({
   geonetEnabled = true,
   onLocationResolved,
 }: AddressDetailPanelProps) {
+  const { isClosing } = usePanelExit(isMobile);
   const title =
     address.sourceQuery?.trim() ||
     [address.street, address.streetNr].filter(Boolean).join(', ') ||
@@ -222,7 +224,7 @@ export function AddressDetailPanel({
     // rolagem, ao lado do scroll do conteúdo — era o scroll duplo do painel. Quem rola
     // aqui é só o filho `overflow-y-auto`. Mesmo ajuste no painel de Site/Recurso.
     <div
-      className={`${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
+      className={`geo-detail-panel ${isClosing ? 'geo-detail-panel-exit' : ''} ${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       {/* A barra de pesquisa é uma instância única, sobreposta a esta doca pelo GeoPage
           (estilo Google Maps): a foto de Street View, o título e o corpo rolam por baixo

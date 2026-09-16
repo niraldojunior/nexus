@@ -98,6 +98,7 @@ describe('SchematicTab', () => {
 
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(4);
+    expect(screen.getAllByTestId('schematic-hop-connector')).toHaveLength(3);
     expect(items[0]).toHaveTextContent('1');
     expect(items[0]).toHaveTextContent('CDOE-7539');
     expect(items[3]).toHaveTextContent('Estação Icaraí');

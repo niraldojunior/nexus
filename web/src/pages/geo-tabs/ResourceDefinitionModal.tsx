@@ -23,7 +23,6 @@ import type { ResourceSpecification } from '../../services/resourceApi';
 import {
   buildModelSpecificationOptions,
   readSpecificationManufacturer,
-  readSpecificationModel,
 } from '../../utils/resourceSpecificationForm';
 
 export type ResourceDefinitionModalProps = {
@@ -166,12 +165,6 @@ function CatalogTreePicker({
 
             <span className="truncate">{node.name}</span>
           </div>
-
-          {!isGroup && node.resourceType ? (
-            <span className="shrink-0 text-[0.7rem] text-app-muted">
-              {node.resourceType.code}
-            </span>
-          ) : null}
         </div>
 
         {isGroup && isExpanded && node.children && node.children.length > 0 && (
@@ -446,9 +439,7 @@ export function ResourceDefinitionModal({
                   readOnly
                   disabled
                   value={
-                    selectedResourceType
-                      ? `${selectedResourceType.name} (${selectedResourceType.code})`
-                      : '—'
+                    selectedResourceType?.name ?? '—'
                   }
                   className="geo-input bg-slate-50 text-app-muted cursor-not-allowed"
                 />
@@ -498,16 +489,11 @@ export function ResourceDefinitionModal({
                   className="geo-input"
                   aria-label="Especificação"
                 >
-                  {visibleSpecifications.map((spec) => {
-                    const m = readSpecificationManufacturer(spec);
-                    const mod = readSpecificationModel(spec);
-                    return (
-                      <option key={spec.id} value={spec.id}>
-                        {mod !== '-' ? `${mod} (${spec.name})` : spec.name}
-                        {m !== '-' ? ` · ${m}` : ''}
-                      </option>
-                    );
-                  })}
+                  {visibleSpecifications.map((spec) => (
+                    <option key={spec.id} value={spec.id}>
+                      {spec.name}
+                    </option>
+                  ))}
                 </select>
               )}
             </div>

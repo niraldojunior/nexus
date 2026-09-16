@@ -3,7 +3,6 @@ import {
   Activity,
   AlertCircle,
   Barcode,
-  Boxes,
   Building2,
   Calendar,
   CalendarClock,
@@ -27,8 +26,6 @@ import {
   type ResourceStatusCatalogEntry,
 } from '../../services/resourceApi';
 import { listPartyRoles, type PartyRole } from '../../services/partyApi';
-import { PlacePicker } from '../../components/PlacePicker';
-import { useResourceSearch } from '../../hooks/useResourceSearch';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { IconInfoRow } from './IconInfoRow';
 import { InlineEditRow } from './InlineEditRow';
@@ -55,11 +52,6 @@ export type ResourceOverviewTabProps = {
   // SiteOverviewTab). Requerido junto com `onPatch`.
   canEdit: boolean;
   onPatch: (patch: PhysicalResourcePayload) => Promise<void>;
-  // Trocar o Recurso Pai não é um PATCH — é a relação `containsAsChild` dedicada
-  // (ver resourceApi.ts addResourceRelationship/removeResourceRelationship). `null` remove o
-  // pai atual sem definir um novo.
-  onChangeParent: (newParentId: string | null) => Promise<void>;
-  onOpenResource?: (resourceId: string) => void;
 };
 
 // Nunca cai no id/hash técnico (issue #184 follow-up) — quando o place não tem rua
@@ -87,10 +79,8 @@ export function ResourceOverviewTab({
   detail,
   canEdit,
   onPatch,
-  onChangeParent,
-  onOpenResource,
 }: ResourceOverviewTabProps) {
-  const { resource, specification, statusCatalogEntry, parent, place, location, servingSite, project } =
+  const { resource, specification, statusCatalogEntry, place, location, servingSite, project } =
     detail;
 
   const notes =
@@ -222,36 +212,6 @@ export function ResourceOverviewTab({
     if (next !== (resource.assetReference ?? '')) void onPatch({ assetReference: next });
   };
 
-  // Endereço (place) — sempre um GeographicSite por convenção (memória geo-place-canonico-
-  // site), mas o PlacePicker também aceita GeographicAddress, igual ao formulário de criação
-  // (ResourcePage.tsx). `null` desvincula.
-  const [editingPlace, setEditingPlace] = useState(false);
-  const commitPlace = (next: { id: string; '@referredType': string } | null) => {
-    setEditingPlace(false);
-    if (next?.id === place?.id) return;
-    void onPatch({ placeId: next?.id ?? null, placeType: next?.['@referredType'] });
-  };
-
-  // Recurso Pai — relação `containsAsChild`, não um PATCH (ver onChangeParent). Busca sob
-  // demanda ao digitar, nunca o inventário inteiro.
-  const [editingParent, setEditingParent] = useState(false);
-  const [parentQuery, setParentQuery] = useState('');
-  const { options: parentMatches } = useResourceSearch(parentQuery, resource.id);
-  const startEditParent = () => {
-    setParentQuery('');
-    setEditingParent(true);
-  };
-  const selectParent = (candidateId: string) => {
-    setEditingParent(false);
-    if (candidateId === parent?.id) return;
-    void onChangeParent(candidateId);
-  };
-  const clearParent = () => {
-    setEditingParent(false);
-    if (!parent) return;
-    void onChangeParent(null);
-  };
-
   // Vendor (RN-002, issue #251) — fornecedor de aquisição da instância de recurso
   // (distinto do fabricante, que é herdado da especificação).
   const [editingVendor, setEditingVendor] = useState(false);
@@ -320,6 +280,10 @@ export function ResourceOverviewTab({
 
   const legacySubstatus =
     resource.characteristic?.find((c) => c.name === 'substatus')?.value as string | undefined;
+  const hasValue = (value: unknown): boolean =>
+    value !== undefined && value !== null && value !== '';
+  const statusValue = statusCatalogEntry ?? legacySubstatus;
+  const locationValue = !placeFormatted && coordinates ? coordinates : null;
 
   return (
     <div className="grid gap-1 pr-2">
@@ -362,7 +326,7 @@ export function ResourceOverviewTab({
             </select>
           )}
         </InlineEditRow>
-      ) : (
+      ) : hasValue(statusValue) ? (
         <IconInfoRow
           icon={AlertCircle}
           hint="Estado"
@@ -373,11 +337,11 @@ export function ResourceOverviewTab({
                 tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
               />
             ) : (
-              legacySubstatus ?? '—'
+              legacySubstatus
             )
           }
         />
-      )}
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -411,22 +375,18 @@ export function ResourceOverviewTab({
             ))}
           </select>
         </InlineEditRow>
-      ) : (
+      ) : resource.administrativeState ? (
         <IconInfoRow
           icon={Wrench}
           hint="Estado administrativo"
           value={
-            resource.administrativeState ? (
-              <TonePill
-                label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
-                tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
-              />
-            ) : (
-              '—'
-            )
+            <TonePill
+              label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
+              tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
+            />
           }
         />
-      )}
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -460,22 +420,18 @@ export function ResourceOverviewTab({
             ))}
           </select>
         </InlineEditRow>
-      ) : (
+      ) : resource.operationalState ? (
         <IconInfoRow
           icon={Activity}
           hint="Estado operacional"
           value={
-            resource.operationalState ? (
-              <TonePill
-                label={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
-                tone={OP_STATE_TONE[resource.operationalState] ?? 'neutral'}
-              />
-            ) : (
-              '—'
-            )
+            <TonePill
+              label={OP_STATE_LABELS[resource.operationalState] ?? resource.operationalState}
+              tone={OP_STATE_TONE[resource.operationalState] ?? 'neutral'}
+            />
           }
         />
-      )}
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -509,22 +465,18 @@ export function ResourceOverviewTab({
             ))}
           </select>
         </InlineEditRow>
-      ) : (
+      ) : resource.usageState ? (
         <IconInfoRow
           icon={Layers}
           hint="Estado de uso"
           value={
-            resource.usageState ? (
-              <TonePill
-                label={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
-                tone={USAGE_STATE_TONE[resource.usageState] ?? 'neutral'}
-              />
-            ) : (
-              '—'
-            )
+            <TonePill
+              label={USAGE_STATE_LABELS[resource.usageState] ?? resource.usageState}
+              tone={USAGE_STATE_TONE[resource.usageState] ?? 'neutral'}
+            />
           }
         />
-      )}
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -548,9 +500,9 @@ export function ResourceOverviewTab({
             className="geo-input geo-input-inline"
           />
         </InlineEditRow>
-      ) : (
-        <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label ?? '—'} />
-      )}
+      ) : resource.label ? (
+        <IconInfoRow icon={Tag} hint="Etiqueta física" value={resource.label} />
+      ) : null}
 
       {/* Agrupador consolidado das 4 informações de definição do recurso (Item 4) */}
       <ResourceDefinitionCard
@@ -594,131 +546,37 @@ export function ResourceOverviewTab({
             ))}
           </select>
         </InlineEditRow>
-      ) : (
+      ) : currentVendor ? (
         <IconInfoRow
           icon={Truck}
           hint="Vendor (aquisição)"
-          value={currentVendor ? (currentVendor.name ?? currentVendor.id) : '—'}
+          value={currentVendor.name ?? currentVendor.id}
         />
-      )}
+      ) : null}
 
-      {canEdit ? (
-        <InlineEditRow
-          label="Recurso Pai"
-          icon={Boxes}
-          editing={editingParent}
-          onActivate={startEditParent}
-          value={parent ? (parent.name ?? parent.id) : <span className="whitespace-nowrap">Nenhum</span>}
-        >
-          <div className="relative">
-            <input
-              autoFocus
-              value={parentQuery}
-              onChange={(event) => setParentQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setEditingParent(false);
-              }}
-              placeholder="Digite o nome do recurso pai…"
-              aria-label="Buscar recurso pai"
-              className="geo-input geo-input-inline"
-            />
-            <div className="fixed inset-0 z-40" onClick={() => setEditingParent(false)} />
-            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
-              {parent ? (
-                <button
-                  type="button"
-                  onClick={clearParent}
-                  className="flex w-full items-center px-3 py-2 text-left text-[0.82rem] text-status-red transition hover:bg-status-red-soft"
-                >
-                  Remover recurso pai
-                </button>
-              ) : null}
-              {parentMatches.length === 0 ? (
-                <p className="px-3 py-2 text-[0.8rem] text-app-muted">
-                  {parentQuery.trim() ? 'Nenhum recurso encontrado' : 'Comece a digitar para buscar'}
-                </p>
-              ) : (
-                parentMatches.map((candidate) => (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    onClick={() => selectParent(candidate.id)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-[0.82rem] text-app-text transition hover:bg-app-accent-soft"
-                  >
-                    <span className="truncate">{candidate.name ?? candidate.id}</span>
-                    <span className="shrink-0 text-[0.72rem] text-app-muted">
-                      {candidate.resourceType ?? ''}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </InlineEditRow>
-      ) : parent ? (
-        <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1" title="Recurso Pai">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
-            <Boxes className="h-[18px] w-[18px]" />
-          </span>
-          <span className="sr-only">Recurso Pai</span>
-          <div className="min-w-0 flex-1">
-            {onOpenResource ? (
-              <button
-                type="button"
-                onClick={() => onOpenResource(parent.id)}
-                className="truncate text-left text-[0.84rem] text-app-accent-dark transition hover:underline"
-              >
-                {parent.name ?? parent.id}
-              </button>
-            ) : (
-              <span className="truncate text-[0.84rem] text-app-text">
-                {parent.name ?? parent.id}
-              </span>
-            )}
-          </div>
-        </div>
-      ) : (
-        <IconInfoRow icon={Boxes} hint="Recurso Pai" value="—" />
-      )}
-
-      {canEdit ? (
-        <InlineEditRow
-          label="Endereço"
-          icon={MapPin}
-          editing={editingPlace}
-          onActivate={() => setEditingPlace(true)}
-          value={placeFormatted ?? '—'}
-        >
-          <PlacePicker
-            value={place ? { id: place.id, '@referredType': place['@referredType'] } : null}
-            onChange={commitPlace}
-            placeholder="Selecione um local…"
-          />
-        </InlineEditRow>
-      ) : (
-        <IconInfoRow icon={MapPin} hint="Endereço" value={placeFormatted ?? '—'} />
-      )}
+      {placeFormatted ? <IconInfoRow icon={MapPin} hint="Endereço" value={placeFormatted} /> : null}
 
       {/* Mesma exclusão mútua do painel de Site (SiteOverviewTab): coordenadas só entram
           quando não há endereço detalhado — senão duplicariam a mesma informação. */}
-      <IconInfoRow
-        icon={Crosshair}
-        hint="Localização"
-        value={!placeFormatted && coordinates ? coordinates : '—'}
-        mono={!placeFormatted && !!coordinates}
-      />
+      {locationValue ? (
+        <IconInfoRow icon={Crosshair} hint="Localização" value={locationValue} mono />
+      ) : null}
 
-      <IconInfoRow
-        icon={Building2}
-        hint="Estação abastecedora"
-        value={servingSite ? (servingSite.name ?? servingSite.id) : '—'}
-      />
+      {servingSite ? (
+        <IconInfoRow
+          icon={Building2}
+          hint="Estação abastecedora"
+          value={servingSite.name ?? servingSite.id}
+        />
+      ) : null}
 
-      <IconInfoRow
-        icon={FolderKanban}
-        hint="Projeto de implantação"
-        value={project ? (project.name ?? project.id) : '—'}
-      />
+      {project ? (
+        <IconInfoRow
+          icon={FolderKanban}
+          hint="Projeto de implantação"
+          value={project.name ?? project.id}
+        />
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -742,9 +600,9 @@ export function ResourceOverviewTab({
             className="geo-input geo-input-inline font-mono"
           />
         </InlineEditRow>
-      ) : (
-        <IconInfoRow icon={Fingerprint} hint="Imobilizado (SAP)" value={resource.assetReference ?? '—'} mono />
-      )}
+      ) : resource.assetReference ? (
+        <IconInfoRow icon={Fingerprint} hint="Imobilizado (SAP)" value={resource.assetReference} mono />
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -768,9 +626,9 @@ export function ResourceOverviewTab({
             className="geo-input geo-input-inline font-mono"
           />
         </InlineEditRow>
-      ) : (
-        <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber ?? '—'} mono />
-      )}
+      ) : resource.serialNumber ? (
+        <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber} mono />
+      ) : null}
 
       {canEdit ? (
         <InlineEditRow
@@ -794,20 +652,21 @@ export function ResourceOverviewTab({
             className="geo-input geo-input-inline font-mono"
           />
         </InlineEditRow>
-      ) : (
-        <IconInfoRow icon={Hash} hint="Part Number" value={resource.partNumber ?? '—'} mono />
-      )}
+      ) : resource.partNumber ? (
+        <IconInfoRow icon={Hash} hint="Part Number" value={resource.partNumber} mono />
+      ) : null}
 
-      <IconInfoRow icon={Calendar} hint="Criado em" value={formatDateBR(resource.createdAt) ?? '—'} />
+      {formatDateBR(resource.createdAt) ? (
+        <IconInfoRow icon={Calendar} hint="Criado em" value={formatDateBR(resource.createdAt)} />
+      ) : null}
 
-      <IconInfoRow
-        icon={CalendarClock}
-        hint="Atualizado em"
-        value={formatDateBR(resource.updatedAt) ?? '—'}
-      />
+      {formatDateBR(resource.updatedAt) ? (
+        <IconInfoRow icon={CalendarClock} hint="Atualizado em" value={formatDateBR(resource.updatedAt)} />
+      ) : null}
 
-      <div className="mt-1 border-t border-app-border pt-1">
-        <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem ?? '—'} />
+      {originSystem || canEdit || notes ? (
+        <div className="mt-1 border-t border-app-border pt-1">
+          {originSystem ? <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem} /> : null}
 
         {canEdit ? (
           <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1" title="Observações">
@@ -831,10 +690,11 @@ export function ResourceOverviewTab({
               />
             </div>
           </div>
-        ) : (
-          <IconInfoRow icon={FileText} hint="Observações" value={notes ?? '—'} />
-        )}
-      </div>
+        ) : notes ? (
+          <IconInfoRow icon={FileText} hint="Observações" value={notes} />
+        ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

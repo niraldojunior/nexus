@@ -1029,7 +1029,7 @@ export function ResourceNodeDetail({
                     <div
                       key={row.key}
                       onClick={() => handleOpenEditCharacteristic(row)}
-                      className="group px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
+                      className="group min-h-12 px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
                       role="button"
                       tabIndex={0}
                       title={row.description || undefined}
@@ -1120,7 +1120,7 @@ export function ResourceNodeDetail({
                         handleOpenViewSpec(spec);
                       }
                     }}
-                    className="px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
+                    className="group min-h-12 px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
@@ -1139,7 +1139,7 @@ export function ResourceNodeDetail({
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       {canEdit && isEditing ? (
-                        <>
+                        <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleOpenEditSpec(spec)}
@@ -1157,7 +1157,7 @@ export function ResourceNodeDetail({
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
-                        </>
+                        </div>
                       ) : (
                         <span className="text-[0.75rem] font-mono text-app-muted">
                           {spec.id.slice(0, 8)}

@@ -143,13 +143,20 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
           const statusText = hopStatusLabel(hop);
           const cableLength = hopCableLength(hop);
           return (
-            <li key={`${hop.index}:${hop.node.id}`}>
+            <li key={`${hop.index}:${hop.node.id}`} className="relative">
+              {hop.index < path.hops.length ? (
+                <span
+                  aria-hidden="true"
+                  data-testid="schematic-hop-connector"
+                  className="absolute bottom-0 left-[18px] top-8 w-0.5 bg-app-muted"
+                />
+              ) : null}
               <button
                 type="button"
                 onClick={() => onPreview(hop.node)}
-                className="flex w-full min-w-0 items-start gap-2.5 rounded-[10px] px-2 py-2 text-left transition hover:bg-app-accent-soft"
+                className="relative flex w-full min-w-0 items-start gap-2.5 rounded-[10px] px-2 py-2 text-left transition hover:bg-app-accent-soft"
               >
-                <span className="w-5 shrink-0 pt-0.5 text-right text-[0.78rem] font-semibold tabular-nums text-app-muted">
+                <span className="relative z-10 flex w-5 shrink-0 justify-center bg-app-panel pt-0.5 text-center text-[0.78rem] font-semibold tabular-nums text-app-muted">
                   {hop.index}
                 </span>
                 <span className="mt-0.5 shrink-0">

@@ -14,6 +14,8 @@ import type {
   ResourceStatusCatalogEntry,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceConnection,
+  ResourceComponentNode,
   ResourceCatalog,
   ResourceCatalogNode,
   ResourceCatalogQuery,
@@ -557,6 +559,167 @@ export class ResourceRepository implements IResourceRepository {
     };
   }
 
+  public listResourceConnections(
+    resourceId: string,
+    scope?: ResourceTenantScope,
+  ): ResourceConnection[] {
+    const tenantId = scope?.tenantId;
+    const connections: ResourceConnection[] = [];
+
+    // Outgoing
+    const outgoingRels = this.listResourceRelationships(resourceId);
+    for (const rel of outgoingRels) {
+      if (rel.relationshipType === 'containsAsChild' || rel.relationshipType === 'containedBy') {
+        continue;
+      }
+      const targetPhysical = this.getPhysicalResource(rel.id);
+      const targetLogical = targetPhysical ? undefined : this.getLogicalResource(rel.id);
+      const target = targetPhysical ?? targetLogical;
+      if (!target) continue;
+      if (tenantId && target.tenantId !== tenantId) continue;
+      connections.push({
+        '@type': 'ResourceConnection',
+        direction: 'outgoing',
+        relationshipType: rel.relationshipType,
+        resource: {
+          id: target.id,
+          name: target.name,
+          ...(target.resourceType ? { resourceType: target.resourceType } : {}),
+          status: target.status,
+          '@type': targetPhysical ? 'PhysicalResource' : 'LogicalResource',
+        },
+        ...(rel.validFor ? { validFor: { ...rel.validFor } } : {}),
+      });
+    }
+
+    // Incoming
+    for (const [fromId, rels] of this.relationships.entries()) {
+      if (fromId === resourceId) continue;
+      for (const rel of rels) {
+        if (rel.id !== resourceId) continue;
+        if (rel.relationshipType === 'containsAsChild' || rel.relationshipType === 'containedBy') {
+          continue;
+        }
+        const sourcePhysical = this.getPhysicalResource(fromId);
+        const sourceLogical = sourcePhysical ? undefined : this.getLogicalResource(fromId);
+        const source = sourcePhysical ?? sourceLogical;
+        if (!source) continue;
+        if (tenantId && source.tenantId !== tenantId) continue;
+        connections.push({
+          '@type': 'ResourceConnection',
+          direction: 'incoming',
+          relationshipType: rel.relationshipType,
+          resource: {
+            id: source.id,
+            name: source.name,
+            ...(source.resourceType ? { resourceType: source.resourceType } : {}),
+            status: source.status,
+            '@type': sourcePhysical ? 'PhysicalResource' : 'LogicalResource',
+          },
+          ...(rel.validFor ? { validFor: { ...rel.validFor } } : {}),
+        });
+      }
+    }
+
+    return connections.sort((a, b) => {
+      const cmp = a.relationshipType.localeCompare(b.relationshipType);
+      return cmp !== 0 ? cmp : a.resource.name.localeCompare(b.resource.name);
+    });
+  }
+
+  public listResourceComponents(
+    resourceId: string,
+    options?: { scope?: ResourceTenantScope; maxDepth?: number },
+  ): { components: ResourceComponentNode[]; truncated: boolean } {
+    const tenantId = options?.scope?.tenantId;
+    const maxDepth = options?.maxDepth ?? 8;
+    const components: ResourceComponentNode[] = [];
+    const visited = new Set<string>([resourceId]);
+    const queue: Array<{ id: string; parentId: string | null; depth: number }> = [];
+
+    // Initialize with direct children
+    const directChildRels = this.listResourceRelationships(resourceId).filter(
+      (r) => r.relationshipType === 'containsAsChild',
+    );
+    for (const rel of directChildRels) {
+      if (!visited.has(rel.id)) {
+        visited.add(rel.id);
+        queue.push({ id: rel.id, parentId: resourceId, depth: 1 });
+      }
+    }
+
+    let truncated = false;
+
+    while (queue.length > 0) {
+      if (components.length >= 2000) {
+        truncated = true;
+        break;
+      }
+      const item = queue.shift()!;
+      const physical = this.getPhysicalResource(item.id);
+      const logical = physical ? undefined : this.getLogicalResource(item.id);
+      const res = physical ?? logical;
+      if (!res) continue;
+      if (tenantId && res.tenantId !== tenantId) continue;
+
+      const kind: 'PhysicalResource' | 'LogicalResource' = physical
+        ? 'PhysicalResource'
+        : 'LogicalResource';
+      const spec = physical?.resourceSpecification?.id
+        ? this.resourceSpecifications.get(physical.resourceSpecification.id)
+        : undefined;
+      const model = spec?.resourceSpecificationCharacteristic?.find(
+        (c) => c.name === MODEL_CHARACTERISTIC.name,
+      )?.value as string | undefined;
+
+      let portInfo: ResourceComponentNode['portInfo'] | undefined;
+      if (physical && physical.resourceType === 'Port') {
+        const role = characteristicString(physical, 'role');
+        const index = characteristicNumber(physical, 'index');
+        const portDetail = this.portDetail(physical, undefined);
+        const activeOnt = portDetail.drops.find((d) => d.active)?.ont;
+        portInfo = {
+          ...(role ? { role } : {}),
+          ...(index !== undefined ? { index } : {}),
+          administrativeState: physical.administrativeState,
+          operationalState: physical.operationalState,
+          usageState: physical.usageState,
+          hasActiveService: false,
+          ...(activeOnt ? { activeDropOnt: activeOnt } : {}),
+          dropCount: portDetail.drops.length,
+        };
+      }
+
+      components.push({
+        '@type': 'ResourceComponentNode',
+        id: res.id,
+        name: res.name,
+        ...(res.resourceType ? { resourceType: res.resourceType } : {}),
+        status: res.status,
+        kind,
+        parentId: item.parentId,
+        depth: item.depth,
+        ...(model ? { model } : {}),
+        ...(physical?.serialNumber ? { serialNumber: physical.serialNumber } : {}),
+        ...(portInfo ? { portInfo } : {}),
+      });
+
+      if (item.depth < maxDepth) {
+        const nextRels = this.listResourceRelationships(item.id).filter(
+          (r) => r.relationshipType === 'containsAsChild',
+        );
+        for (const nextRel of nextRels) {
+          if (!visited.has(nextRel.id)) {
+            visited.add(nextRel.id);
+            queue.push({ id: nextRel.id, parentId: item.id, depth: item.depth + 1 });
+          }
+        }
+      }
+    }
+
+    return { components, truncated };
+  }
+
   /** ONT alimentada por um drop, via `connectedTo` — mesmo grafo físico do Postgres. */
   private resolveDropOnt(dropId: string): { id: string; name: string; '@referredType': 'PhysicalResource'; resourceType: string } | undefined {
     const ont = this.listIncidentResourceRelationships(dropId)
@@ -709,9 +872,12 @@ const characteristicString = (resource: PhysicalResource, name: string): string 
 };
 
 const characteristicNumber = (resource: PhysicalResource, name: string): number | undefined => {
-  const value = characteristicString(resource, name);
-  if (!value) return undefined;
-  const parsed = Number(value);
+  const value = resource.characteristic.find((item) => item.name === name)?.value;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const str = characteristicString(resource, name);
+  if (!str) return undefined;
+  const parsed = Number(str);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 

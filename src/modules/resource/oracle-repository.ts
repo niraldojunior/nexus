@@ -19,6 +19,8 @@ import type {
   ResourcePortConnection,
   ResourcePortDetail,
   ResourcePortsView,
+  ResourceConnection,
+  ResourceComponentNode,
   ResourceCatalog,
   ResourceCatalogNode,
   ResourceCatalogQuery,
@@ -90,6 +92,18 @@ const characteristicStringFromJson = (raw: string | null, name: string): string 
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
       ? characteristicStringFromCharacteristics(parsed as Array<{ name: string; value: unknown }>, name)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const characteristicNumberFromJson = (raw: string | null, name: string): number | undefined => {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? characteristicNumberFromCharacteristics(parsed as Array<{ name: string; value: unknown }>, name)
       : undefined;
   } catch {
     return undefined;
@@ -1562,6 +1576,195 @@ export class OracleResourceRepository implements IResourceRepository {
       }),
     );
     return { '@type': 'ResourcePortsView', ctoId, groups };
+  }
+
+  public async listResourceConnections(
+    resourceId: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceConnection[]> {
+    const tenantId = scope?.tenantId ?? 'default';
+
+    const rows = await this.db.all<{
+      direction: 'outgoing' | 'incoming';
+      relationship_type: string;
+      id: string;
+      name: string;
+      resource_type: string | null;
+      status: string | null;
+      entity_type: 'PhysicalResource' | 'LogicalResource';
+      valid_for_start: string | null;
+      valid_for_end: string | null;
+    }>(
+      `SELECT CASE WHEN e.resource_from_id = ? THEN 'outgoing' ELSE 'incoming' END AS direction,
+              e.relationship_type,
+              r.id, r.name, rt.code AS resource_type, r.status,
+              'PhysicalResource' AS entity_type,
+              e.valid_for_start, e.valid_for_end
+         FROM tmf_resource_relationship e
+         JOIN tmf_physical_resource r
+           ON r.id = CASE WHEN e.resource_from_id = ? THEN e.resource_to_id ELSE e.resource_from_id END
+         LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+        WHERE (e.resource_from_id = ? OR e.resource_to_id = ?)
+          AND e.relationship_type NOT IN ('containsAsChild', 'containedBy')
+          AND r.tenant_id = ?
+       UNION ALL
+       SELECT CASE WHEN e.resource_from_id = ? THEN 'outgoing' ELSE 'incoming' END AS direction,
+              e.relationship_type,
+              r.id, r.name, rt.code AS resource_type, r.status,
+              'LogicalResource' AS entity_type,
+              e.valid_for_start, e.valid_for_end
+         FROM tmf_resource_relationship e
+         JOIN tmf_logical_resource r
+           ON r.id = CASE WHEN e.resource_from_id = ? THEN e.resource_to_id ELSE e.resource_from_id END
+         LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+        WHERE (e.resource_from_id = ? OR e.resource_to_id = ?)
+          AND e.relationship_type NOT IN ('containsAsChild', 'containedBy')
+          AND r.tenant_id = ?
+        ORDER BY relationship_type, name`,
+      [
+        resourceId,
+        resourceId,
+        resourceId,
+        resourceId,
+        tenantId,
+        resourceId,
+        resourceId,
+        resourceId,
+        resourceId,
+        tenantId,
+      ],
+    );
+
+    return rows.map((row) => ({
+      '@type': 'ResourceConnection',
+      direction: row.direction,
+      relationshipType: row.relationship_type,
+      resource: {
+        id: row.id,
+        name: row.name,
+        ...(row.resource_type ? { resourceType: row.resource_type } : {}),
+        ...(row.status ? { status: row.status } : {}),
+        '@type': row.entity_type,
+      },
+      ...(row.valid_for_start || row.valid_for_end
+        ? {
+            validFor: {
+              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+            },
+          }
+        : {}),
+    }));
+  }
+
+  public async listResourceComponents(
+    resourceId: string,
+    options?: { scope?: ResourceTenantScope; maxDepth?: number },
+  ): Promise<{ components: ResourceComponentNode[]; truncated: boolean }> {
+    const tenantId = options?.scope?.tenantId ?? 'default';
+    const maxDepth = options?.maxDepth ?? 8;
+
+    const rows = await this.db.all<{
+      id: string;
+      name: string;
+      entity_type: 'PhysicalResource' | 'LogicalResource';
+      resource_type: string | null;
+      status: string | null;
+      parent_id: string | null;
+      depth: number;
+      model: string | null;
+      serial_number: string | null;
+      administrative_state: string | null;
+      operational_state: string | null;
+      usage_state: string | null;
+      characteristics: string | null;
+    }>(
+      `WITH RECURSIVE tree(id, parent_id, depth) AS (
+         SELECT e.resource_to_id, e.resource_from_id, 1
+           FROM tmf_resource_relationship e
+          WHERE e.resource_from_id = ? AND e.relationship_type = 'containsAsChild'
+         UNION ALL
+         SELECT e.resource_to_id, e.resource_from_id, t.depth + 1
+           FROM tree t
+           JOIN tmf_resource_relationship e ON e.resource_from_id = t.id
+          WHERE e.relationship_type = 'containsAsChild'
+            AND t.depth < ${maxDepth}
+       )
+       SELECT t.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
+              t.parent_id, t.depth,
+              NULL AS model,
+              r.serial_number,
+              r.administrative_state, r.operational_state, r.usage_state,
+              r.characteristics
+         FROM tree t
+         JOIN tmf_physical_resource r ON r.id = t.id
+         LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+        WHERE r.tenant_id = ?
+       UNION ALL
+       SELECT t.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
+              t.parent_id, t.depth,
+              NULL AS model,
+              NULL AS serial_number,
+              r.administrative_state, r.operational_state, r.usage_state,
+              r.characteristics
+         FROM tree t
+         JOIN tmf_logical_resource r ON r.id = t.id
+         LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+        WHERE r.tenant_id = ?
+        ORDER BY depth, name, id`,
+      [resourceId, tenantId, tenantId],
+    );
+
+    const visited = new Set<string>([resourceId]);
+    const components: ResourceComponentNode[] = [];
+    let truncated = false;
+
+    for (const row of rows) {
+      if (components.length >= 2000) {
+        truncated = true;
+        break;
+      }
+      if (visited.has(row.id)) continue;
+      visited.add(row.id);
+
+      let portInfo: ResourceComponentNode['portInfo'] | undefined;
+      if (row.entity_type === 'PhysicalResource' && row.resource_type === 'Port') {
+        const role = characteristicStringFromJson(row.characteristics, 'role');
+        const index = characteristicNumberFromJson(row.characteristics, 'index');
+        const portDetail = await this.getResourcePortDetail(row.id, { tenantId });
+        const activeOnt = portDetail?.drops.find((d) => d.active)?.ont;
+        portInfo = {
+          ...(role ? { role } : {}),
+          ...(index !== undefined ? { index } : {}),
+          ...(row.administrative_state ? { administrativeState: row.administrative_state } : {}),
+          ...(row.operational_state ? { operationalState: row.operational_state } : {}),
+          ...(row.usage_state ? { usageState: row.usage_state } : {}),
+          hasActiveService: false,
+          ...(activeOnt ? { activeDropOnt: activeOnt } : {}),
+          dropCount: portDetail?.drops.length ?? 0,
+        };
+      }
+
+      components.push({
+        '@type': 'ResourceComponentNode',
+        id: row.id,
+        name: row.name,
+        ...(row.resource_type ? { resourceType: row.resource_type } : {}),
+        ...(row.status ? { status: row.status } : {}),
+        kind: row.entity_type,
+        parentId: row.parent_id,
+        depth: row.depth,
+        ...(row.model ? { model: row.model } : {}),
+        ...(row.serial_number ? { serialNumber: row.serial_number } : {}),
+        ...(portInfo ? { portInfo } : {}),
+      });
+    }
+
+    return { components, truncated };
   }
 
   public async getResourcePortDetail(

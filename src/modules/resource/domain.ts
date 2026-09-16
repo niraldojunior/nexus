@@ -333,8 +333,9 @@ export type CreateResourceTypeRelationshipRuleInput = {
 };
 
 export type UpdateResourceTypeRelationshipRuleInput = Partial<
-  Omit<CreateResourceTypeRelationshipRuleInput, 'relationshipTypeCode' | 'targetKind' | 'targetId'>
+  Omit<CreateResourceTypeRelationshipRuleInput, 'cardinality'>
 > & {
+  cardinality?: ResourceRelationshipCardinality | null;
   lifecycleStatus?: ResourceTypeRelationshipRule['lifecycleStatus'];
 };
 
@@ -557,6 +558,60 @@ export type ResourcePortsView = {
     splitter: ResourceDetailReference & { splitRatio?: string };
     ports: ResourcePortDetail[];
   }>;
+};
+
+// --- Conexões e Componentes do Recurso (Painel do Mapa) ------------------------------------------
+
+export type ResourceConnection = {
+  '@type': 'ResourceConnection';
+  direction: 'outgoing' | 'incoming';
+  relationshipType: string;
+  resource: {
+    id: string;
+    name: string;
+    resourceType?: string;
+    status?: string;
+    '@type': ResourceKind;
+  };
+  validFor?: TimePeriod;
+};
+
+export type ResourceConnectionsView = {
+  '@type': 'ResourceConnectionsView';
+  resourceId: string;
+  connections: ResourceConnection[];
+};
+
+export type ResourceComponentPortInfo = {
+  role?: string;
+  index?: number;
+  administrativeState?: string;
+  operationalState?: string;
+  usageState?: string;
+  hasActiveService?: boolean;
+  activeDropOnt?: ResourceDetailReference;
+  dropCount?: number;
+};
+
+export type ResourceComponentNode = {
+  '@type': 'ResourceComponentNode';
+  id: string;
+  name: string;
+  resourceType?: string;
+  status?: string;
+  kind: ResourceKind;
+  parentId: string | null;
+  depth: number;
+  model?: string;
+  serialNumber?: string;
+  portInfo?: ResourceComponentPortInfo;
+};
+
+export type ResourceComponentsView = {
+  '@type': 'ResourceComponentsView';
+  resourceId: string;
+  components: ResourceComponentNode[];
+  truncated: boolean;
 };
 
 export type PhysicalResourceDetail = {

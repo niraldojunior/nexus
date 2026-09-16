@@ -6,21 +6,21 @@ import type { GeoTreeNode } from '../../services/geoTreeApi';
 
 const mocks = vi.hoisted(() => ({
   useResourceDetail: vi.fn(),
-  useResourceChildren: vi.fn(),
-  useResourceCoverage: vi.fn(),
   usePortDetail: vi.fn(),
   usePortService: vi.fn(),
+  useResourceComponents: vi.fn(),
+  useResourceConnections: vi.fn(),
 }));
 
 vi.mock('../../hooks/useResourceDetail', () => ({ useResourceDetail: mocks.useResourceDetail }));
-vi.mock('../../hooks/useResourceChildren', () => ({
-  useResourceChildren: mocks.useResourceChildren,
-}));
-vi.mock('../../hooks/useResourceCoverage', () => ({
-  useResourceCoverage: mocks.useResourceCoverage,
-}));
 vi.mock('../../hooks/usePortDetail', () => ({ usePortDetail: mocks.usePortDetail }));
 vi.mock('../../hooks/usePortService', () => ({ usePortService: mocks.usePortService }));
+vi.mock('../../hooks/useResourceComponents', () => ({
+  useResourceComponents: mocks.useResourceComponents,
+}));
+vi.mock('../../hooks/useResourceConnections', () => ({
+  useResourceConnections: mocks.useResourceConnections,
+}));
 vi.mock('../../components/StreetViewHero', () => ({
   StreetViewHero: () => <div>Street View</div>,
 }));
@@ -38,21 +38,19 @@ vi.mock('./ResourceHistoryTab', () => ({
     <div>Histórico de {resourceId}</div>
   ),
 }));
-vi.mock('./SchematicTab', () => ({
-  SchematicTab: () => <div>Esquemático do recurso</div>,
-}));
-vi.mock('./ResourcePortsTab', () => ({
-  ResourcePortsTab: ({
-    ctoNode,
-    onOpenPort,
+vi.mock('./ResourceComponentsTab', () => ({
+  ResourceComponentsTab: ({
+    resourceId,
   }: {
-    ctoNode: GeoTreeNode;
-    onOpenPort: (n: GeoTreeNode) => void;
-  }) => (
-    <button type="button" onClick={() => onOpenPort(ctoNode)}>
-      Porta de {ctoNode.label}
-    </button>
-  ),
+    resourceId: string;
+  }) => <div>Componentes de {resourceId}</div>,
+}));
+vi.mock('./ResourceConnectionsView', () => ({
+  ResourceConnectionsView: ({
+    resourceId,
+  }: {
+    resourceId: string;
+  }) => <div>Conexões de {resourceId}</div>,
 }));
 
 const node: GeoTreeNode = {
@@ -123,18 +121,30 @@ const portDetail = {
 
 function defaultMocks() {
   mocks.useResourceDetail.mockReturnValue({
-    detail: {},
+    detail: { childCount: 2 },
     loading: false,
     error: null,
     reload: vi.fn().mockResolvedValue(undefined),
   });
-  mocks.useResourceChildren.mockReturnValue({ children: [], loading: false });
   mocks.usePortDetail.mockReturnValue({ detail: null, loading: false, error: null });
   mocks.usePortService.mockReturnValue({
     service: null,
     hasActiveService: false,
     loading: false,
     error: null,
+  });
+  mocks.useResourceComponents.mockReturnValue({
+    components: [],
+    truncated: false,
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  });
+  mocks.useResourceConnections.mockReturnValue({
+    connections: [],
+    loading: false,
+    error: null,
+    reload: vi.fn(),
   });
 }
 
@@ -165,15 +175,15 @@ function renderPanel(overrides: Partial<ComponentProps<typeof ResourcePanel>> = 
 }
 
 describe('ResourcePanel', () => {
-  it('mostra as quatro abas e delega o carregamento ao detalhe especializado', () => {
+  it('mostra as abas e delega o carregamento ao detalhe especializado', () => {
     renderPanel();
 
     expect(mocks.useResourceDetail).toHaveBeenCalledWith('cto-1');
     expect(screen.getByRole('button', { name: 'Geral' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Recursos internos' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Esquemático' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '2Componentes' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Conexões' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Histórico' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cobertura' })).not.toBeInTheDocument();
     expect(screen.getByText('Detalhe da CTO')).toBeInTheDocument();
   });
 
@@ -183,29 +193,14 @@ describe('ResourcePanel', () => {
     expect(screen.getByText('Histórico de cto-1')).toBeInTheDocument();
   });
 
-  it('sem onOpenPort, CTO mantém Recursos internos', () => {
+  it('abre a aba Componentes e Conexões', () => {
     renderPanel();
-    expect(screen.queryByRole('button', { name: 'Portas' })).not.toBeInTheDocument();
-  });
 
-  it('com onOpenPort, CTO troca Recursos internos por Portas e delega ao callback', () => {
-    const onOpenPort = vi.fn();
-    renderPanel({ onOpenPort });
+    fireEvent.click(screen.getByRole('button', { name: '2Componentes' }));
+    expect(screen.getByText('Componentes de cto-1')).toBeInTheDocument();
 
-    expect(screen.queryByRole('button', { name: 'Recursos internos' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Portas' }));
-    fireEvent.click(screen.getByText('Porta de CDOE-6746'));
-    expect(onOpenPort).toHaveBeenCalledWith(node);
-  });
-
-  it('com onOpenPort, recurso não-CTO mantém Recursos internos', () => {
-    renderPanel({
-      node: { ...node, id: 'resource:rack-1', refId: 'rack-1', resourceType: 'Rack' },
-      onOpenPort: vi.fn(),
-    });
-
-    expect(screen.getByRole('button', { name: 'Recursos internos' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Portas' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Conexões' }));
+    expect(screen.getByText('Conexões de cto-1')).toBeInTheDocument();
   });
 
   it('especializa a Porta sem chrome geográfico, renomeia a aba e mostra drops e a ONT', () => {
@@ -217,7 +212,7 @@ describe('ResourcePanel', () => {
     expect(screen.queryByText('Street View')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Serviço' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Recursos internos/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Componentes' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '3Recursos atendidos' }));
     expect(screen.getByText('Cabo Drop atual')).toBeInTheDocument();

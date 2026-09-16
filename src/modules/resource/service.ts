@@ -1242,10 +1242,24 @@ export class ResourceService {
         statusCode: 409,
       });
     }
-    const retired = await this.repository.upsertResourceCatalogNode({
-      ...current,
-      status: 'inactive',
-      ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+    const retired = await this.repository.transaction(async () => {
+      if (current.kind === 'RESOURCE_TYPE' && current.resourceTypeId) {
+        const resourceType = await this.repository.getResourceType(
+          current.resourceTypeId,
+          scopeOf(context),
+        );
+        if (resourceType) {
+          await this.repository.upsertResourceType({
+            ...resourceType,
+            status: 'inactive',
+          });
+        }
+      }
+      return await this.repository.upsertResourceCatalogNode({
+        ...current,
+        status: 'inactive',
+        ...(context?.actorSub ? { updatedBy: context.actorSub } : {}),
+      });
     });
     await this.emit(
       'ResourceCatalogNodeAttributeValueChangeEvent',

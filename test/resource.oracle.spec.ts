@@ -258,3 +258,41 @@ test.skipIf(!oracleConfigured)(
     assert.equal(await repository.countPhysicalResources({ relatedPartyId: 'party-nonexistent' }), 0);
   },
 );
+
+test.skipIf(!oracleConfigured)(
+  'listResourceTypes inativa duplicata legada de um código canônico mesmo quando o canônico já foi seedado antes',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleResourceRepository(client);
+    await repository.initialize();
+
+    // Primeira chamada seeda o vocabulário canônico (tenant_id='default') — simula uma base já
+    // inicializada em boots anteriores, cenário em que `missing.length` fica 0 dali em diante.
+    await repository.listResourceTypes();
+
+    // Simula a linha legada real: mesmo código de um tipo canônico ('OLT'), id aleatório, sob o
+    // tenant do operador — exatamente o que uma base migrada de outro schema carrega.
+    const now = new Date().toISOString();
+    await client.run(
+      `INSERT INTO tmf_resource_type
+       (id, tenant_id, code, name, description, status, nature, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, 'active', 'PhysicalResource', ?, ?)`,
+      ['rt-olt-legacy-vtal', 'vtal', 'OLT', 'Optical Line Terminal', now, now],
+    );
+
+    // Segunda chamada: `missing` já está vazio (canônico existe), mas a linha legada ativa e
+    // duplicada precisa ser detectada e inativada mesmo assim (bug original: `return` antecipado
+    // nunca alcançava essa limpeza fora do primeiro seed).
+    const types = await repository.listResourceTypes({ tenantId: 'vtal' });
+    // A API retorna ativos e inativos (o filtro de ativo é do consumidor, ex.: combo de relações)
+    // — a duplicata precisa desaparecer da fatia ativa, não da lista bruta.
+    const activeOltMatches = types.filter((t) => t.code === 'OLT' && t.status === 'active');
+    assert.equal(activeOltMatches.length, 1, 'combo não deve exibir "OLT" duplicado');
+
+    const legacyRow = await client.get<{ status: string }>(
+      `SELECT status FROM tmf_resource_type WHERE id = ?`,
+      ['rt-olt-legacy-vtal'],
+    );
+    assert.equal(legacyRow?.status, 'inactive', 'linha legada precisa ser inativada, não excluída');
+  },
+);

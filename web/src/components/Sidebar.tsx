@@ -259,8 +259,14 @@ export default function Sidebar({
         {/* Navigation — container de scroll sem padding horizontal: a calha da
             scrollbar fica colada na borda direita do aside. O padding vive no
             <nav> interno. Todos os itens (incluindo Nova Conversa) compartilham
-            o mesmo gap do nav — sem espaçamento extra entre grupos. */}
-        <div className="hover-scroll relative min-h-0 flex-1 overflow-y-auto">
+            o mesmo gap do nav — sem espaçamento extra entre grupos.
+            Quando contraído no desktop (rail 58px), usamos overflow-visible para
+            que os tooltips (.vt-sb-tip) não sejam recortados na borda direita. */}
+        <div
+          className={`hover-scroll relative min-h-0 flex-1 ${
+            contentCollapsed ? 'overflow-visible' : 'overflow-y-auto'
+          }`}
+        >
           <div className="h-full">
             <nav className="flex flex-col gap-[2px] px-2">
               {primaryItems
@@ -461,6 +467,7 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
+      title={collapsed ? label : undefined}
       className={`vt-sb-btn relative flex w-full items-center text-left ${
         collapsed ? 'vt-sb-btn-rail' : ''
       } ${active ? 'is-active' : ''}`}

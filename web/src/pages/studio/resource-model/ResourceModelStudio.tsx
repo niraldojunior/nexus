@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Box, Plus, AlertCircle, Folder, Layers } from 'lucide-react';
 import type {
   ResourceCatalog,
@@ -97,6 +98,7 @@ export function ResourceModelStudio({
   // Menu flutuante de criação (Grupo / Tipo de Recurso) — substitui o modal manual (issue #230).
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [createMenuParent, setCreateMenuParent] = useState<ResourceCatalogNode | null>(null);
+  const [createMenuAnchorRect, setCreateMenuAnchorRect] = useState<DOMRect | null>(null);
 
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingNode, setImpactingNode] = useState<ResourceCatalogNode | null>(null);
@@ -238,8 +240,9 @@ export function ResourceModelStudio({
 
   // Botão "+" da Hierarquia (cabeçalho ou hover de grupo): abre o menu flutuante Grupo/Tipo de
   // Recurso com o pai já resolvido — sem modal, sem digitação prévia (issue #230).
-  const handleAddNodeClick = (explicitParent?: ResourceCatalogNode) => {
+  const handleAddNodeClick = (explicitParent?: ResourceCatalogNode, anchorRect?: DOMRect) => {
     setCreateMenuParent(resolveNewNodeParent(explicitParent));
+    setCreateMenuAnchorRect(anchorRect ?? null);
     setCreateMenuOpen(true);
   };
 
@@ -248,6 +251,7 @@ export function ResourceModelStudio({
   // — a edição do nome acontece depois, via autosave na aba Geral.
   const handleCreateFromMenu = async (kind: CreateResourceCatalogNodeInput['kind']) => {
     setCreateMenuOpen(false);
+    setCreateMenuAnchorRect(null);
     setError(null);
     try {
       // Um ambiente `empty` ainda não possui catálogo. A primeira ação explícita de modelagem
@@ -424,7 +428,10 @@ export function ResourceModelStudio({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => handleAddNodeClick()}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    handleAddNodeClick(undefined, rect);
+                  }}
                   title="Incluir nó"
                   aria-label="Incluir nó"
                   aria-haspopup="menu"
@@ -432,7 +439,7 @@ export function ResourceModelStudio({
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                {createMenuOpen && (
+                {createMenuOpen && !createMenuAnchorRect && (
                   <>
                     <div
                       className="fixed inset-0 z-40"
@@ -474,7 +481,7 @@ export function ResourceModelStudio({
               showSearch={showSearch}
               selectedNodeId={selectedNode?.id ?? null}
               onSelectNode={setSelectedNode}
-              onAddChild={(parent) => handleAddNodeClick(parent)}
+              onAddChild={(parent, anchorRect) => handleAddNodeClick(parent, anchorRect)}
               onImpactNode={(n) => {
                 setImpactingNode(n);
                 setImpactModalOpen(true);
@@ -531,6 +538,48 @@ export function ResourceModelStudio({
           catalogId={selectedCatalogId}
           node={impactingNode}
         />
+      )}
+
+      {/* Menu flutuante contextual quando ancorado a um nó específico */}
+      {createMenuOpen && createMenuAnchorRect && createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setCreateMenuOpen(false);
+              setCreateMenuAnchorRect(null);
+            }}
+          />
+          <div
+            role="menu"
+            aria-label="Tipo de nó a incluir"
+            className="fixed z-50 w-52 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+            style={{
+              top: `${Math.min(createMenuAnchorRect.bottom + 4, window.innerHeight - 90)}px`,
+              left: `${Math.max(12, Math.min(createMenuAnchorRect.left, window.innerWidth - 220))}px`,
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleCreateFromMenu('GROUP')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+            >
+              <Folder className="h-3.5 w-3.5" />
+              Grupo
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => handleCreateFromMenu('RESOURCE_TYPE')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Tipo de Recurso
+            </button>
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

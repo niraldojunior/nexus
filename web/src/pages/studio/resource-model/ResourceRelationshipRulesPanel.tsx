@@ -27,6 +27,21 @@ const targetKindLabel: Record<ResourceRelationshipTargetKind, string> = {
   GEOGRAPHIC_SITE_SPECIFICATION: 'Tipo de Local',
 };
 
+// Rede de segurança: `tmf_resource_type` pode conter linhas legadas com o mesmo `code` de um
+// tipo canônico (cutover de ID, ver `oracle-repository.ts#seedResourceCatalog`). Mantém apenas a
+// primeira ocorrência de cada código para não duplicar a opção na combo.
+function dedupeByCode(types: ResourceType[]): ResourceType[] {
+  const seen = new Set<string>();
+  const result: ResourceType[] = [];
+  for (const rt of types) {
+    const key = rt.code || rt.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(rt);
+  }
+  return result;
+}
+
 export function ResourceRelationshipRulesPanel({
   resourceTypeId,
   canEdit,
@@ -98,8 +113,14 @@ export function ResourceRelationshipRulesPanel({
   const allowedTargetKinds = selectedRelationshipType?.allowedTargetKinds ?? [];
   const targetOptions =
     formTargetKind === 'RESOURCE_TYPE'
-      ? resourceTypes.filter((rt) => rt.id !== resourceTypeId).map((rt) => ({ id: rt.id, name: rt.name }))
-      : geoSpecs.map((s) => ({ id: s.id, name: s.name }));
+      ? dedupeByCode(
+          resourceTypes.filter((rt) => rt.id !== resourceTypeId && rt.status === 'active'),
+        )
+          .map((rt) => ({ id: rt.id, name: rt.name }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+      : geoSpecs
+          .map((s) => ({ id: s.id, name: s.name }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
 
   const handleOpenCreate = () => {
     setFormRelationshipCode(relationshipTypes[0]?.code ?? '');

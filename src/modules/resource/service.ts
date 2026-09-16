@@ -60,6 +60,7 @@ import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js'
 import type { RequestContext } from '../../shared/http/request-context.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { recordMutation } from '../../shared/persistence/audit-outbox.js';
+import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -1659,9 +1660,10 @@ export class ResourceService {
       administrativeState: input.administrativeState ?? 'unlocked',
       operationalState: input.operationalState ?? 'enabled',
       usageState: input.usageState ?? 'idle',
-      relatedParty: await normalizeRelatedParties(
+      relatedParty: await normalizePhysicalResourceRelatedParties(
         input.relatedParty,
         this.dependencies.lookupParty,
+        this.dependencies.lookupPartyRoles,
       ),
       resourceRelationship: [],
       characteristic: input.characteristic ?? [],
@@ -1731,7 +1733,11 @@ export class ResourceService {
       operationalState: input.operationalState ?? current.operationalState,
       usageState: input.usageState ?? current.usageState,
       relatedParty: input.relatedParty
-        ? await normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
+        ? await normalizePhysicalResourceRelatedParties(
+            input.relatedParty,
+            this.dependencies.lookupParty,
+            this.dependencies.lookupPartyRoles,
+          )
         : current.relatedParty,
       resourceRelationship: current.resourceRelationship,
       characteristic: input.characteristic ?? current.characteristic,
@@ -2381,7 +2387,11 @@ const resolveResourceTypeMapConfiguration = (
 // mesmo conceito TMF (`Characteristic[]`), então a mesma lista de nomes proibidos vale nos dois
 // níveis: `manufacturer`/`networkType` já são campos de primeira classe (relatedParty/categoryCode),
 // não fazem sentido como characteristic solto em nenhum dos dois.
-const assertCanonicalCharacteristics = <T extends { name: string }>(characteristics: T[]): T[] => {
+const assertCanonicalCharacteristics = <
+  T extends { name: string; valueType?: string; group?: string },
+>(
+  characteristics: T[],
+): T[] => {
   const forbidden = characteristics.find(
     (characteristic) =>
       characteristic.name === 'manufacturer' || characteristic.name === 'networkType',
@@ -2391,6 +2401,28 @@ const assertCanonicalCharacteristics = <T extends { name: string }>(characterist
       code: 'RESOURCE_SPEC_CHARACTERISTIC_FORBIDDEN',
       statusCode: 400,
     });
+  }
+  // `model` é characteristic legítima (ao contrário de manufacturer/networkType acima), mas seu
+  // valueType/group precisam ser consistentes em toda declaração — senão a leitura via
+  // characteristicValue(MODEL_CHARACTERISTIC.name) silenciosamente não acha nada em specs onde
+  // alguém digitou `Model`, `valueType: 'number'` ou um `group` diferente (issue #251).
+  const divergentModel = characteristics.find((characteristic) => {
+    if (characteristic.name !== MODEL_CHARACTERISTIC.name) return false;
+    const valueTypeDiverges =
+      characteristic.valueType !== undefined &&
+      characteristic.valueType !== MODEL_CHARACTERISTIC.valueType;
+    const groupDiverges =
+      characteristic.group !== undefined && characteristic.group !== MODEL_CHARACTERISTIC.group;
+    return valueTypeDiverges || groupDiverges;
+  });
+  if (divergentModel) {
+    throw new AppError(
+      `model characteristic must use valueType "${MODEL_CHARACTERISTIC.valueType}" and group "${MODEL_CHARACTERISTIC.group}"`,
+      {
+        code: 'RESOURCE_SPEC_CHARACTERISTIC_MODEL_INVALID',
+        statusCode: 400,
+      },
+    );
   }
   return characteristics;
 };
@@ -2413,6 +2445,44 @@ const normalizeSpecificationRelatedParties = async (
     if (!roles.some((role) => role.name === 'manufacturer' && role.status === 'active')) {
       throw new AppError('manufacturer party must have an active manufacturer role', {
         code: 'RESOURCE_SPEC_MANUFACTURER_ROLE_INVALID',
+        statusCode: 409,
+      });
+    }
+  }
+  return parties;
+};
+
+// RN-002 (issue #251): uma instância de PhysicalResource pode ter um `vendor` de aquisição,
+// mas NUNCA um `manufacturer` direto — fabricante é fato do tipo (ResourceSpecification), e
+// aceitar na instância reabriria a duplicação desnormalizada que eliminamos ao fechar a #171.
+const normalizePhysicalResourceRelatedParties = async (
+  relatedParty: RelatedParty[] | undefined,
+  lookupParty?: ResourceServiceDependencies['lookupParty'],
+  lookupPartyRoles?: ResourceServiceDependencies['lookupPartyRoles'],
+): Promise<RelatedParty[]> => {
+  const parties = await normalizeRelatedParties(relatedParty, lookupParty);
+  const manufacturers = parties.filter((party) => party.role === 'manufacturer');
+  if (manufacturers.length > 0) {
+    throw new AppError(
+      'manufacturer cannot be assigned directly to a physical resource instance; it must be inherited from the specification',
+      {
+        code: 'PHYSICAL_RESOURCE_MANUFACTURER_FORBIDDEN',
+        statusCode: 400,
+      },
+    );
+  }
+  const vendors = parties.filter((party) => party.role === 'vendor');
+  if (vendors.length > 1) {
+    throw new AppError('only one vendor can be related to a physical resource', {
+      code: 'PHYSICAL_RESOURCE_VENDOR_DUPLICATE',
+      statusCode: 409,
+    });
+  }
+  if (vendors.length === 1 && lookupPartyRoles) {
+    const roles = await lookupPartyRoles(vendors[0]!.id);
+    if (!roles.some((role) => role.name === 'vendor' && role.status === 'active')) {
+      throw new AppError('vendor party must have an active vendor role', {
+        code: 'PHYSICAL_RESOURCE_VENDOR_ROLE_INVALID',
         statusCode: 409,
       });
     }

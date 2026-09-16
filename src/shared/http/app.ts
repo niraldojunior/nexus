@@ -5682,8 +5682,10 @@ const parseResourceQuery = (params: URLSearchParams): ResourceQuery => {
   if (resourceType) query.resourceType = resourceType;
   const placeId = params.get('placeId');
   if (placeId) query.placeId = placeId;
-  const relatedPartyId = params.get('relatedPartyId');
+  const relatedPartyId = params.get('relatedPartyId') ?? params.get('relatedParty.id');
   if (relatedPartyId) query.relatedPartyId = relatedPartyId;
+  const relatedPartyRole = params.get('relatedPartyRole') ?? params.get('relatedParty.role');
+  if (relatedPartyRole) query.relatedPartyRole = relatedPartyRole;
   const kind = params.get('kind');
   if (kind === 'PhysicalResource' || kind === 'LogicalResource') query.kind = kind;
   const limit = parseOptionalNumber(params.get('limit'));

@@ -148,4 +148,18 @@ export class PartyRoleTypeRepository {
       description: 'Organizações fornecedoras de equipamentos e materiais.',
     });
   }
+
+  public async ensureVendorSeed(tenantId: string): Promise<void> {
+    const existing = await this.db.get<{ id: string }>(
+      `SELECT id FROM party_role_type WHERE tenant_id = ? AND type_key = ?`,
+      [tenantId, 'vendor'],
+    );
+    if (existing) return;
+    await this.create(tenantId, {
+      key: 'vendor',
+      roleName: 'vendor',
+      label: 'Vendors',
+      description: 'Fornecedores de aquisição de instâncias de recurso (RN-002, issue #251).',
+    });
+  }
 }

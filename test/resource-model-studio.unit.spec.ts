@@ -901,3 +901,49 @@ test('ResourceService.updateResourceType: rejects forbidden characteristic names
     ),
   );
 });
+
+test('ResourceService.updateResourceType: rejects model characteristic with divergent valueType/group (issue #251)', async () => {
+  const { resourceService } = createTestServices();
+  const types = await resourceService.listResourceTypes(context);
+  const ctoType = types.find((t) => t.code === 'CTO') ?? types[0]!;
+
+  const isModelInvalid = (error: { code?: string; statusCode?: number }) =>
+    error.code === 'RESOURCE_SPEC_CHARACTERISTIC_MODEL_INVALID' && error.statusCode === 400;
+
+  await assert.rejects(
+    resourceService.updateResourceType(
+      ctoType.id,
+      {
+        resourceTypeCharacteristic: [
+          { name: 'model', value: '123', valueType: 'integer', group: 'commercial' },
+        ],
+      },
+      context,
+    ),
+    isModelInvalid,
+  );
+
+  await assert.rejects(
+    resourceService.updateResourceType(
+      ctoType.id,
+      {
+        resourceTypeCharacteristic: [
+          { name: 'model', value: 'MA5800', valueType: 'string', group: 'technical' },
+        ],
+      },
+      context,
+    ),
+    isModelInvalid,
+  );
+
+  const updated = await resourceService.updateResourceType(
+    ctoType.id,
+    {
+      resourceTypeCharacteristic: [
+        { name: 'model', value: 'MA5800', valueType: 'string', group: 'commercial' },
+      ],
+    },
+    context,
+  );
+  assert.equal(updated.resourceTypeCharacteristic?.[0]?.name, 'model');
+});

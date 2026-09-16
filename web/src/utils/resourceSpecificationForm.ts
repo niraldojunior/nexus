@@ -1,7 +1,8 @@
-// Estado de formulário e regras de conversão para ResourceSpecification (catálogo de Recursos).
-// Extraído de ResourcePage para ser reutilizado também pelo editor de catálogo em Configurações
-// (ver web/src/pages/config-tabs/ResourceCatalogTab.tsx) — uma única implementação do payload e
-// da leitura de características, usada pelas duas telas.
+// Estado de formulário e leitura de características para ResourceSpecification (catálogo de
+// Recursos), consumido por ResourcePage, ResourceOverviewTab/ResourceDefinitionModal e o Studio
+// (ResourceSpecificationFormModal). O caminho de escrita legado (buildResourceSpecificationPayload
+// e afins, payload `category`/`resourceType` string) foi removido na issue #251 — o backend
+// rejeita esses campos com 400 RESOURCE_SPEC_FIELD_REMOVED desde o cutover da #188.
 import {
   Cable,
   Cpu,
@@ -15,16 +16,8 @@ import {
   Shield,
   type LucideIcon,
 } from 'lucide-react';
-import type { Party } from '../services/partyApi';
-import type {
-  ResourceSpecification,
-  ResourceSpecificationPayload,
-  ResourceType,
-} from '../services/resourceApi';
+import type { ResourceSpecification, ResourceType } from '../services/resourceApi';
 import {
-  characteristicBooleanValue,
-  readResourceSpecificationCharacteristicBooleanState,
-  readResourceSpecificationCharacteristicString,
   readResourceSpecificationStatusLabel,
   type ResourceSpecificationCharacteristic,
 } from './resourceSpecificationCharacteristics';
@@ -79,215 +72,6 @@ export function emptyResourceSpecFormState(defaultCategory = ''): ResourceSpecFo
     endOfSupportLifeDate: '',
     lifecycleStatus: '',
     resourceLayerId: '',
-  };
-}
-
-export function resourceSpecFormStateFrom(
-  entity: ResourceSpecification | null,
-  defaultCategory: string,
-  manufacturerOptions: Party[],
-): ResourceSpecFormState {
-  const characteristics = entity?.resourceSpecificationCharacteristic ?? [];
-  const manufacturerParty = entity?.relatedParty?.find((party) => party.role === 'manufacturer');
-  const resolvedManufacturer = manufacturerParty
-    ? (manufacturerOptions.find((party) => party.id === manufacturerParty.id) ?? manufacturerParty)
-    : null;
-
-  return {
-    ...emptyResourceSpecFormState(),
-    name: entity?.name ?? '',
-    category: entity?.category ?? defaultCategory,
-    resourceType: entity?.resourceType ?? '',
-    description: entity?.description ?? '',
-    equipmentCode: readResourceSpecificationCharacteristicString(characteristics, 'equipmentCode'),
-    equipmentFunction: readResourceSpecificationCharacteristicString(
-      characteristics,
-      'equipmentFunction',
-    ),
-    model: readSpecificationModel(entity),
-    manufacturerPartyId: resolvedManufacturer?.id ?? '',
-    skuId: readResourceSpecificationCharacteristicString(characteristics, 'skuId'),
-    stockable: readResourceSpecificationCharacteristicBooleanState(characteristics, 'stockable'),
-    discontinued: readResourceSpecificationCharacteristicBooleanState(
-      characteristics,
-      'discontinued',
-    ),
-    supportsSdWan: readResourceSpecificationCharacteristicBooleanState(
-      characteristics,
-      'supportsSdWan',
-    ),
-    supportsVoice: readResourceSpecificationCharacteristicBooleanState(
-      characteristics,
-      'supportsVoice',
-    ),
-    homologationDate: readResourceSpecificationCharacteristicString(
-      characteristics,
-      'homologationDate',
-    ),
-    endOfLifeDate: readResourceSpecificationCharacteristicString(characteristics, 'endOfLifeDate'),
-    endOfSupportLifeDate: readResourceSpecificationCharacteristicString(
-      characteristics,
-      'endOfSupportLifeDate',
-    ),
-    lifecycleStatus: readResourceSpecificationCharacteristicString(
-      characteristics,
-      'lifecycleStatus',
-    ),
-    resourceLayerId: entity?.resourceLayerId ?? '',
-  };
-}
-
-type SpecificationCharacteristicDefinition = {
-  name: string;
-  field: keyof ResourceSpecFormState;
-  valueType: 'string' | 'boolean' | 'date';
-  group: string;
-};
-
-export const SPECIFICATION_CHARACTERISTIC_DEFINITIONS: SpecificationCharacteristicDefinition[] = [
-  { name: 'equipmentCode', field: 'equipmentCode', valueType: 'string', group: 'identification' },
-  {
-    name: 'equipmentFunction',
-    field: 'equipmentFunction',
-    valueType: 'string',
-    group: 'identification',
-  },
-  { name: 'model', field: 'model', valueType: 'string', group: 'commercial' },
-  { name: 'skuId', field: 'skuId', valueType: 'string', group: 'commercial' },
-  { name: 'stockable', field: 'stockable', valueType: 'boolean', group: 'capability' },
-  { name: 'discontinued', field: 'discontinued', valueType: 'boolean', group: 'lifecycle' },
-  { name: 'supportsSdWan', field: 'supportsSdWan', valueType: 'boolean', group: 'capability' },
-  { name: 'supportsVoice', field: 'supportsVoice', valueType: 'boolean', group: 'capability' },
-  { name: 'homologationDate', field: 'homologationDate', valueType: 'date', group: 'commercial' },
-  { name: 'endOfLifeDate', field: 'endOfLifeDate', valueType: 'date', group: 'lifecycle' },
-  {
-    name: 'endOfSupportLifeDate',
-    field: 'endOfSupportLifeDate',
-    valueType: 'date',
-    group: 'lifecycle',
-  },
-  { name: 'lifecycleStatus', field: 'lifecycleStatus', valueType: 'string', group: 'lifecycle' },
-];
-
-export function normalizeCatalogText(value: string): string {
-  return value.trim().replace(/^[-\s]+/, '');
-}
-
-export function mergeSpecificationCharacteristics(
-  existing: ResourceSpecificationCharacteristic[],
-  state: ResourceSpecFormState,
-): ResourceSpecificationCharacteristic[] {
-  const merged = new Map(existing.map((item) => [item.name, { ...item }] as const));
-
-  for (const definition of SPECIFICATION_CHARACTERISTIC_DEFINITIONS) {
-    const value = state[definition.field];
-    if (definition.valueType === 'boolean') {
-      const normalized = characteristicBooleanValue(value as '' | 'true' | 'false');
-      if (normalized === undefined) merged.delete(definition.name);
-      else {
-        merged.set(definition.name, {
-          name: definition.name,
-          value: normalized,
-          valueType: 'boolean',
-          group: definition.group,
-        });
-      }
-      continue;
-    }
-
-    const text =
-      definition.name === 'model'
-        ? normalizeCatalogText(String(value ?? ''))
-        : String(value ?? '').trim();
-    if (!text) {
-      merged.delete(definition.name);
-      continue;
-    }
-
-    merged.set(definition.name, {
-      name: definition.name,
-      value: text,
-      valueType: definition.valueType,
-      group: definition.group,
-    });
-  }
-
-  return [...merged.values()];
-}
-
-export function resolveManufacturerParty(
-  state: ResourceSpecFormState,
-  options: Party[],
-): Party | undefined {
-  if (state.manufacturerPartyId) {
-    const selected = options.find((party) => party.id === state.manufacturerPartyId);
-    if (selected) return selected;
-  }
-  return undefined;
-}
-
-export function buildResourceSpecificationPayload(
-  state: ResourceSpecFormState,
-  existing: ResourceSpecification | null | undefined,
-  manufacturerOptions: Party[] = [],
-): ResourceSpecificationPayload {
-  const existingManufacturerParty = existing?.relatedParty?.find(
-    (party) => party.role === 'manufacturer',
-  );
-  const manufacturerParty =
-    resolveManufacturerParty(state, manufacturerOptions) ?? existingManufacturerParty;
-  const relatedParty = (existing?.relatedParty ?? []).filter(
-    (party) => party.role !== 'manufacturer',
-  );
-  if (manufacturerParty) {
-    relatedParty.push({
-      id: manufacturerParty.id,
-      '@referredType':
-        'partyType' in manufacturerParty
-          ? manufacturerParty.partyType
-          : manufacturerParty['@referredType'],
-      role: 'manufacturer',
-      name: manufacturerParty.name,
-    });
-  }
-
-  const resourceSpecificationCharacteristic = mergeSpecificationCharacteristics(
-    (existing?.resourceSpecificationCharacteristic ?? []).filter(
-      (item) => item.name !== 'manufacturer' && item.name !== 'networkType',
-    ),
-    state,
-  );
-  // No catálogo de Infraestrutura Civil, Modelo é opcional (ver CivilResourceSpecificationFields) —
-  // sem fallback, o backend rejeitaria a especificação por `name` vazio (assertName em
-  // src/modules/resource/service.ts). Equipamento e o código do Tipo cobrem esse caso na ordem.
-  const modelName =
-    normalizeCatalogText(state.model) ||
-    normalizeCatalogText(state.equipmentFunction) ||
-    normalizeCatalogText(state.name) ||
-    state.resourceType.trim();
-  if (manufacturerParty) {
-    const filtered = resourceSpecificationCharacteristic.filter(
-      (item) => item.name !== 'manufacturer',
-    );
-    return {
-      name: modelName,
-      category: state.category.trim(),
-      resourceType: state.resourceType.trim(),
-      description: state.description.trim(),
-      resourceLayerId: state.resourceLayerId.trim() || undefined,
-      relatedParty,
-      resourceSpecificationCharacteristic: filtered,
-    };
-  }
-
-  return {
-    name: modelName,
-    category: state.category.trim(),
-    resourceType: state.resourceType.trim(),
-    description: state.description.trim(),
-    resourceLayerId: state.resourceLayerId.trim() || undefined,
-    relatedParty,
-    resourceSpecificationCharacteristic,
   };
 }
 
@@ -518,43 +302,4 @@ export function readSpecLifecycleStatus(
 
 export function readResourceTypeCode(types: ResourceType[], resourceTypeCode: string): string {
   return types.find((type) => type.code === resourceTypeCode)?.code ?? resourceTypeCode;
-}
-
-// Validação do formulário de catálogo (categoria/tipo ativos do catálogo + modelo preenchido) —
-// usada tanto pelo modal embutido em ResourcePage quanto pelo editor de Configurações.
-export function resourceSpecSelectionValid(
-  state: ResourceSpecFormState,
-  resourceTypes: ResourceType[],
-  resourceCategoryActive: (categoryCode: string) => boolean,
-): boolean {
-  const visibleTypeOptions = buildTypeOptions(resourceTypes, state.category);
-  const selectedResourceType = resourceTypes.find((type) => type.code === state.resourceType);
-  const categorySelectionInvalid = Boolean(state.category && !resourceCategoryActive(state.category));
-  const resourceTypeSelectionInvalid = Boolean(
-    state.resourceType &&
-      (!selectedResourceType ||
-        selectedResourceType.status !== 'active' ||
-        selectedResourceType.categoryCode !== state.category),
-  );
-  return !(
-    categorySelectionInvalid ||
-    resourceTypeSelectionInvalid ||
-    (Boolean(state.category) &&
-      Boolean(state.resourceType) &&
-      !visibleTypeOptions.some((option) => option.code === state.resourceType))
-  );
-}
-
-export function resourceSpecRequiredFieldsValid(state: ResourceSpecFormState): boolean {
-  return (
-    state.category.trim().length > 0 &&
-    state.resourceType.trim().length > 0 &&
-    state.model.trim().length > 0
-  );
-}
-
-// Obra civil não exige Modelo (ver CivilResourceSpecificationFields) — só Tipo é obrigatório,
-// já que a Categoria vem fixa da aba Civil do catálogo.
-export function civilResourceSpecRequiredFieldsValid(state: ResourceSpecFormState): boolean {
-  return state.category.trim().length > 0 && state.resourceType.trim().length > 0;
 }

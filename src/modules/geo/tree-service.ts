@@ -66,8 +66,6 @@ export type GeoTreeNode = {
   childCount?: number;
   geometry?: GeoJSONGeometry;
   detail?: {
-    manufacturer?: string;
-    model?: string;
     serialNumber?: string;
     address?: string;
     // Detalhe do estado do recurso (ds_estado_controle na origem Netwin) —
@@ -188,8 +186,6 @@ type ResourceRow = {
   resource_type: string | null;
   status: string | null;
   spec_name: string | null;
-  manufacturer: string | null;
-  model: string | null;
   serial_number: string | null;
   substatus: string | null;
   source_system: string | null;
@@ -1079,8 +1075,6 @@ export class GeoTreeService {
       const geometry = parseGeometry(row.geometry);
       if (geometry) node.geometry = geometry;
       const detail: NonNullable<GeoTreeNode['detail']> = {};
-      if (row.manufacturer) detail.manufacturer = row.manufacturer;
-      if (row.model) detail.model = row.model;
       if (row.serial_number) detail.serialNumber = row.serial_number;
       if (row.substatus) detail.substatus = row.substatus;
       if (row.source_system) detail.sourceSystem = row.source_system;
@@ -1469,7 +1463,7 @@ const siteResourceEntityBlock = (
   const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
   SELECT r.id, r.name, '${entity}' AS entity_type, rt.code AS resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, ${serial} AS serial_number,
+         rs.name AS spec_name, ${serial} AS serial_number,
          ${substatus} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
@@ -1545,7 +1539,7 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
   const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
   SELECT r.id, r.name, '${entity}' AS entity_type, rt.code AS resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, ${serial} AS serial_number,
+         rs.name AS spec_name, ${serial} AS serial_number,
          ${substatus} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
@@ -1613,14 +1607,14 @@ const searchResourceIdBlock = (
 // explicitamente para o dedup por ROW_NUMBER em childrenOfResource poder descartar a coluna `rn`
 // sem SELECT DISTINCT * (que Oracle recusa sobre o CLOB `geometry`).
 const RESOURCE_TREE_COLUMNS =
-  'id, name, entity_type, resource_type, status, spec_name, manufacturer, model, ' +
+  'id, name, entity_type, resource_type, status, spec_name, ' +
   'serial_number, substatus, source_system, geometry_type, geometry';
 
 // Filhos de um recurso: o outro lado das arestas de contenção e conexão. Usada em
 // `scope: 'all'` (painel de detalhe) — devolve tudo, Splitter incluso.
 const RESOURCE_CHILD_SOURCE = `
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, r.serial_number,
+         rs.name AS spec_name, r.serial_number,
          ${RESOURCE_SUBSTATUS_SQL} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
@@ -1634,7 +1628,7 @@ const RESOURCE_CHILD_SOURCE = `
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
+         rs.name AS spec_name, NULL AS serial_number,
          NULL AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
@@ -1671,7 +1665,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
        )
   )
   SELECT r.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, r.serial_number,
+         rs.name AS spec_name, r.serial_number,
          ${RESOURCE_SUBSTATUS_SQL} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
@@ -1686,7 +1680,7 @@ const RESOURCE_CHILD_TREE_SOURCE = `
      AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
   UNION ALL
   SELECT r.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
-         rs.name AS spec_name, NULL AS manufacturer, NULL AS model, NULL AS serial_number,
+         rs.name AS spec_name, NULL AS serial_number,
          NULL AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry

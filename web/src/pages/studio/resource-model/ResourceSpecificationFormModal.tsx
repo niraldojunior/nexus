@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FileCode, AlertCircle } from 'lucide-react';
 import type { ResourceType, ResourceSpecification } from '../../../services/resourceApi';
 import { createResourceSpecification, updateResourceSpecification } from '../../../services/resourceApi';
+import { listPartyRoles, type PartyRole } from '../../../services/partyApi';
 import {
   buildCharacteristicPayload,
   characteristicRowsValid,
@@ -38,6 +39,8 @@ export function ResourceSpecificationFormModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [rows, setRows] = useState<ResourceCharacteristicRow[]>([]);
+  const [manufacturerPartyId, setManufacturerPartyId] = useState('');
+  const [manufacturerOptions, setManufacturerOptions] = useState<PartyRole[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -52,13 +55,34 @@ export function ResourceSpecificationFormModal({
           editingSpec.resourceSpecificationCharacteristic,
         ),
       );
+      setManufacturerPartyId(
+        editingSpec.relatedParty?.find((party) => party.role === 'manufacturer')?.id ?? '',
+      );
     } else {
       setName('');
       setDescription('');
       setRows(resourceCharacteristicRowsFrom(resourceType.resourceTypeCharacteristic));
+      setManufacturerPartyId('');
     }
     setError(null);
   }, [isOpen, editingSpec, resourceType]);
+
+  // Opções de fabricante vêm de PartyRole com role "manufacturer" ativa — mesmo catálogo que o
+  // SupplierRecordsTab do Party Studio administra; não duplicar o loader pesado do workspace.
+  useEffect(() => {
+    if (!isOpen || readOnly) return;
+    let cancelled = false;
+    listPartyRoles({ name: 'manufacturer', status: 'active', limit: 200, offset: 0 })
+      .then((roles) => {
+        if (!cancelled) setManufacturerOptions(roles);
+      })
+      .catch(() => {
+        if (!cancelled) setManufacturerOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, readOnly]);
 
   if (!isOpen) return null;
 
@@ -78,18 +102,34 @@ export function ResourceSpecificationFormModal({
     try {
       setSubmitting(true);
       const characteristics = buildCharacteristicPayload(rows);
+      const manufacturerRole = manufacturerOptions.find((role) => role.partyId === manufacturerPartyId);
+      // Sempre envia `relatedParty` explicitamente — inclusive `[]` quando não há fabricante — porque
+      // o backend preserva `current.relatedParty` quando o campo vem `undefined` (service.ts), e
+      // esse é o único jeito de *remover* um fabricante pela UI.
+      const relatedParty = manufacturerRole
+        ? [
+            {
+              id: manufacturerRole.partyId,
+              '@referredType': manufacturerRole.party['@referredType'],
+              role: 'manufacturer',
+              name: manufacturerRole.party.name,
+            },
+          ]
+        : [];
       const saved =
         isEditing && editingSpec
           ? await updateResourceSpecification(editingSpec.id, {
               name: name.trim(),
               description: description.trim() || undefined,
               resourceSpecificationCharacteristic: characteristics,
+              relatedParty,
             })
           : await createResourceSpecification({
               name: name.trim(),
               resourceTypeId: resourceType.id,
               description: description.trim() || undefined,
               resourceSpecificationCharacteristic: characteristics,
+              relatedParty,
             });
       if (onSaved) onSaved(saved);
       onClose();
@@ -191,6 +231,33 @@ export function ResourceSpecificationFormModal({
                   placeholder="Descreva a finalidade desta especificação..."
                   className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
                 />
+              )}
+            </div>
+          )}
+
+          {(!readOnly || manufacturerPartyId) && (
+            <div>
+              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                Fabricante {readOnly ? '' : '(Opcional)'}
+              </label>
+              {readOnly ? (
+                <div className="rounded-[14px] border border-app-border bg-slate-50 px-3 py-2 text-[0.84rem] text-app-text">
+                  {manufacturerOptions.find((role) => role.partyId === manufacturerPartyId)?.party
+                    .name ?? editingSpec?.relatedParty?.find((party) => party.role === 'manufacturer')?.name}
+                </div>
+              ) : (
+                <select
+                  value={manufacturerPartyId}
+                  onChange={(e) => setManufacturerPartyId(e.target.value)}
+                  className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+                >
+                  <option value="">Nenhum</option>
+                  {manufacturerOptions.map((role) => (
+                    <option key={role.partyId} value={role.partyId}>
+                      {role.party.name}
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
           )}

@@ -23,6 +23,7 @@ import type {
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import { RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
 
 export class ResourceRepository implements IResourceRepository {
   private readonly resourceTypes = new Map<string, ResourceType>();
@@ -410,7 +411,7 @@ export class ResourceRepository implements IResourceRepository {
       return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     };
     const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
-    const model = characteristicValue('model');
+    const model = characteristicValue(MODEL_CHARACTERISTIC.name);
     return {
       '@type': 'PhysicalResourceDetail',
       // O repositório em memória não persiste timestamps; os testes unitários recebem um instante
@@ -850,10 +851,13 @@ const filterResource = (resource: Resource, query?: ResourceQuery): boolean => {
   }
   if (query.placeId && resource.place?.id !== query.placeId) return false;
   if (query.kind && resource['@type'] !== query.kind) return false;
-  if (
-    query.relatedPartyId &&
-    !resource.relatedParty.some((item) => item.id === query.relatedPartyId)
-  )
-    return false;
+  if (query.relatedPartyId || query.relatedPartyRole) {
+    const hasMatch = resource.relatedParty.some((item) => {
+      if (query.relatedPartyId && item.id !== query.relatedPartyId) return false;
+      if (query.relatedPartyRole && item.role !== query.relatedPartyRole) return false;
+      return true;
+    });
+    if (!hasMatch) return false;
+  }
   return true;
 };

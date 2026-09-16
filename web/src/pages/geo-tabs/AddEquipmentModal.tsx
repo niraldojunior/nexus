@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import type { GeoLocation, GeoSite } from '../../services/geoApi';
 import { createResource } from '../../services/resourceApi';
 import type { ResourceSpecification } from '../../services/resourceApi';
+import { listPartyRoles, type PartyRole } from '../../services/partyApi';
 
 type Step = 'type' | 'location' | 'details';
 
@@ -41,15 +42,46 @@ export function AddEquipmentModal({
     draftAddress ? `${equipment[0]?.name} - ${draftAddress.street}` : '',
   );
   const [serialNumber, setSerialNumber] = useState('');
+  const [vendorPartyId, setVendorPartyId] = useState('');
+  const [vendorOptions, setVendorOptions] = useState<PartyRole[]>([]);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    listPartyRoles({ name: 'vendor', status: 'active', limit: 200, offset: 0 })
+      .then((roles) => {
+        if (!cancelled) setVendorOptions(roles);
+      })
+      .catch(() => {
+        if (!cancelled) setVendorOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const selectedSpec = equipment.find((e) => e.id === resourceSpecificationId);
+  const selectedManufacturer = selectedSpec?.relatedParty?.find(
+    (party) => party.role === 'manufacturer',
+  );
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!resourceSpecificationId || !name.trim()) return;
     setSaving(true);
     try {
+      const selectedVendor = vendorOptions.find((role) => role.partyId === vendorPartyId);
+      const relatedParty = selectedVendor
+        ? [
+            {
+              id: selectedVendor.partyId,
+              '@referredType': selectedVendor.party['@referredType'],
+              role: 'vendor',
+              name: selectedVendor.party.name,
+            },
+          ]
+        : undefined;
+
       await createResource({
         '@type': 'PhysicalResource',
         name,
@@ -58,6 +90,7 @@ export function AddEquipmentModal({
         status: 'active',
         placeId: draftAddress ? undefined : selectedSite?.place?.id,
         placeType: draftAddress || selectedSite?.place?.id ? 'GeographicLocation' : undefined,
+        ...(relatedParty ? { relatedParty } : {}),
       });
       await onCreated();
     } finally {
@@ -163,6 +196,33 @@ export function AddEquipmentModal({
                     className="geo-input mt-2"
                     placeholder="ex: Splitter A1"
                   />
+                </div>
+
+                <div>
+                  <label className="text-[0.78rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+                    Fabricante (da especificação)
+                  </label>
+                  <div className="geo-input mt-2 bg-app-accent-soft text-app-muted">
+                    {selectedManufacturer?.name ?? selectedManufacturer?.id ?? '—'}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[0.78rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
+                    Vendor (aquisição)
+                  </label>
+                  <select
+                    value={vendorPartyId}
+                    onChange={(event) => setVendorPartyId(event.target.value)}
+                    className="geo-input mt-2"
+                  >
+                    <option value="">Nenhum (não informado)</option>
+                    {vendorOptions.map((role) => (
+                      <option key={role.partyId} value={role.partyId}>
+                        {role.party.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="md:col-span-2">

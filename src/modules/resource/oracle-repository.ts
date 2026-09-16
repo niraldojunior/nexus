@@ -36,6 +36,7 @@ import {
   getResourceTypeByCode,
 } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
+import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
@@ -227,6 +228,22 @@ const buildResourceConditions = (
   if (query?.placeId) {
     conditions.push('r.place_id = ?');
     params.push(query.placeId);
+  }
+  if (query?.relatedPartyId && query?.relatedPartyRole) {
+    conditions.push(
+      `JSON_EXISTS(r.related_party, '$[*]?(@.id == $pid && @.role == $prole)' PASSING ? AS "pid", ? AS "prole" FALSE ON ERROR)`,
+    );
+    params.push(query.relatedPartyId, query.relatedPartyRole);
+  } else if (query?.relatedPartyId) {
+    conditions.push(
+      `JSON_EXISTS(r.related_party, '$[*]?(@.id == $pid)' PASSING ? AS "pid" FALSE ON ERROR)`,
+    );
+    params.push(query.relatedPartyId);
+  } else if (query?.relatedPartyRole) {
+    conditions.push(
+      `JSON_EXISTS(r.related_party, '$[*]?(@.role == $prole)' PASSING ? AS "prole" FALSE ON ERROR)`,
+    );
+    params.push(query.relatedPartyRole);
   }
   if (query?.tenantId) {
     conditions.push('r.tenant_id = ?');
@@ -431,14 +448,15 @@ export class OracleResourceRepository implements IResourceRepository {
       for (const type of missing) {
         await this.db.run(
           `INSERT INTO tmf_resource_type
-           (id, tenant_id, code, name, description, status, created_at, updated_at)
-           VALUES (?, 'default', ?, ?, ?, ?, ?, ?)`,
+           (id, tenant_id, code, name, description, status, nature, created_at, updated_at)
+           VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?)`,
           [
             type.id,
             type.code,
             type.name,
             type.description ?? null,
             type.status,
+            type.nature,
             now,
             now,
           ],
@@ -1440,7 +1458,7 @@ export class OracleResourceRepository implements IResourceRepository {
       return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     };
     const manufacturer = specification.relatedParty.find((party) => party.role === 'manufacturer');
-    const model = characteristicValue('model');
+    const model = characteristicValue(MODEL_CHARACTERISTIC.name);
 
     return {
       '@type': 'PhysicalResourceDetail',

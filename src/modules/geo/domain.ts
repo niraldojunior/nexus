@@ -28,6 +28,7 @@ export type CharacteristicValueType =
   | 'decimal'
   | 'boolean'
   | 'date'
+  | 'image'
   | 'list'
   | 'enum'
   | 'json';

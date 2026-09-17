@@ -45,6 +45,7 @@ import { useGeoViewState } from '../hooks/useGeoViewState';
 import {
   hasVisibleGponAggregate,
   mapLayerEntities,
+  mapLayerVisualRank,
   viewportInclude,
   ALL_MAP_LAYERS_VISIBLE,
   MAP_LAYER_CATALOG_FALLBACK,
@@ -53,10 +54,7 @@ import {
   type MapLayerVisibility,
   type MapSiteRole,
 } from '../utils/mapLayers';
-import type {
-  StudioGeoEntityNode,
-  StudioGeoPointVisualConfig,
-} from '../services/studioGeoApi';
+import type { StudioGeoEntityNode, StudioGeoPointVisualConfig } from '../services/studioGeoApi';
 import { nativeMapIconDataUrl, nativeMapIconForCode } from '../utils/nativeMapIcons';
 import { getStudioSvgAssetDataUrl } from '../services/studioAssetApi';
 import { resolveScaleBandKey } from '../utils/studioGeoDefaults';
@@ -252,12 +250,6 @@ type ProjectSiteView = { mode: 'create' } | { mode: 'view'; siteId: string };
 type DockView =
   { kind: 'hierarchy' } | { kind: 'project'; projectId: string; site: ProjectSiteView | null };
 
-const EQUIPMENT_MARKER_Z = 1000;
-
-// A Estação desenha ACIMA dos equipamentos (z maior): ela é a referência mais importante,
-// então nunca fica escondida atrás de uma caixa/splitter que compartilha a coordenada.
-const SITE_MARKER_Z = 1500;
-
 // Stub de GeoTreeNode a partir de uma feature do InfraOverlay (canvas do mapa, Fase 3 da
 // issue #69) — clique/hover sobre o canvas não tem um GeoTreeNode pronto, só o essencial que o
 // índice de tile carrega. Serve para hover e para abrir o painel na hora; a reidratação
@@ -306,8 +298,7 @@ function pointLayerForNode(
   node: GeoTreeNode,
   catalog: import('../services/studioGeoApi').StudioGeoCatalog,
 ): StudioGeoEntityNode | undefined {
-  const sourceType =
-    node.kind === 'site' ? 'GEOGRAPHIC_SITE_SPECIFICATION' : 'RESOURCE_TYPE';
+  const sourceType = node.kind === 'site' ? 'GEOGRAPHIC_SITE_SPECIFICATION' : 'RESOURCE_TYPE';
   const sourceIds =
     node.kind === 'site'
       ? [node.siteSpecificationCode, node.siteSpecificationId]
@@ -355,6 +346,7 @@ function buildPointMarkerVisual(
   selected: boolean,
   stationMarkerSize: number,
   resourceMarkerSize: number,
+  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
   pointStyle?: ResolvedStudioGeoPointStyle,
   assetDataUrl?: string,
 ): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
@@ -382,7 +374,9 @@ function buildPointMarkerVisual(
         scaledSize: new maps.Size(size, size),
         anchor: new maps.Point(size / 2, size / 2),
       },
-      zIndex: isStation ? (selected ? SITE_MARKER_Z + 1 : SITE_MARKER_Z) : (selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z),
+      zIndex: selected
+        ? SELECTION_PIN_Z - 1
+        : pointLayerZIndex(pointLayerForNode(node, catalog), catalog),
       title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
     };
   }
@@ -414,7 +408,9 @@ function buildPointMarkerVisual(
       // local, e centrado ficaria escondido atrás do pin.
       anchor: new maps.Point(0, size),
     },
-    zIndex: selected ? EQUIPMENT_MARKER_Z + 1 : EQUIPMENT_MARKER_Z,
+    zIndex: selected
+      ? SELECTION_PIN_Z - 1
+      : pointLayerZIndex(pointLayerForNode(node, catalog), catalog),
     title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
   };
 }
@@ -487,8 +483,19 @@ function polylineStyleOptions(
   };
 }
 
-// A rota do cabo fica abaixo de todos os pins — é o fundo por onde a rede passa.
-const CABLE_ROUTE_Z = 10;
+// Faixas semânticas: o catálogo decide a ordem interna da planta; interação funcional continua
+// acima dele. A primeira entidade publicada recebe o maior z-index operacional.
+const OPERATIONAL_LAYER_Z_BASE = 100;
+const OPERATIONAL_LAYER_Z_SPAN = 1000;
+
+function pointLayerZIndex(
+  layer: StudioGeoEntityNode | undefined,
+  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
+): number {
+  if (!layer) return OPERATIONAL_LAYER_Z_BASE;
+  const rank = mapLayerVisualRank(layer, catalog);
+  return OPERATIONAL_LAYER_Z_BASE + OPERATIONAL_LAYER_Z_SPAN - Math.max(rank, 0);
+}
 
 // O ponto "minha localização" fica acima de tudo, inclusive do alfinete de seleção: é
 // referência do usuário no mundo, não do inventário.
@@ -709,8 +716,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     viewportShapesInclude === undefined || viewportShapesInclude.length > 0;
   // Régua de escala própria dos pins de local de Projeto com manchas geradas (REQ-MOD01-017) —
   // mais restrita que a infra passiva comum (ver PROJECT_PIN_MAX_SCALE_METERS).
-  const projectPinScaleVisible =
-    scaleMeters !== null && scaleMeters < PROJECT_PIN_MAX_SCALE_METERS;
+  const projectPinScaleVisible = scaleMeters !== null && scaleMeters < PROJECT_PIN_MAX_SCALE_METERS;
   const { data: infraFeaturesRaw, loading: viewportLoading } = useMapTiles(
     viewportBounds,
     scaleMeters,
@@ -754,8 +760,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // cabe na página do painel), mantém a régua de sempre da infra passiva (< 200 m).
   const projectSiteFeatures = useMemo(() => {
     const projectSitesVisible =
-      activeProjectId !== null &&
-      (hasProjectAreas ? projectPinScaleVisible : passiveInfraVisible);
+      activeProjectId !== null && (hasProjectAreas ? projectPinScaleVisible : passiveInfraVisible);
     if (!projectSitesVisible) return [];
     return hasProjectAreas ? projectViewportSites : projectSites;
   }, [
@@ -777,7 +782,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     if (!selectedNode?.geometry) return null;
     const selectedIsStation =
       selectedNode.kind === 'site' &&
-      siteKindFromSpec({ category: selectedNode.siteCategory, name: selectedNode.sublabel }) === 'CO';
+      siteKindFromSpec({ category: selectedNode.siteCategory, name: selectedNode.sublabel }) ===
+        'CO';
     const selectedVisible =
       selectedNode.kind === 'site' ? selectedIsStation || passiveInfraVisible : passiveInfraVisible;
     if (!selectedVisible) return null;
@@ -847,8 +853,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // MapLoadingBar). Cargas internas dos painéis (Viabilidade, GEONET, eventos) têm spinner
   // próprio dentro da doca e não entram aqui. O script do Google Maps é rastreado dentro do
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
-  const mapDataLoading =
-    loading || tree.busy || viewportLoading || coverageLoading;
+  const mapDataLoading = loading || tree.busy || viewportLoading || coverageLoading;
 
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
@@ -862,7 +867,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [selectedSiteId, selectedResourceNode]);
   // Troca de CTO (ou fechamento do painel de Recurso) desfaz o empilhamento de Porta —
   // senão a Porta da CTO anterior ficaria pendurada ao lado da CTO nova.
-  const detailResourceNodeId = detailOpen && detailTarget?.kind === 'resource' ? detailTarget.node.id : null;
+  const detailResourceNodeId =
+    detailOpen && detailTarget?.kind === 'resource' ? detailTarget.node.id : null;
   useEffect(() => {
     setStackedPortNode(null);
   }, [detailResourceNodeId]);
@@ -1979,72 +1985,77 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           )}
 
           <div className="relative min-h-0 flex-1">
-            {environmentId ? <GoogleMapPanel
-              key={environmentId}
-              nodes={mapNodes}
-              pinnedNode={pinnedSelectedNode}
-              projectSiteFeatures={projectSiteFeatures}
-              infraFeatures={infraFeatures}
-              onSelectInfraFeature={selectNodeFromInfraOverlay}
-              selectedNode={selectedNode}
-              draftAddress={draftAddress}
-              addressPoint={
-                addressLookup?.source === 'search' && addressLookup.resolution?.mode === 'automatic'
-                  ? addressLookup.resolution.selected
-                  : null
-              }
-              addressResolution={
-                addressLookup?.source === 'search' ? addressLookup.resolution : null
-              }
-              dropSimulation={dropSimulation}
-              portDropPreview={portDropPreview}
-              focusRequest={focusRequest}
-              initialView={viewState.initialView?.camera ?? null}
-              bottomSheetState={bottomSheetState}
-              balloon={balloon}
-              onSelectNode={selectNodeFromMap}
-              onHoverNode={handleHover}
-              onCloseBalloon={() => handleHover(null)}
-              onDraftAddress={onMapAddressFound}
-              pickingAddress={pickingProjectSite}
-              // Navegação manual do mapa (arrastar, pinça, roda, duplo clique) NÃO
-              // desseleciona (issue #19); no mobile, encolhe a folha para peek (ver
-              // handleManualMapNavigation). `selectionActive` diz ao mapa se há algo aberto,
-              // para só encolher a folha quando faz sentido.
-              onManualNavigation={handleManualMapNavigation}
-              selectionActive={
-                selectedNode !== null ||
-                addressLookup !== null ||
-                draftAddress !== null ||
-                dockView.kind !== 'hierarchy'
-              }
-              onViewportChange={handleViewportChange}
-              coverage={coverageVisible ? coverage : null}
-              coverageStyle={coverageStyle}
-              siteMarkerSize={siteMarkerSize}
-              stationMarkerSize={stationMarkerSize}
-              resourceMarkerSize={resourceMarkerSize}
-              mapVisualScaleMeters={scaleMeters}
-              onCoverageHover={setCoverageHover}
-              projectAreas={projectAreas}
-              onProjectAreaHover={setProjectAreaHover}
-              // Com uma posição restaurada (F5, link compartilhado), o auto-locate mobile não
-              // deve roubar o enquadramento que o usuário já tinha antes de sair (ele só desiste
-              // sozinho quando há uma seleção, ver `selectedNodeIdRef` — não há uma para
-              // viewport puro).
-              autoLocateOnOpen={isMobile && !viewState.initialView}
-              // Qualquer camada do mapa em carga acende a barra fina no topo do mapa; o
-              // script do Google Maps é somado à barra dentro do painel (ver MapLoadingBar).
-              busy={mapDataLoading}
-              mapLayerCatalog={mapLayerCatalog.catalog}
-              mapLayers={mapLayers.layers}
-              onToggleMapLayer={mapLayers.toggleLayer}
-              onToggleMapLayerGroup={mapLayers.toggleGroup}
-              onResetMapLayers={mapLayers.resetLayers}
-              mapLayersAllVisible={mapLayers.allVisible}
-              mapLayersScaleMeters={scaleMeters}
-              siteRoleByCode={siteRoleByCode}
-            /> : <MapLoadingBar busy />}
+            {environmentId ? (
+              <GoogleMapPanel
+                key={environmentId}
+                nodes={mapNodes}
+                pinnedNode={pinnedSelectedNode}
+                projectSiteFeatures={projectSiteFeatures}
+                infraFeatures={infraFeatures}
+                onSelectInfraFeature={selectNodeFromInfraOverlay}
+                selectedNode={selectedNode}
+                draftAddress={draftAddress}
+                addressPoint={
+                  addressLookup?.source === 'search' &&
+                  addressLookup.resolution?.mode === 'automatic'
+                    ? addressLookup.resolution.selected
+                    : null
+                }
+                addressResolution={
+                  addressLookup?.source === 'search' ? addressLookup.resolution : null
+                }
+                dropSimulation={dropSimulation}
+                portDropPreview={portDropPreview}
+                focusRequest={focusRequest}
+                initialView={viewState.initialView?.camera ?? null}
+                bottomSheetState={bottomSheetState}
+                balloon={balloon}
+                onSelectNode={selectNodeFromMap}
+                onHoverNode={handleHover}
+                onCloseBalloon={() => handleHover(null)}
+                onDraftAddress={onMapAddressFound}
+                pickingAddress={pickingProjectSite}
+                // Navegação manual do mapa (arrastar, pinça, roda, duplo clique) NÃO
+                // desseleciona (issue #19); no mobile, encolhe a folha para peek (ver
+                // handleManualMapNavigation). `selectionActive` diz ao mapa se há algo aberto,
+                // para só encolher a folha quando faz sentido.
+                onManualNavigation={handleManualMapNavigation}
+                selectionActive={
+                  selectedNode !== null ||
+                  addressLookup !== null ||
+                  draftAddress !== null ||
+                  dockView.kind !== 'hierarchy'
+                }
+                onViewportChange={handleViewportChange}
+                coverage={coverageVisible ? coverage : null}
+                coverageStyle={coverageStyle}
+                siteMarkerSize={siteMarkerSize}
+                stationMarkerSize={stationMarkerSize}
+                resourceMarkerSize={resourceMarkerSize}
+                mapVisualScaleMeters={scaleMeters}
+                onCoverageHover={setCoverageHover}
+                projectAreas={projectAreas}
+                onProjectAreaHover={setProjectAreaHover}
+                // Com uma posição restaurada (F5, link compartilhado), o auto-locate mobile não
+                // deve roubar o enquadramento que o usuário já tinha antes de sair (ele só desiste
+                // sozinho quando há uma seleção, ver `selectedNodeIdRef` — não há uma para
+                // viewport puro).
+                autoLocateOnOpen={isMobile && !viewState.initialView}
+                // Qualquer camada do mapa em carga acende a barra fina no topo do mapa; o
+                // script do Google Maps é somado à barra dentro do painel (ver MapLoadingBar).
+                busy={mapDataLoading}
+                mapLayerCatalog={mapLayerCatalog.catalog}
+                mapLayers={mapLayers.layers}
+                onToggleMapLayer={mapLayers.toggleLayer}
+                onToggleMapLayerGroup={mapLayers.toggleGroup}
+                onResetMapLayers={mapLayers.resetLayers}
+                mapLayersAllVisible={mapLayers.allVisible}
+                mapLayersScaleMeters={scaleMeters}
+                siteRoleByCode={siteRoleByCode}
+              />
+            ) : (
+              <MapLoadingBar busy />
+            )}
           </div>
 
           {/* Instância única da barra de pesquisa: sobreposta à doca e ao mapa, com o
@@ -2090,10 +2101,27 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
           eyebrow="Projeto"
         >
           <div className="grid gap-4">
-            <p className="text-[0.9rem] text-app-text">Há campos preenchidos. Deseja descartar o novo local?</p>
+            <p className="text-[0.9rem] text-app-text">
+              Há campos preenchidos. Deseja descartar o novo local?
+            </p>
             <div className="flex justify-end gap-2">
-              <button type="button" className="geo-btn secondary" onClick={() => setConfirmDiscardProjectSite(false)}>Cancelar</button>
-              <button type="button" className="geo-btn border-status-red/30 bg-status-red-soft text-status-red" onClick={() => { closeProjectSite(dockView.projectId); setConfirmDiscardProjectSite(false); }}>Descartar</button>
+              <button
+                type="button"
+                className="geo-btn secondary"
+                onClick={() => setConfirmDiscardProjectSite(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="geo-btn border-status-red/30 bg-status-red-soft text-status-red"
+                onClick={() => {
+                  closeProjectSite(dockView.projectId);
+                  setConfirmDiscardProjectSite(false);
+                }}
+              >
+                Descartar
+              </button>
             </div>
           </div>
         </Modal>
@@ -2571,7 +2599,9 @@ export function GoogleMapPanel({
           // seleciona a feature e sai cedo, igual a um clique em Marker/Polyline de verdade
           // (que também nunca chega até aqui). Em modo "Escolher no mapa" (pickingAddress),
           // qualquer clique é o ponto do novo local — nunca seleciona a feature por baixo.
-          const infraHit = pickingAddressRef.current ? null : infraOverlayRef.current?.hitTest(lng, lat);
+          const infraHit = pickingAddressRef.current
+            ? null
+            : infraOverlayRef.current?.hitTest(lng, lat);
           if (infraHit) {
             closeBalloonRef.current();
             onSelectInfraFeatureRef.current(infraHit);
@@ -2762,11 +2792,7 @@ export function GoogleMapPanel({
       })
       .catch(() => setMapsReady(false))
       .finally(() => setMapsLoading(false));
-  }, [
-    handleManualNavigation,
-    selectedBaseLayer.googleMapTypeId,
-    selectedBaseLayer.mapStyles,
-  ]);
+  }, [handleManualNavigation, selectedBaseLayer.googleMapTypeId, selectedBaseLayer.mapStyles]);
 
   // O contêiner do mapa muda de largura sempre que uma doca aparece/some ao lado dele —
   // hierarquia, painel de Projeto, e agora também a janela de consulta de um local de
@@ -2916,6 +2942,7 @@ export function GoogleMapPanel({
         selected,
         stationMarkerSize,
         resourceMarkerSize,
+        mapLayerCatalog,
         pointStyle,
         pointStyle?.assetId ? assetDataUrls.get(pointStyle.assetId) : undefined,
       );
@@ -2989,6 +3016,7 @@ export function GoogleMapPanel({
         id === selectedNodeId,
         stationMarkerSize,
         resourceMarkerSize,
+        mapLayerCatalog,
         pointStyle,
         pointStyle?.assetId ? assetDataUrls.get(pointStyle.assetId) : undefined,
       );
@@ -3048,6 +3076,7 @@ export function GoogleMapPanel({
       true,
       stationMarkerSize,
       resourceMarkerSize,
+      mapLayerCatalog,
       pinnedPointStyle,
       pinnedPointStyle?.assetId ? assetDataUrls.get(pinnedPointStyle.assetId) : undefined,
     );
@@ -3073,7 +3102,15 @@ export function GoogleMapPanel({
       pinnedMarkerRef.current.setIcon(visual.iconOptions);
       pinnedMarkerRef.current.setZIndex(visual.zIndex);
     }
-  }, [mapsReady, pinnedNode, stationMarkerSize, resourceMarkerSize]);
+  }, [
+    mapsReady,
+    pinnedNode,
+    stationMarkerSize,
+    resourceMarkerSize,
+    mapLayerCatalog,
+    mapVisualScaleMeters,
+    assetDataUrls,
+  ]);
 
   // Voo de câmera até o item/endereço em foco (hierarquia, busca, clique no mapa ou
   // simulação de drop). `flyTo` afasta/reaproxima em saltos longos e pousa em zoom
@@ -3286,11 +3323,18 @@ export function GoogleMapPanel({
             strokeWeight: CABLE_STROKE_WEIGHT[icon.code] ?? 2.5,
             icons: [],
           };
+      const layer = mapLayerEntities(mapLayerCatalog).find(
+        (candidate) =>
+          candidate.entity.sourceType === 'RESOURCE_TYPE' &&
+          candidate.entity.sourceId === node.resourceType &&
+          candidate.visualConfig?.geometryKind === 'LINE',
+      );
+      const zIndex = pointLayerZIndex(layer, mapLayerCatalog);
       const existing = cableRoutesRef.current.get(node.id);
 
       if (existing) {
         existing.setPath(path);
-        existing.setOptions(options);
+        existing.setOptions({ ...options, zIndex });
         if (style?.strokeStyle === 'animated-dotted') animated.push({ line: existing, style });
         continue;
       }
@@ -3298,7 +3342,7 @@ export function GoogleMapPanel({
       const line = new maps.Polyline({
         map: mapRef.current,
         path,
-        zIndex: CABLE_ROUTE_Z,
+        zIndex,
         ...options,
       });
       line.addListener('click', () =>

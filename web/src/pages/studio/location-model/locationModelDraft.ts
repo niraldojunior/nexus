@@ -35,10 +35,24 @@ type LocationModelSnapshotSpec = {
 type LocationModelSnapshot = { specifications?: LocationModelSnapshotSpec[] };
 
 const defaultRole: GeoSiteRole = 'network';
+const LEGACY_FUNCTIONAL_GROUP_CODE = 'FUNCTIONAL_GROUP';
+
+/** Só o artefato histórico removido pelo bootstrap é omitido; specs aposentadas pelo usuário ficam. */
+function isLegacyFunctionalGroup(spec: {
+  code?: string;
+  category?: string;
+  lifecycleStatus?: string;
+}): boolean {
+  return (
+    spec.code?.trim().toUpperCase() === LEGACY_FUNCTIONAL_GROUP_CODE &&
+    (spec.lifecycleStatus === 'Retired' || spec.category === 'FunctionalGroup')
+  );
+}
 
 export function draftSpecsFromGeoSpecs(specs: GeoSpec[]): LocationModelDraftSpec[] {
-  const localIdByPersistedId = new Map(specs.map((spec) => [spec.id, spec.id]));
-  return specs.map((spec) => ({
+  const activeSpecs = specs.filter((spec) => !isLegacyFunctionalGroup(spec));
+  const localIdByPersistedId = new Map(activeSpecs.map((spec) => [spec.id, spec.id]));
+  return activeSpecs.map((spec) => ({
     localId: spec.id,
     persistedId: spec.id,
     code: spec.code,
@@ -48,8 +62,12 @@ export function draftSpecsFromGeoSpecs(specs: GeoSpec[]): LocationModelDraftSpec
     lifecycleStatus: spec.lifecycleStatus,
     description: spec.description,
     specCharacteristic: spec.specCharacteristic ?? [],
-    allowedParentLocalIds: spec.allowedParentSpecIds.map((id) => localIdByPersistedId.get(id) ?? id),
-    allowedChildLocalIds: spec.allowedChildSpecIds.map((id) => localIdByPersistedId.get(id) ?? id),
+    allowedParentLocalIds: spec.allowedParentSpecIds
+      .map((id) => localIdByPersistedId.get(id))
+      .filter((id): id is string => Boolean(id)),
+    allowedChildLocalIds: spec.allowedChildSpecIds
+      .map((id) => localIdByPersistedId.get(id))
+      .filter((id): id is string => Boolean(id)),
     bootstrapProtected: spec._bootstrapProtected,
   }));
 }
@@ -62,15 +80,16 @@ export function draftSpecsFromSnapshot(
   const snapshotSpecs = (snapshot as LocationModelSnapshot).specifications;
   if (!Array.isArray(snapshotSpecs)) return null;
 
+  const compatibleSpecs = snapshotSpecs.filter((spec) => !isLegacyFunctionalGroup(spec));
   const canonicalByCode = new Map(canonicalSpecs.map((spec) => [spec.code.toUpperCase(), spec]));
   const localIdByCode = new Map(
-    snapshotSpecs.map((spec) => [
+    compatibleSpecs.map((spec) => [
       spec.code.toUpperCase(),
       canonicalByCode.get(spec.code.toUpperCase())?.id ?? `draft-${spec.code}`,
     ]),
   );
 
-  return snapshotSpecs.map((spec) => {
+  return compatibleSpecs.map((spec) => {
     const canonical = canonicalByCode.get(spec.code.toUpperCase());
     return {
       localId: canonical?.id ?? localIdByCode.get(spec.code.toUpperCase()) ?? `draft-${spec.code}`,
@@ -94,9 +113,10 @@ export function draftSpecsFromSnapshot(
 }
 
 export function buildLocationModelSnapshot(specs: LocationModelDraftSpec[]): Record<string, unknown> {
-  const codeByLocalId = new Map(specs.map((spec) => [spec.localId, spec.code]));
+  const compatibleSpecs = specs.filter((spec) => !isLegacyFunctionalGroup(spec));
+  const codeByLocalId = new Map(compatibleSpecs.map((spec) => [spec.localId, spec.code]));
   return {
-    specifications: specs.map((spec) => ({
+    specifications: compatibleSpecs.map((spec) => ({
       code: spec.code,
       name: spec.name,
       category: spec.category,

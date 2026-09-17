@@ -10,7 +10,16 @@ export type Characteristic = {
   name: string;
   description?: string;
   value: CharacteristicValue;
-  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'enum' | 'json';
+  valueType?:
+    | 'string'
+    | 'integer'
+    | 'decimal'
+    | 'boolean'
+    | 'date'
+    | 'image'
+    | 'list'
+    | 'enum'
+    | 'json';
   /** Opções permitidas quando `valueType === 'list'` ou `'enum'`, digitadas inline. */
   allowedValues?: string[];
   /**

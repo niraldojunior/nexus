@@ -3,6 +3,7 @@ import {
   specCharacteristicRowsFromType,
   buildCharacteristicPayload,
   characteristicRowsValid,
+  imageReferenceError,
   resourceCharacteristicRowsFrom,
   type ResourceCharacteristicRow,
 } from './resourceCharacteristicsForm';
@@ -78,6 +79,40 @@ describe('specCharacteristicRowsFromType (issue #216)', () => {
     expect(rows[1]?.name).toBe('removidoDoTipo');
     expect(rows[1]?.valueText).toBe('dadoAntigo');
     expect(rows[1]?.group).toBe('legado');
+  });
+});
+
+describe('imageReferenceError & buildCharacteristicPayload', () => {
+  it('aceita referência de catálogo e preserva a imagem aparada no round-trip do payload', () => {
+    const reference = '  resource-icons/cto.svg  ';
+
+    expect(imageReferenceError(reference)).toBeNull();
+
+    const [payload] = buildCharacteristicPayload([
+      {
+        key: 'image-1',
+        name: 'icon',
+        valueType: 'image',
+        valueText: reference,
+      },
+    ]);
+
+    expect(payload).toEqual({
+      name: 'icon',
+      valueType: 'image',
+      value: 'resource-icons/cto.svg',
+    });
+  });
+
+  it('aceita imagem codificada em base64', () => {
+    const base64Image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    expect(imageReferenceError(base64Image)).toBeNull();
+  });
+
+  it('rejeita URL explícita de imagem malformada', () => {
+    expect(imageReferenceError('https://')).toBe(
+      'Informe uma imagem válida (upload/base64), URL http(s) ou referência do catálogo.',
+    );
   });
 });
 

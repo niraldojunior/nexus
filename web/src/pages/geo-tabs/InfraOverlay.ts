@@ -23,7 +23,7 @@ import {
 } from '../../utils/resourceIcon';
 import { siteIconDataUrl, siteIconFor, SITE_ICON_SIZE } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
-import { nodeForMapFeature, type MapSiteRole } from '../../utils/mapLayers';
+import { mapLayerVisualRank, nodeForMapFeature, type MapSiteRole } from '../../utils/mapLayers';
 import { nativeMapIconDataUrl, nativeMapIconForCode } from '../../utils/nativeMapIcons';
 import type { StudioGeoCatalog, StudioGeoVisualConfig } from '../../services/studioGeoApi';
 import {
@@ -80,8 +80,8 @@ export type InfraOverlayHandle = {
   destroy: () => void;
 };
 
-type DrawnPoint = { x: number; y: number; feature: MapTileFeature };
-type DrawnLine = { points: Array<[number, number]>; feature: MapTileFeature };
+type DrawnPoint = { x: number; y: number; feature: MapTileFeature; visualRank: number };
+type DrawnLine = { points: Array<[number, number]>; feature: MapTileFeature; visualRank: number };
 
 // Recursos usam a âncora inferior-esquerda: a coordenada geográfica cai no canto do sprite,
 // enquanto o alvo visual está no seu centro. O hit-test deve seguir o que a pessoa vê, não a
@@ -172,11 +172,11 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     for (let i = 0; i < line.points.length - 1; i += 1) {
       const a = line.points[i]!;
       const b = line.points[i + 1]!;
-      const [minCx, maxCx] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])].map(
-        (v) => Math.floor(v / HIT_GRID_CELL_PX),
+      const [minCx, maxCx] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])].map((v) =>
+        Math.floor(v / HIT_GRID_CELL_PX),
       );
-      const [minCy, maxCy] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])].map(
-        (v) => Math.floor(v / HIT_GRID_CELL_PX),
+      const [minCy, maxCy] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])].map((v) =>
+        Math.floor(v / HIT_GRID_CELL_PX),
       );
       for (let cx = minCx; cx <= maxCx; cx += 1) {
         for (let cy = minCy; cy <= maxCy; cy += 1) {
@@ -333,30 +333,34 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const project = fast ?? toLocal;
       lastProject = project;
 
-      // Cabos primeiro (fundo da rede), depois pontos de recurso, depois pontos de site —
-      // mesma ordem relativa de CABLE_ROUTE_Z < EQUIPMENT_MARKER_Z < SITE_MARKER_Z em GeoPage.
-      for (const feature of data) {
-        if (feature.shape === 'line' && nodeIdOf(feature) !== excludeNodeId) {
-          this.drawLine(context, feature, project);
-        }
-      }
-      for (const feature of data) {
-        if (
-          feature.shape === 'point' &&
-          feature.kind === 'resource' &&
-          nodeIdOf(feature) !== excludeNodeId
-        ) {
-          this.drawResourcePoint(context, feature, project);
-        }
-      }
-      for (const feature of data) {
-        if (
-          feature.shape === 'point' &&
-          feature.kind === 'site' &&
-          nodeIdOf(feature) !== excludeNodeId
-        ) {
-          this.drawSitePoint(context, feature, project);
-        }
+      // O primeiro item no Studio é o mais frontal. Canvas desenha do fundo para a frente,
+      // portanto o rank maior entra primeiro. Empates preservam uma ordem determinística por id.
+      const featuresForDraw = data
+        .filter((feature) => nodeIdOf(feature) !== excludeNodeId)
+        .map((feature) => ({
+          feature,
+          // Feature sem entidade publicada fica atrás de toda camada governada pelo Studio.
+          // `mapLayerVisualRank` usa -1 como sentinela de ausência, que não pode significar
+          // "mais à frente" neste consumidor.
+          visualRank: (() => {
+            if (!catalog) return Number.MAX_SAFE_INTEGER;
+            const rank = mapLayerVisualRank(
+              nodeForMapFeature(feature, catalog, roleByCode),
+              catalog,
+            );
+            return rank >= 0 ? rank : Number.MAX_SAFE_INTEGER;
+          })(),
+        }))
+        .sort(
+          (left, right) =>
+            right.visualRank - left.visualRank ||
+            nodeIdOf(left.feature).localeCompare(nodeIdOf(right.feature)),
+        );
+      for (const { feature, visualRank } of featuresForDraw) {
+        if (feature.shape === 'line') this.drawLine(context, feature, project, visualRank);
+        else if (feature.kind === 'resource')
+          this.drawResourcePoint(context, feature, project, visualRank);
+        else if (feature.kind === 'site') this.drawSitePoint(context, feature, project, visualRank);
       }
 
       for (const point of drawnPoints) insertPoint(pointGrid, point);
@@ -368,6 +372,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
       project: Project,
+      visualRank: number,
     ): void {
       const geometry = feature.geometry;
       if (!geometry || geometry.type !== 'LineString') return;
@@ -388,9 +393,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       context.strokeStyle = lineStyle?.strokeColor ?? icon.color;
       context.globalAlpha = lineStyle?.opacity ?? 0.9;
       context.lineWidth = strokeWidth;
-      context.setLineDash(
-        lineStyle ? strokeDashPattern(lineStyle.strokeStyle, strokeWidth) : [],
-      );
+      context.setLineDash(lineStyle ? strokeDashPattern(lineStyle.strokeStyle, strokeWidth) : []);
       if (lineStyle?.strokeStyle === 'animated-dotted') {
         animatedLinesDrawn += 1;
         context.lineDashOffset = prefersReducedMotion()
@@ -407,13 +410,14 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       context.lineDashOffset = 0;
       context.globalAlpha = 1;
 
-      drawnLines.push({ points, feature });
+      drawnLines.push({ points, feature, visualRank });
     }
 
     private drawResourcePoint(
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
       project: Project,
+      visualRank: number,
     ): void {
       const local = project(feature.lng, feature.lat);
       if (!local) return;
@@ -448,13 +452,14 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       // (a coordenada real fica acima e à direita do próprio ícone).
       if (img) context.drawImage(img, x, y - size, size, size);
       const [hitX, hitY] = resourcePointHitCenter(x, y, size);
-      drawnPoints.push({ x: hitX, y: hitY, feature });
+      drawnPoints.push({ x: hitX, y: hitY, feature, visualRank });
     }
 
     private drawSitePoint(
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
       project: Project,
+      visualRank: number,
     ): void {
       const local = project(feature.lng, feature.lat);
       if (!local) return;
@@ -485,7 +490,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
           );
       // Âncora central — mesma regra de buildPointMarkerVisual em GeoPage (squircle).
       if (img) context.drawImage(img, x - size / 2, y - size / 2, size, size);
-      drawnPoints.push({ x, y, feature });
+      drawnPoints.push({ x, y, feature, visualRank });
     }
   }
 
@@ -510,30 +515,35 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       if (!query) return null;
       const [qx, qy] = query;
 
-      let nearestPoint: DrawnPoint | null = null;
-      let nearestPointDistance = POINT_HIT_RADIUS_PX;
+      type HitCandidate = { feature: MapTileFeature; visualRank: number; distance: number };
+      const candidates: HitCandidate[] = [];
       for (const point of queryGrid(pointGrid, qx, qy)) {
         const distance = Math.hypot(point.x - qx, point.y - qy);
-        if (distance <= nearestPointDistance) {
-          nearestPoint = point;
-          nearestPointDistance = distance;
+        if (distance <= POINT_HIT_RADIUS_PX) {
+          candidates.push({ feature: point.feature, visualRank: point.visualRank, distance });
         }
       }
-      if (nearestPoint) return nearestPoint.feature;
-
-      let nearestLine: DrawnLine | null = null;
-      let nearestLineDistance = LINE_HIT_RADIUS_PX;
       const candidateLines = new Set(queryGrid(lineGrid, qx, qy));
       for (const line of candidateLines) {
+        let distance = LINE_HIT_RADIUS_PX;
         for (let i = 0; i < line.points.length - 1; i += 1) {
-          const distance = distanceToSegment(qx, qy, line.points[i]!, line.points[i + 1]!);
-          if (distance <= nearestLineDistance) {
-            nearestLine = line;
-            nearestLineDistance = distance;
-          }
+          distance = Math.min(
+            distance,
+            distanceToSegment(qx, qy, line.points[i]!, line.points[i + 1]!),
+          );
+        }
+        if (distance <= LINE_HIT_RADIUS_PX) {
+          candidates.push({ feature: line.feature, visualRank: line.visualRank, distance });
         }
       }
-      return nearestLine ? nearestLine.feature : null;
+      // Rank menor está visualmente à frente. A distância só desempata itens da mesma camada.
+      candidates.sort(
+        (left, right) =>
+          left.visualRank - right.visualRank ||
+          left.distance - right.distance ||
+          nodeIdOf(left.feature).localeCompare(nodeIdOf(right.feature)),
+      );
+      return candidates[0]?.feature ?? null;
     },
     destroy: () => {
       animatedLinesDrawn = 0;

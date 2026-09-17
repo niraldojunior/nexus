@@ -8,7 +8,7 @@ export default [
   prettier,
   ...tseslint.configs.recommended,
   {
-    ignores: ['docs/4-design-system/**', 'dist/**', 'web/dist/**', 'node_modules/**'],
+    ignores: ['docs/4-design-system/**', 'dist/**', 'web/dist/**', 'node_modules/**', '.claude/**'],
   },
   {
     files: ['**/*.{ts,tsx,mts,cts,js,mjs,cjs,jsx}'],

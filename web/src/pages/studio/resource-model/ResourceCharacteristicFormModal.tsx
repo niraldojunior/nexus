@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Tag } from 'lucide-react';
 import type { ResourceCharacteristicRow } from '../../../utils/resourceCharacteristicsForm';
-import { emptyResourceCharacteristicRow } from '../../../utils/resourceCharacteristicsForm';
+import {
+  emptyResourceCharacteristicRow,
+  imageReferenceError,
+} from '../../../utils/resourceCharacteristicsForm';
 import { listReferenceDataSets, type ReferenceDataSet } from '../../../services/studioReferenceDataApi';
 import { Modal, Button } from '../../../components/ui';
+import { ImageCharacteristicInput } from './ImageCharacteristicInput';
 
 const VALUE_TYPE_OPTIONS: { value: ResourceCharacteristicRow['valueType']; label: string }[] = [
   { value: 'string', label: 'Texto' },
@@ -11,6 +15,7 @@ const VALUE_TYPE_OPTIONS: { value: ResourceCharacteristicRow['valueType']; label
   { value: 'decimal', label: 'Decimal' },
   { value: 'boolean', label: 'Booleano' },
   { value: 'date', label: 'Data' },
+  { value: 'image', label: 'Imagem' },
   { value: 'list', label: 'Lista de opções' },
   { value: 'json', label: 'JSON livre' },
 ];
@@ -84,6 +89,13 @@ export function ResourceCharacteristicFormModal({
     if (isDuplicate) {
       setError('Já existe uma característica com este nome.');
       return;
+    }
+    if (row.valueType === 'image') {
+      const imageError = imageReferenceError(row.valueText);
+      if (imageError) {
+        setError(imageError);
+        return;
+      }
     }
 
     try {
@@ -250,9 +262,17 @@ export function ResourceCharacteristicFormModal({
 
           <div>
             <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-              Valor padrão
+              {row.valueType === 'image' ? 'Valor padrão (imagem)' : 'Valor padrão'}
             </label>
-            {row.valueType === 'boolean' ? (
+            {row.valueType === 'image' ? (
+              <ImageCharacteristicInput
+                value={row.valueText}
+                disabled={readOnly}
+                readOnly={readOnly}
+                name={row.name}
+                onChange={(nextValue) => setRow((prev) => ({ ...prev, valueText: nextValue }))}
+              />
+            ) : row.valueType === 'boolean' ? (
               <label className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
@@ -294,7 +314,11 @@ export function ResourceCharacteristicFormModal({
                 value={row.valueText}
                 disabled={readOnly}
                 onChange={(e) => setRow((prev) => ({ ...prev, valueText: e.target.value }))}
-                placeholder={row.valueType === 'json' ? '{"chave":"valor"}' : 'Valor da característica'}
+                placeholder={
+                  row.valueType === 'json'
+                    ? '{"chave":"valor"}'
+                    : 'Valor da característica'
+                }
                 className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
               />
             )}

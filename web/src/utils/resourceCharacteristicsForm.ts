@@ -10,6 +10,7 @@ export type CharacteristicValueType =
   | 'decimal'
   | 'boolean'
   | 'date'
+  | 'image'
   | 'list'
   | 'json';
 
@@ -139,8 +140,32 @@ export function specCharacteristicRowsFromType(
   return [...rows, ...orphaned];
 }
 
+/**
+ * Aceita data URIs base64 (data:image/...), referências internas/relativas do catálogo
+ * e URLs absolutas HTTP(S). Outros esquemas não são imagens válidas e são rejeitados.
+ */
+export function imageReferenceError(valueText: string): string | null {
+  const value = valueText.trim();
+  if (!value) return null;
+  if (value.startsWith('data:image/')) {
+    return /^data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+$/.test(value)
+      ? null
+      : 'Formato de imagem base64 inválido.';
+  }
+  if (!value.includes('://')) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? null
+      : 'A URL da imagem deve usar http ou https.';
+  } catch {
+    return 'Informe uma imagem válida (upload/base64), URL http(s) ou referência do catálogo.';
+  }
+}
+
 /** Converte o texto editado de volta ao tipo declarado — usado só ao salvar. */
 function coerceValue(valueText: string, valueType: CharacteristicValueType): unknown {
+  const normalizedValue = valueType === 'image' ? valueText.trim() : valueText;
   switch (valueType) {
     case 'boolean':
       return valueText === 'true';
@@ -155,7 +180,7 @@ function coerceValue(valueText: string, valueType: CharacteristicValueType): unk
         return valueText;
       }
     default:
-      return valueText;
+      return normalizedValue;
   }
 }
 

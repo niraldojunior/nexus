@@ -28,6 +28,30 @@ export type ReferenceDataStudioProps = {
 };
 
 const emptyDraft = (): ReferenceDataSetInput => ({ key: '', name: '', description: '' });
+const REFERENCE_DATA_KEY_PATTERN = /^[a-z][a-z0-9-]*$/;
+
+type ReferenceDataSetDraftErrors = Partial<Record<'name' | 'key', string>>;
+
+export function validateReferenceDataSetDraft(
+  draft: ReferenceDataSetInput,
+): ReferenceDataSetDraftErrors {
+  const errors: ReferenceDataSetDraftErrors = {};
+  const name = draft.name.trim();
+  const key = draft.key.trim();
+  if (!name) errors.name = 'Informe o nome do conjunto.';
+  if (!key) errors.key = 'Informe a chave do conjunto.';
+  else if (!REFERENCE_DATA_KEY_PATTERN.test(key)) {
+    errors.key = 'Use letras minúsculas, números e hífen; a chave deve começar por uma letra.';
+  }
+  return errors;
+}
+
+function createSetErrorMessage(reason: unknown): string {
+  if (reason instanceof Error && reason.message.includes('(409)')) {
+    return 'Já existe um conjunto com esta chave, inclusive se ele estiver inativo.';
+  }
+  return reason instanceof Error ? reason.message : 'Não foi possível criar o conjunto.';
+}
 
 export function ReferenceDataStudio({
   canEdit,
@@ -40,6 +64,7 @@ export function ReferenceDataStudio({
   const [filterText, setFilterText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<ReferenceDataSetInput>(emptyDraft());
+  const [draftErrors, setDraftErrors] = useState<ReferenceDataSetDraftErrors>({});
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -103,9 +128,21 @@ export function ReferenceDataStudio({
     );
   }, [filterText, sets]);
   const selectedSet = sets.find((item) => item.id === selectedId) ?? null;
+  const normalizedDraftErrors = useMemo(() => validateReferenceDataSetDraft(draft), [draft]);
+  const draftIsValid = Object.keys(normalizedDraftErrors).length === 0;
+
+  const updateDraft = (patch: Partial<ReferenceDataSetInput>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    setDraftErrors(validateReferenceDataSetDraft(next));
+  };
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
+    const validationErrors = validateReferenceDataSetDraft(draft);
+    setDraftErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
+
     setSaving(true);
     setError(null);
     try {
@@ -118,7 +155,7 @@ export function ReferenceDataStudio({
       setSelectedId(created.id);
       setCreating(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível criar o conjunto.');
+      setError(createSetErrorMessage(reason));
     } finally {
       setSaving(false);
     }
@@ -154,7 +191,11 @@ export function ReferenceDataStudio({
                 title="Novo conjunto"
                 aria-label="Novo conjunto"
                 onClick={() => {
-                  setDraft(emptyDraft());
+                  const nextDraft = emptyDraft();
+                  setDraft(nextDraft);
+                  // O botão permanece desabilitado até o payload ser válido; explicita o motivo
+                  // já na abertura para não deixar o formulário inicial aparentemente inerte.
+                  setDraftErrors(validateReferenceDataSetDraft(nextDraft));
                   setError(null);
                   setCreating(true);
                 }}
@@ -226,7 +267,7 @@ export function ReferenceDataStudio({
               <Button variant="secondary" onClick={() => setCreating(false)} disabled={saving}>
                 Cancelar
               </Button>
-              <Button type="submit" form="reference-data-set-form" disabled={saving}>
+              <Button type="submit" form="reference-data-set-form" disabled={saving || !draftIsValid}>
                 {saving ? 'Criando…' : 'Criar'}
               </Button>
             </>
@@ -241,15 +282,23 @@ export function ReferenceDataStudio({
             <Field label="Nome">
               <input
                 value={draft.name}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                onChange={(event) => updateDraft({ name: event.target.value })}
                 className="geo-input"
                 autoFocus
+                required
+                aria-invalid={Boolean(draftErrors.name)}
+                aria-describedby={draftErrors.name ? 'reference-data-name-error' : undefined}
               />
+              {draftErrors.name && (
+                <p id="reference-data-name-error" className="mt-1 text-[0.78rem] text-status-red">
+                  {draftErrors.name}
+                </p>
+              )}
             </Field>
             <Field label="Descrição">
               <textarea
                 value={draft.description ?? ''}
-                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                onChange={(event) => updateDraft({ description: event.target.value })}
                 className="geo-input"
                 rows={2}
               />
@@ -257,10 +306,19 @@ export function ReferenceDataStudio({
             <Field label="Chave">
               <input
                 value={draft.key}
-                onChange={(event) => setDraft({ ...draft, key: event.target.value })}
+                onChange={(event) => updateDraft({ key: event.target.value })}
                 className="geo-input font-mono"
                 placeholder="uf, tipo-fibra..."
+                required
+                pattern="[a-z][a-z0-9-]*"
+                aria-invalid={Boolean(draftErrors.key)}
+                aria-describedby={draftErrors.key ? 'reference-data-key-error' : undefined}
               />
+              {draftErrors.key && (
+                <p id="reference-data-key-error" className="mt-1 text-[0.78rem] text-status-red">
+                  {draftErrors.key}
+                </p>
+              )}
             </Field>
           </form>
         </Modal>

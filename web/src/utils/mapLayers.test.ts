@@ -3,7 +3,11 @@ import {
   ALL_MAP_LAYERS_VISIBLE,
   MAP_LAYER_CATALOG_FALLBACK,
   defaultMapLayerVisibility,
+  descendantEntities,
   groupVisibility,
+  mapLayerEntities,
+  mapLayerEntitiesForDraw,
+  mapLayerVisualRank,
   isMapFeatureVisible,
   nodeForMapFeature,
   readStoredExpandedGroups,
@@ -17,6 +21,56 @@ import {
 } from './mapLayers';
 import type { StudioGeoCatalog, StudioGeoPointVisualConfig } from '../services/studioGeoApi';
 import { defaultColorRule } from './studioGeoDefaults';
+
+describe('ordem operacional das camadas', () => {
+  const catalog: StudioGeoCatalog = {
+    schemaVersion: 2,
+    configured: true,
+    environmentId: 'ordering',
+    fallback: false,
+    nodes: [
+      { id: 'z-group', kind: 'GROUP', parentNodeId: null, label: 'Z', sortOrder: 20, active: true },
+      { id: 'a-group', kind: 'GROUP', parentNodeId: null, label: 'A', sortOrder: 10, active: true },
+      {
+        id: 'nested-group', kind: 'GROUP', parentNodeId: 'a-group', label: 'Aninhado', sortOrder: 20, active: true,
+      },
+      {
+        id: 'cdoe', kind: 'ENTITY', parentNodeId: 'a-group', label: 'CDOE', sortOrder: 10, active: true, defaultVisible: true,
+        entity: { category: 'RESOURCE', sourceDomain: 'resource-model', sourceType: 'RESOURCE_TYPE', sourceId: 'CDOE' },
+      },
+      {
+        id: 'coverage', kind: 'ENTITY', parentNodeId: 'nested-group', label: 'Cobertura', sortOrder: 10, active: true, defaultVisible: true,
+        entity: { category: 'COVERAGE', sourceDomain: 'spatial', sourceType: 'GPON_AGGREGATE', sourceId: 'gpon' },
+      },
+      {
+        id: 'tie-b', kind: 'ENTITY', parentNodeId: 'z-group', label: 'B', sortOrder: 10, active: true, defaultVisible: true,
+        entity: { category: 'LOCAL', sourceDomain: 'location-model', sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId: 'B' },
+      },
+      {
+        id: 'tie-a', kind: 'ENTITY', parentNodeId: 'z-group', label: 'A', sortOrder: 10, active: true, defaultVisible: true,
+        entity: { category: 'LOCAL', sourceDomain: 'location-model', sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId: 'A' },
+      },
+      {
+        id: 'inactive', kind: 'ENTITY', parentNodeId: 'a-group', label: 'Inativa', sortOrder: 1, active: false, defaultVisible: true,
+        entity: { category: 'RESOURCE', sourceDomain: 'resource-model', sourceType: 'RESOURCE_TYPE', sourceId: 'INACTIVE' },
+      },
+    ],
+  };
+
+  it('achata a árvore na mesma ordem do controle, com o primeiro item mais frontal', () => {
+    expect(mapLayerEntities(catalog).map((node) => node.id)).toEqual(['cdoe', 'coverage', 'tie-a', 'tie-b']);
+    expect(mapLayerVisualRank(mapLayerEntities(catalog)[0], catalog)).toBe(0);
+    expect(mapLayerVisualRank(undefined, catalog)).toBe(-1);
+  });
+
+  it('inverte a prioridade apenas para o desenho no canvas', () => {
+    expect(mapLayerEntitiesForDraw(catalog).map((node) => node.id)).toEqual(['tie-b', 'tie-a', 'coverage', 'cdoe']);
+  });
+
+  it('mantém a ordem hierárquica ao listar descendentes', () => {
+    expect(descendantEntities(catalog, 'a-group').map((node) => node.id)).toEqual(['cdoe', 'coverage']);
+  });
+});
 
 describe('groupVisibility / setGroupVisibility', () => {
   it('reporta "all" quando todos os filhos do grupo estão ligados', () => {

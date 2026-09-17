@@ -58,6 +58,7 @@ const VALUE_TYPE_LABELS: Record<ResourceCharacteristicRow['valueType'], string> 
   decimal: 'Decimal',
   boolean: 'Booleano',
   date: 'Data',
+  image: 'Imagem',
   list: 'Lista de opções',
   json: 'JSON livre',
 };

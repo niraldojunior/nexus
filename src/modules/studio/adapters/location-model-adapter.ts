@@ -27,6 +27,42 @@ export type LocationModelSnapshot = {
   specifications: LocationModelSnapshotSpec[];
 };
 
+const LEGACY_FUNCTIONAL_GROUP_CODE = 'FUNCTIONAL_GROUP';
+
+/**
+ * Baselines antigos podem conter a specification aposentada no bootstrap antes de ela deixar de
+ * ser uma categoria válida. Esta compatibilidade remove somente esse artefato e suas relações;
+ * qualquer outra categoria ou referência inválida segue bloqueando publicação/materialização.
+ */
+function normalizeLegacyFunctionalGroup(snapshot: Record<string, unknown>): Record<string, unknown> {
+  const candidate = snapshot as Partial<LocationModelSnapshot>;
+  if (!Array.isArray(candidate.specifications)) return snapshot;
+
+  const specifications = candidate.specifications.filter((spec) => {
+    // O snapshot é dado histórico não confiável; lê a categoria como unknown sem ampliar o tipo
+    // canônico GeographicSiteSpecificationCategory para comportar o legado removido.
+    const category: unknown = spec.category;
+    return !(
+      spec.code?.trim().toUpperCase() === LEGACY_FUNCTIONAL_GROUP_CODE &&
+      (spec.lifecycleStatus === 'Retired' || category === 'FunctionalGroup')
+    );
+  });
+  if (specifications.length === candidate.specifications.length) return snapshot;
+
+  return {
+    ...snapshot,
+    specifications: specifications.map((spec) => ({
+      ...spec,
+      allowedParentCodes: spec.allowedParentCodes?.filter(
+        (code) => code.trim().toUpperCase() !== LEGACY_FUNCTIONAL_GROUP_CODE,
+      ),
+      allowedChildCodes: spec.allowedChildCodes?.filter(
+        (code) => code.trim().toUpperCase() !== LEGACY_FUNCTIONAL_GROUP_CODE,
+      ),
+    })),
+  };
+}
+
 export class LocationModelStudioAdapter implements StudioDomainAdapter {
   public readonly domain = 'location-model';
 
@@ -34,7 +70,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
 
   public async validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> {
     const issues: StudioValidationIssue[] = [];
-    const typedSnapshot = snapshot as unknown as Partial<LocationModelSnapshot>;
+    const typedSnapshot = normalizeLegacyFunctionalGroup(snapshot) as unknown as Partial<LocationModelSnapshot>;
 
     const specs = typedSnapshot.specifications;
     if (!specs || !Array.isArray(specs)) {
@@ -158,7 +194,8 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
     snapshot: Record<string, unknown>,
     context: { tenantId: string },
   ): Promise<void> {
-    const validation = await this.validate(snapshot);
+    const normalizedSnapshot = normalizeLegacyFunctionalGroup(snapshot);
+    const validation = await this.validate(normalizedSnapshot);
     if (!validation.valid) {
       const errMsgs = validation.issues.map((i) => i.message).join('; ');
       throw new AppError(`Snapshot de location-model inválido para publicação: ${errMsgs}`, {
@@ -167,7 +204,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
       });
     }
 
-    const typedSnapshot = snapshot as unknown as LocationModelSnapshot;
+    const typedSnapshot = normalizedSnapshot as unknown as LocationModelSnapshot;
     const specs = typedSnapshot.specifications;
 
     // Buscar especificações existentes no banco

@@ -255,6 +255,12 @@ button {
     background: var(--vt-yellow-selected-bg);
     border: 1px solid var(--vt-yellow-selected-border);
   }
+
+  /* Escopo do Studio: reduz o espaçamento inferior do cabeçalho PageHead
+     pela metade para aproximar os painéis/janelas internas do título. */
+  .vt-studio-scope > div:first-child {
+    margin-bottom: var(--space-3) !important;
+  }
 }
 
 @layer components {

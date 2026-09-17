@@ -6,11 +6,13 @@ import { listPartyRoles, type PartyRole } from '../../../services/partyApi';
 import {
   buildCharacteristicPayload,
   characteristicRowsValid,
+  imageReferenceError,
   resourceCharacteristicRowsFrom,
   specCharacteristicRowsFromType,
   type ResourceCharacteristicRow,
 } from '../../../utils/resourceCharacteristicsForm';
 import { Modal, Button } from '../../../components/ui';
+import { ImageCharacteristicInput } from './ImageCharacteristicInput';
 
 export type ResourceSpecificationFormModalProps = {
   isOpen: boolean;
@@ -96,6 +98,13 @@ export function ResourceSpecificationFormModal({
     }
     if (!characteristicRowsValid(rows)) {
       setError('Toda característica precisa de um nome.');
+      return;
+    }
+    const invalidImage = rows.find(
+      (row) => row.valueType === 'image' && imageReferenceError(row.valueText),
+    );
+    if (invalidImage) {
+      setError(imageReferenceError(invalidImage.valueText) ?? 'Referência de imagem inválida.');
       return;
     }
 
@@ -304,7 +313,21 @@ export function ResourceSpecificationFormModal({
                             </div>
 
                             <div>
-                              {row.valueType === 'boolean' ? (
+                              {row.valueType === 'image' ? (
+                                <ImageCharacteristicInput
+                                  value={row.valueText}
+                                  disabled={readOnly}
+                                  readOnly={readOnly}
+                                  name={row.name}
+                                  onChange={(nextValue) =>
+                                    setRows((prev) =>
+                                      prev.map((r) =>
+                                        r.key === row.key ? { ...r, valueText: nextValue } : r,
+                                      ),
+                                    )
+                                  }
+                                />
+                              ) : row.valueType === 'boolean' ? (
                                 <label className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                                   <input
                                     type="checkbox"

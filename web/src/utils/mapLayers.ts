@@ -96,24 +96,54 @@ export const mapLayerTree = (
     .filter(Boolean) as MapLayerTreeNode[];
 };
 
-export const mapLayerEntities = (catalog: StudioGeoCatalog): StudioGeoEntityNode[] =>
-  catalog.nodes.filter((node): node is StudioGeoEntityNode => node.kind === 'ENTITY' && node.active);
-
-export const descendantEntities = (catalog: StudioGeoCatalog, groupId: string): StudioGeoEntityNode[] => {
-  const byParent = new Map<string | null, StudioGeoNode[]>();
-  for (const node of catalog.nodes.filter((candidate) => candidate.active)) {
-    const children = byParent.get(node.parentNodeId) ?? [];
-    children.push(node);
-    byParent.set(node.parentNodeId, children);
-  }
+/** Entidades na mesma travessia hierárquica usada pelo controle de camadas. */
+export const mapLayerEntities = (catalog: StudioGeoCatalog): StudioGeoEntityNode[] => {
   const result: StudioGeoEntityNode[] = [];
-  const visit = (parentId: string): void => {
-    for (const node of byParent.get(parentId) ?? []) {
+  const visit = (nodes: readonly MapLayerTreeNode[]): void => {
+    for (const node of nodes) {
       if (node.kind === 'ENTITY') result.push(node);
-      else visit(node.id);
+      visit(node.children);
     }
   };
-  visit(groupId);
+  visit(mapLayerTree(catalog));
+  return result;
+};
+
+/** Menor índice é a entidade mais frontal no Studio e no mapa. */
+export function mapLayerVisualRank(
+  node: StudioGeoEntityNode | undefined,
+  catalog: StudioGeoCatalog,
+): number {
+  if (!node) return -1;
+  const index = mapLayerEntities(catalog).findIndex((candidate) => candidate.id === node.id);
+  return index === -1 ? -1 : index;
+}
+
+/** Canvas desenha fundo → frente, inverso da ordem exibida pelo Studio. */
+export function mapLayerEntitiesForDraw(catalog: StudioGeoCatalog): StudioGeoEntityNode[] {
+  return [...mapLayerEntities(catalog)].reverse();
+}
+
+export const descendantEntities = (catalog: StudioGeoCatalog, groupId: string): StudioGeoEntityNode[] => {
+  const group = catalog.nodes.find((node) => node.id === groupId && node.kind === 'GROUP' && node.active);
+  if (!group) return [];
+  const result: StudioGeoEntityNode[] = [];
+  const visit = (node: MapLayerTreeNode): void => {
+    for (const child of node.children) {
+      if (child.kind === 'ENTITY') result.push(child);
+      else visit(child);
+    }
+  };
+  const treeNode = (nodes: readonly MapLayerTreeNode[]): MapLayerTreeNode | undefined => {
+    for (const node of nodes) {
+      if (node.id === group.id) return node;
+      const found = treeNode(node.children);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  const found = treeNode(mapLayerTree(catalog));
+  if (found) visit(found);
   return result;
 };
 

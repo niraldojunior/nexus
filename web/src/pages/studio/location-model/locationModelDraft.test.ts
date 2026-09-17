@@ -29,7 +29,19 @@ describe('locationModelDraft', () => {
   });
 
   it('keeps canonical metadata and containment when loading specs', () => {
-    const [draft] = draftSpecsFromGeoSpecs([
+    const drafts = draftSpecsFromGeoSpecs([
+      {
+        '@type': 'GeographicSiteSpecification',
+        id: 'region-1',
+        href: '/v1/geo/site-specifications/region-1',
+        code: 'REGION',
+        name: 'Região',
+        category: 'Region',
+        siteRole: 'grouping',
+        lifecycleStatus: 'Active',
+        allowedParentSpecIds: [],
+        allowedChildSpecIds: ['site-1'],
+      },
       {
         '@type': 'GeographicSiteSpecification',
         id: 'site-1',
@@ -43,6 +55,7 @@ describe('locationModelDraft', () => {
         allowedChildSpecIds: [],
       },
     ]);
+    const draft = drafts.find((spec) => spec.localId === 'site-1');
 
     expect(draft).toMatchObject({
       localId: 'site-1',

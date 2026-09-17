@@ -152,6 +152,9 @@ export class StudioService {
 
       if (existingDraft) {
         this.assertPrecondition(existingDraft.checksum, ifMatch);
+        // Escrita idempotente: o cliente pode capturar o snapshot no publish mesmo sem edição.
+        // Não invalida validação, não escreve auditoria nem emite evento quando o conteúdo é igual.
+        if (existingDraft.checksum === checksum) return existingDraft;
         // Snapshot mudou — a validação anterior não vale mais para o novo conteúdo.
         const { validation: _staleValidation, ...draftWithoutValidation } = existingDraft;
         const updated = await this.repository.updateVersion(
@@ -286,13 +289,11 @@ export class StudioService {
       );
       if (!discarded) this.throwPreconditionFailed();
 
-      // Revert real: cada ação do domínio já gravou imediatamente nas tabelas canônicas (sem
-      // draft em memória), então "Cancelar" só descartar a linha de governança deixaria as
-      // mudanças em pé. Restaura o estado vivo capturado no "Editar" reaproveitando o mesmo
-      // `materialize()` do publish — se não houver baseline (drafts criados antes desta
-      // mudança, ou domínios que não capturam estado inicial), não há o que restaurar.
-      if (discarded.baselineSnapshot) {
-        const adapter = this.adapterFor(domain);
+      // Revert real só é necessário para domínios de autosave, que já gravaram durante a edição.
+      // Editores de snapshot local (como Locais) não alteram o canônico antes do publish e apenas
+      // descartam o envelope de governança; materializar a baseline seria trabalho sem efeito.
+      const adapter = this.adapterFor(domain);
+      if (discarded.baselineSnapshot && adapter.restoreBaselineOnDiscard !== false) {
         await adapter.materialize(discarded.baselineSnapshot, { tenantId: workspace.tenantId });
       }
 

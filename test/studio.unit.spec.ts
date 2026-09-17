@@ -77,6 +77,57 @@ test('StudioService requires an unchanged If-Match to update or discard a draft'
   assert.equal((await service.getStatus('parties', context)).draftVersion, undefined);
 });
 
+test('StudioService treats unchanged draft saves as idempotent after validating If-Match', async () => {
+  const { service, eventService } = createService();
+  service.registerAdapter({
+    domain: 'parties',
+    validate: () => ({ valid: true, issues: [], validatedAt: '2026-09-04T10:00:00.000Z' }),
+    materialize: () => undefined,
+  });
+
+  const snapshot = { party: 'ISP Alfa' };
+  const draft = await service.saveDraft('parties', snapshot, context);
+  const saved = await service.saveDraft('parties', snapshot, context, draft.checksum);
+
+  assert.equal(saved.id, draft.id);
+  assert.equal(saved.checksum, draft.checksum);
+  assert.equal(eventService.appendEvent.mock.calls.length, 1);
+  assert.deepEqual((await service.listAudit('parties', context)).map((entry) => entry.action), [
+    'draft-created',
+  ]);
+  await assert.rejects(
+    () => service.saveDraft('parties', snapshot, context, 'stale-checksum'),
+    (error: { code?: string }) => error.code === 'STUDIO_PRECONDITION_FAILED',
+  );
+});
+
+test('StudioService skips baseline materialization only for snapshot-local adapters', async () => {
+  const { service } = createService();
+  const snapshotLocalMaterialize = vi.fn();
+  service.registerAdapter({
+    domain: 'location-model',
+    restoreBaselineOnDiscard: false,
+    validate: () => ({ valid: true, issues: [], validatedAt: '2026-09-04T10:00:00.000Z' }),
+    materialize: snapshotLocalMaterialize,
+  });
+
+  const snapshotLocalDraft = await service.saveDraft('location-model', { specifications: [] }, context);
+  await service.discardDraft('location-model', context, snapshotLocalDraft.checksum);
+  assert.equal(snapshotLocalMaterialize.mock.calls.length, 0);
+
+  const autosaveMaterialize = vi.fn();
+  service.registerAdapter({
+    domain: 'resource-model',
+    validate: () => ({ valid: true, issues: [], validatedAt: '2026-09-04T10:00:00.000Z' }),
+    materialize: autosaveMaterialize,
+  });
+
+  const autosaveDraft = await service.saveDraft('resource-model', { catalogId: 'fiber' }, context);
+  await service.discardDraft('resource-model', context, autosaveDraft.checksum);
+  assert.equal(autosaveMaterialize.mock.calls.length, 1);
+  assert.deepEqual(autosaveMaterialize.mock.calls[0]?.[0], { catalogId: 'fiber' });
+});
+
 test('StudioService isolates workspaces by tenant and blocks publication for pending adapters', async () => {
   const { service } = createService();
   const otherContext = { ...context, tenantId: 'tenant-b' };

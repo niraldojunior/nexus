@@ -63,8 +63,15 @@ function normalizeLegacyFunctionalGroup(snapshot: Record<string, unknown>): Reco
   };
 }
 
+const sameStringSet = (left: string[] = [], right: string[] = []): boolean =>
+  left.length === right.length && left.every((value) => right.includes(value));
+
+const sameJson = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
+
 export class LocationModelStudioAdapter implements StudioDomainAdapter {
   public readonly domain = 'location-model';
+  /** Locais mantém alterações apenas no snapshot até a publicação. */
+  public readonly restoreBaselineOnDiscard = false;
 
   constructor(private readonly geoService: GeoService) {}
 
@@ -220,63 +227,79 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
       traceId: createCanonicalId(),
     };
 
-    // Criar ou atualizar especificações (fase 1: metadados básicos)
-    const codeToIdMap = new Map<string, string>();
-
+    // Primeiro cria apenas códigos novos para que todas as relações do snapshot possam ser
+    // resolvidas. Specs existentes só serão atualizadas na etapa seguinte se houver diferença.
+    const codeToIdMap = new Map(existingSpecs.map((spec) => [spec.code.toUpperCase(), spec.id]));
+    const createdCodes = new Set<string>();
     for (const specInput of specs) {
       const normalizedCode = specInput.code.trim().toUpperCase();
-      const existing = existingByCode.get(normalizedCode);
-
-      if (existing) {
-        codeToIdMap.set(normalizedCode, existing.id);
-        await this.geoService.updateSpec(
-          existing.id,
-          {
-            name: specInput.name,
-            category: specInput.category,
-            ...(specInput.description !== undefined ? { description: specInput.description } : {}),
-            ...(specInput.siteRole !== undefined ? { siteRole: specInput.siteRole } : {}),
-            lifecycleStatus: specInput.lifecycleStatus ?? existing.lifecycleStatus ?? 'Active',
-            specCharacteristic: specInput.specCharacteristic ?? existing.specCharacteristic,
-          },
-          reqContext,
-        );
-      } else {
-        const created = await this.geoService.createSpec(
-          {
-            code: normalizedCode,
-            name: specInput.name,
-            category: specInput.category,
-            ...(specInput.siteRole !== undefined ? { siteRole: specInput.siteRole } : {}),
-            ...(specInput.description !== undefined ? { description: specInput.description } : {}),
-            lifecycleStatus: specInput.lifecycleStatus ?? 'Active',
-            specCharacteristic: specInput.specCharacteristic ?? [],
-          },
-          reqContext,
-        );
-        codeToIdMap.set(normalizedCode, created.id);
-      }
+      if (codeToIdMap.has(normalizedCode)) continue;
+      const created = await this.geoService.createSpec(
+        {
+          code: normalizedCode,
+          name: specInput.name,
+          category: specInput.category,
+          ...(specInput.siteRole !== undefined ? { siteRole: specInput.siteRole } : {}),
+          ...(specInput.description !== undefined ? { description: specInput.description } : {}),
+          lifecycleStatus: specInput.lifecycleStatus ?? 'Active',
+          specCharacteristic: specInput.specCharacteristic ?? [],
+        },
+        reqContext,
+      );
+      codeToIdMap.set(normalizedCode, created.id);
+      createdCodes.add(normalizedCode);
+      existingByCode.set(normalizedCode, created);
     }
 
-    // Sincronizar regras de contenção (fase 2: IDs resolvidos)
+    // Uma atualização por spec alterada, incluindo metadados e containment. Evita duas passagens
+    // completas (e as validações/auditorias associadas) quando não há diferença publicada.
     for (const specInput of specs) {
       const normalizedCode = specInput.code.trim().toUpperCase();
       const specId = codeToIdMap.get(normalizedCode);
-      if (!specId) continue;
+      const existing = existingByCode.get(normalizedCode);
+      if (!specId || !existing) continue;
 
       const allowedParentSpecIds = (specInput.allowedParentCodes || [])
-        .map((c) => codeToIdMap.get(c.trim().toUpperCase()))
+        .map((code) => codeToIdMap.get(code.trim().toUpperCase()))
         .filter((id): id is string => Boolean(id));
-
       const allowedChildSpecIds = (specInput.allowedChildCodes || [])
-        .map((c) => codeToIdMap.get(c.trim().toUpperCase()))
+        .map((code) => codeToIdMap.get(code.trim().toUpperCase()))
         .filter((id): id is string => Boolean(id));
+      const nextDescription = specInput.description;
+      const nextRole = specInput.siteRole ?? existing.siteRole;
+      const nextLifecycleStatus = specInput.lifecycleStatus ?? existing.lifecycleStatus;
+      const nextCharacteristics = specInput.specCharacteristic ?? existing.specCharacteristic;
+      const metadataChanged =
+        existing.name !== specInput.name ||
+        existing.category !== specInput.category ||
+        existing.description !== nextDescription ||
+        existing.siteRole !== nextRole ||
+        existing.lifecycleStatus !== nextLifecycleStatus ||
+        !sameJson(existing.specCharacteristic, nextCharacteristics);
+      const containmentChanged =
+        !sameStringSet(existing.allowedParentSpecIds, allowedParentSpecIds) ||
+        !sameStringSet(existing.allowedChildSpecIds, allowedChildSpecIds);
+      if (!metadataChanged && !containmentChanged) continue;
+
+      // createSpec já persistiu os metadados; uma segunda chamada só é necessária para as
+      // relações, que dependem de todos os códigos terem sido resolvidos.
+      if (createdCodes.has(normalizedCode) && !containmentChanged) continue;
 
       await this.geoService.updateSpec(
         specId,
         {
-          allowedParentSpecIds,
-          allowedChildSpecIds,
+          ...(!createdCodes.has(normalizedCode) && metadataChanged
+            ? {
+                name: specInput.name,
+                category: specInput.category,
+                // Snapshot sem descrição representa remoção da descrição canônica.
+                description: nextDescription ?? '',
+                siteRole: nextRole,
+                lifecycleStatus: nextLifecycleStatus,
+                specCharacteristic: nextCharacteristics,
+              }
+            : {}),
+          ...(containmentChanged ? { allowedParentSpecIds, allowedChildSpecIds } : {}),
         },
         reqContext,
       );

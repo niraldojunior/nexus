@@ -43,6 +43,7 @@ export function LocationModelStudio({
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const checksumRef = useRef<string | undefined>(undefined);
+  const persistedSnapshotRef = useRef<string | undefined>(undefined);
   const wasEditingRef = useRef(isEditing);
 
   const canMutate = canEdit && isEditing;
@@ -59,6 +60,7 @@ export function LocationModelStudio({
         : null;
       const next = restored ?? draftSpecsFromGeoSpecs(canonicalSpecs);
       checksumRef.current = status.draftVersion?.checksum;
+      persistedSnapshotRef.current = JSON.stringify(buildLocationModelSnapshot(next));
       setSpecs(next);
       setSelectedSpecId((current) =>
         current && next.some((spec) => spec.localId === current) ? current : next[0]?.localId ?? null,
@@ -112,18 +114,21 @@ export function LocationModelStudio({
   const buildSnapshot = useCallback(async () => buildLocationModelSnapshot(specs), [specs]);
 
   const captureDraft = useCallback(async () => {
-    const status = await getStudioStatus('location-model');
-    const saved = await saveStudioDraft(
-      'location-model',
-      await buildSnapshot(),
-      status.draftVersion?.checksum ?? checksumRef.current,
-    );
+    const snapshot = await buildSnapshot();
+    const serializedSnapshot = JSON.stringify(snapshot);
+    if (persistedSnapshotRef.current === serializedSnapshot) return;
+
+    const checksum = checksumRef.current ?? (await getStudioStatus('location-model')).draftVersion?.checksum;
+    const saved = await saveStudioDraft('location-model', snapshot, checksum);
     checksumRef.current = saved.checksum;
+    persistedSnapshotRef.current = serializedSnapshot;
   }, [buildSnapshot]);
 
   const captureInitialSnapshot = useCallback(async () => {
     setBaselineActiveSpecIds(new Set(specs.filter((spec) => spec.lifecycleStatus === 'Active').map((spec) => spec.localId)));
-    return await buildSnapshot();
+    const snapshot = await buildSnapshot();
+    persistedSnapshotRef.current = JSON.stringify(snapshot);
+    return snapshot;
   }, [buildSnapshot, specs]);
 
   useEffect(() => {
@@ -201,7 +206,7 @@ export function LocationModelStudio({
             ))}
           </div>
           {showSearch && <div className="relative mb-3"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" /><input autoFocus value={filterText} onChange={(event) => setFilterText(event.target.value)} placeholder="Buscar tipos de locais por nome..." aria-label="Buscar tipos de locais" className="w-full rounded-[14px] border border-app-border bg-white py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" /></div>}
-          <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto pr-1">
+          <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto p-1 pr-2">
             {visibleSpecs.length === 0 ? <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum tipo de local encontrado.</div> : visibleSpecs.map((spec) => {
               const selected = spec.localId === selectedSpecId;
               const CategoryIcon = locationCategoryIcon(spec.category);

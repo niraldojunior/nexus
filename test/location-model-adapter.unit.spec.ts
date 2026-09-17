@@ -156,6 +156,59 @@ test('LocationModelStudioAdapter materializes specifications and containment rul
   assert.equal(createSpecMock.mock.calls.length, 1);
 });
 
+test('LocationModelStudioAdapter does not update specifications when the snapshot is unchanged', async () => {
+  const existingSpecs: GeographicSiteSpecification[] = [
+    {
+      '@type': 'GeographicSiteSpecification',
+      id: 'region-id',
+      href: '/v1/geo/site-specifications/region-id',
+      code: 'REGION',
+      name: 'Região',
+      category: 'Region',
+      siteRole: 'grouping',
+      lifecycleStatus: 'Active',
+      specCharacteristic: [],
+      allowedParentSpec: [],
+      allowedChildSpec: [],
+      allowedParentSpecIds: [],
+      allowedChildSpecIds: ['site-id'],
+    },
+    {
+      '@type': 'GeographicSiteSpecification',
+      id: 'site-id',
+      href: '/v1/geo/site-specifications/site-id',
+      code: 'SITE',
+      name: 'Local',
+      category: 'Site',
+      siteRole: 'network',
+      lifecycleStatus: 'Active',
+      specCharacteristic: [],
+      allowedParentSpec: [],
+      allowedChildSpec: [],
+      allowedParentSpecIds: ['region-id'],
+      allowedChildSpecIds: [],
+    },
+  ];
+  const geoService = {
+    listSpecs: vi.fn(async () => existingSpecs),
+    createSpec: vi.fn(),
+    updateSpec: vi.fn(),
+  } as unknown as GeoService;
+
+  await new LocationModelStudioAdapter(geoService).materialize(
+    {
+      specifications: [
+        { code: 'REGION', name: 'Região', category: 'Region', siteRole: 'grouping', allowedChildCodes: ['SITE'] },
+        { code: 'SITE', name: 'Local', category: 'Site', siteRole: 'network', allowedParentCodes: ['REGION'] },
+      ],
+    },
+    { tenantId: 'vtal' },
+  );
+
+  assert.equal(vi.mocked(geoService.createSpec).mock.calls.length, 0);
+  assert.equal(vi.mocked(geoService.updateSpec).mock.calls.length, 0);
+});
+
 test('LocationModelStudioAdapter permite remover containment que o snapshot não declara', async () => {
   // O snapshot publicado é a fonte de verdade do catálogo. Regras históricas de bootstrap não
   // podem ser reintroduzidas automaticamente quando foram removidas pelo editor governado.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import { GeoRepository, GeoService } from '../src/modules/geo/index.js';
 
 test('GeoService creates canonical location payloads', async () => {
@@ -458,6 +458,33 @@ test('GeoService permite recategorizar para SubSite quando os sites ativos já t
 
   const updated = await service.updateSpec(spec.id, { category: 'SubSite' });
   assert.equal(updated.category, 'SubSite');
+});
+
+test('GeoService skips structural and characteristic scans for unchanged characteristic patches', async () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = await service.createSpec({
+    name: 'Central Office',
+    category: 'Site',
+    specCharacteristic: [{ name: 'sigla', valueType: 'string' }],
+  });
+  const validateCharacteristics = vi.spyOn(
+    service as unknown as {
+      validateSpecificationChangeAgainstSites: (
+        current: unknown,
+        characteristics: unknown,
+      ) => Promise<void>;
+    },
+    'validateSpecificationChangeAgainstSites',
+  );
+  const analyzeContainment = vi.spyOn(service, 'analyzeContainmentImpact');
+
+  await service.updateSpec(spec.id, {
+    specCharacteristic: spec.specCharacteristic,
+    allowedParentSpecIds: spec.allowedParentSpecIds,
+  });
+
+  assert.equal(validateCharacteristics.mock.calls.length, 0);
+  assert.equal(analyzeContainment.mock.calls.length, 0);
 });
 
 test('GeoService creates inverse governed site relationships', async () => {

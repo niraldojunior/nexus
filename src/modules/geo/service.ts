@@ -346,7 +346,7 @@ const BOOTSTRAP_RELATIONSHIP_TYPES: RelationshipTypeInput[] = [
   },
 ];
 
-const sameStringSet = (left: readonly string[], right: readonly string[]): boolean =>
+const sameStringSet = (left: readonly string[] = [], right: readonly string[] = []): boolean =>
   left.length === right.length && new Set(left).size === new Set([...left, ...right]).size;
 
 const matchesBootstrapSpecification = (
@@ -875,6 +875,11 @@ export class GeoService {
     }
     if (input.siteRole !== undefined) validateSiteRole(input.siteRole);
 
+    const updatesContainment =
+      input.allowedParentSpec !== undefined ||
+      input.allowedParentSpecIds !== undefined ||
+      input.allowedChildSpec !== undefined ||
+      input.allowedChildSpecIds !== undefined;
     const nextAllowedParentSpecIds = resolveSpecIdList(
       input.allowedParentSpec,
       input.allowedParentSpecIds,
@@ -885,34 +890,44 @@ export class GeoService {
       input.allowedChildSpecIds,
       current.allowedChildSpecIds,
     );
-    await validateReferencedSpecs(
-      nextAllowedParentSpecIds,
-      this.getSpecOrThrow.bind(this),
-      current.id,
-    );
-    await validateReferencedSpecs(
-      nextAllowedChildSpecIds,
-      this.getSpecOrThrow.bind(this),
-      current.id,
-    );
+    const containmentChanged =
+      updatesContainment &&
+      (!sameStringSet(current.allowedParentSpecIds, nextAllowedParentSpecIds) ||
+        !sameStringSet(current.allowedChildSpecIds, nextAllowedChildSpecIds));
+    if (containmentChanged) {
+      await validateReferencedSpecs(
+        nextAllowedParentSpecIds,
+        this.getSpecOrThrow.bind(this),
+        current.id,
+      );
+      await validateReferencedSpecs(
+        nextAllowedChildSpecIds,
+        this.getSpecOrThrow.bind(this),
+        current.id,
+      );
 
-    const impact = await this.analyzeContainmentImpact(id, {
-      allowedParentSpecIds: nextAllowedParentSpecIds,
-      allowedChildSpecIds: nextAllowedChildSpecIds,
-    });
-    if (impact.blocking) {
-      throw new AppError('containment rule change has impacted sites', {
-        code: 'GEO_SPEC_CONTAINMENT_IMPACT',
-        statusCode: 409,
+      const impact = await this.analyzeContainmentImpact(id, {
+        allowedParentSpecIds: nextAllowedParentSpecIds,
+        allowedChildSpecIds: nextAllowedChildSpecIds,
       });
+      if (impact.blocking) {
+        throw new AppError('containment rule change has impacted sites', {
+          code: 'GEO_SPEC_CONTAINMENT_IMPACT',
+          statusCode: 409,
+        });
+      }
     }
 
     const nextLifecycleStatus = input.lifecycleStatus ?? current.lifecycleStatus;
-
     const nextCharacteristics = normalizeSpecCharacteristics(
       input.specCharacteristic ?? current.specCharacteristic,
     );
-    await this.validateSpecificationChangeAgainstSites(current, nextCharacteristics);
+    const characteristicsChanged =
+      input.specCharacteristic !== undefined &&
+      JSON.stringify(current.specCharacteristic) !== JSON.stringify(nextCharacteristics);
+    if (characteristicsChanged) {
+      await this.validateSpecificationChangeAgainstSites(current, nextCharacteristics);
+    }
 
     return await this.repository.transaction(async () => {
       const updated = await this.repository.upsertSpec(
@@ -938,10 +953,12 @@ export class GeoService {
           allowedChildSpecIds: nextAllowedChildSpecIds,
         }),
       );
-      await this.repository.syncSpecContainmentRules(updated.id, {
-        allowedParentSpecIds: nextAllowedParentSpecIds,
-        allowedChildSpecIds: nextAllowedChildSpecIds,
-      });
+      if (containmentChanged) {
+        await this.repository.syncSpecContainmentRules(updated.id, {
+          allowedParentSpecIds: nextAllowedParentSpecIds,
+          allowedChildSpecIds: nextAllowedChildSpecIds,
+        });
+      }
       const stored = await this.getSpecOrThrow(updated.id);
       await this.recordMutation(
         ctx,

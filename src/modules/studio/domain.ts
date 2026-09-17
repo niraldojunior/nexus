@@ -145,6 +145,12 @@ export interface StudioDomainAdapter {
    * capaz de materializar a projeção canônica.
    */
   materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> | void;
+  /**
+   * Indica que o domínio grava o estado canônico durante a edição e, por isso, precisa
+   * materializar a baseline ao descartar o draft. O padrão é `true` para preservar os adapters
+   * legados de autosave; editores de snapshot local optam explicitamente por `false`.
+   */
+  restoreBaselineOnDiscard?: boolean;
 }
 
 export const createNoopStudioDomainAdapter = (domain: StudioDomain): StudioDomainAdapter => ({

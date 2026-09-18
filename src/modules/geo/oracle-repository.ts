@@ -793,8 +793,9 @@ export class OracleGeoRepository implements IGeoRepository {
       const result = await this.db.run(
         `UPDATE tmf_geographic_site s
             SET s.characteristics = CASE
-                  WHEN s.characteristics IS NULL OR TRIM(s.characteristics) = '[]'
-                    THEN '[' || ? || ']'
+                  WHEN s.characteristics IS NULL
+                    OR TRIM(DBMS_LOB.SUBSTR(s.characteristics, 4000, 1)) = '[]'
+                    THEN TO_CLOB('[') || ? || TO_CLOB(']')
                   ELSE SUBSTR(s.characteristics, 1, LENGTH(s.characteristics) - 1) || ',' || ? || ']'
                 END,
                 s.updated_at = ?

@@ -10,7 +10,6 @@ import { defaultColorRule } from '../../utils/studioGeoDefaults';
 // que oculta uma entidade numa escala específica, genericamente (qualquer entidade, não só Poste).
 const pointConfigHiddenAt50m: StudioGeoPointVisualConfig = {
   geometryKind: 'POINT',
-  iconCode: 'legacy.pole',
   color: defaultColorRule('RESOURCE', '#10b981'),
   opacity: 1,
   scaleBands: {

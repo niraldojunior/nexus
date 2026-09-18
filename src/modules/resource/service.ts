@@ -64,6 +64,10 @@ import type { RequestContext } from '../../shared/http/request-context.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { recordMutation } from '../../shared/persistence/audit-outbox.js';
 import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
+import {
+  isVisualIdentity,
+  type VisualIdentity,
+} from '../../shared/ui/visual-identity.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -97,6 +101,10 @@ type ResourceServiceDependencies = {
     id: string,
   ) => Promise<{ id: string; name: string } | undefined> | { id: string; name: string } | undefined;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
+  lookupActiveVisualAsset?: (
+    tenantId: string,
+    assetId: string,
+  ) => Promise<boolean> | boolean;
   /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
    *  serviço com um repositório em memória), a auditoria só não roda. */
   db?: DatabaseClient;
@@ -288,11 +296,20 @@ export class ResourceService {
         ? current.resourceTypeCharacteristic
         : assertCanonicalCharacteristics(input.resourceTypeCharacteristic);
     const mapConfiguration = resolveResourceTypeMapConfiguration(current, input);
-    // A geometria sai da base antes do spread: `mapConfiguration` é a única autoridade sobre o
-    // trio natureza/presença/geometria e precisa poder limpar o campo, não só sobrescrevê-lo.
-    const { geometryKind: _previousGeometryKind, ...currentWithoutGeometry } = current;
+    const visualIdentity = await this.resolveVisualIdentity(
+      current.visualIdentity,
+      input.visualIdentity,
+      context,
+    );
+    // Geometria e identidade saem da base antes do spread: os resolvedores são as únicas
+    // autoridades sobre os campos e precisam poder limpá-los, não apenas sobrescrevê-los.
+    const {
+      geometryKind: _previousGeometryKind,
+      visualIdentity: _previousVisualIdentity,
+      ...currentWithoutModelVisuals
+    } = current;
     const updated = await this.repository.upsertResourceType({
-      ...currentWithoutGeometry,
+      ...currentWithoutModelVisuals,
       code: input.code?.trim() ?? current.code,
       name: input.name?.trim() ?? current.name,
       ...(input.description !== undefined
@@ -304,6 +321,7 @@ export class ResourceService {
           : {}),
       status: input.status ?? current.status,
       ...mapConfiguration,
+      ...(visualIdentity ? { visualIdentity } : {}),
       ...(characteristics ? { resourceTypeCharacteristic: characteristics } : {}),
     });
     await this.emit(
@@ -955,6 +973,10 @@ export class ResourceService {
     }
     const parent = await this.assertValidParent(catalog.id, input.parentNodeId, context);
     const resourceTypeId = leafInput ? createCanonicalId() : undefined;
+    const nodeMetadata =
+      input.kind === 'RESOURCE_TYPE' && input.metadata
+        ? withoutRuntimeResourceTypeIcon(input.metadata)
+        : input.metadata;
     const node: ResourceCatalogNode = {
       '@type': 'ResourceCatalogNode',
       id,
@@ -969,7 +991,7 @@ export class ResourceService {
       ...(parent ? { parentNodeId: parent.id } : {}),
       ...(resourceTypeId ? { resourceTypeId } : {}),
       ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-      ...(input.metadata ? { metadata: input.metadata } : {}),
+      ...(nodeMetadata && Object.keys(nodeMetadata).length > 0 ? { metadata: nodeMetadata } : {}),
       ...(context?.actorSub ? { createdBy: context.actorSub, updatedBy: context.actorSub } : {}),
     };
     const stored = await this.repository.transaction(async () => {
@@ -986,6 +1008,11 @@ export class ResourceService {
           ...(leafInput?.mapPresence !== undefined ? { mapPresence: leafInput.mapPresence } : {}),
           ...(leafInput?.geometryKind ? { geometryKind: leafInput.geometryKind } : {}),
         });
+        const visualIdentity = await this.resolveVisualIdentity(
+          undefined,
+          leafInput?.visualIdentity,
+          context,
+        );
         await this.repository.upsertResourceType({
           '@type': 'ResourceType',
           id: resourceTypeId,
@@ -996,6 +1023,7 @@ export class ResourceService {
           ...(node.description ? { description: node.description } : {}),
           status: 'active',
           ...mapConfiguration,
+          ...(visualIdentity ? { visualIdentity } : {}),
           resourceTypeCharacteristic: assertCanonicalCharacteristics(
             leafInput?.resourceTypeCharacteristic ?? [],
           ),
@@ -1053,16 +1081,18 @@ export class ResourceService {
       }
     }
 
+    const requestedMetadata = input.metadata ?? current.metadata;
+    const nextMetadata =
+      current.kind === 'RESOURCE_TYPE' && requestedMetadata
+        ? withoutRuntimeResourceTypeIcon(requestedMetadata)
+        : requestedMetadata;
+    const { metadata: _previousMetadata, ...currentWithoutMetadata } = current;
     const nextNode: ResourceCatalogNode = {
-      ...current,
+      ...currentWithoutMetadata,
       code: input.code !== undefined ? input.code.trim() : current.code,
       name: input.name?.trim() ?? current.name,
       status: input.status ?? current.status,
-      ...(input.metadata !== undefined
-        ? { metadata: input.metadata }
-        : current.metadata
-          ? { metadata: current.metadata }
-          : {}),
+      ...(nextMetadata && Object.keys(nextMetadata).length > 0 ? { metadata: nextMetadata } : {}),
       ...(input.description !== undefined
         ? input.description.trim()
           ? { description: input.description.trim() }
@@ -1093,16 +1123,26 @@ export class ResourceService {
           }
         }
         const mapConfiguration = resolveResourceTypeMapConfiguration(resourceType, input);
-        // Mesmo racional de `updateResourceType`: a geometria vinda do estado atual precisa sair
-        // do spread para que `mapConfiguration` consiga limpá-la quando o Studio pedir.
-        const { geometryKind: _previousGeometryKind, ...typeWithoutGeometry } = resourceType;
+        const visualIdentity = await this.resolveVisualIdentity(
+          resourceType.visualIdentity,
+          input.visualIdentity,
+          context,
+        );
+        // Mesmo racional de `updateResourceType`: os valores atuais precisam sair do spread para
+        // que os resolvedores consigam limpá-los quando o Studio pedir.
+        const {
+          geometryKind: _previousGeometryKind,
+          visualIdentity: _previousVisualIdentity,
+          ...typeWithoutModelVisuals
+        } = resourceType;
         await this.repository.upsertResourceType({
-          ...typeWithoutGeometry,
+          ...typeWithoutModelVisuals,
           code: nextNode.code,
           name: nextNode.name,
           ...(nextNode.description ? { description: nextNode.description } : {}),
           status: nextNode.status,
           ...mapConfiguration,
+          ...(visualIdentity ? { visualIdentity } : {}),
           ...(input.resourceTypeCharacteristic !== undefined
             ? {
                 resourceTypeCharacteristic: assertCanonicalCharacteristics(
@@ -1590,6 +1630,34 @@ export class ResourceService {
       })),
       catalogPaths,
     };
+  }
+
+  private async resolveVisualIdentity(
+    current: VisualIdentity | undefined,
+    input: VisualIdentity | null | undefined,
+    context?: RequestContext,
+  ): Promise<VisualIdentity | undefined> {
+    if (input === undefined) return current;
+    if (input === null) return undefined;
+    if (!isVisualIdentity(input)) {
+      throw new AppError('visualIdentity must contain exactly one valid system icon or asset', {
+        code: 'RESOURCE_VISUAL_IDENTITY_INVALID',
+        statusCode: 400,
+      });
+    }
+    if (input.kind === 'system') {
+      return { kind: 'system', iconCode: input.iconCode.trim() };
+    }
+
+    const assetId = input.assetId.trim();
+    const lookup = this.dependencies.lookupActiveVisualAsset;
+    if (!lookup || !(await lookup(tenantOf(context), assetId))) {
+      throw new AppError('visual identity asset is unavailable for this tenant', {
+        code: 'RESOURCE_VISUAL_IDENTITY_ASSET_UNAVAILABLE',
+        statusCode: 422,
+      });
+    }
+    return { kind: 'asset', assetId };
   }
 
   private async assertValidParent(
@@ -2523,6 +2591,13 @@ const assertName = (value: unknown, field = 'name'): void => {
  * recursivamente a partir das raízes. Ordenação determinística (`sortOrder`, nome, id) já vem do
  * repositório — aqui só preserva a ordem recebida.
  */
+const withoutRuntimeResourceTypeIcon = (
+  metadata: Record<string, unknown>,
+): Record<string, unknown> => {
+  const { icon: _legacyIcon, ...rest } = metadata;
+  return rest;
+};
+
 const buildResourceCatalogTree = (flat: ResourceCatalogNode[]): ResourceCatalogTreeNode[] => {
   const childrenByParent = new Map<string | undefined, ResourceCatalogNode[]>();
   for (const node of flat) {

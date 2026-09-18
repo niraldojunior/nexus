@@ -141,13 +141,16 @@ type ResourceCatalogNodeRow = {
   rt_id?: string | null;
   rt_code?: string | null;
   rt_name?: string | null;
+  rt_icon_code?: string | null;
+  rt_icon_asset_id?: string | null;
 };
 
 // LEFT JOIN em ResourceType para expandir `resourceType` em nós RESOURCE_TYPE sem N+1 (plano §8).
 const RESOURCE_CATALOG_NODE_SELECT = `
   SELECT n.id, n.tenant_id, n.catalog_id, n.parent_node_id, n.code, n.name, n.description, n.kind,
          n.resource_type_id, n.status, n.sort_order, n.metadata, n.created_by, n.updated_by,
-         rt.id AS rt_id, rt.code AS rt_code, rt.name AS rt_name
+         rt.id AS rt_id, rt.code AS rt_code, rt.name AS rt_name,
+         rt.icon_code AS rt_icon_code, rt.icon_asset_id AS rt_icon_asset_id
     FROM tmf_resource_catalog_node n
     LEFT JOIN tmf_resource_type rt ON rt.id = n.resource_type_id`;
 
@@ -533,9 +536,11 @@ export class OracleResourceRepository implements IResourceRepository {
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
       geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
+      icon_code?: string | null;
+      icon_asset_id?: string | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, icon_code, icon_asset_id, characteristics
        FROM tmf_resource_type
        WHERE tenant_id = ? OR tenant_id = ?
        ORDER BY name, code, id`,
@@ -560,9 +565,12 @@ export class OracleResourceRepository implements IResourceRepository {
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
       geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
+      icon_code?: string | null;
+      icon_asset_id?: string | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind,
+              icon_code, icon_asset_id, characteristics
          FROM tmf_resource_type WHERE id = ? AND (tenant_id = ? OR tenant_id = ?)`,
       [id, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
@@ -586,9 +594,12 @@ export class OracleResourceRepository implements IResourceRepository {
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
       geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
+      icon_code?: string | null;
+      icon_asset_id?: string | null;
       characteristics?: string | null;
     }>(
-      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics
+      `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind,
+              icon_code, icon_asset_id, characteristics
          FROM tmf_resource_type WHERE code = ? AND (tenant_id = ? OR tenant_id = ?)`,
       [code, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
     );
@@ -601,8 +612,8 @@ export class OracleResourceRepository implements IResourceRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_resource_type
-       (id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, icon_code, icon_asset_id, characteristics, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          code = excluded.code,
          name = excluded.name,
@@ -611,6 +622,8 @@ export class OracleResourceRepository implements IResourceRepository {
          map_presence = excluded.map_presence,
          nature = excluded.nature,
          geometry_kind = excluded.geometry_kind,
+         icon_code = excluded.icon_code,
+         icon_asset_id = excluded.icon_asset_id,
          characteristics = excluded.characteristics,
          updated_at = excluded.updated_at`,
       [
@@ -623,6 +636,8 @@ export class OracleResourceRepository implements IResourceRepository {
         resourceType.mapPresence ? 1 : 0,
         resourceType.nature,
         resourceType.geometryKind ?? null,
+        resourceType.visualIdentity?.kind === 'system' ? resourceType.visualIdentity.iconCode : null,
+        resourceType.visualIdentity?.kind === 'asset' ? resourceType.visualIdentity.assetId : null,
         JSON.stringify(resourceType.resourceTypeCharacteristic ?? []),
         now,
         now,
@@ -1062,6 +1077,11 @@ export class OracleResourceRepository implements IResourceRepository {
               href: buildHref('resourceType', row.rt_id),
               code: row.rt_code ?? '',
               name: row.rt_name ?? '',
+              ...(row.rt_icon_code
+                ? { visualIdentity: { kind: 'system' as const, iconCode: row.rt_icon_code } }
+                : row.rt_icon_asset_id
+                  ? { visualIdentity: { kind: 'asset' as const, assetId: row.rt_icon_asset_id } }
+                  : {}),
               '@referredType': 'ResourceType' as const,
             },
           }
@@ -2412,6 +2432,8 @@ export class OracleResourceRepository implements IResourceRepository {
       map_presence?: number | null;
       nature?: 'PhysicalResource' | 'LogicalResource' | null;
       geometry_kind?: 'POINT' | 'LINE' | 'POLYGON' | null;
+      icon_code?: string | null;
+      icon_asset_id?: string | null;
       characteristics?: string | null;
     },
     categoryCode?: string,
@@ -2428,6 +2450,11 @@ export class OracleResourceRepository implements IResourceRepository {
       nature: row.nature ?? 'PhysicalResource',
       mapPresence: Number(row.map_presence ?? 0) === 1,
       ...(row.geometry_kind ? { geometryKind: row.geometry_kind } : {}),
+      ...(row.icon_code
+        ? { visualIdentity: { kind: 'system' as const, iconCode: row.icon_code } }
+        : row.icon_asset_id
+          ? { visualIdentity: { kind: 'asset' as const, assetId: row.icon_asset_id } }
+          : {}),
       resourceTypeCharacteristic: JSON.parse(row.characteristics || '[]'),
       tenantId: row.tenant_id,
     };

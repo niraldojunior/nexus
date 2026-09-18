@@ -3,6 +3,7 @@ import type {
   GeoSpec,
   GeoSpecCategory,
   GeoSpecCharacteristic,
+  VisualIdentity,
 } from '../../../services/geoApi';
 
 export type LocationModelDraftSpec = {
@@ -17,6 +18,7 @@ export type LocationModelDraftSpec = {
   specCharacteristic: GeoSpecCharacteristic[];
   allowedParentLocalIds: string[];
   allowedChildLocalIds: string[];
+  visualIdentity?: VisualIdentity;
   bootstrapProtected?: boolean;
 };
 
@@ -30,6 +32,7 @@ type LocationModelSnapshotSpec = {
   allowedParentCodes?: string[];
   allowedChildCodes?: string[];
   specCharacteristic?: GeoSpecCharacteristic[];
+  visualIdentity?: VisualIdentity | null;
 };
 
 type LocationModelSnapshot = { specifications?: LocationModelSnapshotSpec[] };
@@ -68,6 +71,7 @@ export function draftSpecsFromGeoSpecs(specs: GeoSpec[]): LocationModelDraftSpec
     allowedChildLocalIds: spec.allowedChildSpecIds
       .map((id) => localIdByPersistedId.get(id))
       .filter((id): id is string => Boolean(id)),
+    visualIdentity: spec.visualIdentity,
     bootstrapProtected: spec._bootstrapProtected,
   }));
 }
@@ -91,6 +95,10 @@ export function draftSpecsFromSnapshot(
 
   return compatibleSpecs.map((spec) => {
     const canonical = canonicalByCode.get(spec.code.toUpperCase());
+    const resolvedVisualIdentity =
+      spec.visualIdentity !== undefined
+        ? spec.visualIdentity ?? undefined
+        : canonical?.visualIdentity;
     return {
       localId: canonical?.id ?? localIdByCode.get(spec.code.toUpperCase()) ?? `draft-${spec.code}`,
       persistedId: canonical?.id,
@@ -107,6 +115,7 @@ export function draftSpecsFromSnapshot(
       allowedChildLocalIds: (spec.allowedChildCodes ?? [])
         .map((code) => localIdByCode.get(code.toUpperCase()))
         .filter((id): id is string => Boolean(id)),
+      visualIdentity: resolvedVisualIdentity,
       bootstrapProtected: canonical?._bootstrapProtected,
     };
   });
@@ -130,6 +139,9 @@ export function buildLocationModelSnapshot(specs: LocationModelDraftSpec[]): Rec
         .map((id) => codeByLocalId.get(id))
         .filter((code): code is string => Boolean(code)),
       specCharacteristic: spec.specCharacteristic,
+      ...(spec.visualIdentity !== undefined
+        ? { visualIdentity: spec.visualIdentity }
+        : {}),
     })),
   };
 }

@@ -1,4 +1,5 @@
 import type { Characteristic, RelatedParty, TimePeriod } from '../../shared/tmf/index.js';
+import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 import type { GeoGeometryType, GeoJSONGeometry } from '../geo/domain.js';
 
 export type ResourceKind = 'PhysicalResource' | 'LogicalResource';
@@ -29,6 +30,8 @@ export type ResourceType = {
   mapPresence: boolean;
   /** Geometria canônica das instâncias no mapa; obrigatória quando um tipo físico está visível. */
   geometryKind?: ResourceGeometryKind;
+  /** Identidade visual canônica do tipo (ícone nativo do sistema ou SVG customizado via Studio Asset). */
+  visualIdentity?: VisualIdentity;
   /**
    * Características que **definem** este tipo de recurso — o contrato estrutural que toda
    * `ResourceSpecification` do tipo herda. Cada entrada carrega também um valor padrão, copiado
@@ -49,6 +52,8 @@ export type UpdateResourceTypeInput = {
   mapPresence?: boolean;
   /** `null` limpa explicitamente; ausência mantém a geometria atual. */
   geometryKind?: ResourceGeometryKind | null;
+  /** `null` limpa explicitamente; ausência mantém a identidade visual atual. */
+  visualIdentity?: VisualIdentity | null;
   resourceTypeCharacteristic?: Characteristic[];
 };
 
@@ -162,6 +167,7 @@ export type ResourceTypeRef = {
   href: string;
   code: string;
   name: string;
+  visualIdentity?: VisualIdentity;
   '@referredType': 'ResourceType';
 };
 
@@ -238,6 +244,7 @@ type ResourceCatalogNodeShapeInput =
       nature?: ResourceKind;
       mapPresence?: boolean;
       geometryKind?: ResourceGeometryKind;
+      visualIdentity?: VisualIdentity | null;
       resourceTypeCharacteristic?: Characteristic[];
     };
 
@@ -268,6 +275,8 @@ export type UpdateResourceCatalogNodeInput = {
   mapPresence?: boolean;
   /** `null` limpa explicitamente; ausência mantém a geometria atual. */
   geometryKind?: ResourceGeometryKind | null;
+  /** `null` limpa explicitamente; ausência mantém a identidade visual atual. */
+  visualIdentity?: VisualIdentity | null;
   resourceTypeCharacteristic?: Characteristic[];
 };
 
@@ -377,6 +386,8 @@ export type ResourceModelSnapshotResourceType = {
   mapPresence?: boolean;
   /** `null` limpa explicitamente; ausência mantém a geometria atual. */
   geometryKind?: ResourceGeometryKind | null;
+  /** `null` limpa explicitamente; ausência mantém a identidade visual atual. */
+  visualIdentity?: VisualIdentity | null;
   resourceTypeCharacteristic?: Characteristic[];
 };
 

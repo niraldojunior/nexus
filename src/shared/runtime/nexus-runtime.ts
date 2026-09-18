@@ -97,7 +97,12 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const researchRepository = new OracleResearchRepository(db);
   const geoRepository = new OracleGeoRepository(db);
   const mapFeatureSynchronizer = new GeoMapFeatureSynchronizer(db);
-  const geoService = new GeoService(geoRepository, mapFeatureSynchronizer);
+  const studioAssetRepository = new OracleStudioAssetRepository(db);
+  const studioAssetService = new StudioAssetService(studioAssetRepository);
+  const geoService = new GeoService(geoRepository, mapFeatureSynchronizer, {
+    lookupActiveVisualAsset: async (tenantId, assetId) =>
+      (await studioAssetRepository.get(tenantId, assetId))?.active === true,
+  });
   if (!isEmptyEnvironment) {
     await geoService.ensureBootstrapRelationshipTypes();
   }
@@ -124,6 +129,8 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const resourceService = new ResourceService(resourceRepository, eventService, {
     mapFeatureSynchronizer,
     db,
+    lookupActiveVisualAsset: async (tenantId, assetId) =>
+      (await studioAssetRepository.get(tenantId, assetId))?.active === true,
     lookupPlace: async (id) => {
       const site = await geoService.getSite(id);
       if (site) {
@@ -231,8 +238,6 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   });
   const searchService = new SearchService(researchRepository);
   const studioRepository = new OracleStudioRepository(db);
-  const studioAssetRepository = new OracleStudioAssetRepository(db);
-  const studioAssetService = new StudioAssetService(studioAssetRepository);
   const studioService = new StudioService(studioRepository, eventService, { db });
   studioService.registerAdapter(new ResourceModelStudioAdapter(resourceService));
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));
@@ -243,7 +248,6 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   studioService.registerAdapter(new ReferenceDataStudioAdapter(referenceDataRepository));
   studioService.registerAdapter(
     new StudioGeoAdapter(
-      async (tenantId, assetId) => Boolean(await studioAssetRepository.get(tenantId, assetId)),
       async (tenantId) =>
         await resourceService.listResourceTypes({
           actorSub: 'studio-geo-adapter',

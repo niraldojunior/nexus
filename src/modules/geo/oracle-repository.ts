@@ -43,8 +43,10 @@ import type {
   GeographicSiteRow,
   GeographicSiteSpecificationContainmentRuleRow,
   GeographicSiteSpecificationRow,
+  GeographicSiteSpecVisualIdentityRow,
   GeographicSiteStatusHistoryRow,
 } from './rows.js';
+import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 // Tamanho de bloco para listBlockedSiteIds/bulkTransitionSites (issue #58): grande o bastante
 // para poucas idas ao banco, longe do teto de binds do protocolo Postgres (~65 mil parâmetros)
@@ -378,7 +380,10 @@ export class OracleGeoRepository implements IGeoRepository {
     return (await this.getSpec(spec.id))!;
   }
 
-  public async getSpec(id: string): Promise<GeographicSiteSpecification | undefined> {
+  public async getSpec(
+    id: string,
+    scope?: GeoTenantScope,
+  ): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
       `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
@@ -389,10 +394,13 @@ export class OracleGeoRepository implements IGeoRepository {
     );
 
     if (!row) return undefined;
-    return (await this.hydrateSpecs([row])).get(row.id);
+    return (await this.hydrateSpecs([row], scope?.tenantId)).get(row.id);
   }
 
-  public async getSpecByCode(code: string): Promise<GeographicSiteSpecification | undefined> {
+  public async getSpecByCode(
+    code: string,
+    scope?: GeoTenantScope,
+  ): Promise<GeographicSiteSpecification | undefined> {
     const row = await this.db.get<GeographicSiteSpecificationRow>(
       `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
@@ -403,17 +411,19 @@ export class OracleGeoRepository implements IGeoRepository {
     );
 
     if (!row) return undefined;
-    return (await this.hydrateSpecs([row])).get(row.id);
+    return (await this.hydrateSpecs([row], scope?.tenantId)).get(row.id);
   }
 
-  public async listSpecs(query?: {
-    name?: string;
-    code?: string;
-    category?: GeographicSiteSpecification['category'];
-    lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
-    limit?: number;
-    offset?: number;
-  }): Promise<GeographicSiteSpecification[]> {
+  public async listSpecs(
+    query?: GeoTenantScope & {
+      name?: string;
+      code?: string;
+      category?: GeographicSiteSpecification['category'];
+      lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<GeographicSiteSpecification[]> {
     const conditions: string[] = [];
     const params: Array<string | number> = [];
 
@@ -453,7 +463,37 @@ export class OracleGeoRepository implements IGeoRepository {
     if (hasOffset) params.push(query!.offset as number);
 
     const rows = await this.db.all<GeographicSiteSpecificationRow>(sql, params);
-    return [...(await this.hydrateSpecs(rows)).values()];
+    return [...(await this.hydrateSpecs(rows, query?.tenantId)).values()];
+  }
+
+  public async setSpecVisualIdentity(
+    specId: string,
+    tenantId: string,
+    identity: VisualIdentity | undefined,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    if (!identity) {
+      await this.db.run(
+        `DELETE FROM tmf_geo_site_spec_visual_identity
+         WHERE tenant_id = ? AND site_specification_id = ?`,
+        [tenantId, specId],
+      );
+      return;
+    }
+
+    const iconCode = identity.kind === 'system' ? identity.iconCode : null;
+    const iconAssetId = identity.kind === 'asset' ? identity.assetId : null;
+
+    await this.db.run(
+      `INSERT INTO tmf_geo_site_spec_visual_identity
+       (tenant_id, site_specification_id, icon_code, icon_asset_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(tenant_id, site_specification_id) DO UPDATE SET
+       icon_code = excluded.icon_code,
+       icon_asset_id = excluded.icon_asset_id,
+       updated_at = excluded.updated_at`,
+      [tenantId, specId, iconCode, iconAssetId, now, now],
+    );
   }
 
   public async syncSpecContainmentRules(
@@ -1369,6 +1409,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   private async hydrateSpecs(
     rows: GeographicSiteSpecificationRow[],
+    tenantId?: string,
   ): Promise<Map<string, GeographicSiteSpecification>> {
     if (rows.length === 0) return new Map();
 
@@ -1404,6 +1445,32 @@ export class OracleGeoRepository implements IGeoRepository {
       rowById.set(row.id, row);
     }
 
+    // Carregar identidades visuais tenant-scoped para todas as specifications envolvidas (issue #264)
+    const allSpecIds = [...rowById.keys()];
+    const identitiesBySpecId = new Map<string, VisualIdentity>();
+    if (allSpecIds.length > 0 && tenantId) {
+      const specPlaceholders = allSpecIds.map(() => '?').join(', ');
+      const viRows = await this.db.all<GeographicSiteSpecVisualIdentityRow>(
+        `SELECT tenant_id, site_specification_id, icon_code, icon_asset_id
+         FROM tmf_geo_site_spec_visual_identity
+         WHERE tenant_id = ? AND site_specification_id IN (${specPlaceholders})`,
+        [tenantId, ...allSpecIds],
+      );
+      for (const viRow of viRows) {
+        if (viRow.icon_code) {
+          identitiesBySpecId.set(viRow.site_specification_id, {
+            kind: 'system',
+            iconCode: viRow.icon_code,
+          });
+        } else if (viRow.icon_asset_id) {
+          identitiesBySpecId.set(viRow.site_specification_id, {
+            kind: 'asset',
+            assetId: viRow.icon_asset_id,
+          });
+        }
+      }
+    }
+
     const specs = new Map<string, GeographicSiteSpecification>();
     for (const row of rows) {
       const parentRules = ruleRows.filter((ruleRow) => ruleRow.child_spec_id === row.id);
@@ -1411,11 +1478,13 @@ export class OracleGeoRepository implements IGeoRepository {
       const allowedParentSpec = parentRules
         .map((ruleRow) => rowById.get(ruleRow.parent_spec_id))
         .filter((item): item is GeographicSiteSpecificationRow => item !== undefined)
-        .map((item) => this.mapSpecRefRow(item));
+        .map((item) => this.mapSpecRefRow(item, identitiesBySpecId.get(item.id)));
       const allowedChildSpec = childRules
         .map((ruleRow) => rowById.get(ruleRow.child_spec_id))
         .filter((item): item is GeographicSiteSpecificationRow => item !== undefined)
-        .map((item) => this.mapSpecRefRow(item));
+        .map((item) => this.mapSpecRefRow(item, identitiesBySpecId.get(item.id)));
+
+      const visualIdentity = identitiesBySpecId.get(row.id);
 
       specs.set(row.id, {
         '@type': 'GeographicSiteSpecification',
@@ -1426,6 +1495,7 @@ export class OracleGeoRepository implements IGeoRepository {
         category: row.category,
         siteRole: row.site_role ?? defaultSiteRoleFor(row.category),
         lifecycleStatus: row.lifecycle_status,
+        ...(visualIdentity ? { visualIdentity } : {}),
         ...(row.description ? { description: row.description } : {}),
         ...(row.valid_for_start || row.valid_for_end
           ? {
@@ -1634,7 +1704,10 @@ export class OracleGeoRepository implements IGeoRepository {
     return result;
   }
 
-  private mapSpecRefRow(row: GeographicSiteSpecificationRow): GeographicSiteSpecificationRef {
+  private mapSpecRefRow(
+    row: GeographicSiteSpecificationRow,
+    visualIdentity?: VisualIdentity,
+  ): GeographicSiteSpecificationRef {
     return {
       id: row.id,
       href: buildHref('geographicSiteSpecification', row.id),
@@ -1642,6 +1715,7 @@ export class OracleGeoRepository implements IGeoRepository {
       code: row.code,
       category: row.category,
       siteRole: row.site_role ?? defaultSiteRoleFor(row.category),
+      ...(visualIdentity ? { visualIdentity } : {}),
       '@referredType': 'GeographicSiteSpecification',
     };
   }

@@ -8,7 +8,12 @@ import type {
   UseResourceSchematicResult,
 } from '../../hooks/useResourceSchematic';
 
+const mocks = vi.hoisted(() => ({ useResourceTypeVisualIdentities: vi.fn() }));
 const useResourceSchematic = vi.fn<() => UseResourceSchematicResult>();
+
+vi.mock('../../hooks/useResourceTypeVisualIdentities', () => ({
+  useResourceTypeVisualIdentities: mocks.useResourceTypeVisualIdentities,
+}));
 
 vi.mock('../../hooks/useResourceSchematic', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../hooks/useResourceSchematic')>();
@@ -59,6 +64,8 @@ const state = (
 
 beforeEach(() => {
   useResourceSchematic.mockReset();
+  mocks.useResourceTypeVisualIdentities.mockReset();
+  mocks.useResourceTypeVisualIdentities.mockReturnValue(() => undefined);
 });
 
 afterEach(cleanup);
@@ -102,10 +109,36 @@ describe('SchematicTab', () => {
     expect(items[0]).toHaveTextContent('1');
     expect(items[0]).toHaveTextContent('CDOE-7539');
     expect(items[3]).toHaveTextContent('Estação Icaraí');
-    // Detalhe do lance aparece na linha do cabo, não como salto próprio.
-    expect(items[1]).toHaveTextContent('2 lances');
-    // Extensão do próprio cabo (não a soma dos lances) — ~140 m entre os dois pontos.
-    expect(items[1]).toHaveTextContent(/1\d\d m/);
+    // A descrição de Resource traz somente o nome humano do ResourceType.
+    expect(items[1]).toHaveTextContent('Cabo de distribuição');
+    expect(items[1]).not.toHaveTextContent('2 lances');
+  });
+
+  it('exibe somente o nome do ResourceType na descrição de cada recurso', () => {
+    mocks.useResourceTypeVisualIdentities.mockReturnValue((resourceType: string | undefined) =>
+      resourceType === 'CTO'
+        ? { name: 'Caixa de terminação óptica', nature: 'PhysicalResource' }
+        : undefined,
+    );
+    const path: GeoSchematicPath = {
+      nodeId: 'resource:cdoe-type',
+      reachedSite: true,
+      truncated: false,
+      hops: [
+        {
+          index: 1,
+          role: 'equipment',
+          node: equipmentNode('cdoe-type', 'CDOE-TYPE', 'CTO', 'active', [[-43.1, -22.9]]),
+        },
+      ],
+    };
+    useResourceSchematic.mockReturnValue(state('ready', path));
+
+    render(<SchematicTab nodeId="resource:cdoe-type" onSimulate={vi.fn()} onPreview={vi.fn()} />);
+
+    const item = screen.getByRole('listitem');
+    expect(item).toHaveTextContent('Caixa de terminação óptica');
+    expect(item).not.toHaveTextContent(' · ativo');
   });
 
   it('mostra o tipo de Local (não o fallback de recurso) e o mesmo ícone do mapa no salto da Estação', () => {

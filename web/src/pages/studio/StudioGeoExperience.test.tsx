@@ -7,6 +7,7 @@ import * as geoApi from '../../services/geoApi';
 import * as resourceCatalogApi from '../../services/resourceCatalogApi';
 import type { StudioStatus } from '../../services/studioApi';
 import type { StudioGeoNode } from '../../services/studioGeoApi';
+import type { ResourceType } from '../../services/resourceApi';
 import { defaultColorRule } from '../../utils/studioGeoDefaults';
 
 vi.mock('../../services/studioApi', () => ({
@@ -92,7 +93,7 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     expect(screen.getByText('Crie o primeiro grupo ou entidade visual.')).toBeInTheDocument();
     expect(screen.queryByText('Locais')).not.toBeInTheDocument();
     await waitFor(() => expect(captureInitial).not.toBeNull());
-    await expect(captureInitial!()).resolves.toEqual({ schemaVersion: 2, nodes: [] });
+    await expect(captureInitial!()).resolves.toEqual({ schemaVersion: 3, nodes: [] });
   });
 
   it('clique no "+" abre o menu com "Grupo" e "Entidade Visual", sem abrir modal', async () => {
@@ -166,7 +167,6 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
       },
       visualConfig: {
         geometryKind: 'POINT',
-        iconCode: 'CO',
         color: defaultColorRule('LOCAL', '#8b5cf6'),
         opacity: 1,
         scaleBands: {
@@ -213,6 +213,128 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     expect(station?.kind === 'ENTITY' && station.visualConfig).toMatchObject({
       scaleBands: { le5m: { visible: false, sizePx: 31 } },
     });
+  });
+
+  it('projeta a identidade canônica do ResourceType nos previews sem gravá-la no snapshot v3', async () => {
+    const resourceNode: StudioGeoNode = {
+      id: 'poles',
+      kind: 'ENTITY',
+      parentNodeId: null,
+      label: 'Postes',
+      sortOrder: 10,
+      active: true,
+      defaultVisible: true,
+      entity: {
+        category: 'RESOURCE',
+        sourceDomain: 'resource-model',
+        sourceType: 'RESOURCE_TYPE',
+        sourceId: 'Pole',
+      },
+      visualConfig: {
+        geometryKind: 'POINT',
+        color: defaultColorRule('RESOURCE', '#f59e0b'),
+        opacity: 1,
+        scaleBands: {
+          le5m: { visible: true, sizePx: 32 },
+          le10m: { visible: true, sizePx: 30 },
+          le20m: { visible: true, sizePx: 28 },
+          le50m: { visible: true, sizePx: 26 },
+          le100m: { visible: true, sizePx: 24 },
+          le500m: { visible: true, sizePx: 22 },
+          le1km: { visible: true, sizePx: 20 },
+          gt1km: { visible: true, sizePx: 18 },
+        },
+      },
+    };
+    const pole: ResourceType = {
+      '@type': 'ResourceType',
+      id: 'rt-pole',
+      href: '/v1/resource-types/rt-pole',
+      code: 'Pole',
+      name: 'Poste',
+      categoryCode: 'passive',
+      status: 'active',
+      nature: 'PhysicalResource',
+      mapPresence: true,
+      geometryKind: 'POINT',
+      visualIdentity: { kind: 'system', iconCode: 'Pole' },
+    };
+    let captureSnapshot: (() => Promise<Record<string, unknown>>) | null = null;
+    vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus([resourceNode]));
+    vi.mocked(resourceCatalogApi.listModeledResourceTypes).mockResolvedValue([pole]);
+
+    render(
+      <StudioGeoExperience
+        canEdit
+        isEditing
+        onRegisterCaptureInitialSnapshot={(capture) => {
+          captureSnapshot = capture;
+        }}
+      />,
+    );
+
+    const preview = await waitFor(() => {
+      const image = document.querySelector('img[alt=""]');
+      expect(image).not.toBeNull();
+      return image!;
+    });
+    expect(decodeURIComponent(preview.getAttribute('src') ?? '')).toContain('M12 2v20');
+    await waitFor(() => expect(captureSnapshot).not.toBeNull());
+    const captured = await captureSnapshot!();
+    expect(JSON.stringify(captured)).not.toContain('visualIdentity');
+  });
+
+  it('usa o ícone padrão do ResourceType quando não tem customização', async () => {
+    const resourceNode: StudioGeoNode = {
+      id: 'cdoi',
+      kind: 'ENTITY',
+      parentNodeId: null,
+      label: 'CDOI 01',
+      sortOrder: 10,
+      active: true,
+      defaultVisible: true,
+      entity: {
+        category: 'RESOURCE',
+        sourceDomain: 'resource-model',
+        sourceType: 'RESOURCE_TYPE',
+        sourceId: 'CTO',
+      },
+      visualConfig: {
+        geometryKind: 'POINT',
+        color: defaultColorRule('RESOURCE', '#f59e0b'),
+        opacity: 1,
+        scaleBands: {
+          le5m: { visible: true, sizePx: 32 },
+          le10m: { visible: true, sizePx: 30 },
+          le20m: { visible: true, sizePx: 28 },
+          le50m: { visible: true, sizePx: 26 },
+          le100m: { visible: true, sizePx: 24 },
+          le500m: { visible: true, sizePx: 22 },
+          le1km: { visible: true, sizePx: 20 },
+          gt1km: { visible: true, sizePx: 18 },
+        },
+      },
+    };
+    const cto: ResourceType = {
+      '@type': 'ResourceType',
+      id: 'rt-cto',
+      href: '/v1/resource-types/rt-cto',
+      code: 'CTO',
+      name: 'Caixa de Terminação Óptica',
+      categoryCode: 'passive',
+      status: 'active',
+      nature: 'PhysicalResource',
+      mapPresence: true,
+      geometryKind: 'POINT',
+    };
+    vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus([resourceNode]));
+    vi.mocked(resourceCatalogApi.listModeledResourceTypes).mockResolvedValue([cto]);
+
+    render(<StudioGeoExperience canEdit isEditing />);
+
+    await waitFor(() =>
+      expect(document.querySelector('img[src*="m7.5%204.27%209%205.15"]')).not.toBeNull(),
+    );
   });
 
   it('clicar num nó já selecionado desmarca e volta ao placeholder de seleção', async () => {

@@ -286,7 +286,6 @@ describe('isMapFeatureVisible', () => {
 describe('nodeForMapFeature', () => {
   const publishedPointConfig: StudioGeoPointVisualConfig = {
     geometryKind: 'POINT',
-    iconCode: 'energy.substation',
     color: defaultColorRule('LOCAL', '#8b5cf6'),
     opacity: 1,
     scaleBands: {
@@ -321,6 +320,7 @@ describe('nodeForMapFeature', () => {
           sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
           sourceId: 'CO',
         },
+        visualIdentity: { kind: 'system', iconCode: 'energy.substation' },
         visualConfig: publishedPointConfig,
       },
       {
@@ -337,7 +337,8 @@ describe('nodeForMapFeature', () => {
           sourceType: 'RESOURCE_TYPE',
           sourceId: 'OLT',
         },
-        visualConfig: { ...publishedPointConfig, iconCode: 'data-center.server' },
+        visualIdentity: { kind: 'system', iconCode: 'data-center.server' },
+        visualConfig: publishedPointConfig,
       },
       {
         id: 'cdoi',
@@ -353,7 +354,8 @@ describe('nodeForMapFeature', () => {
           sourceType: 'RESOURCE_TYPE',
           sourceId: 'category:CDOI',
         },
-        visualConfig: { ...publishedPointConfig, iconCode: 'network.ont' },
+        visualIdentity: { kind: 'system', iconCode: 'network.ont' },
+        visualConfig: publishedPointConfig,
       },
     ],
   };
@@ -364,7 +366,9 @@ describe('nodeForMapFeature', () => {
       publishedCatalog,
     );
     expect(node?.id).toBe('stations');
-    expect((node?.visualConfig as StudioGeoPointVisualConfig).iconCode).toBe('energy.substation');
+    expect(node?.visualIdentity?.kind === 'system' ? node.visualIdentity.iconCode : undefined).toBe(
+      'energy.substation',
+    );
   });
 
   it('resolve Resource pelo ResourceType.code canônico persistido no índice', () => {
@@ -435,7 +439,7 @@ describe('nodeForMapFeature', () => {
     expect(node?.id).toBe('netwinTower');
   });
 
-  it('trocar apenas visualConfig.iconCode não muda qual entidade é resolvida nem a visibilidade', () => {
+  it('trocar apenas a aparência (opacidade) não muda qual entidade é resolvida nem a visibilidade, nem a identidade canônica', () => {
     const feature = {
       kind: 'resource' as const,
       shape: 'point' as const,
@@ -447,14 +451,15 @@ describe('nodeForMapFeature', () => {
       ...publishedCatalog,
       nodes: publishedCatalog.nodes.map((node) =>
         node.id === 'olts' && node.kind === 'ENTITY'
-          ? { ...node, visualConfig: { ...(node.visualConfig as StudioGeoPointVisualConfig), iconCode: 'logistics.truck' } }
+          ? { ...node, visualConfig: { ...(node.visualConfig as StudioGeoPointVisualConfig), opacity: 0.5 } }
           : node,
       ),
     };
     const after = nodeForMapFeature(feature, repainted);
     expect(after?.id).toBe(before?.id);
     expect(after?.defaultVisible).toBe(before?.defaultVisible);
-    expect((after?.visualConfig as StudioGeoPointVisualConfig).iconCode).toBe('logistics.truck');
+    expect((after?.visualConfig as StudioGeoPointVisualConfig).opacity).toBe(0.5);
+    expect(after?.visualIdentity).toEqual(before?.visualIdentity);
   });
 });
 

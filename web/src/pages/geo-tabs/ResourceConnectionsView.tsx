@@ -7,7 +7,8 @@ import type { DropSimulation } from './ViabilityTab';
 export type ResourceConnectionsViewProps = {
   resourceId: string;
   nodeId: string;
-  onOpenResource: (id: string) => void;
+  /** @deprecated Relações não navegam mais para o painel do recurso relacionado. */
+  onOpenResource?: (id: string) => void;
   onSimulate: (simulation: DropSimulation | null) => void;
   onPreview: (node: GeoTreeNode | null) => void;
 };
@@ -15,7 +16,6 @@ export type ResourceConnectionsViewProps = {
 export function ResourceConnectionsView({
   resourceId,
   nodeId,
-  onOpenResource,
   onSimulate,
   onPreview,
 }: ResourceConnectionsViewProps) {
@@ -71,7 +71,7 @@ export function ResourceConnectionsView({
 
       {tab === 'relationships' ? (
         <div id={relationshipsPanelId} role="tabpanel" aria-labelledby={relationshipsTabId}>
-          <ResourceConnectionsTab resourceId={resourceId} onOpenResource={onOpenResource} />
+          <ResourceConnectionsTab resourceId={resourceId} />
         </div>
       ) : (
         <div id={schematicPanelId} role="tabpanel" aria-labelledby={schematicTabId}>

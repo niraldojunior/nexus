@@ -358,6 +358,7 @@ export class ResourceRepository implements IResourceRepository {
               href: type.href,
               code: type.code,
               name: type.name,
+              ...(type.visualIdentity ? { visualIdentity: type.visualIdentity } : {}),
               '@referredType': 'ResourceType',
             },
           }

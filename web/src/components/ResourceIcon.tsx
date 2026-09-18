@@ -1,28 +1,84 @@
 import { createElement } from 'react';
+import { useResourceTypeVisualIdentities } from '../hooks/useResourceTypeVisualIdentities';
+import { useVisualIdentityPreviewUrl } from '../hooks/useVisualIdentityPreviewUrl';
+import type { VisualIdentity } from '../services/studioGeoApi';
 import {
   resourceIconFor,
   type IconResourceLike,
   type ResourceIcon as ResourceIconSpec,
 } from '../utils/resourceIcon';
+import {
+  resourceTypeFallbackColor,
+  resourceTypeFallbackIcon,
+} from '../utils/resourceTypePresentation';
 
 export type ResourceIconProps = {
   resource: IconResourceLike | string | undefined;
-  // 'badge' desenha o disco na cor da família (igual ao pin do mapa);
-  // 'glyph' desenha só o traço, herdando a cor do texto ao redor.
+  /** Identidade canônica do ResourceType; a instância Resource nunca a duplica. */
+  visualIdentity?: VisualIdentity;
+  // 'badge' só preserva o fundo histórico quando o tipo não pertence ao catálogo modelado.
+  // Tipos modelados sempre seguem o glifo canônico da Modelagem.
   variant?: 'badge' | 'glyph';
   size?: number;
   className?: string;
 };
 
 /**
- * Ícone do tipo de recurso. Renderiza a mesma geometria que `resourceIconDataUrl`
- * usa no marker do Google Maps, para que a árvore de Locais e o mapa mostrem
- * exatamente o mesmo desenho para o mesmo tipo.
+ * Ícone operacional de Resource. A identidade e o fallback genérico vêm do Resource Model;
+ * `resourceIconFor` existe apenas para referências históricas ou tipos ainda não modelados.
  */
-export function ResourceIcon({ resource, variant = 'badge', size, className }: ResourceIconProps) {
-  const icon = resourceIconFor(resource);
+export function ResourceIcon({
+  resource,
+  visualIdentity,
+  variant = 'badge',
+  size,
+  className,
+}: ResourceIconProps) {
+  const legacyIcon = resourceIconFor(resource);
   const box = size ?? (variant === 'badge' ? 20 : 16);
-  const title = icon.label;
+  const resourceType = typeof resource === 'string' ? resource : resource?.resourceType;
+  const presentationForResourceType = useResourceTypeVisualIdentities();
+  const presentation = presentationForResourceType(resourceType);
+  const resolvedVisualIdentity = visualIdentity ?? presentation?.visualIdentity;
+  const title = legacyIcon.label;
+  const visualIdentityUrl = useVisualIdentityPreviewUrl(resolvedVisualIdentity, box, {
+    shape: 'none',
+    color: '#0284c7',
+  });
+
+  if (visualIdentityUrl) {
+    return (
+      <img
+        src={visualIdentityUrl}
+        alt=""
+        aria-hidden="true"
+        className={`shrink-0 ${className ?? ''}`}
+        style={{ width: box, height: box }}
+        title={title}
+      />
+    );
+  }
+
+  // A falta de visualIdentity em tipo modelado é intencional: corresponde exatamente ao
+  // fallback Box/Cpu exibido pela Modelagem, sem inferir Splitter, Porta etc. pelo nome.
+  if (presentation) {
+    const FallbackIcon = resourceTypeFallbackIcon(presentation.nature);
+    return (
+      <FallbackIcon
+        className={`shrink-0 ${className ?? ''}`}
+        style={{
+          width: box,
+          height: box,
+          color: resourceTypeFallbackColor(presentation.nature),
+          strokeWidth: 2,
+        }}
+        aria-hidden="true"
+        data-resource-type-fallback={
+          presentation.nature === 'LogicalResource' ? 'logical' : 'physical'
+        }
+      />
+    );
+  }
 
   if (variant === 'glyph') {
     return (
@@ -32,14 +88,14 @@ export function ResourceIcon({ resource, variant = 'badge', size, className }: R
         height={box}
         viewBox="0 0 24 24"
         fill="none"
-        stroke={icon.color}
+        stroke={legacyIcon.color}
         strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden="true"
       >
         <title>{title}</title>
-        {glyphChildren(icon)}
+        {glyphChildren(legacyIcon)}
       </svg>
     );
   }
@@ -47,7 +103,7 @@ export function ResourceIcon({ resource, variant = 'badge', size, className }: R
   return (
     <span
       className={`flex shrink-0 items-center justify-center rounded-[7px] text-white ${className ?? ''}`}
-      style={{ background: icon.color, width: box, height: box }}
+      style={{ background: legacyIcon.color, width: box, height: box }}
       title={title}
     >
       <svg
@@ -61,14 +117,12 @@ export function ResourceIcon({ resource, variant = 'badge', size, className }: R
         strokeLinejoin="round"
         aria-hidden="true"
       >
-        {glyphChildren(icon)}
+        {glyphChildren(legacyIcon)}
       </svg>
     </span>
   );
 }
 
-// O `node` do lucide é uma lista de [tag, atributos]; createElement evita ter de
-// manter um switch por tipo de elemento SVG.
 function glyphChildren(icon: ResourceIconSpec) {
   return icon.node.map(([tag, attrs], index) =>
     createElement(tag, { ...attrs, key: `${icon.glyph}-${index}` }),

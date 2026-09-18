@@ -61,7 +61,7 @@ function LayerEntitySample({ node }: { node: StudioGeoEntityNode }) {
     ? resolveStudioGeoColor(pointConfig.color, node.entity.category, null)
     : undefined;
   // O hook precisa rodar incondicionalmente; para LINE/POLYGON ele devolve `undefined`.
-  const previewUrl = useStudioPointIconPreviewUrl(node, pointConfig, 20, {
+  const previewUrl = useStudioPointIconPreviewUrl(pointConfig ? node : null, 20, {
     ...(pointColor ? { color: pointColor } : {}),
     ...(pointConfig ? { opacity: pointConfig.opacity } : {}),
   });

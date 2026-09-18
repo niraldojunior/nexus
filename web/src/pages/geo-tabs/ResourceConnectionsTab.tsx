@@ -1,12 +1,14 @@
 import { AlertCircle, ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
 import { useResourceConnections } from '../../hooks/useResourceConnections';
 import { ResourceIcon } from '../../components/ResourceIcon';
+import { useResourceTypeVisualIdentities } from '../../hooks/useResourceTypeVisualIdentities';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import type { ResourceConnection } from '../../services/resourceApi';
 
 export type ResourceConnectionsTabProps = {
   resourceId: string;
-  onOpenResource: (id: string) => void;
+  /** @deprecated Relações não navegam mais para o painel do recurso relacionado. */
+  onOpenResource?: (id: string) => void;
 };
 
 const RELATIONSHIP_TYPE_LABELS: Record<string, { outgoing: string; incoming: string }> = {
@@ -29,11 +31,9 @@ function formatGroupHeader(relationshipType: string, direction: 'outgoing' | 'in
   return `${relationshipType} (${direction === 'outgoing' ? 'saída' : 'entrada'})`;
 }
 
-export function ResourceConnectionsTab({
-  resourceId,
-  onOpenResource,
-}: ResourceConnectionsTabProps) {
+export function ResourceConnectionsTab({ resourceId }: ResourceConnectionsTabProps) {
   const { connections, loading, error, reload } = useResourceConnections(resourceId);
+  const presentationForResourceType = useResourceTypeVisualIdentities();
 
   if (loading) {
     return (
@@ -123,13 +123,13 @@ export function ResourceConnectionsTab({
                 status: res.status,
                 name: res.name,
               });
+              const resourceTypeName =
+                presentationForResourceType(res.resourceType)?.name ?? typeInfo.label;
 
               return (
-                <button
+                <div
                   key={`${conn.direction}-${res.id}`}
-                  type="button"
-                  onClick={() => onOpenResource(res.id)}
-                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  className="flex w-full min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2"
                 >
                   <ResourceIcon
                     resource={{
@@ -137,7 +137,7 @@ export function ResourceConnectionsTab({
                       status: res.status,
                       name: res.name,
                     }}
-                    variant="badge"
+                    variant="glyph"
                     size={26}
                   />
                   <span className="min-w-0 flex-1">
@@ -145,14 +145,10 @@ export function ResourceConnectionsTab({
                       {res.name}
                     </span>
                     <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted">
-                      {typeInfo.label}
-                      {res.status ? ` · ${res.status}` : ''}
+                      {resourceTypeName}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
-                    Abrir
-                  </span>
-                </button>
+                </div>
               );
             })}
           </div>

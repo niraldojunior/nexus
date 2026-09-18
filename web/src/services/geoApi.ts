@@ -3,6 +3,9 @@
 // ResourcePage e ServicePage. Não muda o modelo canônico TMF — apenas expõe
 // os dados já existentes para que outras telas resolvam rótulos amigáveis.
 import { bearerToken } from './session';
+import type { VisualIdentity } from './studioGeoApi';
+
+export type { VisualIdentity };
 
 // Vocabulário de GeoProject.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
 // que usa o vocabulário canônico de 5 estados abaixo (GeoSiteStatus). Os dois nunca
@@ -140,6 +143,7 @@ export type GeoSpec = {
   allowedChildSpecIds: string[];
   allowedParentSpec?: Array<{ id: string; name: string; code: string; category: GeoSpecCategory }>;
   allowedChildSpec?: Array<{ id: string; name: string; code: string; category: GeoSpecCategory }>;
+  visualIdentity?: VisualIdentity;
   _bootstrapProtected?: boolean;
 };
 
@@ -153,6 +157,7 @@ export type CreateGeoSpecInput = {
   allowedParentSpecIds?: string[];
   allowedChildSpecIds?: string[];
   specCharacteristic?: GeoSpecCharacteristic[];
+  visualIdentity?: VisualIdentity | null;
 };
 
 export type UpdateGeoSpecInput = Partial<CreateGeoSpecInput>;

@@ -8,6 +8,7 @@ import {
 } from '../src/modules/studio/asset-service.js';
 import {
   CANONICAL_STUDIO_GEO_SNAPSHOT,
+  normalizeStudioGeoSnapshot,
   StudioGeoAdapter,
 } from '../src/modules/studio/adapters/studio-geo-adapter.js';
 import { StudioRepository } from '../src/modules/studio/repository.js';
@@ -54,7 +55,7 @@ test('Studio assets are tenant-scoped and soft-retired', async () => {
 });
 
 test('Studio GEO adapter validates canonical hierarchy and rejects duplicate entity references', async () => {
-  const adapter = new StudioGeoAdapter(async () => true, noResourceTypes);
+  const adapter = new StudioGeoAdapter(noResourceTypes);
   const valid = await adapter.validate(CANONICAL_STUDIO_GEO_SNAPSHOT);
   assert.equal(valid.valid, true);
 
@@ -71,11 +72,8 @@ test('Studio GEO adapter validates canonical hierarchy and rejects duplicate ent
   assert.equal(invalid.issues.some((issue) => issue.code === 'STUDIO_GEO_ENTITY_REFERENCE_DUPLICATE'), true);
 });
 
-test('Studio GEO validates visual point configuration and its published asset reference', async () => {
-  const adapter = new StudioGeoAdapter(
-    async (tenantId, assetId) => tenantId === 'vtal' && assetId === 'asset-ok',
-    noResourceTypes,
-  );
+test('Studio GEO normalizes v2 point identity away while preserving contextual style', async () => {
+  const adapter = new StudioGeoAdapter(noResourceTypes);
   const base = CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.find((node) => node.kind === 'ENTITY');
   assert.ok(base);
   const snapshot = {
@@ -84,27 +82,53 @@ test('Studio GEO validates visual point configuration and its published asset re
       node.id === base.id
         ? {
             ...node,
+            assetId: 'asset-at-node',
             visualConfig: {
               geometryKind: 'POINT' as const,
               iconCode: 'CO',
-              assetId: 'asset-missing',
+              assetId: 'asset-in-style',
+              color: {
+                mode: 'fixed' as const,
+                defaultColor: '#10b981',
+                statusColors: {
+                  Planned: '#f59e0b',
+                  InConstruction: '#2563eb',
+                  Active: '#047857',
+                  InDeactivation: '#ef4444',
+                  Retired: '#64748b',
+                },
+              },
+              opacity: 1,
               scaleBands: {
-                le5m: { visible: true, sizePx: 24 }, le10m: { visible: true, sizePx: 24 },
-                le20m: { visible: true, sizePx: 24 }, le50m: { visible: true, sizePx: 20 },
-                le100m: { visible: true, sizePx: 18 }, le500m: { visible: true, sizePx: 16 },
-                le1km: { visible: true, sizePx: 14 }, gt1km: { visible: false, sizePx: 12 },
+                le5m: { visible: true, sizePx: 24 },
+                le10m: { visible: true, sizePx: 24 },
+                le20m: { visible: true, sizePx: 24 },
+                le50m: { visible: true, sizePx: 20 },
+                le100m: { visible: true, sizePx: 18 },
+                le500m: { visible: true, sizePx: 16 },
+                le1km: { visible: true, sizePx: 14 },
+                gt1km: { visible: false, sizePx: 12 },
               },
             },
           }
         : node,
     ),
   };
-  assert.equal((await adapter.validate(snapshot)).valid, true);
-  await assert.rejects(adapter.materialize(snapshot, { tenantId: 'vtal' }), (error: { code?: string }) => error.code === 'STUDIO_GEO_ASSET_UNAVAILABLE');
+
+  const normalized = normalizeStudioGeoSnapshot(snapshot);
+  assert.equal(normalized.schemaVersion, 3);
+  assert.equal(normalized.nodes.length, snapshot.nodes.length);
+  const normalizedBase = normalized.nodes.find((node) => node.id === base.id);
+  assert.ok(normalizedBase?.kind === 'ENTITY');
+  assert.equal('assetId' in normalizedBase, false);
+  assert.equal(normalizedBase.visualConfig?.geometryKind, 'POINT');
+  assert.equal('iconCode' in (normalizedBase.visualConfig ?? {}), false);
+  assert.equal('assetId' in (normalizedBase.visualConfig ?? {}), false);
+  assert.equal((await adapter.validate(normalized)).valid, true);
 
   const invalid = await adapter.validate({
-    ...snapshot,
-    nodes: snapshot.nodes.map((node) => {
+    ...normalized,
+    nodes: normalized.nodes.map((node) => {
       if (node.kind !== 'ENTITY' || node.id !== base.id) return node;
       const visualConfig = node.visualConfig;
       if (!visualConfig || visualConfig.geometryKind !== 'POINT') return node;
@@ -112,12 +136,15 @@ test('Studio GEO validates visual point configuration and its published asset re
     }),
   });
   assert.equal(invalid.valid, false);
-  assert.equal(invalid.issues.some((issue) => issue.code === 'STUDIO_GEO_POINT_SCALE_BAND_INVALID'), true);
+  assert.equal(
+    invalid.issues.some((issue) => issue.code === 'STUDIO_GEO_POINT_SCALE_BAND_INVALID'),
+    true,
+  );
 });
 
 test('Studio GEO bootstrap publishes only once and keeps the published snapshot isolated from draft', async () => {
   const studio = new StudioService(new StudioRepository(), eventService as never);
-  studio.registerAdapter(new StudioGeoAdapter(async () => true, noResourceTypes));
+  studio.registerAdapter(new StudioGeoAdapter(noResourceTypes));
   const first = await studio.ensurePublishedBootstrap('studio-geo', CANONICAL_STUDIO_GEO_SNAPSHOT, context);
   const second = await studio.ensurePublishedBootstrap('studio-geo', { groups: [], layers: [] }, context);
   assert.equal(first.id, second.id);
@@ -125,4 +152,6 @@ test('Studio GEO bootstrap publishes only once and keeps the published snapshot 
   const draft = await studio.saveDraft('studio-geo', { groups: [], layers: [] }, context);
   assert.equal((await studio.getPublishedVersion('studio-geo', context))?.id, first.id);
   assert.equal(draft.status, 'draft');
+  assert.deepEqual(draft.snapshot, { schemaVersion: 3, nodes: [] });
+  assert.deepEqual(draft.baselineSnapshot, { schemaVersion: 3, nodes: [] });
 });

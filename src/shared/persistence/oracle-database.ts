@@ -32,6 +32,12 @@ import {
   studioGeoGeometryIndex,
   type ResourceTypeGeometryCandidate,
 } from '../../modules/resource/geometry-backfill.js';
+import {
+  extractStudioGeoVisualIdentities,
+  resolveTargetVisualIdentity,
+  type StudioGeoVisualCandidate,
+} from '../../modules/resource/visual-identity-backfill.js';
+import type { VisualIdentity } from '../ui/visual-identity.js';
 
 export type OracleConnectionConfig = {
   connectString: string;
@@ -264,6 +270,9 @@ export class OracleDatabase implements DatabaseClient {
       }
       if (batch.name === 'resource-type-geometry-kind') {
         await this.applyResourceTypeGeometryKindMigration(connection);
+      }
+      if (batch.name === 'visual-identity-authority') {
+        await this.applyVisualIdentityAuthorityMigration(connection);
       }
       await connection.execute(
         `MERGE INTO ${migrations} target
@@ -598,6 +607,139 @@ export class OracleDatabase implements DatabaseClient {
           'Defina a geometria na Modelagem de Recursos ou retire o tipo do mapa antes de migrar.',
       );
     }
+  }
+
+  /**
+   * Migra a evidência legada de ícone do Studio GEO para a autoridade canônica do modelo.
+   * A publicação histórica é somente lida: divergências entre snapshots, assets fora do tenant e
+   * alvos ausentes não recebem uma escolha arbitrária e fazem o lote falhar antes de ser marcado.
+   */
+  private async applyVisualIdentityAuthorityMigration(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const workspace = prefixed('studio_workspace', prefix);
+    const version = prefixed('studio_version', prefix);
+    const assets = prefixed('studio_asset', prefix);
+    const types = prefixed('tmf_resource_type', prefix);
+    const nodes = prefixed('tmf_resource_catalog_node', prefix);
+    const specs = prefixed('tmf_geographic_site_specification', prefix);
+    const specIdentities = prefixed('tmf_geo_site_spec_visual_identity', prefix);
+
+    const publications = await connection.execute<{ tenant_id: string; snapshot: string | null }>(
+      `SELECT w.tenant_id AS "tenant_id", v.snapshot AS "snapshot"
+         FROM ${workspace} w
+         JOIN ${version} v ON v.id = w.published_version_id
+        WHERE w.domain = 'studio-geo'`,
+      [],
+      QUERY_OPTIONS,
+    );
+    const studioGeoByTenant = new Map<string, Map<string, StudioGeoVisualCandidate>>();
+    const conflictsByTenant = new Map<string, Set<string>>();
+    for (const publication of publications.rows ?? []) {
+      if (!publication.snapshot) continue;
+      let snapshot: unknown;
+      try {
+        snapshot = JSON.parse(publication.snapshot);
+      } catch {
+        continue;
+      }
+      const candidates = extractStudioGeoVisualIdentities(snapshot);
+      const target = studioGeoByTenant.get(publication.tenant_id) ?? new Map();
+      const conflicts = conflictsByTenant.get(publication.tenant_id) ?? new Set<string>();
+      for (const [key, candidate] of candidates) {
+        if (conflicts.has(key)) continue;
+        const prior = target.get(key);
+        const same =
+          prior?.visualIdentity.kind === candidate.visualIdentity.kind &&
+          (prior.visualIdentity.kind === 'system' && candidate.visualIdentity.kind === 'system'
+            ? prior.visualIdentity.iconCode === candidate.visualIdentity.iconCode
+            : prior.visualIdentity.kind === 'asset' && candidate.visualIdentity.kind === 'asset'
+              ? prior.visualIdentity.assetId === candidate.visualIdentity.assetId
+              : false);
+        if (prior && !same) {
+          target.delete(key);
+          conflicts.add(key);
+        } else if (!prior) {
+          target.set(key, candidate);
+        }
+      }
+      studioGeoByTenant.set(publication.tenant_id, target);
+      conflictsByTenant.set(publication.tenant_id, conflicts);
+    }
+
+    const activeAssets = await connection.execute<{ tenant_id: string; id: string }>(
+      `SELECT tenant_id AS "tenant_id", id AS "id" FROM ${assets} WHERE active = 1`,
+      [],
+      QUERY_OPTIONS,
+    );
+    const activeAssetsByTenant = new Map<string, Set<string>>();
+    for (const asset of activeAssets.rows ?? []) {
+      const ids = activeAssetsByTenant.get(asset.tenant_id) ?? new Set<string>();
+      ids.add(asset.id);
+      activeAssetsByTenant.set(asset.tenant_id, ids);
+    }
+
+    const resourceTypes = await connection.execute<{
+      id: string; tenant_id: string; code: string; icon_code: string | null; icon_asset_id: string | null; metadata: string | null;
+    }>(
+      `SELECT rt.id AS "id", rt.tenant_id AS "tenant_id", rt.code AS "code",
+              rt.icon_code AS "icon_code", rt.icon_asset_id AS "icon_asset_id", n.metadata AS "metadata"
+         FROM ${types} rt
+         LEFT JOIN ${nodes} n ON n.resource_type_id = rt.id
+          AND n.kind = 'RESOURCE_TYPE' AND n.status = 'active' AND n.tenant_id = rt.tenant_id`,
+      [],
+      QUERY_OPTIONS,
+    );
+    const unresolved: string[] = [];
+    for (const row of resourceTypes.rows ?? []) {
+      const existingIdentity: VisualIdentity | null = row.icon_code
+        ? { kind: 'system', iconCode: row.icon_code }
+        : row.icon_asset_id
+          ? { kind: 'asset', assetId: row.icon_asset_id }
+          : null;
+      const metadata = row.metadata ? (() => { try { return JSON.parse(row.metadata); } catch { return undefined; } })() : undefined;
+      const resolved = resolveTargetVisualIdentity({
+        sourceType: 'RESOURCE_TYPE', targetId: row.id, targetCode: row.code,
+        studioGeoMap: studioGeoByTenant.get(row.tenant_id) ?? new Map(), catalogNodeMetadata: metadata,
+        activeAssetIds: activeAssetsByTenant.get(row.tenant_id) ?? new Set(), existingIdentity,
+      });
+      if (resolved.status === 'invalid_asset') { unresolved.push(`ResourceType ${row.code}: asset ${resolved.assetId} inválido`); continue; }
+      if (resolved.status !== 'resolved') continue;
+      const identity = resolved.evidence.visualIdentity;
+      await connection.execute(
+        `UPDATE ${types} SET icon_code = :1, icon_asset_id = :2, updated_at = CURRENT_TIMESTAMP WHERE id = :3`,
+        [identity.kind === 'system' ? identity.iconCode : null, identity.kind === 'asset' ? identity.assetId : null, row.id],
+        { autoCommit: true },
+      );
+    }
+
+    const siteSpecs = await connection.execute<{ id: string; code: string }>(
+      `SELECT id AS "id", code AS "code" FROM ${specs}`,
+      [],
+      QUERY_OPTIONS,
+    );
+    for (const [tenantId, candidates] of studioGeoByTenant) {
+      for (const spec of siteSpecs.rows ?? []) {
+        const existing = await connection.execute<{ icon_code: string | null; icon_asset_id: string | null }>(
+          `SELECT icon_code AS "icon_code", icon_asset_id AS "icon_asset_id" FROM ${specIdentities}
+            WHERE tenant_id = :1 AND site_specification_id = :2`, [tenantId, spec.id], QUERY_OPTIONS,
+        );
+        const row = existing.rows?.[0];
+        const existingIdentity: VisualIdentity | null = row?.icon_code ? { kind: 'system', iconCode: row.icon_code } : row?.icon_asset_id ? { kind: 'asset', assetId: row.icon_asset_id } : null;
+        const resolved = resolveTargetVisualIdentity({ sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', targetId: spec.id, targetCode: spec.code, studioGeoMap: candidates, activeAssetIds: activeAssetsByTenant.get(tenantId) ?? new Set(), existingIdentity });
+        if (resolved.status === 'invalid_asset') { unresolved.push(`GeographicSiteSpecification ${spec.code}: asset ${resolved.assetId} inválido`); continue; }
+        if (resolved.status !== 'resolved') continue;
+        const identity = resolved.evidence.visualIdentity;
+        await connection.execute(
+          `MERGE INTO ${specIdentities} target USING (SELECT :1 tenant_id, :2 site_specification_id, :3 icon_code, :4 icon_asset_id FROM DUAL) source
+             ON (target.tenant_id = source.tenant_id AND target.site_specification_id = source.site_specification_id)
+           WHEN NOT MATCHED THEN INSERT (tenant_id, site_specification_id, icon_code, icon_asset_id, created_at, updated_at)
+             VALUES (source.tenant_id, source.site_specification_id, source.icon_code, source.icon_asset_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [tenantId, spec.id, identity.kind === 'system' ? identity.iconCode : null, identity.kind === 'asset' ? identity.assetId : null],
+          { autoCommit: true },
+        );
+      }
+    }
+    if (unresolved.length > 0) throw new Error(`Visual identity backfill has unresolved evidence: ${unresolved.join('; ')}`);
   }
 
   private async widenGeoMapFeatureShapeCheck(connection: Connection): Promise<void> {

@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useResourceSchematic } from '../../hooks/useResourceSchematic';
+import { useResourceTypeVisualIdentities } from '../../hooks/useResourceTypeVisualIdentities';
 import { treeNodeRoute, type GeoSchematicHop, type GeoTreeNode } from '../../services/geoTreeApi';
-import { formatDropDistance, pathLengthMeters, stitchSchematicPath } from '../../utils/dropSimulation';
+import { pathLengthMeters, stitchSchematicPath } from '../../utils/dropSimulation';
 import { statusBadgeMeta, siteSpecNameLabel } from '../../utils/geoLabels';
 import { siteKindFromSpec, siteKindLabel } from '../../utils/placeLabel';
 import { resourceIconFor } from '../../utils/resourceIcon';
@@ -11,60 +12,39 @@ import { NodeIcon } from './HierarchyTreeView';
 import type { DropSimulation } from './ViabilityTab';
 
 export type SchematicTabProps = {
-  // Recurso selecionado (id completo `resource:<uuid>` — o mesmo que a API de árvore usa).
   nodeId: string;
-  // Mesmo canal visual da simulação de drop da aba Viabilidade (pontilhado preto/amarelo
-  // animado + câmera enquadrando o traçado, ver GoogleMapPanel/onDropSimulation em
-  // GeoPage) — os dois painéis nunca coexistem, então reusar o mesmo estado é seguro e
-  // evita duplicar a animação/desenho no mapa.
   onSimulate: (simulation: DropSimulation | null) => void;
-  // Clique num salto: mostra o balão de preview em cima do item no mapa — mesmo canal do
-  // hover na árvore de Hierarquia (ver handleHover/onHoverNode em GeoPage). Não navega:
-  // quem quiser abrir o painel do salto usa o balão ou a própria árvore.
   onPreview: (node: GeoTreeNode | null) => void;
 };
 
 const hopStatusLabel = (hop: GeoSchematicHop): string | undefined =>
   hop.node.detail?.substatus ? shortSubstatus(hop.node.detail.substatus) : undefined;
 
-// Tipo do salto para a linha secundária — recurso usa o rótulo do seu ResourceType
-// (mesmo ícone/rótulo do mapa); Estação usa o rótulo de Site (categoria/kind), nunca o
-// fallback de recurso ("Outro"), que é o que ela caía antes por não ter `resourceType`.
-function hopTypeLabel(hop: GeoSchematicHop): string {
+function hopTypeLabel(
+  hop: GeoSchematicHop,
+  resourceTypeName: (resourceType: string | undefined) => string | undefined,
+): string {
   if (hop.role === 'site') {
     const kind = siteKindFromSpec({ category: hop.node.siteCategory, name: hop.node.sublabel });
     return siteSpecNameLabel(hop.node.sublabel) ?? siteKindLabel[kind];
   }
-  return resourceIconFor({
-    resourceType: hop.node.resourceType ?? '',
-    name: hop.node.label,
-    sublabel: hop.node.sublabel,
-    status: hop.node.status,
-  }).label;
+  return (
+    resourceTypeName(hop.node.resourceType) ??
+    resourceIconFor({
+      resourceType: hop.node.resourceType ?? '',
+      name: hop.node.label,
+      sublabel: hop.node.sublabel,
+      status: hop.node.status,
+    }).label
+  );
 }
 
-// Comprimento do próprio cabo (não a soma dos lances) — calculado da geometria que já
-// veio hidratada no nó, sem chamada extra: mesma métrica que `pathLengthMeters` usa para
-// o traçado costurado inteiro, aplicada só ao trecho deste salto.
-function hopCableLength(hop: GeoSchematicHop): number | null {
-  if (hop.role !== 'cable') return null;
-  const route = treeNodeRoute(hop.node);
-  if (!route || route.length < 2) return null;
-  return pathLengthMeters(route);
-}
-
-/**
- * Aba "Esquemático" do painel de Recurso: o "traceroute" da fibra do equipamento
- * selecionado até a Estação — cada salto numerado (equipamento, cabo, equipamento…),
- * terminando na Estação. Mesmo grafo que `migrate-netwin-osp.ts` grava
- * (`GeoTreeService.schematicPath`).
- *
- * Mesmo padrão de limpeza on-unmount e disparo por microtask do ViabilityTab: o
- * StrictMode monta duas vezes, e a limpeza da primeira montagem não pode apagar o
- * traçado que a segunda acabou de desenhar.
- */
+/** Caminho físico a montante do Resource selecionado até a Estação. */
 export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProps) {
   const { status, path, error } = useResourceSchematic(nodeId);
+  const presentationForResourceType = useResourceTypeVisualIdentities();
+  const resourceTypeName = (resourceType: string | undefined) =>
+    presentationForResourceType(resourceType)?.name;
 
   const onSimulateRef = useRef(onSimulate);
   onSimulateRef.current = onSimulate;
@@ -141,7 +121,6 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
       <ol className="grid gap-0.5">
         {path.hops.map((hop) => {
           const statusText = hopStatusLabel(hop);
-          const cableLength = hopCableLength(hop);
           return (
             <li key={`${hop.index}:${hop.node.id}`} className="relative">
               {hop.index < path.hops.length ? (
@@ -167,14 +146,11 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
                     {hop.node.label}
                   </span>
                   <span className="block break-words text-[0.72rem] leading-snug text-app-muted">
-                    {hopTypeLabel(hop)}
-                    {hop.node.status ? ` · ${statusBadgeMeta(hop.node.status).label}` : null}
-                    {statusText ? ` (${statusText})` : null}
-                    {cableLength !== null ? ` · ${formatDropDistance(cableLength)}` : null}
-                    {hop.spans?.count
-                      ? ` · ${hop.spans.count} lance${hop.spans.count > 1 ? 's' : ''}` +
-                        (hop.spans.types.length ? ` (${hop.spans.types.join(', ')})` : '')
+                    {hopTypeLabel(hop, resourceTypeName)}
+                    {hop.role === 'site' && hop.node.status
+                      ? ` · ${statusBadgeMeta(hop.node.status).label}`
                       : null}
+                    {hop.role === 'site' && statusText ? ` (${statusText})` : null}
                   </span>
                 </span>
               </button>

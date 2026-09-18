@@ -703,39 +703,6 @@ const resolveIconColor = (
   return override ?? familyColor[family];
 };
 
-// CDOI (Caixa de Distribuição Óptica Interna) é uma CTO exclusiva de uma edificação
-// específica — ao contrário da CDOE, que fica na via pública. No catálogo canônico as duas
-// são o mesmo ResourceType `CTO` (decisão já tomada para CDOE — ver
-// scripts/migrate-netwin-infranode.ts); a única distinção disponível hoje é o nome do
-// recurso ou da sua ResourceSpecification ("CDOI" / "Netwin CDOI"). `code`/família/cor
-// permanecem os de CTO de propósito — outras regras (ex.: useAddressViability, que busca
-// candidatas a CDO por `resourceTypeCode(...) === 'CTO'`) dependem de CDOI continuar
-// contando como CTO; só o glifo do pin muda.
-export const isCdoiResource = (resource: IconResourceLike | string | undefined): boolean => {
-  if (typeof resource === 'string' || !resource) return false;
-  const haystack = [resource.name, resource.resourceSpecification?.name, resource.sublabel]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return /\bcdoi\b/.test(haystack);
-};
-
-// Mesmo prédio do CO em siteIcon.ts (Building2 do lucide) — sinaliza "isto pertence a uma
-// edificação" com o mesmo desenho que já significa isso no mapa, só que como recurso
-// (círculo) em vez de local (quadrado arredondado).
-const CDOI_ICON: { glyph: string; node: IconNode } = {
-  glyph: 'building-2',
-  node: [
-    ['path', { d: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z' }],
-    ['path', { d: 'M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2' }],
-    ['path', { d: 'M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2' }],
-    ['path', { d: 'M10 6h4' }],
-    ['path', { d: 'M10 10h4' }],
-    ['path', { d: 'M10 14h4' }],
-    ['path', { d: 'M10 18h4' }],
-  ],
-};
-
 // Resolve o código de tipo do catálogo. `resourceType` já vem com o code em dados
 // criados pelo Nexus; nome e spec são a rede de segurança para o que veio de fora.
 // Rótulo em português de um código de ResourceType já conhecido do catálogo — usado onde o
@@ -784,15 +751,13 @@ export function resourceIconFor(resource: IconResourceLike | string | undefined)
   const code = resourceTypeCode(resource);
   const entry = ICONS[code] ?? ICONS.__fallback;
   const status = typeof resource === 'object' ? resource?.status : undefined;
-  const cdoi = code === 'CTO' && isCdoiResource(resource);
-  const glyphEntry = cdoi ? CDOI_ICON : entry;
   return {
     code,
     family: entry.family,
-    glyph: glyphEntry.glyph,
-    node: glyphEntry.node,
+    glyph: entry.glyph,
+    node: entry.node,
     color: resolveIconColor(code, entry.family, status),
-    label: cdoi ? 'CDOI' : (TYPE_LABEL[code] ?? (code === '__fallback' ? 'Outro' : code)),
+    label: TYPE_LABEL[code] ?? (code === '__fallback' ? 'Outro' : code),
   };
 }
 
@@ -818,10 +783,11 @@ export type IconShape = 'circle' | 'squircle' | 'none';
 export function renderIconSvg(
   node: IconNode,
   color: string,
-  options: { size?: number; shape?: IconShape } = {},
+  options: { size?: number; shape?: IconShape; opacity?: number } = {},
 ): string {
   const size = options.size ?? 32;
   const shape = options.shape ?? 'circle';
+  const opacity = options.opacity ?? 1;
   const glyph = node
     .map(([tag, attrs]) => {
       const serialized = Object.entries(attrs)
@@ -841,11 +807,19 @@ export function renderIconSvg(
         : `<circle cx="16" cy="16" r="14" fill="${color}" stroke="#ffffff" stroke-width="2"/>`;
 
   const strokeColor = shape === 'none' ? color : '#ffffff';
+  // O glifo Lucide ocupa 24×24. No contexto de mapa ele reduz para 16×16 dentro do
+  // marcador 32×32; fora dele, o viewBox também é 24×24 para preencher exatamente o mesmo
+  // espaço visual dos componentes Lucide usados na árvore e no cabeçalho.
+  const viewBox = shape === 'none' ? '0 0 24 24' : '0 0 32 32';
+  const glyphTransform = shape === 'none' ? '' : ' transform="translate(8 8) scale(0.667)"';
+  // Fora do mapa, espelha o traço padrão do Lucide usado nos fallbacks React. O traço mais
+  // espesso continua nos markers, onde o glifo é reduzido sobre o fundo colorido.
+  const strokeWidth = shape === 'none' ? '2' : '2.6';
 
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 32 32">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${viewBox}" opacity="${opacity}">`,
     background,
-    `<g transform="translate(8 8) scale(0.667)" fill="none" stroke="${strokeColor}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">`,
+    `<g${glyphTransform} fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">`,
     glyph,
     `</g></svg>`,
   ].join('');
@@ -853,11 +827,12 @@ export function renderIconSvg(
 
 export function resourceIconSvg(
   icon: ResourceIcon,
-  options: { size?: number; ring?: boolean } = {},
+  options: { size?: number; ring?: boolean; color?: string; opacity?: number } = {},
 ): string {
-  return renderIconSvg(icon.node, icon.color, {
+  return renderIconSvg(icon.node, options.color ?? icon.color, {
     size: options.size,
     shape: options.ring === false ? 'none' : 'circle',
+    opacity: options.opacity,
   });
 }
 
@@ -865,17 +840,14 @@ export function resourceIconSvg(
 // recalcula isto para cada marcador em todo re-render — cachear evita regerar/escapar
 // o mesmo SVG milhares de vezes. A cor entra na chave porque não é mais 1:1 com o
 // `code`: CTO varia de cor por status (ver resolveIconColor) — sem a cor aqui, o
-// primeiro CTO desenhado "vencia" o cache e todos os outros saíam com a cor dele. O
-// glifo entra pelo mesmo motivo: CDOI usa `code: 'CTO'` (mesma cor, mesma família) com um
-// desenho diferente (ver isCdoiResource) — sem o glifo na chave, a primeira CTO/CDOI
-// desenhada "venceria" o cache para as duas.
+// primeiro CTO desenhado "vencia" o cache e todos os outros saíam com a cor dele.
 const resourceIconDataUrlCache = new Map<string, string>();
 
 export function resourceIconDataUrl(
   icon: ResourceIcon,
-  options?: { size?: number; ring?: boolean },
+  options?: { size?: number; ring?: boolean; color?: string; opacity?: number },
 ): string {
-  const key = `${icon.code}:${icon.glyph}:${icon.color}:${options?.size ?? ''}:${options?.ring ?? ''}`;
+  const key = `${icon.code}:${icon.glyph}:${options?.color ?? icon.color}:${options?.size ?? ''}:${options?.ring ?? ''}:${options?.opacity ?? ''}`;
   const cached = resourceIconDataUrlCache.get(key);
   if (cached) return cached;
   const value = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(resourceIconSvg(icon, options))}`;

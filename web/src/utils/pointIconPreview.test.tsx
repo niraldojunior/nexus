@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { StudioGeoEntityNode } from '../services/studioGeoApi';
-import { canonicalPointIconPreviewUrl } from './pointIconPreview';
+import {
+  canonicalPointIconPreviewUrl,
+  resolveOperationalIcon,
+  type OperationalIconFacts,
+} from './pointIconPreview';
 
 const stationNode: StudioGeoEntityNode = {
   id: 'stations',
@@ -68,5 +72,74 @@ describe('canonicalPointIconPreviewUrl', () => {
         /^data:image\/svg\+xml/,
       );
     }
+  });
+
+  it('usa o ícone padrão do ResourceType quando não há identidade customizada', () => {
+    const cdoiNode: StudioGeoEntityNode = {
+      ...resourceNode,
+      id: 'cdoi',
+      label: 'CDOI 01',
+      entity: { ...resourceNode.entity, sourceId: 'CTO' },
+    };
+
+    const url = canonicalPointIconPreviewUrl(cdoiNode, undefined, 32);
+
+    // CTO usa o glifo package (caixa/cubo) por padrão
+    expect(decodeURIComponent(url)).toContain('m7.5 4.27 9 5.15');
+  });
+});
+
+describe('resolveOperationalIcon', () => {
+  const cdoi: OperationalIconFacts = {
+    kind: 'resource',
+    resourceType: 'CTO',
+    name: 'CDOI 01',
+  };
+
+  it('prioriza a identidade system do modelo com a forma contextual de mapa', () => {
+    const result = resolveOperationalIcon(
+      { kind: 'resource', resourceType: 'OLT', name: 'OLT Icaraí' },
+      { kind: 'system', iconCode: 'Pole' },
+      { size: 32, color: '#0ea5e9', opacity: 0.7 },
+    );
+
+    expect(result.assetId).toBeUndefined();
+    expect(result.shape).toBe('circle');
+    expect(decodeURIComponent(result.url ?? '')).toContain('fill="#0ea5e9"');
+  });
+
+  it('usa squircle para Location no mapa e glifo transparente fora dele', () => {
+    const facts: OperationalIconFacts = {
+      kind: 'site',
+      siteCategory: 'Site',
+      sublabel: 'Central Office',
+    };
+    const mapIcon = resolveOperationalIcon(facts, { kind: 'system', iconCode: 'CO' }, { size: 32 });
+    const glyph = resolveOperationalIcon(facts, { kind: 'system', iconCode: 'CO' }, {
+      size: 20,
+      context: 'glyph',
+      color: '#0284c7',
+    });
+
+    expect(mapIcon.shape).toBe('squircle');
+    expect(decodeURIComponent(mapIcon.url ?? '')).toContain('<rect');
+    expect(glyph.shape).toBe('none');
+    expect(decodeURIComponent(glyph.url ?? '')).toContain('viewBox="0 0 24 24"');
+    expect(decodeURIComponent(glyph.url ?? '')).not.toContain('stroke="#ffffff"');
+  });
+
+  it('mantém o asset do modelo separado do fallback síncrono', () => {
+    const result = resolveOperationalIcon(cdoi, { kind: 'asset', assetId: 'asset-cdoi' }, { size: 32 });
+
+    expect(result.assetId).toBe('asset-cdoi');
+    expect(result.url).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeURIComponent(result.url ?? '')).toContain('m7.5 4.27 9 5.15');
+  });
+
+  it('preserva o fallback canônico de CTO para recursos não customizados', () => {
+    const result = resolveOperationalIcon(cdoi, undefined, { size: 32 });
+
+    expect(result.label).toBe('CTO');
+    expect(decodeURIComponent(result.url ?? '')).toContain('m7.5 4.27 9 5.15');
   });
 });

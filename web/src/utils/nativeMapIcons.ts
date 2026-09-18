@@ -10,6 +10,7 @@ import {
 import { siteKindColor } from './siteIcon';
 
 export const NATIVE_MAP_ICON_INDUSTRIES = [
+  'REAL_ESTATE',
   'TELECOM',
   'DATA_CENTER',
   'ENERGY',
@@ -20,6 +21,7 @@ export const NATIVE_MAP_ICON_INDUSTRIES = [
 export type NativeMapIconIndustry = (typeof NATIVE_MAP_ICON_INDUSTRIES)[number];
 
 export const NATIVE_MAP_ICON_INDUSTRY_LABEL: Record<NativeMapIconIndustry, string> = {
+  REAL_ESTATE: 'Imobiliário',
   TELECOM: 'Telecom',
   DATA_CENTER: 'Data Center',
   ENERGY: 'Energia',
@@ -42,6 +44,7 @@ type IconDefinition = Pick<NativeMapIcon, 'code' | 'name' | 'tags' | 'glyph' | '
 };
 
 const industryColor: Record<NativeMapIconIndustry, string> = {
+  REAL_ESTATE: '#8b5cf6',
   TELECOM: familyColor.access,
   DATA_CENTER: '#64748b',
   ENERGY: '#f59e0b',
@@ -65,6 +68,149 @@ const icon = (
   color: options.color ?? industryColor[industry],
   node: options.node ?? NATIVE_MAP_ICON_NODES[glyph] ?? NATIVE_MAP_ICON_NODES.box!,
 });
+
+const realEstateIcons: NativeMapIcon[] = [
+  icon('REAL_ESTATE', 'real-estate.property', 'Imóvel', 'home', [
+    'imóvel',
+    'casa',
+    'residência',
+    'propriedade',
+    'lote',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.condominium', 'Condomínio', 'building-2', [
+    'condomínio',
+    'residencial',
+    'comercial',
+    'complexo',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.campus', 'Campus', 'warehouse', [
+    'campus',
+    'complexo',
+    'polo',
+    'terreno',
+    'área',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.building', 'Edifício', 'building-2', [
+    'edifício',
+    'prédio',
+    'torre',
+    'bloco',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.tower-block', 'Torre / Bloco', 'building-2', [
+    'torre',
+    'bloco',
+    'edificação',
+    'corpo',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.floor', 'Pavimento', 'layers-3', [
+    'pavimento',
+    'andar',
+    'piso',
+    'nível',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.room', 'Sala', 'door-open', [
+    'sala',
+    'cômodo',
+    'compartimento',
+    'espaço',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.unit', 'Unidade', 'box', [
+    'unidade',
+    'apartamento',
+    'conjunto',
+    'sala comercial',
+    'autônoma',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.facility', 'Instalação', 'factory', [
+    'instalação',
+    'infraestrutura',
+    'planta',
+    'complexo',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.site', 'Site', 'map-pin', [
+    'site',
+    'ponto',
+    'estação',
+    'local',
+    'área',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.subsite', 'Subsite', 'door-open', [
+    'subsite',
+    'sublocal',
+    'área interna',
+    'ponto interno',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.operational-area', 'Área operacional', 'crosshair', [
+    'área operacional',
+    'operação',
+    'zona',
+    'setor',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.land', 'Terreno / Lote', 'grid-2x2', [
+    'terreno',
+    'gleba',
+    'lote',
+    'área',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.security-post', 'Portaria e acesso', 'key-round', [
+    'portaria',
+    'guarita',
+    'acesso',
+    'segurança',
+    'controle',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.technical-room', 'Sala técnica', 'server', [
+    'sala técnica',
+    'pop',
+    'ti',
+    'telecom',
+    'dg',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.rooftop', 'Rooftop / Topo', 'arrow-up-from-line', [
+    'rooftop',
+    'topo',
+    'cobertura',
+    'laje',
+    'antena',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.underground', 'Subsolo', 'move-down', [
+    'subsolo',
+    'garagem',
+    'galeria',
+    'poço',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.parking', 'Estacionamento', 'parking-circle', [
+    'estacionamento',
+    'vagas',
+    'pátio',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.distribution-box', 'Distribuição predial', 'package', [
+    'cdoi',
+    'dg',
+    'distribuição',
+    'dg predial',
+    'caixa',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.utility-area', 'Área de utilidades', 'zap', [
+    'utilidades',
+    'energia',
+    'gerador',
+    'subestação',
+    'quadro',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.common-area', 'Área comum', 'globe', [
+    'área comum',
+    'hall',
+    'circulação',
+    'lazer',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.warehouse', 'Galpão', 'warehouse', [
+    'galpão',
+    'armazém',
+    'depósito',
+    'área coberta',
+  ]),
+];
 
 const telecom = (
   code: string,
@@ -434,6 +580,7 @@ const logisticsIcons: NativeMapIcon[] = [
 ];
 
 export const NATIVE_MAP_ICONS: readonly NativeMapIcon[] = [
+  ...realEstateIcons,
   ...telecomIcons,
   ...dataCenterIcons,
   ...energyIcons,

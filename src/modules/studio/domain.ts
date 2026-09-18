@@ -136,6 +136,14 @@ export type DiscardDraftInput = {
 /** Contrato que cada domínio implementa para participar da Governance. Registro em `StudioService`. */
 export interface StudioDomainAdapter {
   domain: StudioDomain;
+  /**
+   * Converte a entrada para a forma canônica antes de checksum e persistência. Domínios sem
+   * migração de schema podem omitir este passo e conservar o payload recebido.
+   */
+  prepareSnapshot?(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<Record<string, unknown>> | Record<string, unknown>;
   /** Valida a forma/consistência do snapshot antes de permitir publicação. */
   validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> | StudioValidationResult;
   /**

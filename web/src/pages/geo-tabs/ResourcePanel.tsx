@@ -302,7 +302,7 @@ export function ResourcePanel({
                     onClick={() => onOpenResource(drop.resource.id)}
                     className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                   >
-                    <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="badge" size={26} />
+                    <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="glyph" size={26} />
                     <span className="min-w-0 flex-1">
                       <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{drop.resource.name}</span>
                       <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
@@ -316,7 +316,7 @@ export function ResourcePanel({
                     onClick={() => onOpenResource(activeDropOnt.id)}
                     className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                   >
-                    <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="badge" size={26} />
+                    <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="glyph" size={26} />
                     <span className="min-w-0 flex-1">
                       <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{activeDropOnt.name}</span>
                       <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
@@ -343,7 +343,6 @@ export function ResourcePanel({
         <ResourceConnectionsView
           resourceId={resourceId}
           nodeId={node.id}
-          onOpenResource={onOpenResource}
           onSimulate={onDropSimulation}
           onPreview={onPreview}
         />

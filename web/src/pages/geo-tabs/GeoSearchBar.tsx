@@ -27,7 +27,6 @@ import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
 import type { ResolvedOperationalIcon } from '../../utils/pointIconPreview';
 import { HierarchyIcon } from './HierarchyIcon';
 import { NodeIcon } from './HierarchyTreeView';
-import { siteSpecNameLabel } from '../../utils/geoLabels';
 import {
   GEO_SEARCH_SCOPES,
   nodeMatchesScope,
@@ -601,7 +600,7 @@ export function GeoSearchBar({
                     selection.type === 'address'
                       ? 'Endereço'
                       : selection.node.kind === 'site'
-                        ? (siteSpecNameLabel(selection.node.sublabel) ?? 'Estação')
+                        ? (selection.node.sublabel ?? 'Estação')
                         : (selection.node.sublabel ?? 'Recurso')
                   }
                   className="shrink-0"
@@ -771,7 +770,7 @@ export function GeoSearchBar({
                           <span className="block truncate text-[0.72rem] text-app-muted">
                             {[
                               node.kind === 'site'
-                                ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel)
+                                ? node.sublabel
                                 : node.sublabel,
                               node.detail?.address,
                             ]

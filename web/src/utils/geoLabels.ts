@@ -99,54 +99,12 @@ export function siteRoleLabel(role: string | undefined): string {
 }
 
 // --- Nome de GeographicSiteSpecification (tipos de site) ------------------------------
-// Cobre os tipos do bootstrap canônico (src/modules/geo/service.ts BOOTSTRAP_SPECIFICATIONS).
-// Tipos criados ad-hoc via catálogo (TypeManagementModal) não têm entrada aqui e caem no
-// nome cru — não há como adivinhar a tradução de um tipo que o usuário acabou de inventar.
-const SITE_SPEC_TRANSLATIONS: ReadonlyArray<{ code: string; name: string; label: string }> = [
-  { code: 'REGION', name: 'Region', label: 'Região' },
-  // FUNCTIONAL_GROUP foi descontinuada (D-GEO-003 superada): a categoria FunctionalGroup não
-  // existe mais no domínio. A entrada fica só para rotular specs Retired de bases já existentes.
-  { code: 'FUNCTIONAL_GROUP', name: 'Functional Group', label: 'Grupo Funcional (descontinuado)' },
-  { code: 'CO', name: 'Central Office', label: 'Estação (CO)' },
-  { code: 'POP', name: 'POP', label: 'POP' },
-  { code: 'CABINET', name: 'Cabinet', label: 'Gabinete' },
-  { code: 'INSTALLATION_POINT', name: 'Installation Point', label: 'Ponto de Instalação' },
-  { code: 'CONDOMINIUM', name: 'Condominium', label: 'Condomínio' },
-  { code: 'BLOCK', name: 'Building Block', label: 'Bloco' },
-  { code: 'FLOOR', name: 'Floor', label: 'Pavimento' },
-  { code: 'ROOM', name: 'Room', label: 'Sala' },
-  { code: 'CAGE', name: 'Cage', label: 'Área Segmentada' },
-  { code: 'BUILDING', name: 'Building', label: 'Edificação' },
-  { code: 'CENTRAL_POP_LEGACY', name: 'Central/POP Legacy', label: 'Central/POP (legado)' },
-  { code: 'TECHNICAL_ROOM', name: 'Technical Room', label: 'Sala Técnica' },
-  { code: 'CUSTOMER_SITE', name: 'Customer Site', label: 'Site de Cliente' },
-  { code: 'REMOTE_UNIT', name: 'Remote Unit', label: 'Unidade Remota' },
-  { code: 'ADVANCED_REMOTE_UNIT', name: 'Advanced Remote Unit', label: 'Unidade Remota Avançada' },
-  { code: 'TECHNICAL_CONTAINER', name: 'Technical Container', label: 'Contêiner Técnico' },
-];
+// O nome vem 100% da modelagem (Studio) — GeographicSiteSpecification não tem tradução
+// fixa por dicionário: o rótulo exibido É o nome que o usuário configurou no catálogo.
 
-const SITE_SPEC_LABEL_BY_CODE = new Map(
-  SITE_SPEC_TRANSLATIONS.map((entry) => [entry.code, entry.label]),
-);
-const SITE_SPEC_LABEL_BY_NAME = new Map(
-  SITE_SPEC_TRANSLATIONS.map((entry) => [entry.name, entry.label]),
-);
-
-// Para telas com a spec completa (código + nome) — resolução precisa por código.
+// Para telas com a spec completa (código + nome).
 export function siteSpecLabel(spec?: Pick<GeoSpec, 'code' | 'name'> | null): string {
-  if (!spec) return '—';
-  return (
-    (spec.code && SITE_SPEC_LABEL_BY_CODE.get(spec.code)) ??
-    SITE_SPEC_LABEL_BY_NAME.get(spec.name) ??
-    spec.name
-  );
-}
-
-// Para telas que só têm o nome cru da spec (ex.: `sublabel` da árvore/busca, que já vem
-// resolvido pelo backend sem o código) — cai no próprio nome quando não reconhecido.
-export function siteSpecNameLabel(name: string | undefined): string | undefined {
-  if (!name) return undefined;
-  return SITE_SPEC_LABEL_BY_NAME.get(name) ?? name;
+  return spec?.name ?? '—';
 }
 
 // --- Containment (que tipo de sub-local cabe embaixo de qual pai) ---------------------

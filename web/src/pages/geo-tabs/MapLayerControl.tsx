@@ -338,7 +338,7 @@ export function MapLayerControl({
           <div className="flex items-center justify-between px-1 pb-2 pt-0.5 border-b border-app-border/50 mb-2">
             <div className="flex items-center gap-1.5">
               <Layers className="h-4 w-4 text-app-muted" />
-              <span className="text-[0.82rem] font-bold text-app-text">Camadas do Mapa</span>
+              <span className="font-display text-[0.82rem] font-bold text-app-text">Camadas do Mapa</span>
             </div>
             <button
               type="button"

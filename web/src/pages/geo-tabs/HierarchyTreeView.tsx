@@ -6,7 +6,6 @@ import { ResourceIcon } from '../../components/ResourceIcon';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { siteIconDataUrl, siteIconFor } from '../../utils/siteIcon';
 import { siteKindFromSpec } from '../../utils/placeLabel';
-import { siteSpecNameLabel } from '../../utils/geoLabels';
 
 export type HierarchyTreeViewProps = {
   rows: GeoTreeRow[];
@@ -141,7 +140,7 @@ function TreeRow({
           onBlur={() => onHover?.(null)}
           title={`${node.label} · ${
             node.kind === 'site'
-              ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel ?? 'Local')
+              ? (node.sublabel ?? 'Local')
               : resourceIconFor({
                   resourceType: node.resourceType ?? '',
                   name: node.label,

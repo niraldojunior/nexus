@@ -4,7 +4,7 @@ import { useResourceSchematic } from '../../hooks/useResourceSchematic';
 import { useResourceTypeVisualIdentities } from '../../hooks/useResourceTypeVisualIdentities';
 import { treeNodeRoute, type GeoSchematicHop, type GeoTreeNode } from '../../services/geoTreeApi';
 import { pathLengthMeters, stitchSchematicPath } from '../../utils/dropSimulation';
-import { statusBadgeMeta, siteSpecNameLabel } from '../../utils/geoLabels';
+import { statusBadgeMeta } from '../../utils/geoLabels';
 import { siteKindFromSpec, siteKindLabel } from '../../utils/placeLabel';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { shortSubstatus } from '../../utils/substatus';
@@ -26,7 +26,7 @@ function hopTypeLabel(
 ): string {
   if (hop.role === 'site') {
     const kind = siteKindFromSpec({ category: hop.node.siteCategory, name: hop.node.sublabel });
-    return siteSpecNameLabel(hop.node.sublabel) ?? siteKindLabel[kind];
+    return hop.node.sublabel ?? siteKindLabel[kind];
   }
   return (
     resourceTypeName(hop.node.resourceType) ??

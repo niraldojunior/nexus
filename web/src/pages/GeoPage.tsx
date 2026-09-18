@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
 import { getJson, listGeoSites } from '../services/geoApi';
 import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
-import { siteStatusLabel, siteSpecNameLabel } from '../utils/geoLabels';
+import { siteStatusLabel } from '../utils/geoLabels';
 import {
   treeNodePoint,
   treeNodeRoute,
@@ -89,10 +89,10 @@ import { useSession } from '../hooks/useSession';
 import {
   resourceIconFor,
   resourceIconDataUrl,
-  resourceTypeLabel,
   MARKER_ICON_SIZE,
   CABLE_STROKE_WEIGHT,
 } from '../utils/resourceIcon';
+import { useResourceTypeVisualIdentities } from '../hooks/useResourceTypeVisualIdentities';
 import {
   selectionPinDataUrl,
   addressSourcePin,
@@ -632,6 +632,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // O catálogo resolve a identidade persistida do namespace. Nunca restauramos viewport sob
   // `pending`: o painel só é montado depois que o environmentId real estiver disponível.
   const mapLayerCatalog = useMapLayerCatalog();
+  // Nome real de cada tipo de recurso, sempre a partir do catálogo modelado no Studio —
+  // usado no eyebrow do balão de hover (ver useMemo `balloon`), nunca um dicionário fixo.
+  const presentationForResourceType = useResourceTypeVisualIdentities();
   const environmentId = mapLayerCatalog.loading ? null : mapLayerCatalog.catalog.environmentId;
   const viewState = useGeoViewState(environmentId);
 
@@ -1684,6 +1687,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [projects],
   );
 
+  // Nome real de cada GeographicSiteSpecification por código — para resolver o eyebrow do
+  // balão de hover sem depender de tradução fixa: hovers do canvas só trazem o código
+  // (issue #69 fase 3, ver map-feature-synchronizer.ts), então o nome configurado na
+  // modelagem precisa ser buscado aqui, no mesmo catálogo que a página já carrega em `specs`.
+  const siteSpecNameByCode = useMemo(() => {
+    const byCode = new Map<string, string>();
+    for (const spec of specs) byCode.set(spec.code, spec.name);
+    return byCode;
+  }, [specs]);
+
   // Monta o conteúdo do balão de preview a partir do nó sob o mouse. Fica aqui,
   // e não no painel do mapa, porque é aqui que se sabe o que fazer com cada
   // tipo de item. Puro cartão de visita — tipo, endereço, status e modelo — sem
@@ -1731,20 +1744,29 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         iconUrl: resolvedIcon.url!,
         // A camada é uma coleção plural ("Estações", "Postes"); o balão descreve
         // uma entidade individual e, por isso, usa sempre o tipo de Site singular.
-        eyebrow: siteSpecNameLabel(node.sublabel) ?? node.sublabel ?? siteKindLabel[kindOfSite],
+        // O rótulo é sempre o nome real configurado na modelagem (Studio) — nunca uma
+        // tradução fixa. Hovers do canvas (issue #69 fase 3) só trazem o código da spec em
+        // siteSpecificationCode/sublabel, então resolve pelo catálogo carregado (`specs`);
+        // hovers da árvore já trazem o nome real em sublabel. Sem nenhum dos dois, cai no
+        // rótulo genérico por categoria (dado ausente/corrompido).
+        eyebrow:
+          (node.siteSpecificationCode && siteSpecNameByCode.get(node.siteSpecificationCode)) ||
+          node.sublabel ||
+          siteKindLabel[kindOfSite],
         title: node.label,
         rows,
       };
     }
 
     const status = resourceStatusLabel[(node.status as GeoStatus) ?? 'active'];
-    // A camada é uma coleção plural; o ResourceType identifica o recurso individual. O nó
-    // pode carregar um code de categoria (`category:…`), então prioriza o nome já resolvido
-    // pela árvore e só traduz o código como fallback.
+    // O nome vem sempre do catálogo modelado (Studio) via useResourceTypeVisualIdentities —
+    // nunca de dicionário fixo (TYPE_LABEL é outro card, fora de escopo aqui). O nó pode
+    // carregar um code de categoria (`category:...`), então normaliza o prefixo antes de resolver.
     const resourceTypeTitle =
-      (node.sublabel ? resourceTypeLabel(node.sublabel) : undefined) ??
-      (node.resourceType ? resourceTypeLabel(node.resourceType.replace(/^category:/i, '')) : undefined) ??
-      node.sublabel ??
+      (node.sublabel && presentationForResourceType(node.sublabel)?.name) ||
+      (node.resourceType &&
+        presentationForResourceType(node.resourceType.replace(/^category:/i, ''))?.name) ||
+      node.sublabel ||
       'Recurso';
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
@@ -1774,6 +1796,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     projectAreaHover,
     mapLayerCatalog.catalog,
     scaleMeters,
+    siteSpecNameByCode,
+    presentationForResourceType,
   ]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está

@@ -13,6 +13,7 @@ const customSpec: LocationModelDraftSpec = {
   siteRole: 'network',
   lifecycleStatus: 'Active',
   specCharacteristic: [],
+  baselineSpecCharacteristic: [],
   allowedParentLocalIds: [],
   allowedChildLocalIds: [],
   visualIdentity: { kind: 'system', iconCode: 'CO' },

@@ -105,6 +105,14 @@ export interface IGeoRepository {
   ): Awaitable<GeographicSite[]>;
   countSites(scope?: GeoTenantScope): Awaitable<number>;
   countSitesBySpecificationId(specificationId: string, scope?: GeoTenantScope): Awaitable<number>;
+  countSitesMissingCharacteristics(
+    specificationId: string,
+    characteristicNames: string[],
+  ): Awaitable<number>;
+  appendMissingSiteCharacteristics(
+    specificationId: string,
+    characteristics: GeographicSite['characteristic'],
+  ): Awaitable<{ updatedSites: number; appliedValues: number }>;
 
   upsertSiteRelationship(
     siteId: string,

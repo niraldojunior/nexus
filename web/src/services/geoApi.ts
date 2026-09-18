@@ -25,13 +25,7 @@ export type GeoGeometry =
 // Fonte externa que originou o dado — o usuário escolhe entre GEONET/Google Maps no modal
 // de edição de endereço; os demais valores vêm de cargas de migração ou cadastro manual.
 export type GeoSourceSystem =
-  | 'GEONET'
-  | 'GOOGLE_MAPS'
-  | 'NETWIN'
-  | 'GEOSITE'
-  | 'NETWORKCORE'
-  | 'GEOPLEX'
-  | 'MANUAL';
+  'GEONET' | 'GOOGLE_MAPS' | 'NETWIN' | 'GEOSITE' | 'NETWORKCORE' | 'GEOPLEX' | 'MANUAL';
 
 export type GeoAccuracyLevel = 'high' | 'medium' | 'low' | 'unknown';
 
@@ -160,7 +154,9 @@ export type CreateGeoSpecInput = {
   visualIdentity?: VisualIdentity | null;
 };
 
-export type UpdateGeoSpecInput = Partial<CreateGeoSpecInput>;
+export type UpdateGeoSpecInput = Partial<CreateGeoSpecInput> & {
+  migrationStrategy?: { type: 'fillMissingWithDefault' };
+};
 
 export type ContainmentImpactResult = {
   specId: string;
@@ -368,6 +364,4 @@ export const unlinkSiteResource = (
   resourceId: string,
   mode: 'unlink' | 'terminate' = 'unlink',
 ): Promise<void> =>
-  deleteJson(
-    `/v1/geo/sites/${siteId}/resources/${encodeURIComponent(resourceId)}?mode=${mode}`,
-  );
+  deleteJson(`/v1/geo/sites/${siteId}/resources/${encodeURIComponent(resourceId)}?mode=${mode}`);

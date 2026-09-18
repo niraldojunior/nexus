@@ -37,6 +37,12 @@ const REPRESENTATIVE_SQL: Record<string, string> = {
   // uma tabela por vez (nunca UNION ALL antes do ORDER BY/LIMIT — mata o NOSORT STOPKEY).
   searchResourceCandidate: `SELECT id, name FROM (SELECT r.id, r.name FROM tmf_physical_resource r WHERE (r.place_id IS NOT NULL AND r.status <> 'terminated' AND r.resource_type IS DISTINCT FROM 'Splitter' AND LOWER(r.name) LIKE LOWER(?))) AS t ORDER BY LOWER(name) LIMIT ?`,
   siteRelationshipHydration: `SELECT site_from_id, site_to_id, relationship_type FROM tmf_geographic_site_relationship WHERE site_from_id IN (SELECT id FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$'))) v) ORDER BY site_from_id, relationship_type, site_to_id`,
+  // countSitesMissingCharacteristics — contagem agregada de Sites sem a característica, sem
+  // hidratar linha nenhuma (a base nacional tem milhões de Sites por specification).
+  siteMissingCharacteristicCount: `SELECT COUNT(*) AS count FROM tmf_geographic_site s WHERE s.site_specification_id = ? AND EXISTS ( SELECT 1 FROM JSON_TABLE(?, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$')) expected WHERE NOT EXISTS ( SELECT 1 FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')) current_value WHERE LOWER(TRIM(current_value.name)) = expected.name ) )`,
+  // appendMissingSiteCharacteristics — um UPDATE set-based por definição migrada. Oracle 19c não
+  // tem JSON_TRANSFORM, daí o append por SUBSTR/concat sobre o array JSON canônico.
+  siteCharacteristicBackfill: `UPDATE tmf_geographic_site s SET s.characteristics = CASE WHEN s.characteristics IS NULL OR TRIM(s.characteristics) = '[]' THEN '[' || ? || ']' ELSE SUBSTR(s.characteristics, 1, LENGTH(s.characteristics) - 1) || ',' || ? || ']' END, s.updated_at = ? WHERE s.site_specification_id = ? AND NOT EXISTS ( SELECT 1 FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')) current_value WHERE LOWER(TRIM(current_value.name)) = LOWER(TRIM(?)) )`,
 };
 
 test('every representative query translates to Oracle without a Postgres-ism', () => {
@@ -71,6 +77,36 @@ test('translator rewrites the hard constructs to their Oracle form', () => {
   assert.match(relationships, /FROM NEXUS_TEST_tmf_geographic_site_relationship/);
   assert.match(relationships, /JSON_TABLE\(:1, '\$\[\*\]'/);
   assert.doesNotMatch(relationships, /IN \(:[0-9]+,\s*:[0-9]+/);
+});
+
+test('backfill de característica obrigatória é set-based e cabe no Oracle 19c (issue #266)', () => {
+  const count = transformOracleQuery(REPRESENTATIVE_SQL.siteMissingCharacteristicCount!, PREFIX);
+  assert.match(count, /FROM NEXUS_TEST_tmf_geographic_site s/);
+  // A lista de nomes esperados entra como um único bind de array JSON, não como IN-list expandido.
+  assert.match(count, /JSON_TABLE\(:2, '\$\[\*\]'/);
+  assert.doesNotMatch(count, /IN \(:[0-9]+,\s*:[0-9]+/);
+
+  const backfill = transformOracleQuery(REPRESENTATIVE_SQL.siteCharacteristicBackfill!, PREFIX);
+  assert.match(backfill, /UPDATE NEXUS_TEST_tmf_geographic_site s/);
+  // Um UPDATE filtrado pela specification — nunca um upsert por Site.
+  assert.match(backfill, /WHERE s\.site_specification_id = :4/);
+  assert.doesNotMatch(backfill, /MERGE INTO/i);
+  // JSON_TRANSFORM é 21c; a instância real é 19c, então o append tem de ser textual.
+  assert.doesNotMatch(backfill, /JSON_TRANSFORM/i);
+  // NOT EXISTS por nome normalizado: idempotente e nunca sobrescreve valor já informado.
+  assert.match(backfill, /NOT EXISTS/);
+  assert.match(backfill, /LOWER\(TRIM\(current_value\.name\)\) = LOWER\(TRIM\(:5\)\)/);
+
+  const binds = toBinds([
+    '{"name":"capacidade"}',
+    '{"name":"capacidade"}',
+    '2026-09-18T00:00:00.000Z',
+    'spec-id',
+    'capacidade',
+  ]) as Record<string, unknown>;
+  assert.equal(binds['1'], '{"name":"capacidade"}');
+  assert.equal(binds['4'], 'spec-id');
+  assert.equal(binds['5'], 'capacidade');
 });
 
 test('toBinds is name-keyed so :n binds by name, not by array position (issue #43)', () => {
@@ -191,7 +227,9 @@ test('geo_project_area (REQ-MOD01-017) survives the Oracle schema transform', ()
 });
 
 test('migration do índice de mapa recebe versão própria nos dois providers', () => {
-  const migration = MIGRATION_BATCHES.find((batch) => batch.name === 'geo-map-feature-segment-rank');
+  const migration = MIGRATION_BATCHES.find(
+    (batch) => batch.name === 'geo-map-feature-segment-rank',
+  );
   assert.ok(migration);
   assert.equal(migration.version, 8);
 });
@@ -236,7 +274,10 @@ test('ALTER COLUMN ... TYPE vira MODIFY no Oracle (lote 16)', () => {
   );
   assert.ok(batch, 'lote de alargamento de source_model_id deve existir');
   assert.equal(batch.version, 16);
-  assert.match(batch.sql, /ALTER TABLE geo_map_feature MODIFY \(source_model_id VARCHAR2\(255 CHAR\)\)/);
+  assert.match(
+    batch.sql,
+    /ALTER TABLE geo_map_feature MODIFY \(source_model_id VARCHAR2\(255 CHAR\)\)/,
+  );
   assert.doesNotMatch(batch.sql, /ALTER COLUMN/i);
 });
 

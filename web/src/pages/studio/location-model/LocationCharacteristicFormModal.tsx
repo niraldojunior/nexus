@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Tag } from 'lucide-react';
 import type { GeoCharacteristicRow } from '../../../utils/geoCharacteristicsForm';
 import { emptyGeoCharacteristicRow } from '../../../utils/geoCharacteristicsForm';
-import { listReferenceDataSets, type ReferenceDataSet } from '../../../services/studioReferenceDataApi';
+import {
+  listReferenceDataSets,
+  type ReferenceDataSet,
+} from '../../../services/studioReferenceDataApi';
 import { Modal, Button } from '../../../components/ui';
 
 const VALUE_TYPE_OPTIONS: { value: GeoCharacteristicRow['valueType']; label: string }[] = [
@@ -21,6 +24,7 @@ export type LocationCharacteristicFormModalProps = {
   editingRow: GeoCharacteristicRow | null;
   readOnly?: boolean;
   existingNames: string[];
+  requiresMigrationDefault?: boolean;
   onSave: (row: GeoCharacteristicRow) => void;
 };
 
@@ -30,6 +34,7 @@ export function LocationCharacteristicFormModal({
   editingRow,
   readOnly = false,
   existingNames,
+  requiresMigrationDefault = false,
   onSave,
 }: LocationCharacteristicFormModalProps) {
   const isEditing = Boolean(editingRow);
@@ -53,12 +58,12 @@ export function LocationCharacteristicFormModal({
 
   const listOptions =
     row.valueType === 'list'
-      ? (row.allowedValuesText
+      ? ((row.allowedValuesText
           ? row.allowedValuesText
               .split(',')
               .map((value) => value.trim())
               .filter(Boolean)
-          : row.allowedValues) ?? []
+          : row.allowedValues) ?? [])
       : [];
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -72,8 +77,18 @@ export function LocationCharacteristicFormModal({
       setError('Já existe uma característica com este nome.');
       return;
     }
-    onSave({ ...row, name });
-    onClose();
+    if (requiresMigrationDefault && row.mandatory && !row.hasDefaultValue) {
+      setError(
+        'Defina um valor padrão para preencher os locais existentes sem esta característica.',
+      );
+      return;
+    }
+    try {
+      onSave({ ...row, name });
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Valor padrão inválido.');
+    }
   };
 
   const title = readOnly
@@ -96,10 +111,14 @@ export function LocationCharacteristicFormModal({
       }
       footer={
         readOnly ? (
-          <Button variant="secondary" onClick={onClose}>Fechar</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Fechar
+          </Button>
         ) : (
           <>
-            <Button variant="secondary" onClick={onClose}>Cancelar</Button>
+            <Button variant="secondary" onClick={onClose}>
+              Cancelar
+            </Button>
             <Button variant="primary" type="submit" form="location-characteristic-form">
               {isEditing ? 'Atualizar característica' : 'Criar característica'}
             </Button>
@@ -142,7 +161,9 @@ export function LocationCharacteristicFormModal({
             rows={2}
             value={row.description ?? ''}
             disabled={readOnly}
-            onChange={(event) => setRow((current) => ({ ...current, description: event.target.value }))}
+            onChange={(event) =>
+              setRow((current) => ({ ...current, description: event.target.value }))
+            }
             placeholder="Descreva a finalidade desta característica..."
             className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
           />
@@ -155,11 +176,20 @@ export function LocationCharacteristicFormModal({
               disabled={readOnly}
               onChange={(event) => {
                 const valueType = event.target.value as GeoCharacteristicRow['valueType'];
-                setRow((current) => ({ ...current, valueType, valueText: valueType === 'boolean' ? 'false' : '' }));
+                setRow((current) => ({
+                  ...current,
+                  valueType,
+                  valueText: valueType === 'boolean' ? 'false' : '',
+                  hasDefaultValue: false,
+                }));
               }}
               className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
             >
-              {VALUE_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {VALUE_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
           <label className="flex items-end gap-2 pb-2 text-[0.82rem] font-medium text-app-text">
@@ -167,7 +197,9 @@ export function LocationCharacteristicFormModal({
               type="checkbox"
               checked={row.mandatory}
               disabled={readOnly}
-              onChange={(event) => setRow((current) => ({ ...current, mandatory: event.target.checked }))}
+              onChange={(event) =>
+                setRow((current) => ({ ...current, mandatory: event.target.checked }))
+              }
               className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
             />
             Obrigatória
@@ -181,63 +213,123 @@ export function LocationCharacteristicFormModal({
                 value={row.referenceDataSetKey ?? ''}
                 disabled={readOnly}
                 aria-label="Conjunto de referência"
-                onChange={(event) => setRow((current) => ({
-                  ...current,
-                  referenceDataSetKey: event.target.value || null,
-                  ...(event.target.value ? { allowedValuesText: '', allowedValues: undefined } : {}),
-                }))}
+                onChange={(event) =>
+                  setRow((current) => ({
+                    ...current,
+                    referenceDataSetKey: event.target.value || null,
+                    ...(event.target.value
+                      ? { allowedValuesText: '', allowedValues: undefined }
+                      : {}),
+                  }))
+                }
                 className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
               >
                 <option value="">Opções digitadas manualmente</option>
-                {referenceDataSets.map((set) => <option key={set.key} value={set.key}>{set.name}</option>)}
+                {referenceDataSets.map((set) => (
+                  <option key={set.key} value={set.key}>
+                    {set.name}
+                  </option>
+                ))}
               </select>
             </label>
             {!row.referenceDataSetKey && (
               <input
                 value={row.allowedValuesText ?? ''}
                 disabled={readOnly}
-                onChange={(event) => setRow((current) => ({ ...current, allowedValuesText: event.target.value }))}
+                onChange={(event) =>
+                  setRow((current) => ({ ...current, allowedValuesText: event.target.value }))
+                }
                 placeholder="Opção 1, Opção 2, Opção 3..."
                 className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 font-mono text-[0.82rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
               />
             )}
           </div>
         )}
-        <label className="block text-[0.8rem] font-semibold text-app-text">
-          Valor padrão
-          {row.valueType === 'boolean' ? (
-            <span className="mt-2 flex items-center gap-2 text-[0.82rem] font-normal">
-              <input
-                type="checkbox"
-                checked={row.valueText === 'true'}
-                disabled={readOnly}
-                onChange={(event) => setRow((current) => ({ ...current, valueText: event.target.checked ? 'true' : 'false' }))}
-                className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
-              />
-              {row.valueText === 'true' ? 'Sim' : 'Não'}
-            </span>
-          ) : row.valueType === 'list' && listOptions.length > 0 ? (
-            <select
-              value={row.valueText}
-              disabled={readOnly}
-              onChange={(event) => setRow((current) => ({ ...current, valueText: event.target.value }))}
-              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
-            >
-              <option value="">Selecione um padrão...</option>
-              {listOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          ) : (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-[0.8rem] font-semibold text-app-text">
             <input
-              type={row.valueType === 'date' ? 'date' : row.valueType === 'integer' || row.valueType === 'decimal' ? 'number' : 'text'}
-              step={row.valueType === 'decimal' ? 'any' : undefined}
-              value={row.valueText}
+              type="checkbox"
+              checked={row.hasDefaultValue}
               disabled={readOnly}
-              onChange={(event) => setRow((current) => ({ ...current, valueText: event.target.value }))}
-              placeholder={row.valueType === 'json' ? '{"chave":"valor"}' : 'Valor da característica'}
-              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+              onChange={(event) =>
+                setRow((current) => ({
+                  ...current,
+                  hasDefaultValue: event.target.checked,
+                  valueText:
+                    event.target.checked && current.valueType === 'boolean'
+                      ? current.valueText || 'false'
+                      : current.valueText,
+                }))
+              }
+              className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
             />
+            Definir valor padrão
+          </label>
+          {row.hasDefaultValue && (
+            <label className="block text-[0.8rem] font-semibold text-app-text">
+              Valor padrão
+              {row.valueType === 'boolean' ? (
+                <span className="mt-2 flex items-center gap-2 text-[0.82rem] font-normal">
+                  <input
+                    type="checkbox"
+                    checked={row.valueText === 'true'}
+                    disabled={readOnly}
+                    onChange={(event) =>
+                      setRow((current) => ({
+                        ...current,
+                        valueText: event.target.checked ? 'true' : 'false',
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
+                  />
+                  {row.valueText === 'true' ? 'Sim' : 'Não'}
+                </span>
+              ) : row.valueType === 'list' && listOptions.length > 0 ? (
+                <select
+                  value={row.valueText}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setRow((current) => ({ ...current, valueText: event.target.value }))
+                  }
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+                >
+                  <option value="">Selecione um padrão...</option>
+                  {listOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={
+                    row.valueType === 'date'
+                      ? 'date'
+                      : row.valueType === 'integer' || row.valueType === 'decimal'
+                        ? 'number'
+                        : 'text'
+                  }
+                  step={row.valueType === 'decimal' ? 'any' : undefined}
+                  value={row.valueText}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setRow((current) => ({ ...current, valueText: event.target.value }))
+                  }
+                  placeholder={
+                    row.valueType === 'json' ? '{"chave":"valor"}' : 'Valor da característica'
+                  }
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+                />
+              )}
+            </label>
           )}
-        </label>
+          {requiresMigrationDefault && row.mandatory && (
+            <p className="rounded-[10px] bg-status-amber-soft p-3 text-[0.78rem] text-app-text">
+              O valor padrão será aplicado somente aos locais existentes que ainda não tenham esta
+              característica.
+            </p>
+          )}
+        </div>
       </form>
     </Modal>
   );

@@ -16,6 +16,8 @@ export type LocationModelDraftSpec = {
   lifecycleStatus: 'Active' | 'Retired';
   description?: string;
   specCharacteristic: GeoSpecCharacteristic[];
+  /** Baseline canônica usada somente para detectar transições obrigatórias na publicação. */
+  baselineSpecCharacteristic: GeoSpecCharacteristic[];
   allowedParentLocalIds: string[];
   allowedChildLocalIds: string[];
   visualIdentity?: VisualIdentity;
@@ -33,6 +35,7 @@ type LocationModelSnapshotSpec = {
   allowedChildCodes?: string[];
   specCharacteristic?: GeoSpecCharacteristic[];
   visualIdentity?: VisualIdentity | null;
+  migrationStrategy?: { type: 'fillMissingWithDefault' };
 };
 
 type LocationModelSnapshot = { specifications?: LocationModelSnapshotSpec[] };
@@ -65,6 +68,7 @@ export function draftSpecsFromGeoSpecs(specs: GeoSpec[]): LocationModelDraftSpec
     lifecycleStatus: spec.lifecycleStatus,
     description: spec.description,
     specCharacteristic: spec.specCharacteristic ?? [],
+    baselineSpecCharacteristic: structuredClone(spec.specCharacteristic ?? []),
     allowedParentLocalIds: spec.allowedParentSpecIds
       .map((id) => localIdByPersistedId.get(id))
       .filter((id): id is string => Boolean(id)),
@@ -97,7 +101,7 @@ export function draftSpecsFromSnapshot(
     const canonical = canonicalByCode.get(spec.code.toUpperCase());
     const resolvedVisualIdentity =
       spec.visualIdentity !== undefined
-        ? spec.visualIdentity ?? undefined
+        ? (spec.visualIdentity ?? undefined)
         : canonical?.visualIdentity;
     return {
       localId: canonical?.id ?? localIdByCode.get(spec.code.toUpperCase()) ?? `draft-${spec.code}`,
@@ -109,6 +113,7 @@ export function draftSpecsFromSnapshot(
       lifecycleStatus: spec.lifecycleStatus ?? canonical?.lifecycleStatus ?? 'Active',
       description: spec.description,
       specCharacteristic: spec.specCharacteristic ?? [],
+      baselineSpecCharacteristic: structuredClone(canonical?.specCharacteristic ?? []),
       allowedParentLocalIds: (spec.allowedParentCodes ?? [])
         .map((code) => localIdByCode.get(code.toUpperCase()))
         .filter((id): id is string => Boolean(id)),
@@ -121,28 +126,43 @@ export function draftSpecsFromSnapshot(
   });
 }
 
-export function buildLocationModelSnapshot(specs: LocationModelDraftSpec[]): Record<string, unknown> {
+export function buildLocationModelSnapshot(
+  specs: LocationModelDraftSpec[],
+): Record<string, unknown> {
   const compatibleSpecs = specs.filter((spec) => !isLegacyFunctionalGroup(spec));
   const codeByLocalId = new Map(compatibleSpecs.map((spec) => [spec.localId, spec.code]));
   return {
-    specifications: compatibleSpecs.map((spec) => ({
-      code: spec.code,
-      name: spec.name,
-      category: spec.category,
-      siteRole: spec.siteRole,
-      ...(spec.description?.trim() ? { description: spec.description.trim() } : {}),
-      lifecycleStatus: spec.lifecycleStatus,
-      allowedParentCodes: spec.allowedParentLocalIds
-        .map((id) => codeByLocalId.get(id))
-        .filter((code): code is string => Boolean(code)),
-      allowedChildCodes: spec.allowedChildLocalIds
-        .map((id) => codeByLocalId.get(id))
-        .filter((code): code is string => Boolean(code)),
-      specCharacteristic: spec.specCharacteristic,
-      ...(spec.visualIdentity !== undefined
-        ? { visualIdentity: spec.visualIdentity }
-        : {}),
-    })),
+    specifications: compatibleSpecs.map((spec) => {
+      const baselineByName = new Map(
+        spec.baselineSpecCharacteristic.map((item) => [item.name.trim().toLowerCase(), item]),
+      );
+      const introducesMandatoryCharacteristic = Boolean(
+        spec.persistedId &&
+        spec.specCharacteristic.some((item) => {
+          const baseline = baselineByName.get(item.name.trim().toLowerCase());
+          return item.mandatory && (!baseline || !baseline.mandatory);
+        }),
+      );
+      return {
+        code: spec.code,
+        name: spec.name,
+        category: spec.category,
+        siteRole: spec.siteRole,
+        ...(spec.description?.trim() ? { description: spec.description.trim() } : {}),
+        lifecycleStatus: spec.lifecycleStatus,
+        allowedParentCodes: spec.allowedParentLocalIds
+          .map((id) => codeByLocalId.get(id))
+          .filter((code): code is string => Boolean(code)),
+        allowedChildCodes: spec.allowedChildLocalIds
+          .map((id) => codeByLocalId.get(id))
+          .filter((code): code is string => Boolean(code)),
+        specCharacteristic: spec.specCharacteristic,
+        ...(introducesMandatoryCharacteristic
+          ? { migrationStrategy: { type: 'fillMissingWithDefault' as const } }
+          : {}),
+        ...(spec.visualIdentity !== undefined ? { visualIdentity: spec.visualIdentity } : {}),
+      };
+    }),
   };
 }
 
@@ -156,6 +176,7 @@ export function createLocationDraftSpec(): LocationModelDraftSpec {
     siteRole: defaultRole,
     lifecycleStatus: 'Active',
     specCharacteristic: [],
+    baselineSpecCharacteristic: [],
     allowedParentLocalIds: [],
     allowedChildLocalIds: [],
   };

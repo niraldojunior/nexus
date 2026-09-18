@@ -1,7 +1,14 @@
 import { AppError } from '../../../shared/errors/app-error.js';
 import { createCanonicalId } from '../../../shared/utils/canonical-id.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
-import type { GeoService } from '../../geo/service.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
+import type {
+  GeographicSiteSpecificationMigrationStrategy,
+  GeoService,
+} from '../../geo/service.js';
 import type {
   GeographicSiteSpecificationCategory,
   GeographicSiteRole,
@@ -23,6 +30,7 @@ export type LocationModelSnapshotSpec = {
   allowedChildCodes?: string[];
   specCharacteristic?: GeographicSiteSpecificationCharacteristic[];
   visualIdentity?: VisualIdentity | null;
+  migrationStrategy?: GeographicSiteSpecificationMigrationStrategy;
 };
 
 export type LocationModelSnapshot = {
@@ -36,7 +44,9 @@ const LEGACY_FUNCTIONAL_GROUP_CODE = 'FUNCTIONAL_GROUP';
  * ser uma categoria válida. Esta compatibilidade remove somente esse artefato e suas relações;
  * qualquer outra categoria ou referência inválida segue bloqueando publicação/materialização.
  */
-function normalizeLegacyFunctionalGroup(snapshot: Record<string, unknown>): Record<string, unknown> {
+function normalizeLegacyFunctionalGroup(
+  snapshot: Record<string, unknown>,
+): Record<string, unknown> {
   const candidate = snapshot as Partial<LocationModelSnapshot>;
   if (!Array.isArray(candidate.specifications)) return snapshot;
 
@@ -68,7 +78,8 @@ function normalizeLegacyFunctionalGroup(snapshot: Record<string, unknown>): Reco
 const sameStringSet = (left: string[] = [], right: string[] = []): boolean =>
   left.length === right.length && left.every((value) => right.includes(value));
 
-const sameJson = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
 
 export class LocationModelStudioAdapter implements StudioDomainAdapter {
   public readonly domain = 'location-model';
@@ -79,14 +90,17 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
 
   public async validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> {
     const issues: StudioValidationIssue[] = [];
-    const typedSnapshot = normalizeLegacyFunctionalGroup(snapshot) as unknown as Partial<LocationModelSnapshot>;
+    const typedSnapshot = normalizeLegacyFunctionalGroup(
+      snapshot,
+    ) as unknown as Partial<LocationModelSnapshot>;
 
     const specs = typedSnapshot.specifications;
     if (!specs || !Array.isArray(specs)) {
       issues.push({
         severity: 'error',
         code: 'SPECS_ARRAY_REQUIRED',
-        message: 'A lista de especificações de locais (specifications) é obrigatória e deve ser um array.',
+        message:
+          'A lista de especificações de locais (specifications) é obrigatória e deve ser um array.',
         path: 'specifications',
       });
       return {
@@ -97,7 +111,11 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
     }
 
     const codeSet = new Set<string>();
-    const validCategories = new Set<GeographicSiteSpecificationCategory>(['Region', 'Site', 'SubSite']);
+    const validCategories = new Set<GeographicSiteSpecificationCategory>([
+      'Region',
+      'Site',
+      'SubSite',
+    ]);
     const validRoles = new Set<GeographicSiteRole>(GEO_SITE_ROLES);
 
     // 1ª passada: validação individual de campos e unicidade
@@ -150,6 +168,18 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
           code: 'SPEC_ROLE_INVALID',
           message: `Papel funcional (siteRole) '${s.siteRole}' inválido. Esperado: grouping, network, property ou service.`,
           path: `${pathPrefix}.siteRole`,
+        });
+      }
+
+      if (
+        s.migrationStrategy !== undefined &&
+        s.migrationStrategy.type !== 'fillMissingWithDefault'
+      ) {
+        issues.push({
+          severity: 'error',
+          code: 'SPEC_MIGRATION_STRATEGY_INVALID',
+          message: 'A estratégia de migração da característica obrigatória é inválida.',
+          path: `${pathPrefix}.migrationStrategy`,
         });
       }
     }
@@ -218,7 +248,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
     const reqContext = {
       actorSub: 'location-model-studio-adapter',
       tenantId: context.tenantId,
-      roles: ['studio.admin'],
+      roles: ['studio.admin', 'platform.admin'],
       traceId: createCanonicalId(),
     };
 
@@ -242,7 +272,9 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
           ...(specInput.description !== undefined ? { description: specInput.description } : {}),
           lifecycleStatus: specInput.lifecycleStatus ?? 'Active',
           specCharacteristic: specInput.specCharacteristic ?? [],
-          ...(specInput.visualIdentity !== undefined ? { visualIdentity: specInput.visualIdentity } : {}),
+          ...(specInput.visualIdentity !== undefined
+            ? { visualIdentity: specInput.visualIdentity }
+            : {}),
         },
         reqContext,
       );
@@ -305,6 +337,9 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
                 siteRole: nextRole,
                 lifecycleStatus: nextLifecycleStatus,
                 specCharacteristic: nextCharacteristics,
+                ...(specInput.migrationStrategy !== undefined
+                  ? { migrationStrategy: specInput.migrationStrategy }
+                  : {}),
                 ...(specInput.visualIdentity !== undefined
                   ? { visualIdentity: specInput.visualIdentity }
                   : {}),

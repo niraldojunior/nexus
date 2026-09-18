@@ -198,8 +198,20 @@ test('LocationModelStudioAdapter does not update specifications when the snapsho
   await new LocationModelStudioAdapter(geoService).materialize(
     {
       specifications: [
-        { code: 'REGION', name: 'Região', category: 'Region', siteRole: 'grouping', allowedChildCodes: ['SITE'] },
-        { code: 'SITE', name: 'Local', category: 'Site', siteRole: 'network', allowedParentCodes: ['REGION'] },
+        {
+          code: 'REGION',
+          name: 'Região',
+          category: 'Region',
+          siteRole: 'grouping',
+          allowedChildCodes: ['SITE'],
+        },
+        {
+          code: 'SITE',
+          name: 'Local',
+          category: 'Site',
+          siteRole: 'network',
+          allowedParentCodes: ['REGION'],
+        },
       ],
     },
     { tenantId: 'vtal' },
@@ -291,9 +303,138 @@ test('LocationModelStudioAdapter permite remover containment que o snapshot não
   assert.ok(regionUpdate, 'REGION deveria receber update de containment');
   assert.deepEqual(new Set(regionUpdate!.patch.allowedChildSpecIds as string[]), new Set());
 
-  const coUpdate = updateSpecCalls.find((c) => c.id === 'spec-co-id' && 'allowedParentSpecIds' in c.patch);
+  const coUpdate = updateSpecCalls.find(
+    (c) => c.id === 'spec-co-id' && 'allowedParentSpecIds' in c.patch,
+  );
   assert.ok(coUpdate, 'CO deveria receber update de containment');
   assert.deepEqual(new Set(coUpdate!.patch.allowedParentSpecIds as string[]), new Set());
+});
+
+test('LocationModelStudioAdapter rejeita estratégia de migração desconhecida antes de materializar', async () => {
+  const geoService = {
+    listSpecs: vi.fn(),
+    createSpec: vi.fn(),
+    updateSpec: vi.fn(),
+  } as unknown as GeoService;
+  const adapter = new LocationModelStudioAdapter(geoService);
+
+  const snapshot = {
+    specifications: [
+      {
+        code: 'CO',
+        name: 'Central Office',
+        category: 'Site',
+        siteRole: 'network',
+        migrationStrategy: { type: 'dropExistingSites' },
+      },
+    ],
+  };
+
+  const result = await adapter.validate(snapshot as Record<string, unknown>);
+  assert.equal(result.valid, false);
+  assert.equal(
+    result.issues.some((issue) => issue.code === 'SPEC_MIGRATION_STRATEGY_INVALID'),
+    true,
+  );
+
+  await assert.rejects(
+    () => adapter.materialize(snapshot as Record<string, unknown>, { tenantId: 'vtal' }),
+    /STUDIO_MATERIALIZE_INVALID|inválido para publicação/,
+  );
+  // Nada é tocado: a publicação falha antes de qualquer escrita parcial.
+  assert.equal(vi.mocked(geoService.listSpecs).mock.calls.length, 0);
+  assert.equal(vi.mocked(geoService.createSpec).mock.calls.length, 0);
+  assert.equal(vi.mocked(geoService.updateSpec).mock.calls.length, 0);
+});
+
+test('LocationModelStudioAdapter encaminha a estratégia de migração ao atualizar spec existente', async () => {
+  const existingSpecs: GeographicSiteSpecification[] = [
+    {
+      '@type': 'GeographicSiteSpecification',
+      id: 'spec-co-id',
+      href: '/v1/geo/site-specifications/spec-co-id',
+      code: 'CO',
+      name: 'Central Office',
+      category: 'Site',
+      siteRole: 'network',
+      lifecycleStatus: 'Active',
+      specCharacteristic: [],
+      allowedParentSpec: [],
+      allowedChildSpec: [],
+      allowedParentSpecIds: [],
+      allowedChildSpecIds: [],
+    },
+  ];
+
+  const updateSpecCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const geoService = {
+    listSpecs: vi.fn(async () => existingSpecs),
+    createSpec: vi.fn(),
+    updateSpec: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+      updateSpecCalls.push({ id, patch });
+      return existingSpecs.find((s) => s.id === id);
+    }),
+  } as unknown as GeoService;
+
+  const adapter = new LocationModelStudioAdapter(geoService);
+
+  await adapter.materialize(
+    {
+      specifications: [
+        {
+          code: 'CO',
+          name: 'Central Office',
+          category: 'Site',
+          siteRole: 'network',
+          specCharacteristic: [
+            { name: 'capacidade', valueType: 'integer', mandatory: true, defaultValue: 12 },
+          ],
+          migrationStrategy: { type: 'fillMissingWithDefault' },
+        },
+      ],
+    } as Record<string, unknown>,
+    { tenantId: 'vtal' },
+  );
+
+  const metadataUpdate = updateSpecCalls.find(
+    (call) => call.id === 'spec-co-id' && 'specCharacteristic' in call.patch,
+  );
+  assert.ok(metadataUpdate, 'CO deveria receber update de metadados');
+  assert.deepEqual(metadataUpdate!.patch.migrationStrategy, { type: 'fillMissingWithDefault' });
+});
+
+test('LocationModelStudioAdapter não encaminha estratégia de migração ao criar spec nova', async () => {
+  const createSpecCalls: Array<Record<string, unknown>> = [];
+  const geoService = {
+    listSpecs: vi.fn(async () => [] as GeographicSiteSpecification[]),
+    createSpec: vi.fn(async (input: Record<string, unknown>) => {
+      createSpecCalls.push(input);
+      return { id: 'new-co-id', code: input.code, name: input.name };
+    }),
+    updateSpec: vi.fn(),
+  } as unknown as GeoService;
+
+  const adapter = new LocationModelStudioAdapter(geoService);
+
+  await adapter.materialize(
+    {
+      specifications: [
+        {
+          code: 'CO',
+          name: 'Central Office',
+          category: 'Site',
+          siteRole: 'network',
+          specCharacteristic: [{ name: 'capacidade', valueType: 'integer', mandatory: true }],
+          migrationStrategy: { type: 'fillMissingWithDefault' },
+        },
+      ],
+    } as Record<string, unknown>,
+    { tenantId: 'vtal' },
+  );
+
+  assert.equal(createSpecCalls.length, 1);
+  assert.equal('migrationStrategy' in createSpecCalls[0]!, false);
+  assert.equal(vi.mocked(geoService.updateSpec).mock.calls.length, 0);
 });
 
 test('LocationModelStudioAdapter encaminha mudança de categoria de uma spec existente ao materializar', async () => {
@@ -341,7 +482,9 @@ test('LocationModelStudioAdapter encaminha mudança de categoria de uma spec exi
 
   await adapter.materialize(snapshot as Record<string, unknown>, { tenantId: 'vtal' });
 
-  const metadataUpdate = updateSpecCalls.find((c) => c.id === 'spec-co-id' && 'category' in c.patch);
+  const metadataUpdate = updateSpecCalls.find(
+    (c) => c.id === 'spec-co-id' && 'category' in c.patch,
+  );
   assert.ok(metadataUpdate, 'CO deveria receber update com a nova categoria');
   assert.equal(metadataUpdate!.patch.category, 'Region');
 });

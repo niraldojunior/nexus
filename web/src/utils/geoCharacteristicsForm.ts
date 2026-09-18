@@ -5,13 +5,7 @@
 import type { GeoSpecCharacteristic } from '../services/geoApi';
 
 export type CharacteristicValueType =
-  | 'string'
-  | 'integer'
-  | 'decimal'
-  | 'boolean'
-  | 'date'
-  | 'list'
-  | 'json';
+  'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json';
 
 /**
  * Linha editável de característica de local — `key` só existe no cliente (identidade de lista no
@@ -25,6 +19,7 @@ export type GeoCharacteristicRow = {
   description?: string;
   valueType: CharacteristicValueType;
   valueText: string;
+  hasDefaultValue: boolean;
   mandatory: boolean;
   /** Valores permitidos da lista (quando `valueType === 'list'`), digitados inline. */
   allowedValues?: string[];
@@ -57,7 +52,14 @@ function valueToText(value: unknown, valueType: CharacteristicValueType): string
 }
 
 export function emptyGeoCharacteristicRow(): GeoCharacteristicRow {
-  return { key: nextRowKey(), name: '', valueType: 'string', valueText: '', mandatory: false };
+  return {
+    key: nextRowKey(),
+    name: '',
+    valueType: 'string',
+    valueText: '',
+    hasDefaultValue: false,
+    mandatory: false,
+  };
 }
 
 export function geoCharacteristicRowsFrom(
@@ -65,7 +67,8 @@ export function geoCharacteristicRowsFrom(
 ): GeoCharacteristicRow[] {
   return (characteristics ?? []).map((characteristic) => {
     const valueType =
-      (characteristic.valueType as CharacteristicValueType) || inferValueType(characteristic.defaultValue);
+      (characteristic.valueType as CharacteristicValueType) ||
+      inferValueType(characteristic.defaultValue);
     // A API tipa `allowedValues` como `Array<string | number | boolean>` (specs legadas podiam
     // guardar número/boolean), mas a linha do formulário só edita texto — cada opção vira string.
     const allowedValues = characteristic.allowedValues?.map((value) => String(value));
@@ -76,6 +79,7 @@ export function geoCharacteristicRowsFrom(
       description: characteristic.description,
       valueType,
       valueText: valueToText(characteristic.defaultValue, valueType),
+      hasDefaultValue: characteristic.defaultValue !== undefined,
       mandatory: Boolean(characteristic.mandatory),
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
@@ -88,16 +92,27 @@ export function geoCharacteristicRowsFrom(
 function coerceValue(valueText: string, valueType: CharacteristicValueType): unknown {
   switch (valueType) {
     case 'boolean':
+      if (valueText !== 'true' && valueText !== 'false') {
+        throw new Error('O valor padrão booleano deve ser Sim ou Não.');
+      }
       return valueText === 'true';
-    case 'integer':
-      return Number.parseInt(valueText, 10) || 0;
-    case 'decimal':
-      return Number.parseFloat(valueText) || 0;
+    case 'integer': {
+      if (!/^-?\d+$/.test(valueText.trim())) {
+        throw new Error('O valor padrão deve ser um número inteiro válido.');
+      }
+      return Number(valueText);
+    }
+    case 'decimal': {
+      if (valueText.trim() === '' || !Number.isFinite(Number(valueText))) {
+        throw new Error('O valor padrão deve ser um número decimal válido.');
+      }
+      return Number(valueText);
+    }
     case 'json':
       try {
         return JSON.parse(valueText);
       } catch {
-        return valueText;
+        throw new Error('O valor padrão deve conter um JSON válido.');
       }
     default:
       return valueText;
@@ -113,7 +128,9 @@ export function parseAllowedValues(text?: string): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
-export function buildGeoCharacteristicPayload(rows: GeoCharacteristicRow[]): GeoSpecCharacteristic[] {
+export function buildGeoCharacteristicPayload(
+  rows: GeoCharacteristicRow[],
+): GeoSpecCharacteristic[] {
   return rows
     .filter((row) => row.name.trim().length > 0)
     .map((row) => {
@@ -128,7 +145,7 @@ export function buildGeoCharacteristicPayload(rows: GeoCharacteristicRow[]): Geo
       return {
         name: row.name.trim(),
         valueType: row.valueType,
-        defaultValue: coerceValue(row.valueText, row.valueType),
+        ...(row.hasDefaultValue ? { defaultValue: coerceValue(row.valueText, row.valueType) } : {}),
         mandatory: row.mandatory,
         ...(row.description?.trim() ? { description: row.description.trim() } : {}),
         ...(row.group?.trim() ? { group: row.group.trim() } : {}),

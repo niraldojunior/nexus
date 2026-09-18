@@ -62,7 +62,8 @@ export function LocationSpecDetail({
 }: LocationSpecDetailProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [characteristicModalOpen, setCharacteristicModalOpen] = useState(false);
-  const [editingCharacteristicRow, setEditingCharacteristicRow] = useState<GeoCharacteristicRow | null>(null);
+  const [editingCharacteristicRow, setEditingCharacteristicRow] =
+    useState<GeoCharacteristicRow | null>(null);
   const [characteristicDeletingKey, setCharacteristicDeletingKey] = useState<string | null>(null);
   const [visualIdentityPickerOpen, setVisualIdentityPickerOpen] = useState(false);
   const canMutate = canEdit && isEditing;
@@ -91,8 +92,22 @@ export function LocationSpecDetail({
 
   const saveCharacteristic = (row: GeoCharacteristicRow) => {
     const exists = characteristicRows.some((item) => item.key === row.key);
-    patchCharacteristics(exists ? characteristicRows.map((item) => (item.key === row.key ? row : item)) : [...characteristicRows, row]);
+    patchCharacteristics(
+      exists
+        ? characteristicRows.map((item) => (item.key === row.key ? row : item))
+        : [...characteristicRows, row],
+    );
   };
+
+  const baselineCharacteristic = editingCharacteristicRow
+    ? spec.baselineSpecCharacteristic.find(
+        (item) =>
+          item.name.trim().toLowerCase() === editingCharacteristicRow.name.trim().toLowerCase(),
+      )
+    : undefined;
+  const requiresMigrationDefault = Boolean(
+    spec.persistedId && (!baselineCharacteristic || !baselineCharacteristic.mandatory),
+  );
 
   const deleteCharacteristic = (row: GeoCharacteristicRow) => {
     setCharacteristicDeletingKey(row.key);
@@ -100,9 +115,16 @@ export function LocationSpecDetail({
     setCharacteristicDeletingKey(null);
   };
 
-  const toggleRelation = (field: 'allowedParentLocalIds' | 'allowedChildLocalIds', localId: string) => {
+  const toggleRelation = (
+    field: 'allowedParentLocalIds' | 'allowedChildLocalIds',
+    localId: string,
+  ) => {
     const current = spec[field];
-    onPatch({ [field]: current.includes(localId) ? current.filter((id) => id !== localId) : [...current, localId] });
+    onPatch({
+      [field]: current.includes(localId)
+        ? current.filter((id) => id !== localId)
+        : [...current, localId],
+    });
   };
 
   const CategoryIcon = locationCategoryIcon(spec.category);
@@ -135,7 +157,10 @@ export function LocationSpecDetail({
             )}
             <div className="min-w-0">
               <h3 className="truncate font-bold leading-tight text-app-text">{spec.name}</h3>
-              <span className="mt-0.5 block" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+              <span
+                className="mt-0.5 block"
+                style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
+              >
                 {locationCategoryLabel(spec.category)}
               </span>
             </div>
@@ -143,18 +168,33 @@ export function LocationSpecDetail({
           {canMutate && (
             <div className="flex shrink-0 items-center gap-2">
               {!spec.persistedId ? (
-                <Button variant="danger" size="sm" iconLeft={<Trash2 className="h-4 w-4" />} onClick={onRemoveNew}>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  iconLeft={<Trash2 className="h-4 w-4" />}
+                  onClick={onRemoveNew}
+                >
                   Remover
                 </Button>
               ) : (
                 <>
                   {!spec.bootstrapProtected && spec.lifecycleStatus === 'Active' && (
-                    <Button variant="danger" size="sm" iconLeft={<Trash2 className="h-4 w-4" />} onClick={onInactivate}>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      iconLeft={<Trash2 className="h-4 w-4" />}
+                      onClick={onInactivate}
+                    >
                       Inativar
                     </Button>
                   )}
                   {spec.lifecycleStatus !== 'Active' && wasActiveAtBaseline && (
-                    <Button variant="secondary" size="sm" iconLeft={<RotateCcw className="h-4 w-4" />} onClick={onReactivate}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      iconLeft={<RotateCcw className="h-4 w-4" />}
+                      onClick={onReactivate}
+                    >
                       Reativar
                     </Button>
                   )}
@@ -165,11 +205,13 @@ export function LocationSpecDetail({
         </div>
         <div className="mt-3.5 flex">
           <div className="inline-flex items-center gap-1 rounded-xl bg-black/[0.04] p-1">
-            {([
-              ['overview', 'Geral'],
-              ['characteristics', `Características (${spec.specCharacteristic.length})`],
-              ['relations', `Relações (${relationsCount})`],
-            ] as const).map(([tab, label]) => (
+            {(
+              [
+                ['overview', 'Geral'],
+                ['characteristics', `Características (${spec.specCharacteristic.length})`],
+                ['relations', `Relações (${relationsCount})`],
+              ] as const
+            ).map(([tab, label]) => (
               <button
                 key={tab}
                 type="button"
@@ -184,24 +226,47 @@ export function LocationSpecDetail({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
-        {activeTab === 'overview' && (
-          canMutate ? (
+        {activeTab === 'overview' &&
+          (canMutate ? (
             <div className="space-y-5">
               <label className="block text-[0.8rem] font-semibold text-app-text">
                 Nome *
-                <input value={spec.name} onChange={(event) => onPatch({ name: event.target.value })} placeholder="Ex.: Central Office, Pavimento..." className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" />
+                <input
+                  value={spec.name}
+                  onChange={(event) => onPatch({ name: event.target.value })}
+                  placeholder="Ex.: Central Office, Pavimento..."
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-[0.8rem] font-semibold text-app-text">
                   Categoria
-                  <select value={spec.category} onChange={(event) => onPatch({ category: event.target.value as GeoSpecCategory })} className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent">
-                    {Object.entries(LOCATION_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  <select
+                    value={spec.category}
+                    onChange={(event) =>
+                      onPatch({ category: event.target.value as GeoSpecCategory })
+                    }
+                    className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent"
+                  >
+                    {Object.entries(LOCATION_CATEGORY_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="block text-[0.8rem] font-semibold text-app-text">
                   Papel funcional
-                  <select value={spec.siteRole} onChange={(event) => onPatch({ siteRole: event.target.value as GeoSiteRole })} className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent">
-                    {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  <select
+                    value={spec.siteRole}
+                    onChange={(event) => onPatch({ siteRole: event.target.value as GeoSiteRole })}
+                    className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent"
+                  >
+                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -211,8 +276,8 @@ export function LocationSpecDetail({
                     Identidade visual
                   </span>
                   <span className="block text-[0.76rem] text-app-muted mt-0.5">
-                    Glifo ou imagem que representa este tipo de local em toda a plataforma —
-                    cor, tamanho e opacidade ficam na Experiência no Mapa.
+                    Glifo ou imagem que representa este tipo de local em toda a plataforma — cor,
+                    tamanho e opacidade ficam na Experiência no Mapa.
                   </span>
                 </div>
                 <button
@@ -230,34 +295,114 @@ export function LocationSpecDetail({
               </div>
               <label className="block text-[0.8rem] font-semibold text-app-text">
                 Descrição
-                <textarea rows={3} value={spec.description ?? ''} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Descreva a finalidade deste tipo de local..." className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" />
+                <textarea
+                  rows={3}
+                  value={spec.description ?? ''}
+                  onChange={(event) => onPatch({ description: event.target.value })}
+                  placeholder="Descreva a finalidade deste tipo de local..."
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                />
               </label>
             </div>
           ) : (
             <div className="space-y-6">
-              {spec.description?.trim() && <div><h3 className="mb-2" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Descrição</h3><p className="text-[0.92rem] leading-relaxed text-app-text">{spec.description}</p></div>}
+              {spec.description?.trim() && (
+                <div>
+                  <h3
+                    className="mb-2"
+                    style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
+                  >
+                    Descrição
+                  </h3>
+                  <p className="text-[0.92rem] leading-relaxed text-app-text">{spec.description}</p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-[10px] border border-app-border p-4"><span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Categoria</span><p className="mt-1 text-[0.95rem] font-medium text-app-text">{locationCategoryLabel(spec.category)}</p></div>
-                <div className="rounded-[10px] border border-app-border p-4"><span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Papel funcional</span><p className="mt-1 text-[0.95rem] font-medium text-app-text">{ROLE_LABELS[spec.siteRole]}</p></div>
+                <div className="rounded-[10px] border border-app-border p-4">
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Categoria
+                  </span>
+                  <p className="mt-1 text-[0.95rem] font-medium text-app-text">
+                    {locationCategoryLabel(spec.category)}
+                  </p>
+                </div>
+                <div className="rounded-[10px] border border-app-border p-4">
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Papel funcional
+                  </span>
+                  <p className="mt-1 text-[0.95rem] font-medium text-app-text">
+                    {ROLE_LABELS[spec.siteRole]}
+                  </p>
+                </div>
               </div>
             </div>
-          )
-        )}
+          ))}
 
         {activeTab === 'characteristics' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-[0.88rem] font-semibold text-app-text">Características ({characteristicRows.length})</h3>
-              {canMutate && <Button type="button" variant="primary" size="sm" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditingCharacteristicRow(null); setCharacteristicModalOpen(true); }}>Adicionar característica</Button>}
+              <h3 className="text-[0.88rem] font-semibold text-app-text">
+                Características ({characteristicRows.length})
+              </h3>
+              {canMutate && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  iconLeft={<Plus className="h-3.5 w-3.5" />}
+                  onClick={() => {
+                    setEditingCharacteristicRow(null);
+                    setCharacteristicModalOpen(true);
+                  }}
+                >
+                  Adicionar característica
+                </Button>
+              )}
             </div>
             {characteristicRows.length === 0 ? (
-              <div className="rounded-[18px] border border-dashed border-app-border p-8 text-center text-app-muted"><p className="text-[0.88rem] font-medium">Nenhuma característica cadastrada.</p></div>
+              <div className="rounded-[18px] border border-dashed border-app-border p-8 text-center text-app-muted">
+                <p className="text-[0.88rem] font-medium">Nenhuma característica cadastrada.</p>
+              </div>
             ) : (
               <div className="divide-y divide-app-border overflow-hidden rounded-[18px] border border-app-border">
                 {characteristicRows.map((row) => (
-                  <div key={row.key} onClick={() => openCharacteristic(row)} role="button" tabIndex={0} title={row.description || undefined} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCharacteristic(row); } }} className="group flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 transition hover:bg-black/[0.02]">
-                    <div className="min-w-0"><h4 className="truncate text-[0.88rem] font-semibold text-app-text">{row.name}</h4><p className="truncate text-[0.78rem] text-app-muted">{row.group ? `${row.group} · ` : ''}{VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}</p></div>
-                    {canMutate && <button type="button" title="Remover característica" onClick={(event) => { event.stopPropagation(); deleteCharacteristic(row); }} disabled={characteristicDeletingKey === row.key} className="hidden shrink-0 rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 group-hover:flex group-focus-within:flex"><Trash2 className="h-4 w-4" /></button>}
+                  <div
+                    key={row.key}
+                    onClick={() => openCharacteristic(row)}
+                    role="button"
+                    tabIndex={0}
+                    title={row.description || undefined}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openCharacteristic(row);
+                      }
+                    }}
+                    className="group flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 transition hover:bg-black/[0.02]"
+                  >
+                    <div className="min-w-0">
+                      <h4 className="truncate text-[0.88rem] font-semibold text-app-text">
+                        {row.name}
+                      </h4>
+                      <p className="truncate text-[0.78rem] text-app-muted">
+                        {row.group ? `${row.group} · ` : ''}
+                        {VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}
+                      </p>
+                    </div>
+                    {canMutate && (
+                      <button
+                        type="button"
+                        title="Remover característica"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteCharacteristic(row);
+                        }}
+                        disabled={characteristicDeletingKey === row.key}
+                        className="hidden shrink-0 rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 group-hover:flex group-focus-within:flex"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -270,14 +415,61 @@ export function LocationSpecDetail({
             {(['allowedParentLocalIds', 'allowedChildLocalIds'] as const).map((field) => {
               const parent = field === 'allowedParentLocalIds';
               const ids = spec[field];
-              return <div key={field} className="rounded-[10px] border border-app-border p-4">
-                <div className="mb-3 flex items-center gap-2">{parent ? <FolderTree className="h-4 w-4 text-amber-600" /> : <Layers className="h-4 w-4 text-sky-600" />}<h4 className="text-[0.85rem] font-semibold text-app-text">{parent ? 'Pais permitidos' : 'Filhos permitidos'}</h4></div>
-                {canMutate ? (
-                  <div className="max-h-56 space-y-1 overflow-y-auto">
-                    {otherSpecs.length === 0 ? <p className="text-[0.8rem] italic text-app-muted">Nenhuma outra especificação ativa.</p> : otherSpecs.map((item) => <label key={item.localId} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[0.82rem] text-app-text hover:bg-black/[0.02]"><input type="checkbox" checked={ids.includes(item.localId)} onChange={() => toggleRelation(field, item.localId)} className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent" />{item.name}</label>)}
+              return (
+                <div key={field} className="rounded-[10px] border border-app-border p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    {parent ? (
+                      <FolderTree className="h-4 w-4 text-amber-600" />
+                    ) : (
+                      <Layers className="h-4 w-4 text-sky-600" />
+                    )}
+                    <h4 className="text-[0.85rem] font-semibold text-app-text">
+                      {parent ? 'Pais permitidos' : 'Filhos permitidos'}
+                    </h4>
                   </div>
-                ) : ids.length === 0 ? <p className="text-[0.8rem] italic text-app-muted">{parent ? 'Nenhum pai permitido (raiz do modelo).' : 'Nenhum filho permitido (folha do modelo).'}</p> : <div className="flex flex-wrap gap-1.5">{ids.map((id) => <span key={id} className="rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] font-medium text-app-text">{allSpecs.find((item) => item.localId === id)?.name ?? id}</span>)}</div>}
-              </div>;
+                  {canMutate ? (
+                    <div className="max-h-56 space-y-1 overflow-y-auto">
+                      {otherSpecs.length === 0 ? (
+                        <p className="text-[0.8rem] italic text-app-muted">
+                          Nenhuma outra especificação ativa.
+                        </p>
+                      ) : (
+                        otherSpecs.map((item) => (
+                          <label
+                            key={item.localId}
+                            className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[0.82rem] text-app-text hover:bg-black/[0.02]"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={ids.includes(item.localId)}
+                              onChange={() => toggleRelation(field, item.localId)}
+                              className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
+                            />
+                            {item.name}
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  ) : ids.length === 0 ? (
+                    <p className="text-[0.8rem] italic text-app-muted">
+                      {parent
+                        ? 'Nenhum pai permitido (raiz do modelo).'
+                        : 'Nenhum filho permitido (folha do modelo).'}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {ids.map((id) => (
+                        <span
+                          key={id}
+                          className="rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] font-medium text-app-text"
+                        >
+                          {allSpecs.find((item) => item.localId === id)?.name ?? id}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
             })}
           </div>
         )}
@@ -288,7 +480,10 @@ export function LocationSpecDetail({
         onClose={() => setCharacteristicModalOpen(false)}
         editingRow={editingCharacteristicRow}
         readOnly={!canMutate}
-        existingNames={characteristicRows.filter((row) => row.key !== editingCharacteristicRow?.key).map((row) => row.name)}
+        existingNames={characteristicRows
+          .filter((row) => row.key !== editingCharacteristicRow?.key)
+          .map((row) => row.name)}
+        requiresMigrationDefault={requiresMigrationDefault}
         onSave={saveCharacteristic}
       />
 

@@ -3,8 +3,8 @@ import type { GeoSpecCategory } from '../../../services/geoApi';
 
 export const LOCATION_CATEGORY_LABELS: Record<GeoSpecCategory, string> = {
   Region: 'Região',
-  Site: 'Local',
-  SubSite: 'Sub-Local',
+  Site: 'Externo',
+  SubSite: 'Interno',
 };
 
 export const LOCATION_CATEGORY_ICONS: Record<GeoSpecCategory, LucideIcon> = {

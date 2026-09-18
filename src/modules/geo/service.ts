@@ -39,10 +39,7 @@ import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-in
 import { normalizeCountrySearch } from './address-normalization.js';
 import type { MapFeatureSynchronizer } from './map-feature-synchronizer.js';
 
-import {
-  isVisualIdentity,
-  type VisualIdentity,
-} from '../../shared/ui/visual-identity.js';
+import { isVisualIdentity, type VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 type LocationInput = {
   geometryType: 'Point' | 'LineString' | 'Polygon';
@@ -74,7 +71,11 @@ export type AddressInput = {
 
 type SpecRefInput = string | { id: string };
 
-type SpecInput = {
+export type GeographicSiteSpecificationMigrationStrategy = {
+  type: 'fillMissingWithDefault';
+};
+
+export type SpecInput = {
   name: string;
   code?: string;
   description?: string;
@@ -88,6 +89,8 @@ type SpecInput = {
   allowedChildSpecIds?: string[];
   specCharacteristic?: GeographicSiteSpecificationCharacteristic[];
   visualIdentity?: VisualIdentity | null;
+  /** Metadado operacional do comando; nunca integra GeographicSiteSpecification persistida. */
+  migrationStrategy?: GeographicSiteSpecificationMigrationStrategy;
 };
 
 export type SiteInput = {
@@ -848,11 +851,7 @@ export class GeoService {
         allowedChildSpecIds,
       });
       if (input.visualIdentity !== undefined) {
-        await this.repository.setSpecVisualIdentity(
-          spec.id,
-          ctx.tenantId,
-          resolvedVisualIdentity,
-        );
+        await this.repository.setSpecVisualIdentity(spec.id, ctx.tenantId, resolvedVisualIdentity);
       }
       const stored = await this.getSpecOrThrow(spec.id, ctx);
       await this.recordMutation(
@@ -880,9 +879,11 @@ export class GeoService {
     if (input.category !== undefined) validateSpecCategory(input.category);
     const nextCategory = input.category ?? current.category;
     if (nextCategory === 'SubSite' && current.category !== 'SubSite') {
-      const activeSitesWithoutParent = (await this.repository.listSites({
-        siteSpecificationId: current.id,
-      })).some((site) => site.status !== 'Retired' && !site.parentSite?.id);
+      const activeSitesWithoutParent = (
+        await this.repository.listSites({
+          siteSpecificationId: current.id,
+        })
+      ).some((site) => site.status !== 'Retired' && !site.parentSite?.id);
       if (activeSitesWithoutParent) {
         throw new AppError('sub-site specification has active sites without parent', {
           code: 'GEO_SPEC_CATEGORY_SUBSITE_PARENT_REQUIRED',
@@ -897,6 +898,15 @@ export class GeoService {
       });
     }
     if (input.siteRole !== undefined) validateSiteRole(input.siteRole);
+    if (
+      input.migrationStrategy !== undefined &&
+      input.migrationStrategy.type !== 'fillMissingWithDefault'
+    ) {
+      throw new AppError('invalid site specification migration strategy', {
+        code: 'GEO_SPEC_CHARACTERISTIC_MIGRATION_STRATEGY_INVALID',
+        statusCode: 400,
+      });
+    }
 
     const updatesContainment =
       input.allowedParentSpec !== undefined ||
@@ -948,20 +958,40 @@ export class GeoService {
     const characteristicsChanged =
       input.specCharacteristic !== undefined &&
       JSON.stringify(current.specCharacteristic) !== JSON.stringify(nextCharacteristics);
-    if (characteristicsChanged) {
-      await this.validateSpecificationChangeAgainstSites(current, nextCharacteristics);
-    }
 
     const resolvedVisualIdentity =
       input.visualIdentity !== undefined
-        ? await this.resolveVisualIdentity(
-            current.visualIdentity,
-            input.visualIdentity,
-            ctx,
-          )
+        ? await this.resolveVisualIdentity(current.visualIdentity, input.visualIdentity, ctx)
         : current.visualIdentity;
 
     return await this.repository.transaction(async () => {
+      let migration:
+        | {
+            strategy: GeographicSiteSpecificationMigrationStrategy;
+            characteristicNames: string[];
+            updatedSites: number;
+            appliedValues: number;
+          }
+        | undefined;
+      if (characteristicsChanged) {
+        const validation = await this.validateSpecificationChangeAgainstSites(
+          current,
+          nextCharacteristics,
+          input.migrationStrategy,
+        );
+        if (validation.backfillCharacteristics.length > 0) {
+          const result = await this.repository.appendMissingSiteCharacteristics(
+            current.id,
+            validation.backfillCharacteristics,
+          );
+          migration = {
+            strategy: input.migrationStrategy!,
+            characteristicNames: validation.backfillCharacteristics.map((item) => item.name),
+            ...result,
+          };
+        }
+      }
+
       const updated = await this.repository.upsertSpec(
         this.buildSpecRecord({
           id: current.id,
@@ -1005,10 +1035,11 @@ export class GeoService {
         'GeographicSiteSpecification',
         stored.id,
         current,
-        stored,
+        migration ? { specification: stored, migration } : stored,
         current.lifecycleStatus !== stored.lifecycleStatus
           ? 'GeographicSiteSpecificationStatusChangeEvent'
           : 'GeographicSiteSpecificationAttributeValueChangeEvent',
+        migration ? { specification: stored, migration } : stored,
       );
       return stored;
     });
@@ -1319,7 +1350,9 @@ export class GeoService {
         relatedParty: input.relatedParty
           ? normalizeSiteRelatedParty(input.relatedParty, ctx)
           : current.relatedParty,
-        ...(input.note !== undefined ? optional('note', input.note) : optional('note', current.note)),
+        ...(input.note !== undefined
+          ? optional('note', input.note)
+          : optional('note', current.note)),
         characteristic,
         relatedSite: current.relatedSite,
       });
@@ -3057,48 +3090,71 @@ export class GeoService {
   private async validateSpecificationChangeAgainstSites(
     current: GeographicSiteSpecification,
     nextCharacteristics: GeographicSiteSpecificationCharacteristic[],
-  ): Promise<void> {
+    migrationStrategy?: GeographicSiteSpecificationMigrationStrategy,
+  ): Promise<{ backfillCharacteristics: Characteristic[] }> {
     const currentByName = new Map(
       current.specCharacteristic.map((item) => [item.name.trim().toLowerCase(), item]),
     );
     const nextByName = new Map(
       nextCharacteristics.map((item) => [item.name.trim().toLowerCase(), item]),
     );
-    const sites = await this.repository.listSites({ siteSpecificationId: current.id });
-
-    for (const [key, nextDefinition] of nextByName) {
+    const mandatoryTransitions = [...nextByName.entries()].filter(([key, nextDefinition]) => {
       const currentDefinition = currentByName.get(key);
-      if (!currentDefinition && nextDefinition.mandatory) {
-        const impacted = sites.filter(
-          (site) => !site.characteristic.some((item) => item.name.trim().toLowerCase() === key),
-        );
-        if (impacted.length > 0) {
-          throw new AppError('mandatory characteristic addition requires external migration', {
-            code: 'GEO_SPEC_CHARACTERISTIC_MIGRATION_REQUIRED',
-            statusCode: 409,
+      return Boolean(
+        nextDefinition.mandatory && (!currentDefinition || !currentDefinition.mandatory),
+      );
+    });
+    const impactedSites =
+      mandatoryTransitions.length > 0
+        ? await this.repository.countSitesMissingCharacteristics(
+            current.id,
+            mandatoryTransitions.map(([, definition]) => definition.name),
+          )
+        : 0;
+
+    let backfillCharacteristics: Characteristic[] = [];
+    if (impactedSites > 0) {
+      if (migrationStrategy?.type !== 'fillMissingWithDefault') {
+        throw new AppError('mandatory characteristic change requires migration strategy', {
+          code: 'GEO_SPEC_CHARACTERISTIC_MIGRATION_REQUIRED',
+          statusCode: 409,
+        });
+      }
+      for (const [, definition] of mandatoryTransitions) {
+        if (definition.defaultValue === undefined) {
+          throw new AppError('mandatory characteristic migration requires default value', {
+            code: 'GEO_SPEC_CHARACTERISTIC_MIGRATION_DEFAULT_REQUIRED',
+            statusCode: 422,
           });
         }
       }
-      if (currentDefinition && !currentDefinition.mandatory && nextDefinition.mandatory) {
-        const impacted = sites.filter(
-          (site) => !site.characteristic.some((item) => item.name.trim().toLowerCase() === key),
-        );
-        if (impacted.length > 0) {
-          throw new AppError('mandatory characteristic transition requires external migration', {
-            code: 'GEO_SPEC_CHARACTERISTIC_MIGRATION_REQUIRED',
-            statusCode: 409,
+      backfillCharacteristics = mandatoryTransitions.map(([, definition]) => {
+        const defaultValue = definition.defaultValue;
+        if (defaultValue === undefined) {
+          throw new AppError('mandatory characteristic migration requires default value', {
+            code: 'GEO_SPEC_CHARACTERISTIC_MIGRATION_DEFAULT_REQUIRED',
+            statusCode: 422,
           });
         }
-      }
+        return {
+          ...(definition.group ? { group: definition.group } : {}),
+          name: definition.name,
+          value: cloneCharacteristicValue(defaultValue),
+          valueType: definition.valueType,
+        };
+      });
     }
 
+    // As proteções abaixo ainda precisam inspecionar os valores atuais: remover uma definição em
+    // uso, mudar seu tipo ou apertar constraints não é uma migração suportada por esta estratégia.
+    const sites = await this.repository.listSites({ siteSpecificationId: current.id });
     for (const [key, currentDefinition] of currentByName) {
       const nextDefinition = nextByName.get(key);
       if (!nextDefinition) {
-        const impacted = sites.filter((site) =>
+        const impacted = sites.some((site) =>
           site.characteristic.some((item) => item.name.trim().toLowerCase() === key),
         );
-        if (impacted.length > 0) {
+        if (impacted) {
           throw new AppError('site characteristic definition cannot be removed while in use', {
             code: 'GEO_SPEC_CHARACTERISTIC_IN_USE',
             statusCode: 409,
@@ -3116,6 +3172,7 @@ export class GeoService {
         }
       }
     }
+    return { backfillCharacteristics };
   }
 
   private async emitEvent(

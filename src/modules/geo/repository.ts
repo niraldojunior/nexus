@@ -319,6 +319,50 @@ export class GeoRepository implements IGeoRepository {
     ).length;
   }
 
+  public countSitesMissingCharacteristics(
+    specificationId: string,
+    characteristicNames: string[],
+  ): number {
+    const expectedNames = new Set(characteristicNames.map(normalizeCharacteristicName));
+    if (expectedNames.size === 0) return 0;
+    return [...this.sites.values()].filter((site) => {
+      if (site.siteSpecificationId !== specificationId) return false;
+      const knownNames = new Set(
+        site.characteristic.map((item) => normalizeCharacteristicName(item.name)),
+      );
+      return [...expectedNames].some((name) => !knownNames.has(name));
+    }).length;
+  }
+
+  public appendMissingSiteCharacteristics(
+    specificationId: string,
+    characteristics: GeographicSite['characteristic'],
+  ): { updatedSites: number; appliedValues: number } {
+    if (characteristics.length === 0) return { updatedSites: 0, appliedValues: 0 };
+    let updatedSites = 0;
+    let appliedValues = 0;
+    for (const [id, site] of this.sites) {
+      if (site.siteSpecificationId !== specificationId) continue;
+      const knownNames = new Set(
+        site.characteristic.map((item) => normalizeCharacteristicName(item.name)),
+      );
+      const missing = characteristics.filter(
+        (item) => !knownNames.has(normalizeCharacteristicName(item.name)),
+      );
+      if (missing.length === 0) continue;
+      this.sites.set(
+        id,
+        cloneSite({
+          ...site,
+          characteristic: [...site.characteristic, ...missing.map(cloneCharacteristic)],
+        }),
+      );
+      updatedSites += 1;
+      appliedValues += missing.length;
+    }
+    return { updatedSites, appliedValues };
+  }
+
   public upsertSiteRelationship(
     siteId: string,
     relationship: GeographicSiteRelationship,
@@ -617,11 +661,15 @@ export class GeoRepository implements IGeoRepository {
     const allowedParentSpec = parentRules
       .map((rule) => this.specs.get(rule.parentSpecId))
       .filter((item): item is GeographicSiteSpecification => item !== undefined)
-      .map((s) => toSpecRef(s, tenantId ? this.specVisualIdentities.get(`${tenantId}:${s.id}`) : undefined));
+      .map((s) =>
+        toSpecRef(s, tenantId ? this.specVisualIdentities.get(`${tenantId}:${s.id}`) : undefined),
+      );
     const allowedChildSpec = childRules
       .map((rule) => this.specs.get(rule.childSpecId))
       .filter((item): item is GeographicSiteSpecification => item !== undefined)
-      .map((s) => toSpecRef(s, tenantId ? this.specVisualIdentities.get(`${tenantId}:${s.id}`) : undefined));
+      .map((s) =>
+        toSpecRef(s, tenantId ? this.specVisualIdentities.get(`${tenantId}:${s.id}`) : undefined),
+      );
 
     const visualIdentity = tenantId
       ? this.specVisualIdentities.get(`${tenantId}:${spec.id}`)
@@ -770,6 +818,15 @@ const cloneStatusHistory = (
   entry: GeographicSiteStatusHistoryEntry,
 ): GeographicSiteStatusHistoryEntry => ({
   ...entry,
+});
+
+const normalizeCharacteristicName = (name: string): string => name.trim().toLowerCase();
+
+const cloneCharacteristic = (
+  characteristic: GeographicSite['characteristic'][number],
+): GeographicSite['characteristic'][number] => ({
+  ...characteristic,
+  value: cloneCharacteristicValue(characteristic.value),
 });
 
 const cloneCharacteristicValue = (

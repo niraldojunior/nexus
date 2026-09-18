@@ -472,16 +472,28 @@ export function GeoSearchBar({
   };
 
   // Instância única, sobreposta à doca e ao mapa (ver GeoPage): um estilo só, com o
-  // mesmo retângulo em todos os estados. Com a lista aberta, arredonda só o topo e some
-  // a borda de baixo, para caixa e sugestões virarem um componente só (estilo Google
-  // Maps). O fundo da barra continua branco fora do modo "geral" (RF-013) — só o círculo
-  // do botão de filtro fica amarelo-claro (ver `scopeButtonClass`), para o realce marcar
-  // o filtro sem tirar o contraste do texto digitado.
+  // mesmo retângulo em todos os estados. O fundo da barra continua branco fora do modo
+  // "geral" (RF-013) — só o círculo do botão de filtro fica amarelo-claro (ver
+  // `scopeButtonClass`), para o realce marcar o filtro sem tirar o contraste do texto
+  // digitado.
+  //
+  // Borda e sombra moram num único lugar: na própria barra quando a lista está fechada;
+  // no invólucro comum às duas quando está aberta. Antes, caixa e lista tinham CADA UMA
+  // a sua borda e a sua sombra — no encontro das duas isso desenhava uma linha e uma
+  // sombra dupla bem onde elas se tocam, dando a impressão de 2 peças empilhadas com
+  // acabamento grosseiro. Sem moldura própria em nenhuma das duas partes (arredondando
+  // só os cantos que ficam nas pontas de cada uma), a moldura do invólucro é a única
+  // visível — como se a barra tivesse esticado para baixo para mostrar as opções
+  // (estilo Google Maps), em vez de um menu flutuante grudado por cima dela.
   const scopeRestricted = scope !== 'all';
-  const shellBase =
-    'flex h-12 items-center border border-app-border bg-white shadow-map-control transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
-  const dropdownRadiusClass = 'rounded-b-2xl';
-  const shellClass = `${shellBase} ${showDropdown ? 'rounded-t-2xl border-b-0' : 'rounded-2xl'}`;
+  const standaloneChromeClass =
+    'rounded-2xl border border-app-border shadow-map-control focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
+  const shellClass = `flex h-12 items-center bg-white transition ${
+    showDropdown ? 'rounded-t-2xl' : standaloneChromeClass
+  }`;
+  const cardWrapClass = showDropdown
+    ? 'rounded-2xl border border-app-border shadow-map-control-lg transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15'
+    : '';
   const ScopeIcon = SCOPE_ICONS[scope];
   const activeScope = GEO_SEARCH_SCOPES.find((candidate) => candidate.id === scope);
 
@@ -500,298 +512,304 @@ export function GeoSearchBar({
 
   return (
     <div className={wrapperClass}>
-      {/* Contexto de posicionamento próprio para a lista de sugestões se alinhar
-          exatamente às bordas da caixa de busca. */}
+      {/* Contexto de posicionamento próprio para os menus flutuantes (filtro de escopo)
+          se alinharem exatamente às bordas da caixa de busca. O card em si (moldura de
+          borda/sombra) fica no invólucro logo abaixo, não neste elemento — ver
+          cardWrapClass. */}
       <div className="relative" ref={containerRef}>
-        <div className={shellClass}>
-          {showMenuMark ? (
-            <button
-              type="button"
-              onClick={onOpenMainMenu}
-              className="ml-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-black/5"
-              aria-label="Abrir menu principal"
-            >
-              <NexusMark className="h-8 w-8" />
-            </button>
-          ) : null}
-          <div ref={scopeMenuRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setScopeMenuOpen((current) => !current)}
-              className={`${showMenuMark ? 'ml-0.5' : 'ml-1.5'} flex h-9 w-9 items-center justify-center rounded-full transition ${
-                scopeRestricted
-                  ? 'bg-app-accent-soft hover:brightness-[0.98]'
-                  : 'hover:bg-black/5'
-              }`}
-              aria-label={`Modo de busca: ${activeScope?.label ?? 'Pesquisa geral'}`}
-              title={activeScope?.label ?? 'Pesquisa geral'}
-              aria-haspopup="listbox"
-              aria-expanded={scopeMenuOpen}
-            >
-              <ScopeIcon
-                className={`h-5 w-5 ${scopeRestricted ? 'text-app-strong' : 'text-app-muted'}`}
-                aria-hidden="true"
-              />
-            </button>
-            {scopeMenuOpen ? (
-              <div
-                role="listbox"
-                aria-label="Modo de busca"
-                onMouseDown={(event) => event.preventDefault()}
-                className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-white py-1.5 shadow-map-control-lg"
+        <div className={cardWrapClass}>
+          <div className={shellClass}>
+            {showMenuMark ? (
+              <button
+                type="button"
+                onClick={onOpenMainMenu}
+                className="ml-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-black/5"
+                aria-label="Abrir menu principal"
               >
-                {GEO_SEARCH_SCOPES.map((candidate) => {
-                  const Icon = SCOPE_ICONS[candidate.id];
-                  const active = candidate.id === scope;
-                  return (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      role="option"
-                      aria-selected={active}
-                      onClick={() => selectScope(candidate.id)}
-                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition ${
-                        active ? 'bg-app-accent-soft' : 'hover:bg-black/5'
-                      }`}
-                    >
-                      <Icon
-                        className={`h-4 w-4 shrink-0 ${active ? 'text-app-strong' : 'text-app-muted'}`}
-                        aria-hidden="true"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[0.86rem] text-app-text">
-                          {candidate.label}
-                        </span>
-                        <span className="block truncate text-[0.7rem] text-app-muted">
-                          {candidate.hint}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                <NexusMark className="h-8 w-8" />
+              </button>
             ) : null}
-          </div>
-          {selection ? (
-            <button
-              type="button"
-              onClick={editSelection}
-              className={`${showMenuMark ? 'ml-1' : 'ml-2'} flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.92rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30`}
-              aria-label={`Editar seleção ${selection.type === 'node' ? selection.node.label : selection.address.label}`}
-              title={selection.type === 'node' ? selection.node.label : selection.address.label}
-            >
-              <span
-                role="img"
-                aria-label={
-                  selection.type === 'address'
-                    ? 'Endereço'
-                    : selection.node.kind === 'site'
-                      ? (siteSpecNameLabel(selection.node.sublabel) ?? 'Estação')
-                      : (selection.node.sublabel ?? 'Recurso')
-                }
-                className="shrink-0"
+            <div ref={scopeMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setScopeMenuOpen((current) => !current)}
+                className={`${showMenuMark ? 'ml-0.5' : 'ml-1.5'} flex h-9 w-9 items-center justify-center rounded-full transition ${
+                  scopeRestricted
+                    ? 'bg-app-accent-soft hover:brightness-[0.98]'
+                    : 'hover:bg-black/5'
+                }`}
+                aria-label={`Modo de busca: ${activeScope?.label ?? 'Pesquisa geral'}`}
+                title={activeScope?.label ?? 'Pesquisa geral'}
+                aria-haspopup="listbox"
+                aria-expanded={scopeMenuOpen}
               >
-                {selection.type === 'node' ? (
-                  <SelectedNodeIcon node={selection.node} resolveIcon={selectedNodeIcon} />
-                ) : (
-                  <MapPin className="h-4 w-4 text-app-muted" aria-hidden="true" />
-                )}
-              </span>
-              <span className="min-w-0 flex-1 truncate font-medium">
-                {selection.type === 'node' ? selection.node.label : selection.address.label}
-              </span>
-            </button>
-          ) : (
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => {
-                cancelAddressResolution();
-                closeDropdown();
-                onQueryChange(event.target.value);
-                setOpen(true);
-              }}
-              onFocus={() => {
-                // Foco sempre abre: com texto, mostra resultados; vazio, mostra o histórico
-                // (estilo Google Maps). A picklist só aparece se houver o que mostrar
-                // (showDropdown).
-                setOpen(true);
-              }}
-              onKeyDown={handleKeyDown}
-              className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-1.5 pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none"
-              placeholder={SCOPE_PLACEHOLDER[scope]}
-              id="geo-search-input"
-              autoComplete="off"
-            />
-          )}
-          {showClose ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (hasSearchToClear) {
+                <ScopeIcon
+                  className={`h-5 w-5 ${scopeRestricted ? 'text-app-strong' : 'text-app-muted'}`}
+                  aria-hidden="true"
+                />
+              </button>
+              {scopeMenuOpen ? (
+                <div
+                  role="listbox"
+                  aria-label="Modo de busca"
+                  onMouseDown={(event) => event.preventDefault()}
+                  className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-white py-1.5 shadow-map-control-lg"
+                >
+                  {GEO_SEARCH_SCOPES.map((candidate) => {
+                    const Icon = SCOPE_ICONS[candidate.id];
+                    const active = candidate.id === scope;
+                    return (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => selectScope(candidate.id)}
+                        className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition ${
+                          active ? 'bg-app-accent-soft' : 'hover:bg-black/5'
+                        }`}
+                      >
+                        <Icon
+                          className={`h-4 w-4 shrink-0 ${active ? 'text-app-strong' : 'text-app-muted'}`}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[0.86rem] text-app-text">
+                            {candidate.label}
+                          </span>
+                          <span className="block truncate text-[0.7rem] text-app-muted">
+                            {candidate.hint}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            {selection ? (
+              <button
+                type="button"
+                onClick={editSelection}
+                className={`${showMenuMark ? 'ml-1' : 'ml-2'} flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-app-accent-border bg-app-accent-soft px-2.5 py-1.5 text-left text-[0.92rem] text-app-text transition hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-app-focus/30`}
+                aria-label={`Editar seleção ${selection.type === 'node' ? selection.node.label : selection.address.label}`}
+                title={selection.type === 'node' ? selection.node.label : selection.address.label}
+              >
+                <span
+                  role="img"
+                  aria-label={
+                    selection.type === 'address'
+                      ? 'Endereço'
+                      : selection.node.kind === 'site'
+                        ? (siteSpecNameLabel(selection.node.sublabel) ?? 'Estação')
+                        : (selection.node.sublabel ?? 'Recurso')
+                  }
+                  className="shrink-0"
+                >
+                  {selection.type === 'node' ? (
+                    <SelectedNodeIcon node={selection.node} resolveIcon={selectedNodeIcon} />
+                  ) : (
+                    <MapPin className="h-4 w-4 text-app-muted" aria-hidden="true" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {selection.type === 'node' ? selection.node.label : selection.address.label}
+                </span>
+              </button>
+            ) : (
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(event) => {
                   cancelAddressResolution();
                   closeDropdown();
-                  onQueryChange('');
-                  // Além de limpar o texto, desseleciona: fecha o painel aberto e tira
-                  // o alfinete do mapa (ver onDeselect em GeoPage). onQueryChange('')
-                  // acima fica redundante quando onClear já zera a query, mas mantém a
-                  // barra utilizável quando o chamador não passa onClear.
-                  onClear?.();
-                } else {
-                  // Sem texto nem seleção, o X só fecha o painel de hierarquia (ver
-                  // GeoPage) — o slot volta a mostrar o ListTree de abrir.
-                  onToggleHierarchy?.();
-                }
-              }}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
-              aria-label={hasSearchToClear ? 'Limpar busca' : 'Fechar hierarquia'}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : onToggleHierarchy ? (
-            // Fundo transparente (o slot fica leve, sem moldura); quem carrega a leitura é
-            // o ícone próprio, colorido, de "lista em árvore" (ver HierarchyIcon).
+                  onQueryChange(event.target.value);
+                  setOpen(true);
+                }}
+                onFocus={() => {
+                  // Foco sempre abre: com texto, mostra resultados; vazio, mostra o histórico
+                  // (estilo Google Maps). A picklist só aparece se houver o que mostrar
+                  // (showDropdown).
+                  setOpen(true);
+                }}
+                onKeyDown={handleKeyDown}
+                className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-1.5 pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none"
+                placeholder={SCOPE_PLACEHOLDER[scope]}
+                id="geo-search-input"
+                autoComplete="off"
+              />
+            )}
+            {showClose ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasSearchToClear) {
+                    cancelAddressResolution();
+                    closeDropdown();
+                    onQueryChange('');
+                    // Além de limpar o texto, desseleciona: fecha o painel aberto e tira
+                    // o alfinete do mapa (ver onDeselect em GeoPage). onQueryChange('')
+                    // acima fica redundante quando onClear já zera a query, mas mantém a
+                    // barra utilizável quando o chamador não passa onClear.
+                    onClear?.();
+                  } else {
+                    // Sem texto nem seleção, o X só fecha o painel de hierarquia (ver
+                    // GeoPage) — o slot volta a mostrar o ListTree de abrir.
+                    onToggleHierarchy?.();
+                  }
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
+                aria-label={hasSearchToClear ? 'Limpar busca' : 'Fechar hierarquia'}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : onToggleHierarchy ? (
+              // Fundo transparente (o slot fica leve, sem moldura); quem carrega a leitura é
+              // o ícone próprio, colorido, de "lista em árvore" (ver HierarchyIcon).
+              <button
+                type="button"
+                onClick={onToggleHierarchy}
+                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-black/5"
+                aria-label="Abrir hierarquia"
+                title="Hierarquia"
+              >
+                <HierarchyIcon className="h-6 w-6" />
+              </button>
+            ) : null}
+            <span className="mx-1 h-6 w-px bg-app-border" />
             <button
               type="button"
-              onClick={onToggleHierarchy}
-              className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-black/5"
-              aria-label="Abrir hierarquia"
-              title="Hierarquia"
+              onClick={() => (selection ? editSelection() : void runFallbackAddressSearch())}
+              disabled={resolving}
+              className="mr-1 flex h-9 w-9 items-center justify-center rounded-full text-[#1a73e8] transition hover:bg-[#1a73e8]/10 disabled:opacity-50"
+              aria-label={selection ? 'Editar busca' : 'Pesquisar'}
             >
-              <HierarchyIcon className="h-6 w-6" />
+              {resolving ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-5 w-5" />
+              )}
             </button>
-          ) : null}
-          <span className="mx-1 h-6 w-px bg-app-border" />
-          <button
-            type="button"
-            onClick={() => (selection ? editSelection() : void runFallbackAddressSearch())}
-            disabled={resolving}
-            className="mr-1 flex h-9 w-9 items-center justify-center rounded-full text-[#1a73e8] transition hover:bg-[#1a73e8]/10 disabled:opacity-50"
-            aria-label={selection ? 'Editar busca' : 'Pesquisar'}
-          >
-            {resolving ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-5 w-5" />
-            )}
-          </button>
-        </div>
+          </div>
 
-        {showDropdown ? (
-          <div
-            onMouseDown={(event) => event.preventDefault()}
-            className={`absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border border-t-0 border-app-border bg-white shadow-map-control-lg ${dropdownRadiusClass}`}
-          >
-            {!hasText ? (
-              <div>
-                <div className="flex items-center justify-between px-3 pt-2 pb-1">
-                  <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                    Recentes
-                  </span>
-                  <button
-                    type="button"
-                    onClick={clear}
-                    className="text-[0.7rem] font-medium text-app-muted transition hover:text-app-text"
-                  >
-                    Limpar histórico
-                  </button>
-                </div>
-                {historyOptions.map((option, index) => {
-                  const label =
-                    option.type === 'history-node'
-                      ? option.node.label
-                      : option.address.sourceQuery?.trim() || option.address.label;
-                  return (
-                    <div
-                      key={option.entryKey}
-                      className={`group flex items-center ${
-                        index === highlighted ? 'bg-app-accent-soft' : 'hover:bg-black/5'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void selectOption(option)}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left"
-                      >
-                        {option.type === 'history-node' ? (
-                          <NodeIcon node={option.node} />
-                        ) : (
-                          <Clock className="h-4 w-4 shrink-0 text-app-muted" />
-                        )}
-                        <span className="min-w-0 flex-1 truncate text-[0.86rem] text-app-text">
-                          {label}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(option.entryKey)}
-                        className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-app-muted transition hover:bg-black/10"
-                        aria-label={`Remover ${label} do histórico`}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-            {hasText && nodeResults.length ? (
-              <div>
-                <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                  Locais e recursos
-                </div>
-                {nodeResults.map((node, index) => (
-                  <button
-                    key={node.id}
-                    type="button"
-                    onClick={() => selectNode(node)}
-                    className={optionClass(index === highlighted)}
-                  >
-                    <NodeIcon node={node} />
-                    <span className="min-w-0 flex-1 text-left">
-                      <span className="block truncate text-[0.86rem] text-app-text">
-                        {node.label}
-                      </span>
-                      {node.sublabel || node.detail?.address ? (
-                        <span className="block truncate text-[0.72rem] text-app-muted">
-                          {[
-                            node.kind === 'site' ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel) : node.sublabel,
-                            node.detail?.address,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </span>
-                      ) : null}
+          {showDropdown ? (
+            <div
+              onMouseDown={(event) => event.preventDefault()}
+              className="max-h-80 overflow-y-auto rounded-b-2xl bg-white"
+            >
+              {!hasText ? (
+                <div>
+                  <div className="flex items-center justify-between px-3 pt-2 pb-1">
+                    <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                      Recentes
                     </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {addressResults.length ? (
-              <div>
-                <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
-                  Endereços
-                </div>
-                {addressResults.map((prediction, index) => {
-                  const flatIndex = nodeResults.length + index;
-                  return (
                     <button
-                      key={prediction.placeId}
                       type="button"
-                      onClick={() => void selectAddress(prediction)}
-                      className={optionClass(flatIndex === highlighted)}
+                      onClick={clear}
+                      className="text-[0.7rem] font-medium text-app-muted transition hover:text-app-text"
                     >
-                      <MapPin className="h-4 w-4 shrink-0 text-app-muted" />
-                      <span className="min-w-0 flex-1 truncate text-left text-[0.86rem] text-app-text">
-                        {prediction.description}
+                      Limpar histórico
+                    </button>
+                  </div>
+                  {historyOptions.map((option, index) => {
+                    const label =
+                      option.type === 'history-node'
+                        ? option.node.label
+                        : option.address.sourceQuery?.trim() || option.address.label;
+                    return (
+                      <div
+                        key={option.entryKey}
+                        className={`group flex items-center ${
+                          index === highlighted ? 'bg-app-accent-soft' : 'hover:bg-black/5'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void selectOption(option)}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left"
+                        >
+                          {option.type === 'history-node' ? (
+                            <NodeIcon node={option.node} />
+                          ) : (
+                            <Clock className="h-4 w-4 shrink-0 text-app-muted" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate text-[0.86rem] text-app-text">
+                            {label}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => remove(option.entryKey)}
+                          className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-app-muted transition hover:bg-black/10"
+                          aria-label={`Remover ${label} do histórico`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {hasText && nodeResults.length ? (
+                <div>
+                  <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                    Locais e recursos
+                  </div>
+                  {nodeResults.map((node, index) => (
+                    <button
+                      key={node.id}
+                      type="button"
+                      onClick={() => selectNode(node)}
+                      className={optionClass(index === highlighted)}
+                    >
+                      <NodeIcon node={node} />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block truncate text-[0.86rem] text-app-text">
+                          {node.label}
+                        </span>
+                        {node.sublabel || node.detail?.address ? (
+                          <span className="block truncate text-[0.72rem] text-app-muted">
+                            {[
+                              node.kind === 'site'
+                                ? (siteSpecNameLabel(node.sublabel) ?? node.sublabel)
+                                : node.sublabel,
+                              node.detail?.address,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+                  ))}
+                </div>
+              ) : null}
+              {addressResults.length ? (
+                <div>
+                  <div className="px-3 pt-2 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted">
+                    Endereços
+                  </div>
+                  {addressResults.map((prediction, index) => {
+                    const flatIndex = nodeResults.length + index;
+                    return (
+                      <button
+                        key={prediction.placeId}
+                        type="button"
+                        onClick={() => void selectAddress(prediction)}
+                        className={optionClass(flatIndex === highlighted)}
+                      >
+                        <MapPin className="h-4 w-4 shrink-0 text-app-muted" />
+                        <span className="min-w-0 flex-1 truncate text-left text-[0.86rem] text-app-text">
+                          {prediction.description}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

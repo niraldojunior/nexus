@@ -460,6 +460,81 @@ test('GeoService permite recategorizar para SubSite quando os sites ativos já t
   assert.equal(updated.category, 'SubSite');
 });
 
+test('GeoService exige estratégia para tornar característica obrigatória em spec com sites', async () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = await service.createSpec({ name: 'Central Office', category: 'Site' });
+  await service.createSite({ name: 'CO Centro', siteSpecificationId: spec.id });
+
+  await assert.rejects(
+    () =>
+      service.updateSpec(spec.id, {
+        specCharacteristic: [
+          { name: 'monitorado', valueType: 'boolean', mandatory: true, defaultValue: false },
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'GEO_SPEC_CHARACTERISTIC_MIGRATION_REQUIRED',
+  );
+  assert.deepEqual((await service.getSpec(spec.id))?.specCharacteristic, []);
+});
+
+test('GeoService preenche somente características ausentes ao tornar definição obrigatória', async () => {
+  const repository = new GeoRepository();
+  const service = new GeoService(repository);
+  const spec = await service.createSpec({
+    name: 'Central Office',
+    category: 'Site',
+    specCharacteristic: [{ name: 'capacidade', valueType: 'integer' }],
+  });
+  const existingValue = await service.createSite({
+    name: 'CO A',
+    siteSpecificationId: spec.id,
+    characteristic: [{ name: 'capacidade', value: 0, valueType: 'integer' }],
+  });
+  const missingValue = await service.createSite({
+    name: 'CO B',
+    siteSpecificationId: spec.id,
+  });
+
+  const updated = await service.updateSpec(spec.id, {
+    specCharacteristic: [
+      { name: 'capacidade', valueType: 'integer', mandatory: true, defaultValue: 12 },
+    ],
+    migrationStrategy: { type: 'fillMissingWithDefault' },
+  });
+
+  assert.equal(updated.specCharacteristic[0]?.mandatory, true);
+  assert.equal((await service.getSite(existingValue.id))?.characteristic[0]?.value, 0);
+  assert.equal((await service.getSite(missingValue.id))?.characteristic[0]?.value, 12);
+  const event = (await repository.listEventsForEntity(spec.id)).at(-1);
+  assert.deepEqual(
+    (event?.eventData.payload as { migration?: { updatedSites: number } }).migration?.updatedSites,
+    1,
+  );
+});
+
+test('GeoService bloqueia migração sem default antes de alterar sites ou spec', async () => {
+  const service = new GeoService(new GeoRepository());
+  const spec = await service.createSpec({ name: 'Central Office', category: 'Site' });
+  const site = await service.createSite({ name: 'CO Centro', siteSpecificationId: spec.id });
+
+  await assert.rejects(
+    () =>
+      service.updateSpec(spec.id, {
+        specCharacteristic: [{ name: 'sigla', valueType: 'string', mandatory: true }],
+        migrationStrategy: { type: 'fillMissingWithDefault' },
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'GEO_SPEC_CHARACTERISTIC_MIGRATION_DEFAULT_REQUIRED',
+  );
+  assert.deepEqual((await service.getSite(site.id))?.characteristic, []);
+  assert.deepEqual((await service.getSpec(spec.id))?.specCharacteristic, []);
+});
+
 test('GeoService skips structural and characteristic scans for unchanged characteristic patches', async () => {
   const service = new GeoService(new GeoRepository());
   const spec = await service.createSpec({

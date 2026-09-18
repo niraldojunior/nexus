@@ -308,7 +308,9 @@ export class OracleGeoRepository implements IGeoRepository {
         );
         params.push(likePattern, likePattern, `%${postcodeDigits}%`);
       } else {
-        conditions.push(`(${foldedColumn('street_name')} LIKE ? OR ${foldedColumn('city', true)} LIKE ?)`);
+        conditions.push(
+          `(${foldedColumn('street_name')} LIKE ? OR ${foldedColumn('city', true)} LIKE ?)`,
+        );
         params.push(likePattern, likePattern);
       }
     }
@@ -737,6 +739,81 @@ export class OracleGeoRepository implements IGeoRepository {
       params,
     );
     return Number(row?.count ?? 0);
+  }
+
+  public async countSitesMissingCharacteristics(
+    specificationId: string,
+    characteristicNames: string[],
+  ): Promise<number> {
+    const normalizedNames = [
+      ...new Set(characteristicNames.map((name) => name.trim().toLowerCase())),
+    ];
+    if (normalizedNames.length === 0) return 0;
+
+    const row = await this.db.get<{ count: number }>(
+      `SELECT COUNT(*) AS count
+         FROM tmf_geographic_site s
+        WHERE s.site_specification_id = ?
+          AND EXISTS (
+            SELECT 1
+              FROM JSON_TABLE(?, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$')) expected
+             WHERE NOT EXISTS (
+               SELECT 1
+                 FROM JSON_TABLE(
+                   s.characteristics,
+                   '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')
+                 ) current_value
+                WHERE LOWER(TRIM(current_value.name)) = expected.name
+             )
+          )`,
+      [specificationId, JSON.stringify(normalizedNames)],
+    );
+    return Number(row?.count ?? 0);
+  }
+
+  public async appendMissingSiteCharacteristics(
+    specificationId: string,
+    characteristics: GeographicSite['characteristic'],
+  ): Promise<{ updatedSites: number; appliedValues: number }> {
+    if (characteristics.length === 0) return { updatedSites: 0, appliedValues: 0 };
+
+    const updatedSites = await this.countSitesMissingCharacteristics(
+      specificationId,
+      characteristics.map((characteristic) => characteristic.name),
+    );
+    let appliedValues = 0;
+    const updatedAt = new Date().toISOString();
+
+    // Um UPDATE por definição, nunca por Site. Oracle 19c não dispõe de JSON_TRANSFORM; como a
+    // coluna guarda canonicamente um array JSON, removemos apenas o colchete raiz e anexamos o
+    // objeto serializado. O NOT EXISTS torna a operação idempotente e preserva qualquer valor já
+    // informado, inclusive quando o nome difere apenas em caixa.
+    for (const characteristic of characteristics) {
+      const serialized = JSON.stringify(characteristic);
+      const result = await this.db.run(
+        `UPDATE tmf_geographic_site s
+            SET s.characteristics = CASE
+                  WHEN s.characteristics IS NULL
+                    OR TRIM(DBMS_LOB.SUBSTR(s.characteristics, 4000, 1)) = '[]'
+                    THEN TO_CLOB('[') || ? || TO_CLOB(']')
+                  ELSE SUBSTR(s.characteristics, 1, LENGTH(s.characteristics) - 1) || ',' || ? || ']'
+                END,
+                s.updated_at = ?
+          WHERE s.site_specification_id = ?
+            AND NOT EXISTS (
+              SELECT 1
+                FROM JSON_TABLE(
+                  s.characteristics,
+                  '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')
+                ) current_value
+               WHERE LOWER(TRIM(current_value.name)) = LOWER(TRIM(?))
+            )`,
+        [serialized, serialized, updatedAt, specificationId, characteristic.name],
+      );
+      appliedValues += result.changes;
+    }
+
+    return { updatedSites, appliedValues };
   }
 
   public async upsertSiteRelationship(

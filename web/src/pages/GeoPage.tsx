@@ -362,8 +362,7 @@ function buildPointMarkerVisual(
       scaledSize: new maps.Size(size, size),
       // Recursos compartilham coordenada com o Site e ficam acima/à direita; Locations
       // permanecem centrados. Esta é uma regra de posicionamento, não de identidade.
-      anchor:
-        node.kind === 'site' ? new maps.Point(size / 2, size / 2) : new maps.Point(0, size),
+      anchor: node.kind === 'site' ? new maps.Point(size / 2, size / 2) : new maps.Point(0, size),
     },
     zIndex: selected
       ? SELECTION_PIN_Z - 1
@@ -651,7 +650,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   );
 
   const tree = useGeoTree();
-  const { navParams, clearNav, goToResource } = useNavigation();
+  const { navParams, clearNav } = useNavigation();
 
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga fetch + render por
   // grupo, persistido em localStorage. `include` fica memoizado pelas flags que realmente
@@ -1094,6 +1093,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     [tree.revealNode],
   );
 
+  // "Abrir recurso" a partir de um id (link relacionado dentro de Site/CTO/Porta) — resolve o nó
+  // via `fetchTreeNode` e seleciona dentro do próprio Mapa, sem sair de Geo (a antiga página de
+  // Recursos, que recebia esse id como deep-link, foi removida do sidebar principal).
+  const handleOpenResourceById = useCallback(
+    (resourceId: string) => {
+      void fetchTreeNode(`resource:${resourceId}`)
+        .then((node) => selectNode(node, 'search'))
+        .catch(() => {
+          // Recurso pode não existir mais (terminado/excluído) ou não ser navegável nesta
+          // árvore — ignora silenciosamente, o painel de origem continua aberto.
+        });
+    },
+    [selectNode],
+  );
+
   // Contexto persistido do mapa (issue #182): deriva do que está aberto na doca, na mesma
   // precedência do resto do arquivo — endereço e nó nunca coexistem (ver
   // onAddressFound/selectNode/onDeselect). Sem nada aberto cai em `{kind:'none'}`, e só o
@@ -1234,11 +1248,15 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       const facts = operationalIconFactsForTreeNode(node);
       const pointStyle = pointStyleForNode(node, mapLayerCatalog.catalog, scaleMeters);
       if (!facts || !pointStyle) return undefined;
-      return resolveOperationalIcon(facts, visualIdentityForTreeNode(node, mapLayerCatalog.catalog), {
-        size: 20,
-        color: pointStyle.color,
-        opacity: pointStyle.opacity,
-      });
+      return resolveOperationalIcon(
+        facts,
+        visualIdentityForTreeNode(node, mapLayerCatalog.catalog),
+        {
+          size: 20,
+          color: pointStyle.color,
+          opacity: pointStyle.opacity,
+        },
+      );
     },
     [mapLayerCatalog.catalog, scaleMeters],
   );
@@ -1759,14 +1777,20 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     }
 
     const status = resourceStatusLabel[(node.status as GeoStatus) ?? 'active'];
-    // O nome vem sempre do catálogo modelado (Studio) via useResourceTypeVisualIdentities —
-    // nunca de dicionário fixo (TYPE_LABEL é outro card, fora de escopo aqui). O nó pode
-    // carregar um code de categoria (`category:...`), então normaliza o prefixo antes de resolver.
+    // O nome do tipo vem sempre da modelagem/Studio:
+    // 1. Nome do ResourceType via useResourceTypeVisualIdentities (a partir de sublabel ou resourceType).
+    // 2. Rótulo da camada no Studio GEO (pointLayerForNode).
+    // 3. sublabel (nome da ResourceSpecification).
+    // 4. resourceType (código do tipo).
+    // 5. 'Recurso' (fallback genérico final se nada for conhecido).
+    const studioLayerLabel = pointLayerForNode(node, mapLayerCatalog.catalog)?.label;
     const resourceTypeTitle =
       (node.sublabel && presentationForResourceType(node.sublabel)?.name) ||
       (node.resourceType &&
         presentationForResourceType(node.resourceType.replace(/^category:/i, ''))?.name) ||
+      studioLayerLabel ||
       node.sublabel ||
+      node.resourceType ||
       'Recurso';
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
@@ -1867,7 +1891,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onClose={onDeselect}
               onCreated={() => undefined}
               onChanged={() => void loadGeo()}
-              onOpenResource={goToResource}
+              onOpenResource={handleOpenResourceById}
             />
           ) : detailOpen && detailTarget?.kind === 'resource' ? (
             <>
@@ -1881,7 +1905,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   node={detailTarget.node}
                   onSnapChange={onMobileSheetSnapChange}
                   minimizeSignal={sheetMinimizeSignal}
-                  onOpenResource={goToResource}
+                  onOpenResource={handleOpenResourceById}
                   onOpenPort={setStackedPortNode}
                   onBack={() => setDetailOpen(false)}
                   onClose={onDeselect}
@@ -1898,7 +1922,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   node={stackedPortNode}
                   onSnapChange={onMobileSheetSnapChange}
                   minimizeSignal={sheetMinimizeSignal}
-                  onOpenResource={goToResource}
+                  onOpenResource={handleOpenResourceById}
                   onBack={() => setStackedPortNode(null)}
                   onClose={() => setStackedPortNode(null)}
                   onDropSimulation={onDropSimulation}
@@ -1975,7 +1999,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   }}
                   onCreated={(created) => handleProjectSiteCreated(dockView.projectId, created)}
                   onChanged={handleProjectSiteChanged}
-                  onOpenResource={goToResource}
+                  onOpenResource={handleOpenResourceById}
                   onRemoveFromProject={
                     activeProjectSiteView.mode === 'view' && activeProject.status !== 'terminated'
                       ? async () => {

@@ -1,12 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import {
-  appRoutePath,
-  categorySlug,
-  parseAppRoute,
-  resolveResourceCategorySlug,
-  resolveServiceCategorySlug,
-} from './appRoute';
-import { DEFAULT_RESOURCE_CATEGORY_CODE } from '../data/resourceCategoryViews';
+import { appRoutePath, categorySlug, parseAppRoute, resolveServiceCategorySlug } from './appRoute';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from '../data/serviceCategoryViews';
 
 const desktop = { isMobile: false };
@@ -21,12 +14,6 @@ describe('categorySlug', () => {
 });
 
 describe('slug resolution', () => {
-  test('resolves known resource slugs and falls back to default', () => {
-    expect(resolveResourceCategorySlug('logical-ipam')).toBe('Logical.IPAM');
-    expect(resolveResourceCategorySlug('equipment-access')).toBe('Equipment.Access');
-    expect(resolveResourceCategorySlug('does-not-exist')).toBe(DEFAULT_RESOURCE_CATEGORY_CODE);
-  });
-
   test('resolves known service slugs and falls back to default', () => {
     expect(resolveServiceCategorySlug('access')).toBe('Access');
     expect(resolveServiceCategorySlug('does-not-exist')).toBe(DEFAULT_SERVICE_CATEGORY_CODE);
@@ -71,19 +58,16 @@ describe('parseAppRoute', () => {
     });
   });
 
-  test('resource and service categories', () => {
-    expect(parseAppRoute('/resources/logical-ipam', desktop)).toEqual({
-      page: 'resource',
-      resourceCategory: 'Logical.IPAM',
-    });
-    expect(parseAppRoute('/resources', desktop)).toEqual({
-      page: 'resource',
-      resourceCategory: DEFAULT_RESOURCE_CATEGORY_CODE,
-    });
+  test('service categories', () => {
     expect(parseAppRoute('/services/access', desktop)).toEqual({
       page: 'service',
       serviceCategory: 'Access',
     });
+  });
+
+  test('the retired /resources route falls back to the device default', () => {
+    expect(parseAppRoute('/resources/logical-ipam', mobile)).toEqual({ page: 'geo' });
+    expect(parseAppRoute('/resources', desktop)).toEqual({ page: 'research' });
   });
 
   test('sessions vs legacy mock conversations', () => {
@@ -112,9 +96,6 @@ describe('appRoutePath round-trips', () => {
     expect(appRoutePath({ page: 'studio', studioSection: 'location-model' })).toBe(
       '/studio/location-model',
     );
-    expect(appRoutePath({ page: 'resource', resourceCategory: 'Logical.IPAM' })).toBe(
-      '/resources/logical-ipam',
-    );
     expect(appRoutePath({ page: 'service', serviceCategory: 'Access' })).toBe('/services/access');
   });
 
@@ -131,7 +112,6 @@ describe('appRoutePath round-trips', () => {
       '/orders',
       '/conversations',
       '/new-conversation',
-      '/resources/logical-ipam',
       '/services/access',
       '/c/sess-9',
     ]) {

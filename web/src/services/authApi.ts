@@ -103,6 +103,7 @@ export const deleteUser = (id: string): Promise<void> =>
 export const ASSIGNABLE_ROLES = [
   'inventory.reader',
   'inventory.editor',
+  'order.reader',
   'order.requester',
   'order.operator',
   'catalog.admin',

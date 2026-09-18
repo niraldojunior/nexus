@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Download,
-  FileText,
-  FolderTree,
-  Layers3,
-  MapPin,
-  MapPinned,
-  Workflow,
-  Zap,
-} from 'lucide-react';
+import { Download, FileText, FolderTree, MapPin, MapPinned, Workflow, Zap } from 'lucide-react';
 import ClaudeBurst from './components/ClaudeBurst';
 import CopilotPendingResponse from './components/CopilotPendingResponse';
 import Diamond from './components/Diamond';
@@ -23,7 +14,6 @@ import PageHead from './components/ui/PageHead';
 import GeoPage from './pages/GeoPage';
 import LoginPage from './pages/LoginPage';
 import NewResearchPage from './pages/NewResearchPage';
-import ResourcePage from './pages/ResourcePage';
 import ServicePage from './pages/ServicePage';
 import { ConfigurationPage } from './pages/ConfigurationPage';
 import { StudioPage } from './pages/StudioPage';
@@ -37,7 +27,6 @@ import { initialConversations, initialRecentItems, settingsSections } from './da
 import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
 import { clearGeoViewParams } from './utils/geoViewState';
-import { DEFAULT_RESOURCE_CATEGORY_CODE } from './data/resourceCategoryViews';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
 import {
   appRoutePath,
@@ -50,18 +39,19 @@ import { Conversation, ConversationEntry, PageId, RecentGroup, SettingsSection }
 
 const assistantChips = [
   { icon: MapPinned, label: 'Explorar Geo' },
-  { icon: Layers3, label: 'Analisar Resource' },
   { icon: Workflow, label: 'Modelar Service' },
   { icon: Zap, label: 'Checar Order' },
   { icon: FileText, label: 'Gerar especificação' },
 ];
 
 const domainMeta: Record<
-  Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>,
+  Exclude<
+    PageId,
+    'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'
+  >,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
-  resource: { title: 'Resource', subtitle: 'O quê? Inventário físico e lógico', icon: Layers3 },
   service: {
     title: 'Service',
     subtitle: 'Para quê / quem? CFS, RFS e SubscriberID',
@@ -113,7 +103,6 @@ function AssistantHome({
               type="button"
               onClick={() => {
                 if (label.includes('Geo')) onNavigate('geo');
-                if (label.includes('Resource')) onNavigate('resource');
                 if (label.includes('Service')) onNavigate('service');
                 if (label.includes('Order')) onNavigate('order');
               }}
@@ -134,7 +123,10 @@ function DomainPage({
   page,
   onOpenMainMenu,
 }: {
-  page: Exclude<PageId, 'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'>;
+  page: Exclude<
+    PageId,
+    'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'
+  >;
   onOpenMainMenu?: () => void;
 }) {
   if (page === 'geo') {
@@ -343,10 +335,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   const [activeResearchSessionId, setActiveResearchSessionId] = useState<string | null>(
     initialRoute.sessionId ?? null,
   );
-  const [activeResourceCategory, setActiveResourceCategory] = useState<string>(
-    initialRoute.resourceCategory ?? DEFAULT_RESOURCE_CATEGORY_CODE,
-  );
-  const [resourceMenuOpen, setResourceMenuOpen] = useState(initialRoute.page === 'resource');
   const [activeServiceCategory, setActiveServiceCategory] = useState<string>(
     initialRoute.serviceCategory ?? DEFAULT_SERVICE_CATEGORY_CODE,
   );
@@ -391,17 +379,14 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       });
       setActiveConversationId(conversationId);
       setActiveResearchSessionId(null);
-      setResourceMenuOpen(false);
       setServiceMenuOpen(false);
       setCurrentPage('conversation');
       return;
     }
 
     setActiveResearchSessionId(route.sessionId ?? null);
-    if (route.resourceCategory) setActiveResourceCategory(route.resourceCategory);
     if (route.serviceCategory) setActiveServiceCategory(route.serviceCategory);
     if (route.studioSection) setActiveStudioSection(route.studioSection);
-    setResourceMenuOpen(route.page === 'resource');
     setServiceMenuOpen(route.page === 'service');
     setCurrentPage(route.page);
   });
@@ -422,7 +407,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       sessionId: activeResearchSessionId ?? undefined,
       conversationId:
         currentPage === 'conversation' ? (activeConversationId ?? undefined) : undefined,
-      resourceCategory: activeResourceCategory,
       serviceCategory: activeServiceCategory,
       studioSection: activeStudioSection,
     });
@@ -434,7 +418,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     currentPage,
     activeConversationId,
     activeResearchSessionId,
-    activeResourceCategory,
     activeServiceCategory,
     activeStudioSection,
   ]);
@@ -489,7 +472,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setInput('');
     setAssistantError(null);
     setPendingConversationEntryId(null);
-    setResourceMenuOpen(false);
   };
 
   const handleNewResearch = () => {
@@ -500,24 +482,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setInput('');
     setAssistantError(null);
     setPendingConversationEntryId(null);
-    setResourceMenuOpen(false);
-  };
-
-  const handleSelectResourceCategory = (categoryCode: string) => {
-    setSettingsOpen(false);
-    setActiveResearchSessionId(null);
-    setActiveResourceCategory(categoryCode);
-    setResourceMenuOpen(true);
-    setServiceMenuOpen(false);
-    setCurrentPage('resource');
-  };
-
-  const handleToggleResourceMenu = () => {
-    setSettingsOpen(false);
-    setActiveResearchSessionId(null);
-    setCurrentPage('resource');
-    setServiceMenuOpen(false);
-    setResourceMenuOpen((current) => !current);
   };
 
   const handleSelectServiceCategory = (categoryCode: string) => {
@@ -525,7 +489,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setActiveResearchSessionId(null);
     setActiveServiceCategory(categoryCode);
     setServiceMenuOpen(true);
-    setResourceMenuOpen(false);
     setCurrentPage('service');
   };
 
@@ -533,7 +496,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setSettingsOpen(false);
     setActiveResearchSessionId(null);
     setCurrentPage('service');
-    setResourceMenuOpen(false);
     setServiceMenuOpen((current) => !current);
   };
 
@@ -543,10 +505,15 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       return;
     }
     setSettingsOpen(false);
-    setResourceMenuOpen(page === 'resource' ? resourceMenuOpen : false);
     setServiceMenuOpen(page === 'service' ? serviceMenuOpen : false);
     setCurrentPage(page);
-    if (!isMobile && (page === 'conversas' || page === 'conversation' || page === 'assistant' || page === 'research')) {
+    if (
+      !isMobile &&
+      (page === 'conversas' ||
+        page === 'conversation' ||
+        page === 'assistant' ||
+        page === 'research')
+    ) {
       setSidebarCollapsed(false);
     }
     setActiveResearchSessionId(null);
@@ -558,7 +525,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   };
 
   const handleAssistantNavigate = (page: PageId) => {
-    setResourceMenuOpen(false);
     setServiceMenuOpen(false);
     setCurrentPage(page);
   };
@@ -577,7 +543,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setInput('');
     setLoading(true);
     setAssistantError(null);
-    setResourceMenuOpen(false);
     setCurrentPage('conversation');
     if (!isMobile) setSidebarCollapsed(false);
     setActiveConversationId(nextConversationId);
@@ -652,8 +617,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}
-        activeResourceCategory={activeResourceCategory}
-        resourceMenuOpen={resourceMenuOpen}
         activeServiceCategory={activeServiceCategory}
         serviceMenuOpen={serviceMenuOpen}
         settingsOpen={settingsOpen}
@@ -664,21 +627,17 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
         onNewConversation={handleNewConversation}
         onNewResearch={handleNewResearch}
-        onToggleResourceMenu={handleToggleResourceMenu}
-        onSelectResourceCategory={handleSelectResourceCategory}
         onToggleServiceMenu={handleToggleServiceMenu}
         onSelectServiceCategory={handleSelectServiceCategory}
         onSelectPage={handleSelectPage}
         onOpenRecentItem={(conversationId) => {
           setSettingsOpen(false);
-          setResourceMenuOpen(false);
           setActiveConversationId(conversationId);
           setCurrentPage('conversation');
           if (!isMobile) setSidebarCollapsed(false);
         }}
         onSelectResearchSession={(sessionId) => {
           setSettingsOpen(false);
-          setResourceMenuOpen(false);
           setActiveResearchSessionId(sessionId);
           setCurrentPage('research');
           if (!isMobile) setSidebarCollapsed(false);
@@ -686,6 +645,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         sessionUser={session.user}
         isAdmin={session.admin}
         canViewStudio={session.canViewStudio}
+        canViewOrder={session.canViewOrder}
         onLogout={onLogout}
       />
 
@@ -749,11 +709,20 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
                   onNavigate={handleAssistantNavigate}
                 />
               ) : null}
-              {currentPage === 'resource' ? (
-                <ResourcePage category={activeResourceCategory} />
+              {currentPage === 'service' || currentPage === 'order' ? (
+                session.canViewOrder ? (
+                  currentPage === 'service' ? (
+                    <ServicePage category={activeServiceCategory} />
+                  ) : (
+                    <DomainPage page="order" />
+                  )
+                ) : (
+                  <div className="p-8 text-app-muted">
+                    Você não tem permissão para acessar{' '}
+                    {currentPage === 'service' ? 'Serviços' : 'Ordens'}.
+                  </div>
+                )
               ) : null}
-              {currentPage === 'service' ? <ServicePage category={activeServiceCategory} /> : null}
-              {currentPage === 'order' ? <DomainPage page="order" /> : null}
               {currentPage === 'research' ? (
                 activeResearchSessionId === null ? (
                   <NewResearchPage

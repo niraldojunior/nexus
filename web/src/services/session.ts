@@ -127,3 +127,13 @@ export const canEditStudio = (): boolean =>
 /** O usuário da sessão pode publicar e descartar drafts no Nexus Studio. */
 export const canAdminStudio = (): boolean =>
   getSessionRoles().some((role) => STUDIO_ADMIN_ROLES.includes(role));
+
+// Espelha ORDER_READ_ROLES do backend (src/shared/http/app.ts). `order.reader` é somente
+// leitura; `order.requester`/`order.operator` já incluem leitura implicitamente (podem criar
+// ou operar ordens, logo podem vê-las). Sem nenhum desses papéis, Serviços e Ordens saem do
+// sidebar principal — ver docs/3-system-design/security.md §3.
+const ORDER_READ_ROLES = ['order.reader', 'order.requester', 'order.operator', 'platform.admin'];
+
+/** O usuário da sessão pode visualizar as sessões de Serviços e Ordens do sidebar principal. */
+export const canViewOrder = (): boolean =>
+  getSessionRoles().some((role) => ORDER_READ_ROLES.includes(role));

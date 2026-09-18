@@ -114,7 +114,7 @@ export function GeoNodeSizeTab({ node, visualConfig, canEdit, onChange }: GeoNod
     ? resolveStudioGeoColor(pointConfig.color, node.entity.category, null)
     : undefined;
   // O hook precisa rodar incondicionalmente; para LINE/POLYGON ele devolve `undefined`.
-  const pointPreviewUrl = useStudioPointIconPreviewUrl(node, pointConfig, 64, {
+  const pointPreviewUrl = useStudioPointIconPreviewUrl(pointConfig ? node : null, 64, {
     ...(pointColor ? { color: pointColor } : {}),
     ...(pointConfig ? { opacity: pointConfig.opacity } : {}),
   });

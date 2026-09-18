@@ -37,6 +37,7 @@ export type ResourceCatalogNode = {
     href: string;
     code: string;
     name: string;
+    visualIdentity?: ResourceType['visualIdentity'];
     '@referredType': 'ResourceType';
   };
   status: ResourceCatalogStatus;

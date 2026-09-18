@@ -134,11 +134,12 @@ export function siteIconFor(kind: SiteKind, status?: string): SiteIcon {
 
 export function siteIconSvg(
   icon: SiteIcon,
-  options: { size?: number; badge?: boolean } = {},
+  options: { size?: number; badge?: boolean; color?: string; opacity?: number } = {},
 ): string {
-  return renderIconSvg(icon.node, icon.color, {
+  return renderIconSvg(icon.node, options.color ?? icon.color, {
     size: options.size,
     shape: options.badge === false ? 'none' : 'squircle',
+    opacity: options.opacity,
   });
 }
 
@@ -148,9 +149,9 @@ const siteIconDataUrlCache = new Map<string, string>();
 
 export function siteIconDataUrl(
   icon: SiteIcon,
-  options?: { size?: number; badge?: boolean },
+  options?: { size?: number; badge?: boolean; color?: string; opacity?: number },
 ): string {
-  const key = `${icon.kind}:${icon.color}:${options?.size ?? ''}:${options?.badge ?? ''}`;
+  const key = `${icon.kind}:${options?.color ?? icon.color}:${options?.size ?? ''}:${options?.badge ?? ''}:${options?.opacity ?? ''}`;
   const cached = siteIconDataUrlCache.get(key);
   if (cached) return cached;
   const value = toDataUrl(siteIconSvg(icon, options));

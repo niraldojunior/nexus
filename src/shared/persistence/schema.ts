@@ -63,6 +63,7 @@ export const TABLE_NAMES = [
   'tmf_resource_relationship_type',
   'tmf_resource_type_relationship_rule',
   'tmf_resource_type_clone_ledger',
+  'tmf_geo_site_spec_visual_identity',
   'nexus_environment',
 ] as const;
 
@@ -773,6 +774,27 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_parent ON tmf_geographic_site_spec_containment_rule(parent_spec_id, child_spec_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geo_spec_containment_child ON tmf_geographic_site_spec_containment_rule(child_spec_id, parent_spec_id);
 
+      -- Extensão tenant-scoped de identidade visual de GeographicSiteSpecification (issue #264).
+      -- Permite que cada tenant configure a identidade visual do catálogo de localizações sem clonar
+      -- a specification global, preservando referências canônicas e integridade de sites existentes.
+      CREATE TABLE IF NOT EXISTS tmf_geo_site_spec_visual_identity (
+        tenant_id TEXT NOT NULL,
+        site_specification_id TEXT NOT NULL,
+        icon_code TEXT,
+        icon_asset_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, site_specification_id),
+        FOREIGN KEY (site_specification_id) REFERENCES tmf_geographic_site_specification(id),
+        CHECK (
+          (icon_code IS NULL AND icon_asset_id IS NULL) OR
+          (icon_code IS NOT NULL AND icon_asset_id IS NULL) OR
+          (icon_code IS NULL AND icon_asset_id IS NOT NULL)
+        )
+      );
+      CREATE INDEX IF NOT EXISTS idx_tmf_geo_site_spec_visual_identity_asset
+        ON tmf_geo_site_spec_visual_identity(tenant_id, icon_asset_id);
+
       -- TMF674: Geographic Site (entidade central: Centro, POP, Sala, Armário, etc.)
       CREATE TABLE IF NOT EXISTS tmf_geographic_site (
         id TEXT PRIMARY KEY,
@@ -998,6 +1020,15 @@ export const SCHEMA_SQL = `
         -- físico fora do mapa não declaram geometria. A coerência com nature/map_presence é
         -- invariante de domínio (ResourceService), não CHECK — o banco só guarda o domínio léxico.
         geometry_kind TEXT CHECK(geometry_kind IN ('POINT', 'LINE', 'POLYGON')),
+        -- Identidade visual canônica do tipo (issue #264): código nativo ou asset do Studio.
+        -- Exclusividade mútua garantida por CHECK; validação semântica em ResourceService.
+        icon_code TEXT,
+        icon_asset_id TEXT,
+        CHECK (
+          (icon_code IS NULL AND icon_asset_id IS NULL) OR
+          (icon_code IS NOT NULL AND icon_asset_id IS NULL) OR
+          (icon_code IS NULL AND icon_asset_id IS NOT NULL)
+        ),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(tenant_id, code),
@@ -1963,6 +1994,28 @@ const MIGRATIONS_SQL_V18_RESOURCE_TYPE_GEOMETRY_KIND = `
     CHECK(geometry_kind IN ('POINT', 'LINE', 'POLYGON'));
 `;
 
+// Autoridade de Identidade Visual canônica (issue #264): ResourceType passa a governar a identidade
+// de recursos; GeographicSiteSpecification governa a identidade de locais via extensão tenant-scoped.
+// Studio GEO v3 deixa de ser fonte de identidade e o read model do mapa compõe identidade do modelo
+// com estilo contextual do Studio. O DDL é aditivo e a migração executa o backfill determinístico.
+const MIGRATIONS_SQL_V19_VISUAL_IDENTITY_AUTHORITY = `
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS icon_code TEXT;
+  ALTER TABLE tmf_resource_type ADD COLUMN IF NOT EXISTS icon_asset_id TEXT;
+
+  CREATE TABLE IF NOT EXISTS tmf_geo_site_spec_visual_identity (
+    tenant_id TEXT NOT NULL,
+    site_specification_id TEXT NOT NULL,
+    icon_code TEXT,
+    icon_asset_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, site_specification_id),
+    FOREIGN KEY (site_specification_id) REFERENCES tmf_geographic_site_specification(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmf_geo_site_spec_visual_identity_asset
+    ON tmf_geo_site_spec_visual_identity(tenant_id, icon_asset_id);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2029,6 +2082,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 18,
     name: 'resource-type-geometry-kind',
     sql: MIGRATIONS_SQL_V18_RESOURCE_TYPE_GEOMETRY_KIND,
+  },
+  {
+    version: 19,
+    name: 'visual-identity-authority',
+    sql: MIGRATIONS_SQL_V19_VISUAL_IDENTITY_AUTHORITY,
   },
 ];
 

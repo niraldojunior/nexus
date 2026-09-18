@@ -1,6 +1,7 @@
-// Aba "Ícone & Cor" do nó selecionado no Studio GEO. Edita apenas a aparência — ícone, regras de
+// Aba "Cor" do nó selecionado no Studio GEO. Edita apenas a aparência contextual — regras de
 // cor, opacidade e estilo de traço. Tamanho, espessura e visibilidade por escala ficam na aba
 // "Tamanho" (ver GeoNodeSizeTab), e o "Restaurar padrão" daqui preserva o que aquela aba edita.
+// Identidade visual (ícone / glifo / SVG) é governada exclusivamente por ResourceType e GeographicSiteSpecification.
 
 import { RotateCcw } from 'lucide-react';
 import type {
@@ -20,13 +21,25 @@ import {
   StrokeStyleField,
 } from './VisualStyleControls';
 
-export type GeoNodeIconColorTabProps = {
+export type GeoNodeColorTabProps = {
   node: StudioGeoEntityNode;
   visualConfig: StudioGeoVisualConfig;
   canEdit: boolean;
   onChange: (visualConfig: StudioGeoVisualConfig) => void;
-  onOpenIconPicker: () => void;
 };
+
+/** Traçado do preview de linha/polígono para o estilo de traço configurado, ou `undefined` (sólido). */
+function previewStrokeDashArray(
+  strokeStyle: StudioGeoLineVisualConfig['strokeStyle'],
+): string | undefined {
+  if (strokeStyle === 'dashed') {
+    return STROKE_STYLE_OPTIONS.find((option) => option.value === 'dashed')?.dashArray;
+  }
+  if (strokeStyle === 'dotted' || strokeStyle === 'animated-dotted') {
+    return STROKE_STYLE_OPTIONS.find((option) => option.value === 'dotted')?.dashArray;
+  }
+  return undefined;
+}
 
 /**
  * Defaults só da aparência: as faixas de escala do config atual são preservadas, de modo que
@@ -80,23 +93,21 @@ function TabHeader({
   );
 }
 
-function PointIconColor({
+function PointColor({
   node,
   config,
   canEdit,
   onChange,
-  onOpenIconPicker,
 }: {
   node: StudioGeoEntityNode;
   config: StudioGeoPointVisualConfig;
   canEdit: boolean;
   onChange: (visualConfig: StudioGeoVisualConfig) => void;
-  onOpenIconPicker: () => void;
 }) {
   // A prévia usa a cor efetiva do modo atual: no modo por status, a cor padrão representa o
   // fallback de quem não tem status próprio.
   const previewColor = resolveStudioGeoColor(config.color, node.entity.category, null);
-  const previewUrl = useStudioPointIconPreviewUrl(node, config, 64, {
+  const previewUrl = useStudioPointIconPreviewUrl(node, 64, {
     color: previewColor,
     opacity: config.opacity,
   });
@@ -110,21 +121,10 @@ function PointIconColor({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <h5 className="text-[0.84rem] font-semibold text-app-text">Ícone do ponto</h5>
+          <h5 className="text-[0.84rem] font-semibold text-app-text">Identidade visual</h5>
           <p className="text-[0.76rem] text-app-muted">
-            {config.assetId
-              ? 'SVG personalizado do Studio.'
-              : `Ícone nativo ${config.iconCode ?? 'CO'}.`}
+            O glifo/ícone é governado pelo modelo canônico de Recursos e Locais.
           </p>
-          {canEdit && (
-            <button
-              type="button"
-              onClick={onOpenIconPicker}
-              className="mt-2 rounded-[8px] border border-app-border bg-white px-2.5 py-1.5 text-[0.78rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
-            >
-              {config.assetId || config.iconCode ? 'Trocar ícone' : 'Escolher ícone'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -149,7 +149,7 @@ function PointIconColor({
   );
 }
 
-function LineIconColor({
+function LineColor({
   node,
   config,
   canEdit,
@@ -198,12 +198,9 @@ function LineIconColor({
               y2="5"
               stroke={previewColor}
               strokeOpacity={config.opacity}
-              strokeWidth={4}
+              strokeWidth={3}
+              strokeDasharray={previewStrokeDashArray(config.strokeStyle)}
               strokeLinecap="round"
-              strokeDasharray={
-                STROKE_STYLE_OPTIONS.find((option) => option.value === config.strokeStyle)
-                  ?.dashArray ?? 'none'
-              }
             />
           </svg>
         </div>
@@ -212,7 +209,7 @@ function LineIconColor({
   );
 }
 
-function PolygonIconColor({
+function PolygonColor({
   node,
   config,
   canEdit,
@@ -223,8 +220,8 @@ function PolygonIconColor({
   canEdit: boolean;
   onChange: (visualConfig: StudioGeoVisualConfig) => void;
 }) {
-  const strokeColor = resolveStudioGeoColor(config.stroke, node.entity.category, null);
-  const fillColor = resolveStudioGeoColor(config.fill, node.entity.category, null);
+  const previewStrokeColor = resolveStudioGeoColor(config.stroke, node.entity.category, null);
+  const previewFillColor = resolveStudioGeoColor(config.fill, node.entity.category, null);
 
   return (
     <>
@@ -240,7 +237,7 @@ function PolygonIconColor({
         <StrokeStyleField
           label="Estilo da borda"
           value={config.strokeStyle}
-          color={strokeColor}
+          color={previewStrokeColor}
           canEdit={canEdit}
           onChange={(strokeStyle) => onChange({ ...config, strokeStyle })}
         />
@@ -253,102 +250,88 @@ function PolygonIconColor({
       </div>
 
       <ColorRuleEditor
-        title="Cor de preenchimento"
+        title="Cor do preenchimento"
         rule={config.fill}
         category={node.entity.category}
         canEdit={canEdit}
         onChange={(fill) => onChange({ ...config, fill })}
       />
 
-      <div className="space-y-4 rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
+      <div className="rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
         <OpacityField
           label="Transparência do preenchimento"
           value={config.fillOpacity}
           canEdit={canEdit}
           onChange={(fillOpacity) => onChange({ ...config, fillOpacity })}
         />
-        <div className="rounded-[10px] border border-app-border/80 bg-black/[0.02] p-4 text-center">
-          <span className="mb-2 block text-[0.72rem] text-app-muted">
-            Pré-visualização da região
-          </span>
-          <div className="flex items-center justify-center">
-            <svg width="140" height="72" aria-hidden="true">
-              <rect
-                x="4"
-                y="4"
-                width="132"
-                height="64"
-                rx="10"
-                fill={fillColor}
-                fillOpacity={config.fillOpacity}
-                stroke={strokeColor}
-                strokeOpacity={config.strokeOpacity}
-                strokeWidth={2.5}
-                strokeDasharray={
-                  STROKE_STYLE_OPTIONS.find((option) => option.value === config.strokeStyle)
-                    ?.dashArray ?? 'none'
-                }
-              />
-            </svg>
-          </div>
-        </div>
+      </div>
+
+      <div className="rounded-[10px] border border-app-border/80 bg-black/[0.02] p-4 text-center">
+        <span className="mb-2 block text-[0.72rem] text-app-muted">
+          Pré-visualização do polígono
+        </span>
+        <svg width="220" height="48" aria-hidden="true" className="mx-auto">
+          <polygon
+            points="10,38 60,10 160,10 210,38 110,44"
+            fill={previewFillColor}
+            fillOpacity={config.fillOpacity}
+            stroke={previewStrokeColor}
+            strokeOpacity={config.strokeOpacity}
+            strokeWidth={2}
+            strokeDasharray={previewStrokeDashArray(config.strokeStyle)}
+          />
+        </svg>
       </div>
     </>
   );
 }
 
-export function GeoNodeIconColorTab({
+export function GeoNodeColorTab({
   node,
   visualConfig,
   canEdit,
   onChange,
-  onOpenIconPicker,
-}: GeoNodeIconColorTabProps) {
+}: GeoNodeColorTabProps) {
   const handleReset = () => onChange(appearanceDefaults(visualConfig, node));
-
-  if (visualConfig.geometryKind === 'POINT') {
-    return (
-      <div className="space-y-4">
-        <TabHeader
-          title="Ícone & Cor do ponto"
-          description="Escolha o ícone, a cor de fundo e a transparência aplicados no mapa."
-          canEdit={canEdit}
-          onReset={handleReset}
-        />
-        <PointIconColor
-          node={node}
-          config={visualConfig}
-          canEdit={canEdit}
-          onChange={onChange}
-          onOpenIconPicker={onOpenIconPicker}
-        />
-      </div>
-    );
-  }
-
-  if (visualConfig.geometryKind === 'LINE') {
-    return (
-      <div className="space-y-4">
-        <TabHeader
-          title="Cor & estilo da linha"
-          description="Defina a cor, o estilo do traço e a transparência de cabos e dutos."
-          canEdit={canEdit}
-          onReset={handleReset}
-        />
-        <LineIconColor node={node} config={visualConfig} canEdit={canEdit} onChange={onChange} />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4">
       <TabHeader
-        title="Cor & estilo da região"
-        description="Defina borda, preenchimento e transparências da cobertura."
+        title="Cores e estilo"
+        description="Configure as cores contextuais, transparência e estilo de traço desta camada no mapa."
         canEdit={canEdit}
         onReset={handleReset}
       />
-      <PolygonIconColor node={node} config={visualConfig} canEdit={canEdit} onChange={onChange} />
+
+      {visualConfig.geometryKind === 'POINT' && (
+        <PointColor
+          node={node}
+          config={visualConfig}
+          canEdit={canEdit}
+          onChange={onChange}
+        />
+      )}
+
+      {visualConfig.geometryKind === 'LINE' && (
+        <LineColor
+          node={node}
+          config={visualConfig}
+          canEdit={canEdit}
+          onChange={onChange}
+        />
+      )}
+
+      {visualConfig.geometryKind === 'POLYGON' && (
+        <PolygonColor
+          node={node}
+          config={visualConfig}
+          canEdit={canEdit}
+          onChange={onChange}
+        />
+      )}
     </div>
   );
 }
+
+// Manter alias retrocompatível para imports legados
+export const GeoNodeIconColorTab = GeoNodeColorTab;

@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { resourceTypeFallbackIcon } from '../../../utils/resourceTypePresentation';
 import {
   // Padrões
   Folder,
@@ -596,8 +597,7 @@ export function getDefaultNodeIcon(
   isLogical: boolean,
 ): LucideIcon {
   if (kind === 'GROUP') return Folder;
-  if (isLogical) return Cpu;
-  return Box;
+  return resourceTypeFallbackIcon(isLogical ? 'LogicalResource' : 'PhysicalResource');
 }
 
 /**

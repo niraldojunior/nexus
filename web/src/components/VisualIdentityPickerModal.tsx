@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileUp, Image as ImageIcon, Search } from 'lucide-react';
-import { Button, Modal } from '../../../components/ui';
-import type { StudioGeoPointVisualConfig } from '../../../services/studioGeoApi';
+import { Button, Modal } from './ui';
+import type { VisualIdentity } from '../services/studioGeoApi';
 import {
   createStudioSvgAsset,
   getStudioSvgAssetDataUrl,
   listStudioAssets,
   type StudioAsset,
-} from '../../../services/studioAssetApi';
+} from '../services/studioAssetApi';
 import {
   NATIVE_MAP_ICON_INDUSTRIES,
   NATIVE_MAP_ICON_INDUSTRY_LABEL,
@@ -15,54 +15,50 @@ import {
   nativeMapIconDataUrl,
   nativeMapIconForCode,
   type NativeMapIconIndustry,
-} from '../../../utils/nativeMapIcons';
-import { STUDIO_GEO_NEUTRAL_ICON_COLOR } from '../../../utils/studioGeoDefaults';
+} from '../utils/nativeMapIcons';
+import { STUDIO_GEO_NEUTRAL_ICON_COLOR } from '../utils/studioGeoDefaults';
 
-type Selection = { kind: 'system'; iconCode: string } | { kind: 'asset'; assetId: string };
-
-type GeoNodeIconPickerModalProps = {
+export type VisualIdentityPickerModalProps = {
   isOpen: boolean;
-  pointConfig: StudioGeoPointVisualConfig;
+  value?: VisualIdentity | null;
+  defaultIndustry?: NativeMapIconIndustry;
+  title?: string;
   onClose: () => void;
-  onSelect: (selection: Selection) => void;
+  onSelect: (selection: VisualIdentity | null) => void;
 };
 
-export function GeoNodeIconPickerModal({
+export function VisualIdentityPickerModal({
   isOpen,
-  pointConfig,
+  value,
+  defaultIndustry = 'TELECOM',
+  title = 'Escolher identidade visual',
   onClose,
   onSelect,
-}: GeoNodeIconPickerModalProps) {
+}: VisualIdentityPickerModalProps) {
   const [assets, setAssets] = useState<StudioAsset[]>([]);
   const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  const [industry, setIndustry] = useState<NativeMapIconIndustry>('TELECOM');
-  const [selection, setSelection] = useState<Selection>(
-    pointConfig.assetId
-      ? { kind: 'asset', assetId: pointConfig.assetId }
-      : { kind: 'system', iconCode: pointConfig.iconCode ?? 'CO' },
-  );
+  const [industry, setIndustry] = useState<NativeMapIconIndustry>(defaultIndustry);
+  const [selection, setSelection] = useState<VisualIdentity | null>(value ?? null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelection(
-      pointConfig.assetId
-        ? { kind: 'asset', assetId: pointConfig.assetId }
-        : { kind: 'system', iconCode: pointConfig.iconCode ?? 'CO' },
-    );
-    setIndustry(nativeMapIconForCode(pointConfig.iconCode)?.industry ?? 'TELECOM');
+    setSelection(value ?? null);
+    if (value?.kind === 'system') {
+      setIndustry(nativeMapIconForCode(value.iconCode)?.industry ?? defaultIndustry);
+    } else {
+      setIndustry(defaultIndustry);
+    }
     setSearch('');
     setUploadError(null);
     void listStudioAssets()
       .then(setAssets)
       .catch(() => setAssets([]));
-  }, [isOpen, pointConfig.assetId, pointConfig.iconCode]);
+  }, [isOpen, value, defaultIndustry]);
 
-  // Miniatura real de cada SVG personalizado — o conteúdo vem sanitizado pelo Studio, e sem ele
-  // a lista só mostraria um ícone genérico igual para todos.
   useEffect(() => {
     let active = true;
     for (const asset of assets) {
@@ -74,8 +70,7 @@ export function GeoNodeIconPickerModal({
     return () => {
       active = false;
     };
-    // `assetPreviews` entra só como cache consultado; incluí-lo reexecutaria a cada resposta.
-  }, [assets]);
+  }, [assets, assetPreviews]);
 
   const systemIcons = useMemo(() => filterNativeMapIcons(industry, search), [industry, search]);
   const customAssets = useMemo(() => {
@@ -117,16 +112,32 @@ export function GeoNodeIconPickerModal({
     <Modal
       onClose={onClose}
       width={760}
-      title={<h3>Escolher ícone do ponto</h3>}
+      title={title}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={() => confirm()}>
-            Confirmar
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between">
+          <div>
+            {selection && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelection(null);
+                  confirm(null);
+                }}
+              >
+                Limpar seleção
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={() => confirm()}>
+              Confirmar
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="space-y-4">
@@ -145,7 +156,7 @@ export function GeoNodeIconPickerModal({
           <div className="mb-2 flex items-center justify-between gap-3">
             <h4 className="text-[0.82rem] font-semibold text-app-text">Ícones nativos</h4>
             <span className="text-[0.74rem] text-app-muted">
-              A cor de fundo é escolhida depois, em Ícone &amp; Cor
+              Cor, tamanho, opacidade e escala vêm da Experiência no Mapa
             </span>
           </div>
           <div
@@ -180,8 +191,8 @@ export function GeoNodeIconPickerModal({
               className="grid h-[216px] grid-cols-7 content-start gap-1 overflow-y-auto p-1"
             >
               {systemIcons.map((mapIcon) => {
-                const selected = selection.kind === 'system' && selection.iconCode === mapIcon.code;
-                const nextSelection: Selection = { kind: 'system', iconCode: mapIcon.code };
+                const selected = selection?.kind === 'system' && selection.iconCode === mapIcon.code;
+                const nextSelection: VisualIdentity = { kind: 'system', iconCode: mapIcon.code };
                 return (
                   <button
                     key={mapIcon.code}
@@ -196,7 +207,6 @@ export function GeoNodeIconPickerModal({
                         : 'border-app-border bg-white hover:bg-black/[0.02]'
                     }`}
                   >
-                    {/* Glifo neutro sem badge: o fundo colorido só é decidido na aba. */}
                     <img
                       src={nativeMapIconDataUrl(mapIcon, {
                         size: 32,
@@ -244,12 +254,13 @@ export function GeoNodeIconPickerModal({
           ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {customAssets.map((asset) => {
-                const selected = selection.kind === 'asset' && selection.assetId === asset.id;
+                const selected = selection?.kind === 'asset' && selection.assetId === asset.id;
                 return (
                   <button
                     key={asset.id}
                     type="button"
                     onClick={() => setSelection({ kind: 'asset', assetId: asset.id })}
+                    onDoubleClick={() => confirm({ kind: 'asset', assetId: asset.id })}
                     className={`flex items-center gap-2 rounded-[9px] border p-2 text-left text-[0.76rem] transition ${
                       selected
                         ? 'border-app-accent bg-app-accent-soft ring-2 ring-app-accent/30'

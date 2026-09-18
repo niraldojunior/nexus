@@ -17,6 +17,22 @@ import {
   draftSpecsFromSnapshot,
   type LocationModelDraftSpec,
 } from './locationModelDraft';
+import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPreviewUrl';
+
+export function LocationSpecItemIcon({ spec }: { spec: LocationModelDraftSpec }) {
+  const visualIdentity = spec.visualIdentity ?? null;
+  // Na modelagem, a identidade do tipo é um glifo — sem o marcador contextual do mapa.
+  const previewUrl = useVisualIdentityPreviewUrl(visualIdentity, 20, {
+    shape: 'none',
+    color: '#0284c7',
+  });
+  const CategoryIcon = locationCategoryIcon(spec.category);
+
+  if (previewUrl) {
+    return <img src={previewUrl} alt="" className="h-4 w-4 shrink-0" aria-hidden="true" />;
+  }
+  return <CategoryIcon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />;
+}
 
 export type LocationModelStudioProps = {
   canEdit: boolean;
@@ -209,9 +225,8 @@ export function LocationModelStudio({
           <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto p-1 pr-2">
             {visibleSpecs.length === 0 ? <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum tipo de local encontrado.</div> : visibleSpecs.map((spec) => {
               const selected = spec.localId === selectedSpecId;
-              const CategoryIcon = locationCategoryIcon(spec.category);
               return <button key={spec.localId} type="button" aria-pressed={selected} onClick={() => setSelectedSpecId(spec.localId)} className={`flex w-full items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-left text-[0.85rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border' : 'border-transparent text-app-text hover:bg-black/[0.04]'}`}>
-                <span className="flex min-w-0 items-center gap-1.5"><CategoryIcon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" /><span className="truncate" title={spec.name}>{spec.name}</span></span>
+                <span className="flex min-w-0 items-center gap-1.5"><LocationSpecItemIcon spec={spec} /><span className="truncate" title={spec.name}>{spec.name}</span></span>
                 {spec.bootstrapProtected && <span title="Protegido pelo bootstrap"><Shield className="h-3.5 w-3.5 shrink-0 text-amber-600" /></span>}
               </button>;
             })}

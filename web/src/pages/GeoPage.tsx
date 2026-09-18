@@ -55,7 +55,12 @@ import {
   type MapSiteRole,
 } from '../utils/mapLayers';
 import type { StudioGeoEntityNode, StudioGeoPointVisualConfig } from '../services/studioGeoApi';
-import { nativeMapIconDataUrl, nativeMapIconForCode } from '../utils/nativeMapIcons';
+import {
+  operationalIconFactsForTreeNode,
+  pointLayerForTreeNode,
+  resolveOperationalIcon,
+  visualIdentityForTreeNode,
+} from '../utils/pointIconPreview';
 import { getStudioSvgAssetDataUrl } from '../services/studioAssetApi';
 import { resolveScaleBandKey } from '../utils/studioGeoDefaults';
 import {
@@ -84,6 +89,7 @@ import { useSession } from '../hooks/useSession';
 import {
   resourceIconFor,
   resourceIconDataUrl,
+  resourceTypeLabel,
   MARKER_ICON_SIZE,
   CABLE_STROKE_WEIGHT,
 } from '../utils/resourceIcon';
@@ -294,35 +300,17 @@ function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
 // marcadores cujo estado `selected` de fato mudou (ver os dois `useEffect` de marcadores
 // logo abaixo). Mantém a mesma regra visual: o selecionado cresce, o resto segue o tier de
 // escala (cheio perto, reduzido em zoom baixo).
+/**
+ * A identidade pertence ao tipo do modelo e a aparência pertence à entidade publicada do Studio.
+ * Elas são buscadas e resolvidas separadamente para não criar uma segunda fonte de ícones.
+ */
 function pointLayerForNode(
   node: GeoTreeNode,
   catalog: import('../services/studioGeoApi').StudioGeoCatalog,
 ): StudioGeoEntityNode | undefined {
-  const sourceType = node.kind === 'site' ? 'GEOGRAPHIC_SITE_SPECIFICATION' : 'RESOURCE_TYPE';
-  const sourceIds =
-    node.kind === 'site'
-      ? [node.siteSpecificationCode, node.siteSpecificationId]
-      : [node.resourceType];
-  return mapLayerEntities(catalog).find(
-    (candidate) =>
-      candidate.entity.sourceType === sourceType &&
-      sourceIds.some((sourceId) => sourceId === candidate.entity.sourceId) &&
-      candidate.visualConfig?.geometryKind === 'POINT',
-  );
+  return pointLayerForTreeNode(node, catalog);
 }
 
-function pointVisualConfigForNode(
-  node: GeoTreeNode,
-  catalog: import('../services/studioGeoApi').StudioGeoCatalog,
-): StudioGeoPointVisualConfig | undefined {
-  return pointLayerForNode(node, catalog)?.visualConfig as StudioGeoPointVisualConfig | undefined;
-}
-
-/**
- * Estilo publicado pelo Studio GEO para o pin de um nó, já resolvido pelo status da própria
- * instância e pela faixa de escala atual. `undefined` quando não há entidade visual publicada
- * para a origem do nó — aí valem os perfis canônicos legados (siteIconFor/resourceIconFor).
- */
 function pointStyleForNode(
   node: GeoTreeNode,
   catalog: import('../services/studioGeoApi').StudioGeoCatalog,
@@ -350,68 +338,37 @@ function buildPointMarkerVisual(
   pointStyle?: ResolvedStudioGeoPointStyle,
   assetDataUrl?: string,
 ): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
-  if (node.kind === 'site') {
-    const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-    const icon = siteIconFor(kind, node.status);
-    // Só a Central/Estação é referência permanente do mapa. Qualquer outro Site
-    // (cliente, condomínio, edificação, POP...) usa a mesma régua de Resource.
-    const isStation = kind === 'CO';
-    const baseSize = isStation ? stationMarkerSize : resourceMarkerSize;
-    const size = selected ? baseSize + (isStation ? 8 : 6) : (pointStyle?.sizePx ?? baseSize);
-    const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
-    return {
-      iconOptions: {
-        url:
-          assetDataUrl ??
-          (nativeIcon
-            ? nativeMapIconDataUrl(nativeIcon, {
-                size,
-                shape: 'squircle',
-                color: pointStyle?.color,
-                opacity: pointStyle?.opacity,
-              })
-            : siteIconDataUrl(icon, { size })),
-        scaledSize: new maps.Size(size, size),
-        anchor: new maps.Point(size / 2, size / 2),
-      },
-      zIndex: selected
-        ? SELECTION_PIN_Z - 1
-        : pointLayerZIndex(pointLayerForNode(node, catalog), catalog),
-      title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
-    };
-  }
-
-  const icon = resourceIconFor({
-    resourceType: node.resourceType ?? '',
-    status: node.status,
-    name: node.label,
-    sublabel: node.sublabel,
+  const facts = operationalIconFactsForTreeNode(node);
+  if (!facts) throw new Error('Marcador operacional requer Resource ou Location.');
+  const siteKind =
+    node.kind === 'site'
+      ? siteKindFromSpec({ category: node.siteCategory, name: node.sublabel })
+      : undefined;
+  // Só a Central/Estação é referência permanente do mapa. Qualquer outro Site usa a régua
+  // de Resource; a forma e o glifo seguem sendo definidos pelo resolvedor comum.
+  const isStation = siteKind === 'CO';
+  const baseSize = node.kind === 'site' && isStation ? stationMarkerSize : resourceMarkerSize;
+  const selectedBoost = node.kind === 'site' && isStation ? 8 : 6;
+  const size = selected ? baseSize + selectedBoost : (pointStyle?.sizePx ?? baseSize);
+  const resolved = resolveOperationalIcon(facts, visualIdentityForTreeNode(node, catalog), {
+    size,
+    color: pointStyle?.color,
+    opacity: pointStyle?.opacity,
   });
-  const baseSize = resourceMarkerSize;
-  const size = selected ? baseSize + 6 : (pointStyle?.sizePx ?? baseSize);
-  const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
+
   return {
     iconOptions: {
-      url:
-        assetDataUrl ??
-        (nativeIcon
-          ? nativeMapIconDataUrl(nativeIcon, {
-              size,
-              shape: 'circle',
-              color: pointStyle?.color,
-              opacity: pointStyle?.opacity,
-            })
-          : resourceIconDataUrl(icon, { size })),
+      url: assetDataUrl ?? resolved.url,
       scaledSize: new maps.Size(size, size),
-      // Âncora no canto inferior-esquerdo: o equipamento fica acima e à direita da
-      // coordenada. Um equipamento dentro de um CO compartilha a coordenada exata do
-      // local, e centrado ficaria escondido atrás do pin.
-      anchor: new maps.Point(0, size),
+      // Recursos compartilham coordenada com o Site e ficam acima/à direita; Locations
+      // permanecem centrados. Esta é uma regra de posicionamento, não de identidade.
+      anchor:
+        node.kind === 'site' ? new maps.Point(size / 2, size / 2) : new maps.Point(0, size),
     },
     zIndex: selected
       ? SELECTION_PIN_Z - 1
       : pointLayerZIndex(pointLayerForNode(node, catalog), catalog),
-    title: `${node.label} · ${nativeIcon?.name ?? icon.label}`,
+    title: `${node.label} · ${resolved.label}`,
   };
 }
 
@@ -853,7 +810,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // MapLoadingBar). Cargas internas dos painéis (Viabilidade, GEONET, eventos) têm spinner
   // próprio dentro da doca e não entram aqui. O script do Google Maps é rastreado dentro do
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
-  const mapDataLoading = loading || tree.busy || viewportLoading || coverageLoading;
+  const mapDataLoading =
+    loading || tree.busy || mapLayerCatalog.loading || viewportLoading || coverageLoading;
 
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
@@ -1265,6 +1223,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const selectNodeFromTree = useCallback(
     (node: GeoTreeNode) => selectNode(node, 'tree'),
     [selectNode],
+  );
+  // O chip da seleção fica sobre o mapa e acompanha a aparência publicada da camada. Árvore,
+  // resultados e esquemático continuam usando NodeIcon no contexto de inventário.
+  const selectedNodeIcon = useCallback(
+    (node: GeoTreeNode) => {
+      const facts = operationalIconFactsForTreeNode(node);
+      const pointStyle = pointStyleForNode(node, mapLayerCatalog.catalog, scaleMeters);
+      if (!facts || !pointStyle) return undefined;
+      return resolveOperationalIcon(facts, visualIdentityForTreeNode(node, mapLayerCatalog.catalog), {
+        size: 20,
+        color: pointStyle.color,
+        opacity: pointStyle.opacity,
+      });
+    },
+    [mapLayerCatalog.catalog, scaleMeters],
   );
   const openProjectSite = useCallback(
     (projectId: string, node: GeoTreeNode) => {
@@ -1728,9 +1701,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     const point = treeNodePoint(node);
     if (!point) return null;
 
+    const facts = operationalIconFactsForTreeNode(node);
+    if (!facts) return null;
+    const pointStyle = pointStyleForNode(node, mapLayerCatalog.catalog, scaleMeters);
+    const resolvedIcon = resolveOperationalIcon(
+      facts,
+      visualIdentityForTreeNode(node, mapLayerCatalog.catalog),
+      {
+        size: 40,
+        color: pointStyle?.color,
+        opacity: pointStyle?.opacity,
+      },
+    );
+
     if (node.kind === 'site') {
       const kindOfSite = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-      const icon = siteIconFor(kindOfSite, node.status);
       // O pin do local é centrado na coordenada e cresce quando selecionado.
       const pinSize = SITE_ICON_SIZE + 8;
       const rows: Array<[string, string]> = [
@@ -1743,20 +1728,24 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         key: node.id,
         point,
         offset: [0, -(pinSize / 2 + 6)],
-        iconUrl: siteIconDataUrl(icon, { size: 40 }),
-        eyebrow: siteSpecNameLabel(node.sublabel) ?? siteKindLabel[kindOfSite],
+        iconUrl: resolvedIcon.url!,
+        // A camada é uma coleção plural ("Estações", "Postes"); o balão descreve
+        // uma entidade individual e, por isso, usa sempre o tipo de Site singular.
+        eyebrow: siteSpecNameLabel(node.sublabel) ?? node.sublabel ?? siteKindLabel[kindOfSite],
         title: node.label,
         rows,
       };
     }
 
     const status = resourceStatusLabel[(node.status as GeoStatus) ?? 'active'];
-    const icon = resourceIconFor({
-      resourceType: node.resourceType ?? '',
-      status: node.status,
-      name: node.label,
-      sublabel: node.sublabel,
-    });
+    // A camada é uma coleção plural; o ResourceType identifica o recurso individual. O nó
+    // pode carregar um code de categoria (`category:…`), então prioriza o nome já resolvido
+    // pela árvore e só traduz o código como fallback.
+    const resourceTypeTitle =
+      (node.sublabel ? resourceTypeLabel(node.sublabel) : undefined) ??
+      (node.resourceType ? resourceTypeLabel(node.resourceType.replace(/^category:/i, '')) : undefined) ??
+      node.sublabel ??
+      'Recurso';
     // Cabo não tem pin: o balão nasce sobre o traçado, sem folga de ícone.
     const isCable = Boolean(treeNodeRoute(node));
     const rows: Array<[string, string]> = [
@@ -1771,12 +1760,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       // O ícone de equipamento é ancorado no canto inferior-esquerdo, então ele
       // fica acima e à direita da coordenada — o balão segue o ícone.
       offset: isCable ? [0, -8] : [MARKER_ICON_SIZE / 2, -(MARKER_ICON_SIZE + 4)],
-      iconUrl: resourceIconDataUrl(icon, { size: 40 }),
-      eyebrow: icon.label,
+      iconUrl: resolvedIcon.url!,
+      eyebrow: resourceTypeTitle,
       title: node.label,
       rows,
     };
-  }, [detailOpen, hoverNode, selectedNode?.id, coverageHover, coverage?.level, projectAreaHover]);
+  }, [
+    detailOpen,
+    hoverNode,
+    selectedNode?.id,
+    coverageHover,
+    coverage?.level,
+    projectAreaHover,
+    mapLayerCatalog.catalog,
+    scaleMeters,
+  ]);
 
   // Esc fecha o painel de detalhe — mas só quando nenhum outro modal está
   // aberto, senão a tecla fecharia os dois de uma vez.
@@ -1991,7 +1989,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 nodes={mapNodes}
                 pinnedNode={pinnedSelectedNode}
                 projectSiteFeatures={projectSiteFeatures}
-                infraFeatures={infraFeatures}
+                // Não desenha a infraestrutura contra o catálogo sentinela: ele não carrega
+                // identidade nem estilo publicado e causava um flash de ícones legados antes
+                // da primeira resposta do Studio GEO.
+                infraFeatures={mapLayerCatalog.loading ? [] : infraFeatures}
                 onSelectInfraFeature={selectNodeFromInfraOverlay}
                 selectedNode={selectedNode}
                 draftAddress={draftAddress}
@@ -2066,6 +2067,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             isMobile={isMobile}
             query={query}
             selection={searchSelection}
+            selectedNodeIcon={selectedNodeIcon}
             onEditSelection={() => setSearchSelection(null)}
             onQueryChange={setQuery}
             onSelectNode={selectNodeFromSearch}
@@ -2537,7 +2539,8 @@ export function GoogleMapPanel({
   useEffect(() => {
     const assetIds = new Set<string>();
     for (const node of [...nodes, ...(pinnedNode ? [pinnedNode] : [])]) {
-      const assetId = pointVisualConfigForNode(node, mapLayerCatalog)?.assetId;
+      const identity = visualIdentityForTreeNode(node, mapLayerCatalog);
+      const assetId = identity?.kind === 'asset' ? identity.assetId : undefined;
       if (assetId && !assetDataUrls.has(assetId)) assetIds.add(assetId);
     }
     for (const assetId of assetIds) {
@@ -2944,7 +2947,10 @@ export function GoogleMapPanel({
         resourceMarkerSize,
         mapLayerCatalog,
         pointStyle,
-        pointStyle?.assetId ? assetDataUrls.get(pointStyle.assetId) : undefined,
+        (() => {
+          const identity = visualIdentityForTreeNode(node, mapLayerCatalog);
+          return identity?.kind === 'asset' ? assetDataUrls.get(identity.assetId) : undefined;
+        })(),
       );
 
       if (existing) {
@@ -3018,7 +3024,10 @@ export function GoogleMapPanel({
         resourceMarkerSize,
         mapLayerCatalog,
         pointStyle,
-        pointStyle?.assetId ? assetDataUrls.get(pointStyle.assetId) : undefined,
+        (() => {
+          const identity = visualIdentityForTreeNode(node, mapLayerCatalog);
+          return identity?.kind === 'asset' ? assetDataUrls.get(identity.assetId) : undefined;
+        })(),
       );
       marker.setIcon(visual.iconOptions);
       marker.setZIndex(visual.zIndex);
@@ -3078,7 +3087,10 @@ export function GoogleMapPanel({
       resourceMarkerSize,
       mapLayerCatalog,
       pinnedPointStyle,
-      pinnedPointStyle?.assetId ? assetDataUrls.get(pinnedPointStyle.assetId) : undefined,
+      (() => {
+        const identity = visualIdentityForTreeNode(pinnedNode, mapLayerCatalog);
+        return identity?.kind === 'asset' ? assetDataUrls.get(identity.assetId) : undefined;
+      })(),
     );
     nodeByIdRef.current.set(pinnedNode.id, pinnedNode);
     if (!pinnedMarkerRef.current) {

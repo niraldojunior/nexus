@@ -180,7 +180,7 @@ export function ResourceComponentsTab({
                     status: node.status,
                     name: node.name,
                   }}
-                  variant="badge"
+                  variant="glyph"
                   size={26}
                 />
                 <span className="min-w-0 flex-1">
@@ -249,7 +249,7 @@ export function ResourceComponentsTab({
                   status: node.status,
                   name: node.name,
                 }}
-                variant="badge"
+                variant="glyph"
                 size={26}
               />
               <span className="min-w-0 flex-1">

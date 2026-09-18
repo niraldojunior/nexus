@@ -37,8 +37,9 @@ const LEGACY_TELECOM_CODES = [
 ];
 
 describe('NATIVE_MAP_ICON_INDUSTRIES', () => {
-  it('define exatamente as cinco indústrias esperadas', () => {
+  it('define as seis indústrias esperadas com REAL_ESTATE em primeiro', () => {
     expect(NATIVE_MAP_ICON_INDUSTRIES).toEqual([
+      'REAL_ESTATE',
       'TELECOM',
       'DATA_CENTER',
       'ENERGY',
@@ -157,5 +158,15 @@ describe('nativeMapIconDataUrl', () => {
     const small = nativeMapIconDataUrl(entry, { size: 16 });
     const large = nativeMapIconDataUrl(entry, { size: 40 });
     expect(small).not.toBe(large);
+  });
+
+  it('gera glifo sem fundo quando a superfície não representa um marcador de mapa', () => {
+    const entry = nativeMapIconForCode('CTO')!;
+    const svg = decodeURIComponent(nativeMapIconDataUrl(entry, { size: 20, shape: 'none', color: '#0284c7' }));
+
+    expect(svg).toContain('viewBox="0 0 24 24"');
+    expect(svg).toContain('stroke="#0284c7"');
+    expect(svg).toContain('stroke-width="2"');
+    expect(svg).not.toContain('fill="#0284c7" stroke="#ffffff"');
   });
 });

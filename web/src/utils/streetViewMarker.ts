@@ -36,9 +36,6 @@ export function resourceStreetViewMarker(
   resource: IconResourceLike & { label: string },
   point: [number, number],
 ): StreetViewMarker {
-  // resourceType + status + nome (label/sublabel), igual à resolução dos markers de
-  // GeoPage — o nome só entra em jogo para distinguir CDOI de CDOE (ver isCdoiResource em
-  // resourceIcon.ts); o resto do tipo continua vindo só de resourceType.
   const icon = resourceIconFor({
     resourceType: resource.resourceType ?? '',
     status: resource.status,

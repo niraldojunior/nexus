@@ -26,15 +26,15 @@ import type {
   StudioGeoEntityNode,
   StudioGeoNode,
   StudioGeoVisualConfig,
+  VisualIdentity,
 } from '../../services/studioGeoApi';
 import { listGeoSiteSpecifications, type GeoSpec } from '../../services/geoApi';
 import { listModeledResourceTypes } from '../../services/resourceCatalogApi';
 import type { ResourceType } from '../../services/resourceApi';
 import { mapLayerTree, type MapLayerTreeNode } from '../../utils/mapLayers';
 import { useStudioPointIconPreviewUrl } from '../../hooks/useStudioPointIconPreviewUrl';
-import { GeoNodeIconColorTab } from './geo/GeoNodeIconColorTab';
+import { GeoNodeColorTab } from './geo/GeoNodeIconColorTab';
 import { GeoNodeSizeTab } from './geo/GeoNodeSizeTab';
-import { GeoNodeIconPickerModal } from './geo/GeoNodeIconPickerModal';
 import {
   defaultVisualConfigForGeometry,
   visualGeometryKindOf,
@@ -62,10 +62,10 @@ type StudioGeoSnapshot = Pick<StudioGeoCatalog, 'schemaVersion' | 'nodes'>;
 // do mapa em namespaces legacy (`GET /v1/geo/map-layer-catalog`), nunca como conteúdo inicial de
 // um ambiente novo nem como dado editável aqui.
 const normalize = (value: Record<string, unknown> | undefined): StudioGeoSnapshot => {
-  if (value?.schemaVersion === 2 && Array.isArray(value.nodes)) {
-    return { schemaVersion: 2, nodes: value.nodes as StudioGeoNode[] };
+  if ((value?.schemaVersion === 2 || value?.schemaVersion === 3) && Array.isArray(value.nodes)) {
+    return { schemaVersion: 3, nodes: value.nodes as StudioGeoNode[] };
   }
-  return { schemaVersion: 2, nodes: [] };
+  return { schemaVersion: 3, nodes: [] };
 };
 
 const compactOrder = (nodes: StudioGeoNode[]): StudioGeoNode[] => {
@@ -129,6 +129,24 @@ const optionForEntity = (
 ): EligibleOption | undefined =>
   eligible.find((option) => option.sourceId === entity.sourceId || option.id === entity.sourceId);
 
+const visualIdentityForEntity = (
+  entity: StudioGeoEntityNode['entity'],
+  resourceTypes: ResourceType[],
+  siteSpecs: GeoSpec[],
+): VisualIdentity | undefined => {
+  if (entity.sourceType === 'RESOURCE_TYPE') {
+    const resourceType = resourceTypes.find(
+      (item) => item.id === entity.sourceId || item.code === entity.sourceId,
+    );
+    return resourceType?.visualIdentity;
+  }
+  if (entity.sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION') {
+    const siteSpec = siteSpecs.find((item) => item.id === entity.sourceId || item.code === entity.sourceId);
+    return siteSpec?.visualIdentity;
+  }
+  return undefined;
+};
+
 const isDescendant = (nodes: StudioGeoNode[], candidateId: string, ancestorId: string): boolean => {
   let current = nodes.find((node) => node.id === candidateId);
   const visited = new Set<string>();
@@ -165,7 +183,6 @@ function GeoTreePointIcon({ node }: GeoTreePointIconProps) {
   const pointConfig = visualConfig.geometryKind === 'POINT' ? visualConfig : undefined;
   const previewUrl = useStudioPointIconPreviewUrl(
     node,
-    pointConfig ?? null,
     22,
     pointConfig
       ? {
@@ -185,7 +202,7 @@ export function StudioGeoExperience({
   onRegisterCaptureInitialSnapshot,
 }: StudioGeoExperienceProps) {
   const [snapshot, setSnapshot] = useState<StudioGeoSnapshot>({
-    schemaVersion: 2,
+    schemaVersion: 3,
     nodes: [],
   });
   const [checksum, setChecksum] = useState<string>();
@@ -194,7 +211,6 @@ export function StudioGeoExperience({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [pendingEntityChange, setPendingEntityChange] = useState<PendingEntityChange | null>(null);
 
@@ -261,7 +277,7 @@ export function StudioGeoExperience({
       const visualConfig = visualConfigForEligibleOption(node.visualConfig, option, node.label);
       return visualConfig ? { ...node, visualConfig } : node;
     });
-    return { schemaVersion: 2, nodes };
+    return { schemaVersion: 3, nodes };
   }, [resourceTypes, siteSpecs, snapshot]);
 
   const captureDraft = useCallback(async () => {
@@ -283,11 +299,24 @@ export function StudioGeoExperience({
     return () => onRegisterCaptureInitialSnapshot?.(null);
   }, [buildSnapshot, onRegisterCaptureInitialSnapshot]);
 
-  const tree = useMemo(
-    () => mapLayerTree({ ...snapshot, configured: true, environmentId: 'studio-draft', fallback: false }),
-    [snapshot],
+  // A identidade é enriquecida somente para previews. O snapshot v3 continua livre desse campo,
+  // pois o modelo (ResourceType/GeoSpec), e não o Studio GEO, é sua autoridade.
+  const previewCatalog = useMemo<StudioGeoCatalog>(
+    () => ({
+      ...snapshot,
+      configured: true,
+      environmentId: 'studio-draft',
+      fallback: false,
+      nodes: snapshot.nodes.map((node) => {
+        if (node.kind !== 'ENTITY') return node;
+        const visualIdentity = visualIdentityForEntity(node.entity, resourceTypes, siteSpecs);
+        return visualIdentity ? { ...node, visualIdentity } : node;
+      }),
+    }),
+    [resourceTypes, siteSpecs, snapshot],
   );
-  const selected = snapshot.nodes.find((node) => node.id === selectedId) ?? null;
+  const tree = useMemo(() => mapLayerTree(previewCatalog), [previewCatalog]);
+  const selected = previewCatalog.nodes.find((node) => node.id === selectedId) ?? null;
 
   const patchSelected = (patch: Partial<StudioGeoNode>) =>
     selected &&
@@ -534,7 +563,6 @@ export function StudioGeoExperience({
 
   const pointIconPreview = useStudioPointIconPreviewUrl(
     selected?.kind === 'ENTITY' ? selected : null,
-    selectedPointConfig,
     32,
     selectedPointConfig && selected?.kind === 'ENTITY'
       ? {
@@ -979,7 +1007,7 @@ export function StudioGeoExperience({
                           }`}
                         >
                           <Palette className="h-3.5 w-3.5" />
-                          Ícone &amp; Cor
+                          Cor
                         </button>
                         <button
                           type="button"
@@ -1002,14 +1030,13 @@ export function StudioGeoExperience({
               {/* Conteúdo das Abas */}
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
                 {activeTab === 'icon-color' && selected.kind === 'ENTITY' && visualEditorConfig ? (
-                  <GeoNodeIconColorTab
+                  <GeoNodeColorTab
                     node={selected}
                     visualConfig={visualEditorConfig}
                     canEdit={canMutate}
                     onChange={(updatedVisualConfig: StudioGeoVisualConfig) =>
                       patchSelected({ visualConfig: updatedVisualConfig })
                     }
-                    onOpenIconPicker={() => setIconPickerOpen(true)}
                   />
                 ) : activeTab === 'size' && selected.kind === 'ENTITY' && visualEditorConfig ? (
                   <GeoNodeSizeTab
@@ -1123,22 +1150,6 @@ export function StudioGeoExperience({
         </section>
       </div>
 
-      {selected?.kind === 'ENTITY' && selectedPointConfig?.geometryKind === 'POINT' && (
-        <GeoNodeIconPickerModal
-          isOpen={iconPickerOpen}
-          pointConfig={selectedPointConfig}
-          onClose={() => setIconPickerOpen(false)}
-          onSelect={(selection) =>
-            patchSelected({
-              visualConfig:
-                selection.kind === 'system'
-                  ? { ...selectedPointConfig, iconCode: selection.iconCode, assetId: undefined }
-                  : { ...selectedPointConfig, assetId: selection.assetId },
-            })
-          }
-        />
-      )}
-
       {pendingEntityChange && (
         <Modal
           onClose={() => setPendingEntityChange(null)}
@@ -1159,8 +1170,8 @@ export function StudioGeoExperience({
             A configuração visual desta entidade será redefinida com os padrões da nova origem.
           </p>
           <p className="mt-2 text-[0.84rem] text-app-muted">
-            Ícone, cores, transparência, estilo de traço e tamanhos por escala configurados aqui
-            serão perdidos.
+            Cores, transparência, estilo de traço e tamanhos por escala configurados aqui
+            serão redefinidos.
           </p>
         </Modal>
       )}

@@ -146,9 +146,13 @@ export class StudioService {
       const existingDraft = workspace.draftVersionId
         ? await this.repository.getVersion(workspace.draftVersionId, { tenantId: workspace.tenantId })
         : undefined;
+      const adapter = this.adapterFor(domain);
+      const preparedSnapshot = adapter.prepareSnapshot
+        ? await adapter.prepareSnapshot(snapshot, { tenantId: workspace.tenantId })
+        : snapshot;
 
       const now = new Date().toISOString();
-      const checksum = checksumOf(snapshot);
+      const checksum = checksumOf(preparedSnapshot);
 
       if (existingDraft) {
         this.assertPrecondition(existingDraft.checksum, ifMatch);
@@ -160,7 +164,7 @@ export class StudioService {
         const updated = await this.repository.updateVersion(
           {
             ...draftWithoutValidation,
-            snapshot,
+            snapshot: preparedSnapshot,
             checksum,
           },
           existingDraft.checksum,
@@ -180,11 +184,11 @@ export class StudioService {
         domain,
         versionNumber,
         status: 'draft',
-        snapshot,
+        snapshot: preparedSnapshot,
         // Fotografia do estado vivo do domínio no instante em que o draft nasce — nunca
         // atualizada depois (só a criação passa por aqui; o ramo `existingDraft` acima não toca
         // este campo). É o que `discardDraft` usa para restaurar o domínio ao cancelar.
-        baselineSnapshot: snapshot,
+        baselineSnapshot: preparedSnapshot,
         checksum,
         ...(workspace.publishedVersionId ? { baseVersionId: workspace.publishedVersionId } : {}),
         createdAt: now,

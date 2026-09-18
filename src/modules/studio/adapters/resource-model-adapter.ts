@@ -555,6 +555,10 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
             : snapshotType.geometryKind === undefined
               ? currentType.geometryKind
               : (snapshotType.geometryKind ?? undefined);
+        const desiredVisualIdentity =
+          snapshotType.visualIdentity === undefined
+            ? currentType.visualIdentity
+            : (snapshotType.visualIdentity ?? undefined);
         const typeChanged =
           (snapshotType.description !== undefined &&
             (currentType.description ?? '') !== snapshotType.description.trim()) ||
@@ -562,6 +566,7 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
           currentType.nature !== desiredNature ||
           currentType.mapPresence !== desiredMapPresence ||
           currentType.geometryKind !== desiredGeometryKind ||
+          !isDeepStrictEqual(currentType.visualIdentity, desiredVisualIdentity) ||
           (snapshotType.resourceTypeCharacteristic !== undefined &&
             !isDeepStrictEqual(
               currentType.resourceTypeCharacteristic ?? [],
@@ -582,6 +587,9 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
             ...(desiredNature === 'LogicalResource'
               ? {}
               : { geometryKind: desiredGeometryKind ?? null }),
+            ...(snapshotType.visualIdentity !== undefined
+              ? { visualIdentity: snapshotType.visualIdentity }
+              : {}),
             ...(snapshotType.resourceTypeCharacteristic !== undefined
               ? { resourceTypeCharacteristic: snapshotType.resourceTypeCharacteristic }
               : {}),

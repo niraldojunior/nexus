@@ -13,6 +13,30 @@ import {
 import type { ResourceCatalogTreeNode, ResourceCatalogNode } from '../../../services/resourceCatalogApi';
 import { isLogicalResourceNode } from '../../../utils/resourceNodeNature';
 import { resolveNodeIcon } from './catalogNodeIcons';
+import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPreviewUrl';
+
+function ResourceTypeTreeIcon({
+  node,
+  isLogical,
+  fallback: FallbackIcon,
+}: {
+  node: ResourceCatalogTreeNode;
+  isLogical: boolean;
+  fallback: ReturnType<typeof resolveNodeIcon>;
+}) {
+  // A identidade canônica é um glifo do tipo, não um marcador do mapa: sem fundo e no azul
+  // já usado pelo fallback de recursos físicos (`text-sky-600`).
+  const previewUrl = useVisualIdentityPreviewUrl(node.resourceType?.visualIdentity, 20, {
+    shape: 'none',
+    color: '#0284c7',
+  });
+
+  return previewUrl ? (
+    <img src={previewUrl} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />
+  ) : (
+    <FallbackIcon className={`h-4 w-4 shrink-0 ${isLogical ? 'text-purple-600' : 'text-sky-600'}`} />
+  );
+}
 
 export type DropPosition = 'before' | 'after' | 'inside';
 
@@ -360,10 +384,12 @@ export function ResourceCatalogTree({
               ) : (
                 <Folder className="h-4 w-4 shrink-0 text-amber-500" />
               )
-            ) : isLogical ? (
-              <CustomResourceIcon className="h-4 w-4 shrink-0 text-purple-600" />
             ) : (
-              <CustomResourceIcon className="h-4 w-4 shrink-0 text-sky-600" />
+              <ResourceTypeTreeIcon
+                node={node}
+                isLogical={isLogical}
+                fallback={CustomResourceIcon}
+              />
             )}
 
             <span className="truncate" title={node.name}>

@@ -15,6 +15,8 @@ import {
   locationCategoryIconTone,
   locationCategoryLabel,
 } from './locationCategoryPresentation';
+import { VisualIdentityPickerModal } from '../../../components/VisualIdentityPickerModal';
+import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPreviewUrl';
 
 const ROLE_LABELS: Record<GeoSiteRole, string> = {
   grouping: 'Agrupamento',
@@ -62,6 +64,7 @@ export function LocationSpecDetail({
   const [characteristicModalOpen, setCharacteristicModalOpen] = useState(false);
   const [editingCharacteristicRow, setEditingCharacteristicRow] = useState<GeoCharacteristicRow | null>(null);
   const [characteristicDeletingKey, setCharacteristicDeletingKey] = useState<string | null>(null);
+  const [visualIdentityPickerOpen, setVisualIdentityPickerOpen] = useState(false);
   const canMutate = canEdit && isEditing;
   const characteristicRows = useMemo(
     () => geoCharacteristicRowsFrom(spec.specCharacteristic),
@@ -75,6 +78,7 @@ export function LocationSpecDetail({
   useEffect(() => {
     setActiveTab('overview');
     setCharacteristicModalOpen(false);
+    setVisualIdentityPickerOpen(false);
   }, [spec.localId]);
 
   const patchCharacteristics = (rows: GeoCharacteristicRow[]) =>
@@ -102,15 +106,33 @@ export function LocationSpecDetail({
   };
 
   const CategoryIcon = locationCategoryIcon(spec.category);
+  const visualIdentity = spec.visualIdentity ?? null;
+  // Fora do mapa, a identidade canônica é exibida como glifo, sem a moldura contextual LOCAL.
+  const visualIdentityPreviewUrl = useVisualIdentityPreviewUrl(visualIdentity, 40, {
+    shape: 'none',
+    color: '#0284c7',
+  });
 
   return (
     <div className="vt-card flex h-full flex-col overflow-hidden p-0">
       <div className="px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${locationCategoryIconTone(spec.category)}`}>
-              <CategoryIcon className="h-5 w-5" />
-            </div>
+            {visualIdentityPreviewUrl ? (
+              <div
+                title="A identidade visual é editada na aba Geral"
+                className="flex h-10 w-10 shrink-0 items-center justify-center text-sky-600"
+              >
+                <img src={visualIdentityPreviewUrl} alt="" className="h-5 w-5" />
+              </div>
+            ) : (
+              <div
+                title="A identidade visual é editada na aba Geral"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${locationCategoryIconTone(spec.category)}`}
+              >
+                <CategoryIcon className="h-5 w-5" />
+              </div>
+            )}
             <div className="min-w-0">
               <h3 className="truncate font-bold leading-tight text-app-text">{spec.name}</h3>
               <span className="mt-0.5 block" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
@@ -183,6 +205,29 @@ export function LocationSpecDetail({
                   </select>
                 </label>
               </div>
+              <div className="flex items-center justify-between gap-3 rounded-[12px] border border-app-border bg-black/[0.01] p-4">
+                <div className="min-w-0">
+                  <span className="block text-[0.8rem] font-semibold text-app-text">
+                    Identidade visual
+                  </span>
+                  <span className="block text-[0.76rem] text-app-muted mt-0.5">
+                    Glifo ou imagem que representa este tipo de local em toda a plataforma —
+                    cor, tamanho e opacidade ficam na Experiência no Mapa.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVisualIdentityPickerOpen(true)}
+                  className="flex shrink-0 items-center gap-2 rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
+                >
+                  {visualIdentityPreviewUrl ? (
+                    <img src={visualIdentityPreviewUrl} alt="" className="h-5 w-5" />
+                  ) : (
+                    <CategoryIcon className="h-4 w-4" />
+                  )}
+                  Alterar
+                </button>
+              </div>
               <label className="block text-[0.8rem] font-semibold text-app-text">
                 Descrição
                 <textarea rows={3} value={spec.description ?? ''} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Descreva a finalidade deste tipo de local..." className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" />
@@ -245,6 +290,18 @@ export function LocationSpecDetail({
         readOnly={!canMutate}
         existingNames={characteristicRows.filter((row) => row.key !== editingCharacteristicRow?.key).map((row) => row.name)}
         onSave={saveCharacteristic}
+      />
+
+      <VisualIdentityPickerModal
+        isOpen={visualIdentityPickerOpen}
+        onClose={() => setVisualIdentityPickerOpen(false)}
+        value={visualIdentity}
+        title={`Identidade visual — ${spec.name}`}
+        defaultIndustry="REAL_ESTATE"
+        onSelect={(identity) => {
+          onPatch({ visualIdentity: identity ?? undefined });
+          setVisualIdentityPickerOpen(false);
+        }}
       />
     </div>
   );

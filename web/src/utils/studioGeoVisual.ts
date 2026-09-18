@@ -65,8 +65,6 @@ export function normalizeStudioGeoVisualConfig(
 ): StudioGeoVisualConfig {
   const candidate = (value && typeof value === 'object' ? value : {}) as LegacyColorConfig & {
     geometryKind?: unknown;
-    assetId?: unknown;
-    iconCode?: unknown;
     color?: unknown;
     stroke?: unknown;
     strokeStyle?: unknown;
@@ -99,12 +97,6 @@ export function normalizeStudioGeoVisualConfig(
     ) as StudioGeoPointVisualConfig['scaleBands'];
     return {
       geometryKind: 'POINT',
-      ...(typeof candidate.assetId === 'string' ? { assetId: candidate.assetId } : {}),
-      ...(typeof candidate.iconCode === 'string'
-        ? { iconCode: candidate.iconCode }
-        : defaults.iconCode
-          ? { iconCode: defaults.iconCode }
-          : {}),
       color: colorRule(candidate.color, defaults.color),
       opacity: opacity(candidate.opacity, defaults.opacity),
       scaleBands,
@@ -199,8 +191,6 @@ export type ResolvedStudioGeoPointStyle = {
   sizePx: number;
   color: string;
   opacity: number;
-  iconCode?: string;
-  assetId?: string;
 };
 
 export type ResolvedStudioGeoLineStyle = {
@@ -243,8 +233,6 @@ export function resolveStudioGeoVisualStyle(
       sizePx: band.sizePx,
       color: resolveStudioGeoColor(config.color, category, status),
       opacity: config.opacity,
-      ...(config.iconCode ? { iconCode: config.iconCode } : {}),
-      ...(config.assetId ? { assetId: config.assetId } : {}),
     };
   }
   if (config.geometryKind === 'LINE') {

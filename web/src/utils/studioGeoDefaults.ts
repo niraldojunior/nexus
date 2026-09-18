@@ -153,22 +153,6 @@ export function defaultPointVisualConfig(
     reference.sourceId.toLowerCase().includes('tower') ||
     (label?.toLowerCase().includes('torre') ?? false);
 
-  let iconCode = 'CO';
-  if (reference.category === 'RESOURCE') {
-    if (isPole) iconCode = 'pole';
-    else if (isTower) iconCode = 'tower';
-    else if (reference.sourceId.includes('cdoe')) iconCode = 'cdoe';
-    else if (reference.sourceId.includes('cdoi')) iconCode = 'cdoi';
-    else if (reference.sourceId.includes('ceo')) iconCode = 'ceo';
-    else if (reference.sourceId.includes('dio')) iconCode = 'dio';
-    else iconCode = 'cdoe';
-  } else if (reference.category === 'LOCAL') {
-    if (reference.sourceId.toUpperCase() === 'POP' || label?.toLowerCase().includes('pop'))
-      iconCode = 'POP';
-    else if (reference.sourceId.toUpperCase() === 'PI') iconCode = 'PI';
-    else iconCode = 'CO';
-  }
-
   const pointAppearance = {
     color: defaultColorRule(
       reference.category,
@@ -181,7 +165,6 @@ export function defaultPointVisualConfig(
     // Estação: sempre visível em todas as escalas com tamanhos decrescentes
     return {
       geometryKind: 'POINT',
-      iconCode,
       ...pointAppearance,
       scaleBands: {
         le5m: { visible: true, sizePx: 32 },
@@ -200,7 +183,6 @@ export function defaultPointVisualConfig(
     // Postes: visíveis apenas até 20 m (detalhe)
     return {
       geometryKind: 'POINT',
-      iconCode,
       ...pointAppearance,
       scaleBands: {
         le5m: { visible: true, sizePx: 22 },
@@ -219,7 +201,6 @@ export function defaultPointVisualConfig(
     // Torres: visíveis até 500 m
     return {
       geometryKind: 'POINT',
-      iconCode,
       ...pointAppearance,
       scaleBands: {
         le5m: { visible: true, sizePx: 30 },
@@ -237,7 +218,6 @@ export function defaultPointVisualConfig(
   // Padrão de caixas e recursos ópticos pontuais (CDOE, CDOI, CEO, DIO): visíveis até 100m / 500m
   return {
     geometryKind: 'POINT',
-    iconCode,
     ...pointAppearance,
     scaleBands: {
       le5m: { visible: true, sizePx: 32 },

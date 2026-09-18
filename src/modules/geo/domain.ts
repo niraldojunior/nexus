@@ -1,3 +1,5 @@
+import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
+
 export type GeoGeometryType = 'Point' | 'LineString' | 'Polygon';
 
 export type GeoJSONPoint = {
@@ -269,6 +271,7 @@ export type GeographicSiteSpecificationRef = {
   code: string;
   category: GeographicSiteSpecificationCategory;
   siteRole: GeographicSiteRole;
+  visualIdentity?: VisualIdentity;
   '@referredType': 'GeographicSiteSpecification';
 };
 
@@ -299,6 +302,7 @@ export type GeographicSiteSpecification = {
   siteRole: GeographicSiteRole;
   lifecycleStatus: GeographicSiteSpecificationLifecycleStatus;
   description?: string;
+  visualIdentity?: VisualIdentity;
   validFor?: TimePeriod;
   specCharacteristic: GeographicSiteSpecificationCharacteristic[];
   allowedParentSpec: GeographicSiteSpecificationRef[];

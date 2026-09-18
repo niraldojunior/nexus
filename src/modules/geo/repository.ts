@@ -27,6 +27,7 @@ import {
   normalizeStreetSearch,
 } from './address-normalization.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
+import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 type ContainmentRule = {
   parentSpecId: string;
@@ -39,6 +40,8 @@ export class GeoRepository implements IGeoRepository {
   private readonly addresses = new Map<string, GeographicAddress>();
   private readonly sites = new Map<string, GeographicSite>();
   private readonly specs = new Map<string, GeographicSiteSpecification>();
+  // Extensão tenant-scoped de identidade visual (issue #264): `${tenantId}:${specId}`.
+  private readonly specVisualIdentities = new Map<string, VisualIdentity>();
   private readonly siteRelationships = new Map<string, GeographicSiteRelationship[]>();
   private readonly relationshipTypes = new Map<string, GeographicRelationshipType>();
   private readonly containmentRules = new Map<string, ContainmentRule>();
@@ -133,27 +136,32 @@ export class GeoRepository implements IGeoRepository {
     return this.getSpec(stored.id)!;
   }
 
-  public getSpec(id: string): GeographicSiteSpecification | undefined {
+  public getSpec(id: string, scope?: GeoTenantScope): GeographicSiteSpecification | undefined {
     const spec = this.specs.get(id);
-    return spec ? this.hydrateSpec(spec) : undefined;
+    return spec ? this.hydrateSpec(spec, scope?.tenantId) : undefined;
   }
 
-  public getSpecByCode(code: string): GeographicSiteSpecification | undefined {
+  public getSpecByCode(
+    code: string,
+    scope?: GeoTenantScope,
+  ): GeographicSiteSpecification | undefined {
     const normalized = code.trim().toLowerCase();
     const spec = [...this.specs.values()].find(
       (item) => item.code.trim().toLowerCase() === normalized,
     );
-    return spec ? this.hydrateSpec(spec) : undefined;
+    return spec ? this.hydrateSpec(spec, scope?.tenantId) : undefined;
   }
 
-  public listSpecs(query?: {
-    name?: string;
-    code?: string;
-    category?: GeographicSiteSpecification['category'];
-    lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
-    limit?: number;
-    offset?: number;
-  }): GeographicSiteSpecification[] {
+  public listSpecs(
+    query?: GeoTenantScope & {
+      name?: string;
+      code?: string;
+      category?: GeographicSiteSpecification['category'];
+      lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
+      limit?: number;
+      offset?: number;
+    },
+  ): GeographicSiteSpecification[] {
     const filtered = [...this.specs.values()].filter((spec) => {
       if (query?.name && !spec.name.toLowerCase().includes(query.name.toLowerCase())) return false;
       if (query?.code && !spec.code.toLowerCase().includes(query.code.toLowerCase())) return false;
@@ -169,7 +177,20 @@ export class GeoRepository implements IGeoRepository {
       query?.limit !== undefined
         ? sorted.slice(offset, offset + query.limit)
         : sorted.slice(offset);
-    return sliced.map((spec) => this.hydrateSpec(spec));
+    return sliced.map((spec) => this.hydrateSpec(spec, query?.tenantId));
+  }
+
+  public setSpecVisualIdentity(
+    specId: string,
+    tenantId: string,
+    identity: VisualIdentity | undefined,
+  ): void {
+    const key = `${tenantId}:${specId}`;
+    if (!identity) {
+      this.specVisualIdentities.delete(key);
+      return;
+    }
+    this.specVisualIdentities.set(key, structuredClone(identity));
   }
 
   public syncSpecContainmentRules(
@@ -583,7 +604,10 @@ export class GeoRepository implements IGeoRepository {
     return sliced.map(cloneBulkJobResult);
   }
 
-  private hydrateSpec(spec: GeographicSiteSpecification): GeographicSiteSpecification {
+  private hydrateSpec(
+    spec: GeographicSiteSpecification,
+    tenantId?: string,
+  ): GeographicSiteSpecification {
     const parentRules = [...this.containmentRules.values()].filter(
       (rule) => rule.childSpecId === spec.id,
     );
@@ -593,14 +617,19 @@ export class GeoRepository implements IGeoRepository {
     const allowedParentSpec = parentRules
       .map((rule) => this.specs.get(rule.parentSpecId))
       .filter((item): item is GeographicSiteSpecification => item !== undefined)
-      .map(toSpecRef);
+      .map((s) => toSpecRef(s, tenantId ? this.specVisualIdentities.get(`${tenantId}:${s.id}`) : undefined));
     const allowedChildSpec = childRules
       .map((rule) => this.specs.get(rule.childSpecId))
       .filter((item): item is GeographicSiteSpecification => item !== undefined)
-      .map(toSpecRef);
+      .map((s) => toSpecRef(s, tenantId ? this.specVisualIdentities.get(`${tenantId}:${s.id}`) : undefined));
+
+    const visualIdentity = tenantId
+      ? this.specVisualIdentities.get(`${tenantId}:${spec.id}`)
+      : undefined;
 
     return {
       ...cloneSpec(spec),
+      ...(visualIdentity ? { visualIdentity: structuredClone(visualIdentity) } : {}),
       allowedParentSpec,
       allowedChildSpec,
       allowedParentSpecIds: allowedParentSpec.map((item) => item.id),
@@ -637,13 +666,17 @@ export class GeoRepository implements IGeoRepository {
 const buildRuleKey = (parentSpecId: string, childSpecId: string): string =>
   `${parentSpecId}::${childSpecId}`;
 
-const toSpecRef = (spec: GeographicSiteSpecification): GeographicSiteSpecificationRef => ({
+const toSpecRef = (
+  spec: GeographicSiteSpecification,
+  visualIdentity?: VisualIdentity,
+): GeographicSiteSpecificationRef => ({
   id: spec.id,
   href: spec.href,
   name: spec.name,
   code: spec.code,
   category: spec.category,
   siteRole: spec.siteRole,
+  ...(visualIdentity ? { visualIdentity: structuredClone(visualIdentity) } : {}),
   '@referredType': 'GeographicSiteSpecification',
 });
 

@@ -37,6 +37,7 @@ import {
   listResourceTypeRelationshipRules,
   type ResourceGeometryKind,
   type ResourceSpecification,
+  type VisualIdentity,
 } from '../../../services/resourceApi';
 import {
   buildCharacteristicPayload,
@@ -48,6 +49,8 @@ import { ResourceSpecificationFormModal } from './ResourceSpecificationFormModal
 import { ResourceRelationshipRulesPanel } from './ResourceRelationshipRulesPanel';
 import { IconPickerModal } from './IconPickerModal';
 import { resolveNodeIcon } from './catalogNodeIcons';
+import { VisualIdentityPickerModal } from '../../../components/VisualIdentityPickerModal';
+import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPreviewUrl';
 import { Button } from '../../../components/ui';
 
 const numberFormatter = new Intl.NumberFormat('pt-BR');
@@ -175,6 +178,10 @@ export function ResourceNodeDetail({
     (node.metadata?.icon as string) || undefined,
   );
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  // Identidade visual do ResourceType (issue #264) — autoridade única para folhas RESOURCE_TYPE;
+  // nunca lida/gravada em `node.metadata.icon` (esse campo segue existindo só para GROUP, acima).
+  const [visualIdentityPickerOpen, setVisualIdentityPickerOpen] = useState(false);
+  const [visualIdentityError, setVisualIdentityError] = useState<string | null>(null);
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
   const [autosaveError, setAutosaveError] = useState<string | null>(null);
 
@@ -347,11 +354,13 @@ export function ResourceNodeDetail({
     setAutosaveError(null);
 
     const snapshot = formRef.current;
-    const updatedMetadata: Record<string, unknown> = {
-      ...(node.metadata ?? {}),
-      ...(snapshot.icon ? { icon: snapshot.icon } : {}),
-    };
-    if (!snapshot.icon && 'icon' in updatedMetadata) {
+    const updatedMetadata: Record<string, unknown> = { ...(node.metadata ?? {}) };
+    // `metadata.icon` só é uma autoridade organizacional legítima para GROUP. Para RESOURCE_TYPE, a
+    // identidade vive exclusivamente em `ResourceType.visualIdentity` (ver `persistVisualIdentity`)
+    // — nunca escrever/preservar `icon` aqui evita que ele volte a sobrepor o modelo canônico.
+    if (isGroup && snapshot.icon) {
+      updatedMetadata.icon = snapshot.icon;
+    } else {
       delete updatedMetadata.icon;
     }
     // Estes campos pertencem ao ResourceType. Remove cópias legadas do metadata para manter uma
@@ -496,6 +505,28 @@ export function ResourceNodeDetail({
     setTypeCharacteristicRows(resourceCharacteristicRowsFrom(updated.resourceTypeCharacteristic));
   };
 
+  // Grava a identidade visual diretamente no ResourceType (autoridade única, issue #264) — `null`
+  // limpa explicitamente e volta ao fallback legado; nunca toca `metadata.icon`.
+  const persistVisualIdentity = async (nextIdentity: VisualIdentity | null): Promise<void> => {
+    if (!context) return;
+    const updated = await updateResourceType(context.resourceType.id, {
+      visualIdentity: nextIdentity,
+    });
+    setContext((prev) => (prev ? { ...prev, resourceType: updated } : prev));
+    await onUpdateNodeRef.current?.({});
+  };
+
+  const handleSelectVisualIdentity = async (selection: VisualIdentity | null): Promise<void> => {
+    setVisualIdentityError(null);
+    try {
+      await persistVisualIdentity(selection);
+    } catch (err: unknown) {
+      setVisualIdentityError(
+        err instanceof Error ? err.message : 'Falha ao salvar identidade visual.',
+      );
+    }
+  };
+
   const handleOpenCreateCharacteristic = () => {
     setEditingCharacteristicRow(null);
     setTypeCharacteristicError(null);
@@ -571,8 +602,19 @@ export function ResourceNodeDetail({
     }
   };
 
-  const displayIcon = isEditing ? formIcon : (node.metadata?.icon as string | undefined);
+  // GROUP mantém o ícone organizacional legado (`metadata.icon` + IconPickerModal, clicável).
+  // RESOURCE_TYPE nunca lê `metadata.icon`: o cabeçalho é read-only e reflete somente
+  // `context.resourceType.visualIdentity` (issue #264) — `resolveNodeIcon` aqui só serve de
+  // glifo genérico enquanto a identidade canônica não chegou/não foi definida.
+  const displayIcon = isGroup ? (isEditing ? formIcon : (node.metadata?.icon as string | undefined)) : undefined;
   const CurrentNodeIcon = resolveNodeIcon(displayIcon, node.kind, isLogical);
+  const visualIdentity = context?.resourceType.visualIdentity ?? null;
+  // No editor de modelo, identidade é somente o glifo azul do ResourceType. Fundo, cor
+  // contextual e demais estilos pertencem exclusivamente à Experiência no Mapa.
+  const visualIdentityPreviewUrl = useVisualIdentityPreviewUrl(visualIdentity, 40, {
+    shape: 'none',
+    color: '#0284c7',
+  });
 
   const handleTabChange = (tab: DetailTab) => {
     void flush();
@@ -585,41 +627,49 @@ export function ResourceNodeDetail({
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="relative group/icon shrink-0">
-              <button
-                type="button"
-                disabled={!isEditing}
-                onClick={() => isEditing && setIconPickerOpen(true)}
-                title={isEditing ? 'Clique para trocar o ícone deste nó' : undefined}
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border transition ${
-                  isGroup
-                    ? 'border-amber-200 bg-amber-50 text-amber-600'
-                    : isLogical
-                      ? 'border-purple-200 bg-purple-50 text-purple-600'
-                      : 'border-sky-200 bg-sky-50 text-sky-600'
-                } ${
-                  isEditing
-                    ? 'cursor-pointer hover:scale-105 hover:shadow-sm ring-offset-1 focus:outline-none focus:ring-2 ' +
-                      (isGroup
-                        ? 'hover:border-amber-400 focus:ring-amber-400'
-                        : isLogical
-                          ? 'hover:border-purple-400 focus:ring-purple-400'
-                          : 'hover:border-sky-400 focus:ring-sky-400')
-                    : 'cursor-default'
+            {isGroup ? (
+              <div className="relative group/icon shrink-0">
+                <button
+                  type="button"
+                  disabled={!isEditing}
+                  onClick={() => isEditing && setIconPickerOpen(true)}
+                  title={isEditing ? 'Clique para trocar o ícone deste nó' : undefined}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border transition border-amber-200 bg-amber-50 text-amber-600 ${
+                    isEditing
+                      ? 'cursor-pointer hover:scale-105 hover:shadow-sm ring-offset-1 focus:outline-none focus:ring-2 hover:border-amber-400 focus:ring-amber-400'
+                      : 'cursor-default'
+                  }`}
+                >
+                  <CurrentNodeIcon className="h-5 w-5" />
+                </button>
+                {isEditing && (
+                  <span
+                    onClick={() => setIconPickerOpen(true)}
+                    title="Trocar ícone"
+                    className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-app-accent text-app-text shadow-xs transition cursor-pointer"
+                  >
+                    <Pencil className="h-2.5 w-2.5" />
+                  </span>
+                )}
+              </div>
+            ) : (
+              // Read-only: reflete apenas `ResourceType.visualIdentity` (issue #264). A edição
+              // acontece na aba Geral, junto de Natureza/Geometria — nunca clicando aqui.
+              <div
+                title="A identidade visual é editada na aba Geral"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${
+                  isLogical
+                    ? 'border-purple-200 bg-purple-50 text-purple-600'
+                    : 'border-sky-200 bg-sky-50 text-sky-600'
                 }`}
               >
-                <CurrentNodeIcon className="h-5 w-5" />
-              </button>
-              {isEditing && (
-                <span
-                  onClick={() => setIconPickerOpen(true)}
-                  title="Trocar ícone"
-                  className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-app-accent text-app-text shadow-xs transition cursor-pointer"
-                >
-                  <Pencil className="h-2.5 w-2.5" />
-                </span>
-              )}
-            </div>
+                {visualIdentityPreviewUrl ? (
+                  <img src={visualIdentityPreviewUrl} alt="" className="h-6 w-6" />
+                ) : (
+                  <CurrentNodeIcon className="h-5 w-5" />
+                )}
+              </div>
+            )}
             <div className="min-w-0">
               <h3 className="font-bold leading-tight text-app-text truncate">{node.name}</h3>
               {pathString && (
@@ -784,6 +834,38 @@ export function ResourceNodeDetail({
                 </div>
 
                 {!isGroup && (
+                  <div className="flex items-center justify-between gap-3 rounded-[12px] border border-app-border bg-black/[0.01] p-4">
+                    <div className="min-w-0">
+                      <span className="block text-[0.8rem] font-semibold text-app-text">
+                        Identidade visual
+                      </span>
+                      <span className="block text-[0.76rem] text-app-muted mt-0.5">
+                        Glifo ou imagem que representa este tipo de recurso em toda a plataforma —
+                        cor, tamanho e opacidade ficam na Experiência no Mapa.
+                      </span>
+                      {visualIdentityError && (
+                        <p className="mt-1.5 flex items-center gap-1.5 text-[0.76rem] text-status-red">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          {visualIdentityError}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVisualIdentityPickerOpen(true)}
+                      className="flex shrink-0 items-center gap-2 rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
+                    >
+                      {visualIdentityPreviewUrl ? (
+                        <img src={visualIdentityPreviewUrl} alt="" className="h-5 w-5" />
+                      ) : (
+                        <CurrentNodeIcon className="h-4 w-4" />
+                      )}
+                      Alterar
+                    </button>
+                  </div>
+                )}
+
+                {!isGroup && (
                   <div className="space-y-3 rounded-[12px] border border-app-border bg-black/[0.01] p-4">
                     <div>
                       <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
@@ -908,6 +990,28 @@ export function ResourceNodeDetail({
                 )}
 
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  {!isGroup && (
+                    <div className="rounded-[10px] border border-app-border p-4">
+                      <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                        Identidade visual
+                      </span>
+                      <div className="mt-1 flex items-center gap-2">
+                        {visualIdentityPreviewUrl ? (
+                          <img src={visualIdentityPreviewUrl} alt="" className="h-5 w-5" />
+                        ) : (
+                          <CurrentNodeIcon className="h-5 w-5 text-app-muted" />
+                        )}
+                        <p className="text-[0.95rem] font-semibold text-app-text">
+                          {visualIdentity
+                            ? visualIdentity.kind === 'system'
+                              ? 'Ícone do sistema'
+                              : 'Imagem personalizada'
+                            : 'Não definida'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {!isGroup && (
                     <div className="rounded-[10px] border border-app-border p-4">
                       <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
@@ -1218,6 +1322,15 @@ export function ResourceNodeDetail({
         nodeKind={node.kind}
         isLogical={isLogical}
       />
+
+      {!isGroup && (
+        <VisualIdentityPickerModal
+          isOpen={visualIdentityPickerOpen}
+          value={visualIdentity}
+          onClose={() => setVisualIdentityPickerOpen(false)}
+          onSelect={(selection) => void handleSelectVisualIdentity(selection)}
+        />
+      )}
     </div>
   );
 }

@@ -338,6 +338,7 @@ export function ResourceModelStudio({
                   // Só declara a geometria quando ela existe: o campo ausente é o que faz o
                   // adapter preservar o estado vivo ao materializar um snapshot histórico.
                   ...(type.geometryKind ? { geometryKind: type.geometryKind } : {}),
+                  ...(type.visualIdentity !== undefined ? { visualIdentity: type.visualIdentity } : {}),
                   resourceTypeCharacteristic: type.resourceTypeCharacteristic,
                 },
               }

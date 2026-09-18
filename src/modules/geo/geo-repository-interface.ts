@@ -15,6 +15,7 @@ import type {
   GeographicSiteStatusHistoryEntry,
   GeoOutboxMessage,
 } from './domain.js';
+import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 export type GeoTenantScope = {
   tenantId?: string;
@@ -52,16 +53,30 @@ export interface IGeoRepository {
   listAddresses(query?: GeographicAddressQuery): Awaitable<GeographicAddress[]>;
 
   upsertSpec(spec: GeographicSiteSpecification): Awaitable<GeographicSiteSpecification>;
-  getSpec(id: string): Awaitable<GeographicSiteSpecification | undefined>;
-  getSpecByCode(code: string): Awaitable<GeographicSiteSpecification | undefined>;
-  listSpecs(query?: {
-    name?: string;
-    code?: string;
-    category?: GeographicSiteSpecification['category'];
-    lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
-    limit?: number;
-    offset?: number;
-  }): Awaitable<GeographicSiteSpecification[]>;
+  getSpec(id: string, scope?: GeoTenantScope): Awaitable<GeographicSiteSpecification | undefined>;
+  getSpecByCode(
+    code: string,
+    scope?: GeoTenantScope,
+  ): Awaitable<GeographicSiteSpecification | undefined>;
+  listSpecs(
+    query?: GeoTenantScope & {
+      name?: string;
+      code?: string;
+      category?: GeographicSiteSpecification['category'];
+      lifecycleStatus?: GeographicSiteSpecification['lifecycleStatus'];
+      limit?: number;
+      offset?: number;
+    },
+  ): Awaitable<GeographicSiteSpecification[]>;
+  /**
+   * Extensão tenant-scoped da identidade visual (issue #264) — a specification é global, mas cada
+   * tenant pode configurar seu próprio glifo/asset sem clonar o agregado. `undefined` limpa.
+   */
+  setSpecVisualIdentity(
+    specId: string,
+    tenantId: string,
+    identity: VisualIdentity | undefined,
+  ): Awaitable<void>;
   syncSpecContainmentRules(
     specId: string,
     input: {

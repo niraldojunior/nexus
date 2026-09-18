@@ -25,7 +25,11 @@ import { siteIconDataUrl, siteIconFor, SITE_ICON_SIZE } from '../../utils/siteIc
 import { siteKindFromSpec } from '../../utils/placeLabel';
 import { mapLayerVisualRank, nodeForMapFeature, type MapSiteRole } from '../../utils/mapLayers';
 import { nativeMapIconDataUrl, nativeMapIconForCode } from '../../utils/nativeMapIcons';
-import type { StudioGeoCatalog, StudioGeoVisualConfig } from '../../services/studioGeoApi';
+import type {
+  StudioGeoCatalog,
+  StudioGeoVisualConfig,
+  VisualIdentity,
+} from '../../services/studioGeoApi';
 import {
   normalizeStudioGeoVisualConfig,
   resolveStudioGeoVisualStyle,
@@ -114,6 +118,13 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       normalizedCache.set(node.id, config);
     }
     return resolveStudioGeoVisualStyle(config, node.entity.category, feature.status, scaleMeters);
+  };
+
+  // Identidade canônica do modelo (ResourceType/GeoSpec) — nunca vem do `visualConfig` do
+  // Studio GEO, que a partir do schema v3 só carrega aparência contextual.
+  const identityFor = (feature: MapTileFeature): VisualIdentity | undefined => {
+    if (!catalog) return undefined;
+    return nodeForMapFeature(feature, catalog, roleByCode)?.visualIdentity;
   };
 
   // Um único relógio de animação para todas as linhas `animated-dotted` visíveis: o offset do
@@ -429,15 +440,14 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const inferredIcon = resourceIconFor({
         resourceType: feature.typeCode ?? '',
         status: feature.status,
-        // O índice pré-computado (geo_map_feature) não traz resourceSpecification para
-        // recurso — só `label` (nome). Suficiente para distinguir CDOI de CDOE (ver
-        // isCdoiResource em resourceIcon.ts), já que a convenção de nome já é o sinal
-        // usado pelo resto do código (ex.: condominium-workflow.ts).
         name: feature.label,
       });
-      const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
-      const img = pointStyle?.assetId
-        ? loadStudioAsset(pointStyle.assetId)
+      const identity = identityFor(feature);
+      const iconCode = identity?.kind === 'system' ? identity.iconCode : undefined;
+      const assetId = identity?.kind === 'asset' ? identity.assetId : undefined;
+      const nativeIcon = nativeMapIconForCode(iconCode);
+      const img = assetId
+        ? loadStudioAsset(assetId)
         : loadImage(
             nativeIcon
               ? nativeMapIconDataUrl(nativeIcon, {
@@ -475,9 +485,12 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const size =
         pointStyle?.sizePx ?? (inferredKind === 'CO' ? siteMarkerSize : resourceMarkerSize);
       const icon = siteIconFor(inferredKind, feature.status);
-      const nativeIcon = nativeMapIconForCode(pointStyle?.iconCode);
-      const img = pointStyle?.assetId
-        ? loadStudioAsset(pointStyle.assetId)
+      const identity = identityFor(feature);
+      const iconCode = identity?.kind === 'system' ? identity.iconCode : undefined;
+      const assetId = identity?.kind === 'asset' ? identity.assetId : undefined;
+      const nativeIcon = nativeMapIconForCode(iconCode);
+      const img = assetId
+        ? loadStudioAsset(assetId)
         : loadImage(
             nativeIcon
               ? nativeMapIconDataUrl(nativeIcon, {

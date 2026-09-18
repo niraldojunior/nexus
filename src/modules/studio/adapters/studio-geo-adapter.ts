@@ -1,6 +1,7 @@
 import { AppError } from '../../../shared/errors/app-error.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
 import type { ResourceType } from '../../resource/domain.js';
+import type { VisualIdentity } from '../../../shared/ui/visual-identity.js';
 
 /** Snapshot v1, kept only to normalize historical publications and drafts. */
 export type StudioGeoLayerShape = 'stations' | 'sites' | 'resource-points' | 'resource-lines' | 'coverage';
@@ -106,8 +107,6 @@ export type StudioGeoStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'animated-dot
 
 export type StudioGeoPointVisualConfig = {
   geometryKind: 'POINT';
-  assetId?: string;
-  iconCode?: string;
   color: StudioGeoColorRule;
   opacity: number;
   scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScalePointConfig>;
@@ -153,11 +152,17 @@ export type StudioGeoEntityNode = {
 export type StudioGeoNode = StudioGeoGroupNode | StudioGeoEntityNode;
 
 export type StudioGeoSnapshot = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   nodes: StudioGeoNode[];
 };
 
-export type StudioGeoCatalog = StudioGeoSnapshot & {
+export type StudioGeoCatalogNode = StudioGeoGroupNode | (StudioGeoEntityNode & {
+  /** Identidade efetiva composta pelo read model; nunca faz parte do snapshot Studio GEO. */
+  visualIdentity?: VisualIdentity;
+});
+
+export type StudioGeoCatalog = Omit<StudioGeoSnapshot, 'nodes'> & {
+  nodes: StudioGeoCatalogNode[];
   /** Indica se existe uma publicação explícita do Studio GEO para o tenant. */
   configured: boolean;
   /** Identidade pública e estável do namespace para preferências locais do mapa. */
@@ -249,8 +254,6 @@ const normalizeVisualConfig = (
     const fallbackColor = defaultColorRule(category, category === 'LOCAL' ? '#8b5cf6' : '#10b981');
     return {
       geometryKind: 'POINT',
-      ...(typeof candidate.assetId === 'string' ? { assetId: candidate.assetId } : {}),
-      ...(typeof candidate.iconCode === 'string' ? { iconCode: candidate.iconCode } : {}),
       color: normalizeColorRule(candidate.color, fallbackColor),
       opacity: typeof candidate.opacity === 'number' ? candidate.opacity : 1,
       scaleBands: Object.fromEntries(
@@ -316,28 +319,38 @@ const normalizeVisualConfig = (
   return undefined;
 };
 
-const normalizeV2Node = (node: StudioGeoNode): StudioGeoNode => {
-  if (node.kind !== 'ENTITY' || node.visualConfig === undefined) return node;
+const normalizeCurrentNode = (node: StudioGeoNode): StudioGeoNode => {
+  if (node.kind === 'GROUP') {
+    const { assetId: _legacyAssetId, ...groupNode } = node;
+    return groupNode;
+  }
+  const { assetId: _legacyAssetId, ...entityNode } = node;
+  if (node.visualConfig === undefined) return entityNode;
   const visualConfig = normalizeVisualConfig(node.visualConfig, node.entity.category);
-  return visualConfig ? { ...node, visualConfig } : node;
+  return visualConfig ? { ...entityNode, visualConfig } : entityNode;
 };
 
 /**
- * Normalizes historical snapshots and additive visual contracts at the control-plane boundary.
- * It is deliberately deterministic so publications remain readable until the editor saves them.
+ * Normaliza snapshots históricos v1/v2 e atuais v3 para o contrato persistido v3. A remoção de
+ * identidade acontece aqui, antes de checksum/persistência, para impedir uma segunda autoridade.
  */
 export const normalizeStudioGeoSnapshot = (snapshot: Record<string, unknown>): StudioGeoSnapshot => {
-  const candidate = snapshot as Partial<StudioGeoSnapshot & StudioGeoSnapshotV1>;
-  if (candidate.schemaVersion === 2 && Array.isArray(candidate.nodes)) {
+  const candidate = snapshot as Partial<
+    StudioGeoSnapshotV1 & { schemaVersion: 2 | 3; nodes: StudioGeoNode[] }
+  >;
+  if (
+    (candidate.schemaVersion === 2 || candidate.schemaVersion === 3) &&
+    Array.isArray(candidate.nodes)
+  ) {
     return {
-      schemaVersion: 2,
-      nodes: (candidate.nodes as StudioGeoNode[]).map(normalizeV2Node),
+      schemaVersion: 3,
+      nodes: candidate.nodes.map(normalizeCurrentNode),
     };
   }
   const groups = Array.isArray(candidate.groups) ? candidate.groups : [];
   const layers = Array.isArray(candidate.layers) ? candidate.layers : [];
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     nodes: [
       ...groups.map((group) => ({
         id: group.id,
@@ -356,7 +369,6 @@ export const normalizeStudioGeoSnapshot = (snapshot: Record<string, unknown>): S
         ...(layer.hint ? { hint: layer.hint } : {}),
         sortOrder: layer.sortOrder,
         active: layer.active,
-        ...(layer.assetId ? { assetId: layer.assetId } : {}),
         defaultVisible: layer.defaultVisible,
         entity: entitySourceForLegacyMatcher(layer.matcher),
       })),
@@ -417,9 +429,9 @@ const local = (sourceId: string): StudioGeoEntityReference => ({
   category: 'LOCAL', sourceDomain: 'location-model', sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId,
 });
 
-/** Canonical v2 fallback and idempotent first Studio GEO publication. */
+/** Fallback canônico v3 e primeira publicação idempotente do Studio GEO. */
 export const CANONICAL_STUDIO_GEO_SNAPSHOT: StudioGeoSnapshot = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   nodes: [
     group('locations', 'Locais', 10),
     group('coverage', 'Cobertura', 20, 'Manchas agregadas por tema — hoje só GPON, outras entram como novos itens do grupo'),
@@ -506,8 +518,6 @@ const visualConfigIssues = (
         }
       }
     }
-    if (point.assetId !== undefined && !nonEmpty(point.assetId)) issues.push({ severity: 'error', code: 'STUDIO_GEO_VISUAL_ASSET_ID_INVALID', message: 'A referência de asset visual é inválida.', path: `${path}.assetId` });
-    if (point.iconCode !== undefined && !nonEmpty(point.iconCode)) issues.push({ severity: 'error', code: 'STUDIO_GEO_ICON_CODE_INVALID', message: 'O código do ícone é inválido.', path: `${path}.iconCode` });
     return issues;
   }
   if (config.geometryKind === 'LINE' || config.geometryKind === 'POLYGON') {
@@ -543,10 +553,11 @@ const visualConfigIssues = (
 export class StudioGeoAdapter implements StudioDomainAdapter {
   public readonly domain = 'studio-geo';
 
-  constructor(
-    private readonly assetExists: (tenantId: string, assetId: string) => Promise<boolean>,
-    private readonly listResourceTypes: (tenantId: string) => Promise<ResourceType[]>,
-  ) {}
+  constructor(private readonly listResourceTypes: (tenantId: string) => Promise<ResourceType[]>) {}
+
+  public prepareSnapshot(snapshot: Record<string, unknown>): StudioGeoSnapshot {
+    return normalizeStudioGeoSnapshot(snapshot);
+  }
 
   public async validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> {
     const typed = normalizeStudioGeoSnapshot(snapshot);
@@ -658,15 +669,6 @@ export class StudioGeoAdapter implements StudioDomainAdapter {
               statusCode: 422,
             },
           );
-        }
-      }
-      const visualAssetId =
-        node.kind === 'ENTITY' && node.visualConfig?.geometryKind === 'POINT'
-          ? node.visualConfig.assetId
-          : undefined;
-      for (const assetId of [node.assetId, visualAssetId]) {
-        if (assetId && !(await this.assetExists(context.tenantId, assetId))) {
-          throw new AppError('studio GEO node references an unavailable asset', { code: 'STUDIO_GEO_ASSET_UNAVAILABLE', statusCode: 422 });
         }
       }
     }

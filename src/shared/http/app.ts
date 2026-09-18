@@ -1,4 +1,5 @@
-﻿import { createServer, IncomingMessage, ServerResponse } from 'node:http';
+﻿import { createHash } from 'node:crypto';
+import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import type { AppConfig } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
 import {
@@ -892,24 +893,16 @@ const routePublishedGeoLayerCatalogRequest = async ({
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   const context = await buildRequestContext(request, config);
   requireRoles(context, GEO_PROJECT_READ_ROLES);
-  let published: Awaited<ReturnType<typeof runtime.studioService.getPublishedVersion>>;
-  try {
-    published = await runtime.studioService.getPublishedVersion('studio-geo', context);
-  } catch {
-    // Leitura indisponível não pode materializar configuração. Legacy preserva somente o fallback
-    // de leitura para manter o mapa operacional durante uma migração incompleta.
-    published = undefined;
-  }
+  const published = await runtime.studioService.getPublishedVersion('studio-geo', context);
   const snapshot = published?.snapshot;
   const hasPublishedSnapshot = Boolean(
     snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot),
   );
-  const catalog: StudioGeoCatalog = hasPublishedSnapshot
+  const baseCatalog: StudioGeoCatalog = hasPublishedSnapshot
     ? {
         ...normalizeStudioGeoSnapshot(snapshot as Record<string, unknown>),
         configured: true,
         environmentId: runtime.environmentProfile.environmentId,
-        ...(published ? { publicationChecksum: published.checksum } : {}),
         fallback: false,
       }
     : runtime.environmentProfile.bootstrapMode === 'legacy'
@@ -920,13 +913,53 @@ const routePublishedGeoLayerCatalogRequest = async ({
           fallback: true,
         }
       : {
-          schemaVersion: 2,
+          schemaVersion: 3,
           nodes: [],
           configured: false,
           environmentId: runtime.environmentProfile.environmentId,
           fallback: false,
         };
-  if (catalog.publicationChecksum) response.setHeader('ETag', catalog.publicationChecksum);
+  const [resourceTypes, geographicSiteSpecifications] = await Promise.all([
+    runtime.resourceService.listResourceTypes(context),
+    runtime.geoService.listSpecs(undefined, context),
+  ]);
+  const resourceTypeById = new Map(resourceTypes.map((item) => [item.id, item]));
+  const resourceTypeByCode = new Map(resourceTypes.map((item) => [item.code, item]));
+  const geoSpecById = new Map(geographicSiteSpecifications.map((item) => [item.id, item]));
+  const geoSpecByCode = new Map(geographicSiteSpecifications.map((item) => [item.code, item]));
+  const nodes = await Promise.all(
+    baseCatalog.nodes.map(async (node) => {
+      if (node.kind !== 'ENTITY') return node;
+      const model =
+        node.entity.sourceType === 'RESOURCE_TYPE'
+          ? (resourceTypeById.get(node.entity.sourceId) ??
+            resourceTypeByCode.get(node.entity.sourceId))
+          : node.entity.sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION'
+            ? (geoSpecById.get(node.entity.sourceId) ?? geoSpecByCode.get(node.entity.sourceId))
+            : undefined;
+      // Só a identidade explicitamente modelada é publicada. Quando não há customização,
+      // consumidores usam o fallback canônico da própria origem (ResourceType/GeoSpec), sem
+      // sintetizar `CO` nem gravar uma segunda autoridade no catálogo Studio GEO.
+      const canonical = model?.visualIdentity;
+      const visualIdentity =
+        canonical?.kind === 'asset'
+          ? (await runtime.studioAssetRepository.get(context.tenantId, canonical.assetId))?.active ===
+            true
+            ? canonical
+            : undefined
+          : canonical;
+      return visualIdentity ? { ...node, visualIdentity } : node;
+    }),
+  );
+  const projection = {
+    ...baseCatalog,
+    nodes,
+  };
+  const publicationChecksum = createHash('sha256')
+    .update(JSON.stringify(projection))
+    .digest('hex');
+  const catalog: StudioGeoCatalog = { ...projection, publicationChecksum };
+  response.setHeader('ETag', publicationChecksum);
   await sendJson(response, 200, catalog);
 };
 
@@ -5387,6 +5420,7 @@ const parseUpdateResourceTypeInput = (
     'nature',
     'mapPresence',
     'geometryKind',
+    'visualIdentity',
     'resourceTypeCharacteristic',
   ]);
   const unexpected = Object.keys(body).find((field) => !editable.has(field));

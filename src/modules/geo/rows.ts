@@ -82,6 +82,13 @@ export type GeographicSiteSpecificationContainmentRuleRow = {
   is_protected: number | null;
 };
 
+export type GeographicSiteSpecVisualIdentityRow = {
+  tenant_id: string;
+  site_specification_id: string;
+  icon_code: string | null;
+  icon_asset_id: string | null;
+};
+
 export type GeographicSiteRow = {
   id: string;
   tenant_id: string | null;

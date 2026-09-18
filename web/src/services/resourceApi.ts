@@ -1,7 +1,10 @@
 import type { Party } from './partyApi';
 import type { GeoGeometry } from './geoApi';
+import type { VisualIdentity } from './studioGeoApi';
 import { invalidateMapTiles } from '../utils/mapTileCache';
 import { bearerToken } from './session';
+
+export type { VisualIdentity };
 
 const API_BASE_URL = '/tmf-api';
 
@@ -39,6 +42,8 @@ export type ResourceType = {
   mapPresence?: boolean;
   geometryKind?: ResourceGeometryKind;
   resourceTypeCharacteristic?: ResourceCharacteristic[];
+  /** Autoridade canônica do glifo/asset deste tipo (issue #264) — nunca `metadata.icon`. */
+  visualIdentity?: VisualIdentity;
 };
 
 export type ResourceLayer = {
@@ -167,6 +172,8 @@ export type UpdateResourceTypeInput = {
   mapPresence?: boolean;
   geometryKind?: ResourceGeometryKind | null;
   resourceTypeCharacteristic?: ResourceCharacteristic[];
+  /** `undefined` preserva, `null` limpa, objeto substitui (mesma semântica do backend). */
+  visualIdentity?: VisualIdentity | null;
 };
 
 export type ResourceRelationshipCardinality = {
@@ -341,7 +348,7 @@ export type ResourceCatalogPath = {
 };
 
 export type ResourceTypeCatalogContext = {
-  resourceType: Pick<ResourceType, 'id' | 'code' | 'name'>;
+  resourceType: Pick<ResourceType, 'id' | 'code' | 'name' | 'visualIdentity'>;
   catalogPaths: ResourceCatalogPath[];
 };
 

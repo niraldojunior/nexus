@@ -39,6 +39,11 @@ import type { GeographicAddressQuery, IGeoRepository } from './geo-repository-in
 import { normalizeCountrySearch } from './address-normalization.js';
 import type { MapFeatureSynchronizer } from './map-feature-synchronizer.js';
 
+import {
+  isVisualIdentity,
+  type VisualIdentity,
+} from '../../shared/ui/visual-identity.js';
+
 type LocationInput = {
   geometryType: 'Point' | 'LineString' | 'Polygon';
   geometry: GeoJSONGeometry;
@@ -82,6 +87,7 @@ type SpecInput = {
   allowedParentSpecIds?: string[];
   allowedChildSpecIds?: string[];
   specCharacteristic?: GeographicSiteSpecificationCharacteristic[];
+  visualIdentity?: VisualIdentity | null;
 };
 
 export type SiteInput = {
@@ -404,10 +410,15 @@ const SITE_STATUS_TRANSITIONS: Record<GeoSiteStatus, GeoSiteStatus[]> = {
   Retired: ['Active'],
 };
 
+export type GeoServiceDependencies = {
+  lookupActiveVisualAsset?: (tenantId: string, assetId: string) => Promise<boolean> | boolean;
+};
+
 export class GeoService {
   public constructor(
     private readonly repository: IGeoRepository,
     private readonly mapFeatureSynchronizer?: MapFeatureSynchronizer,
+    private readonly dependencies: GeoServiceDependencies = {},
   ) {}
 
   public async ensureBootstrapSpecifications(context?: RequestContext): Promise<{
@@ -811,6 +822,11 @@ export class GeoService {
 
     const id = createCanonicalId();
     const characteristics = normalizeSpecCharacteristics(input.specCharacteristic ?? []);
+    const resolvedVisualIdentity = await this.resolveVisualIdentity(
+      undefined,
+      input.visualIdentity,
+      ctx,
+    );
     return await this.repository.transaction(async () => {
       const spec = await this.repository.upsertSpec(
         this.buildSpecRecord({
@@ -831,7 +847,14 @@ export class GeoService {
         allowedParentSpecIds,
         allowedChildSpecIds,
       });
-      const stored = await this.getSpecOrThrow(spec.id);
+      if (input.visualIdentity !== undefined) {
+        await this.repository.setSpecVisualIdentity(
+          spec.id,
+          ctx.tenantId,
+          resolvedVisualIdentity,
+        );
+      }
+      const stored = await this.getSpecOrThrow(spec.id, ctx);
       await this.recordMutation(
         ctx,
         'create',
@@ -852,7 +875,7 @@ export class GeoService {
   ): Promise<GeographicSiteSpecification> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, CATALOG_ROLE);
-    const current = await this.getSpecOrThrow(id);
+    const current = await this.getSpecOrThrow(id, ctx);
     if (input.name !== undefined) assertRequiredString(input.name, 'name');
     if (input.category !== undefined) validateSpecCategory(input.category);
     const nextCategory = input.category ?? current.category;
@@ -929,6 +952,15 @@ export class GeoService {
       await this.validateSpecificationChangeAgainstSites(current, nextCharacteristics);
     }
 
+    const resolvedVisualIdentity =
+      input.visualIdentity !== undefined
+        ? await this.resolveVisualIdentity(
+            current.visualIdentity,
+            input.visualIdentity,
+            ctx,
+          )
+        : current.visualIdentity;
+
     return await this.repository.transaction(async () => {
       const updated = await this.repository.upsertSpec(
         this.buildSpecRecord({
@@ -959,7 +991,14 @@ export class GeoService {
           allowedChildSpecIds: nextAllowedChildSpecIds,
         });
       }
-      const stored = await this.getSpecOrThrow(updated.id);
+      if (input.visualIdentity !== undefined) {
+        await this.repository.setSpecVisualIdentity(
+          updated.id,
+          ctx.tenantId,
+          resolvedVisualIdentity,
+        );
+      }
+      const stored = await this.getSpecOrThrow(updated.id, ctx);
       await this.recordMutation(
         ctx,
         'update',
@@ -1845,7 +1884,7 @@ export class GeoService {
   ): Promise<GeographicSiteSpecification | undefined> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return await this.repository.getSpec(id);
+    return await this.repository.getSpec(id, { tenantId: ctx.tenantId });
   }
   public async listLocations(
     query?: { limit?: number; offset?: number },
@@ -2154,7 +2193,7 @@ export class GeoService {
   ): Promise<GeographicSiteSpecification[]> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, READ_ROLE);
-    return await this.repository.listSpecs(query);
+    return await this.repository.listSpecs({ ...query, tenantId: ctx.tenantId });
   }
   public async listSiteEvents(siteId: string, context?: RequestContext): Promise<GeoEvent[]> {
     const ctx = this.resolveContext(context);
@@ -2570,8 +2609,12 @@ export class GeoService {
     return address;
   }
 
-  private async getSpecOrThrow(id: string): Promise<GeographicSiteSpecification> {
-    const spec = await this.repository.getSpec(id);
+  private async getSpecOrThrow(
+    id: string,
+    context?: RequestContext,
+  ): Promise<GeographicSiteSpecification> {
+    const ctx = context ? this.resolveContext(context) : undefined;
+    const spec = await this.repository.getSpec(id, ctx ? { tenantId: ctx.tenantId } : undefined);
     if (!spec)
       throw new AppError('site specification not found', {
         code: 'GEO_SPEC_NOT_FOUND',
@@ -2603,6 +2646,35 @@ export class GeoService {
       });
     }
     return relationshipType;
+  }
+
+  private async resolveVisualIdentity(
+    current: VisualIdentity | undefined,
+    input: VisualIdentity | null | undefined,
+    context?: RequestContext,
+  ): Promise<VisualIdentity | undefined> {
+    if (input === undefined) return current;
+    if (input === null) return undefined;
+    if (!isVisualIdentity(input)) {
+      throw new AppError('visualIdentity must contain exactly one valid system icon or asset', {
+        code: 'GEO_SPEC_VISUAL_IDENTITY_INVALID',
+        statusCode: 400,
+      });
+    }
+    if (input.kind === 'system') {
+      return { kind: 'system', iconCode: input.iconCode.trim() };
+    }
+
+    const assetId = input.assetId.trim();
+    const lookup = this.dependencies.lookupActiveVisualAsset;
+    const ctx = this.resolveContext(context);
+    if (!lookup || !(await lookup(ctx.tenantId, assetId))) {
+      throw new AppError('visual identity asset is unavailable for this tenant', {
+        code: 'GEO_SPEC_VISUAL_IDENTITY_ASSET_UNAVAILABLE',
+        statusCode: 422,
+      });
+    }
+    return { kind: 'asset', assetId };
   }
 
   private resolveContext(context?: RequestContext): RequestContext {

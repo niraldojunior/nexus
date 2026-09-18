@@ -9,6 +9,7 @@ import type {
   GeographicSiteSpecificationCharacteristic,
 } from '../../geo/domain.js';
 import { GEO_SITE_ROLES } from '../../geo/domain.js';
+import type { VisualIdentity } from '../../../shared/ui/visual-identity.js';
 
 export type LocationModelSnapshotSpec = {
   id?: string;
@@ -21,6 +22,7 @@ export type LocationModelSnapshotSpec = {
   allowedParentCodes?: string[];
   allowedChildCodes?: string[];
   specCharacteristic?: GeographicSiteSpecificationCharacteristic[];
+  visualIdentity?: VisualIdentity | null;
 };
 
 export type LocationModelSnapshot = {
@@ -213,19 +215,16 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
 
     const typedSnapshot = normalizedSnapshot as unknown as LocationModelSnapshot;
     const specs = typedSnapshot.specifications;
-
-    // Buscar especificações existentes no banco
-    const existingSpecs = await this.geoService.listSpecs();
-    const existingByCode = new Map(existingSpecs.map((s) => [s.code.toUpperCase(), s]));
-
     const reqContext = {
+      actorSub: 'location-model-studio-adapter',
       tenantId: context.tenantId,
-      actorSub: 'studio-adapter',
-      roles: ['catalog.admin', 'geo.admin', 'platform.admin'],
-      // traceId vira correlationId em tmf_event (correlation_id) — coluna dimensionada para UUID
-      // (VARCHAR2(36) no Oracle, ver oracle-schema.ts), não string legível com prefixo.
+      roles: ['studio.admin'],
       traceId: createCanonicalId(),
     };
+
+    // Buscar especificações existentes no banco
+    const existingSpecs = await this.geoService.listSpecs(undefined, reqContext);
+    const existingByCode = new Map(existingSpecs.map((s) => [s.code.toUpperCase(), s]));
 
     // Primeiro cria apenas códigos novos para que todas as relações do snapshot possam ser
     // resolvidas. Specs existentes só serão atualizadas na etapa seguinte se houver diferença.
@@ -243,6 +242,7 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
           ...(specInput.description !== undefined ? { description: specInput.description } : {}),
           lifecycleStatus: specInput.lifecycleStatus ?? 'Active',
           specCharacteristic: specInput.specCharacteristic ?? [],
+          ...(specInput.visualIdentity !== undefined ? { visualIdentity: specInput.visualIdentity } : {}),
         },
         reqContext,
       );
@@ -269,12 +269,20 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
       const nextRole = specInput.siteRole ?? existing.siteRole;
       const nextLifecycleStatus = specInput.lifecycleStatus ?? existing.lifecycleStatus;
       const nextCharacteristics = specInput.specCharacteristic ?? existing.specCharacteristic;
+      const desiredVisualIdentity =
+        specInput.visualIdentity === undefined
+          ? existing.visualIdentity
+          : (specInput.visualIdentity ?? undefined);
+      const visualIdentityChanged =
+        specInput.visualIdentity !== undefined &&
+        !sameJson(existing.visualIdentity, desiredVisualIdentity);
       const metadataChanged =
         existing.name !== specInput.name ||
         existing.category !== specInput.category ||
         existing.description !== nextDescription ||
         existing.siteRole !== nextRole ||
         existing.lifecycleStatus !== nextLifecycleStatus ||
+        visualIdentityChanged ||
         !sameJson(existing.specCharacteristic, nextCharacteristics);
       const containmentChanged =
         !sameStringSet(existing.allowedParentSpecIds, allowedParentSpecIds) ||
@@ -297,6 +305,9 @@ export class LocationModelStudioAdapter implements StudioDomainAdapter {
                 siteRole: nextRole,
                 lifecycleStatus: nextLifecycleStatus,
                 specCharacteristic: nextCharacteristics,
+                ...(specInput.visualIdentity !== undefined
+                  ? { visualIdentity: specInput.visualIdentity }
+                  : {}),
               }
             : {}),
           ...(containmentChanged ? { allowedParentSpecIds, allowedChildSpecIds } : {}),

@@ -22,7 +22,9 @@ import {
 } from '../../utils/googleMaps';
 import NexusMark from '../../components/NexusMark';
 import { useGeoSearchHistory } from '../../hooks/useGeoSearchHistory';
+import { useVisualIdentityPreviewUrl } from '../../hooks/useVisualIdentityPreviewUrl';
 import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
+import type { ResolvedOperationalIcon } from '../../utils/pointIconPreview';
 import { HierarchyIcon } from './HierarchyIcon';
 import { NodeIcon } from './HierarchyTreeView';
 import { siteSpecNameLabel } from '../../utils/geoLabels';
@@ -67,6 +69,8 @@ export type GeoSearchBarProps = {
   // no lugar do botão flutuante que foi removido nesta página (ver GeoPage/App).
   onOpenMainMenu?: () => void;
   isMobile?: boolean;
+  /** Ícone composto no contexto do mapa apenas para o chip da seleção confirmada. */
+  selectedNodeIcon?: (node: GeoTreeNode) => ResolvedOperationalIcon | undefined;
 };
 
 type SearchOption =
@@ -134,6 +138,7 @@ export function GeoSearchBar({
   onToggleHierarchy,
   onOpenMainMenu,
   isMobile,
+  selectedNodeIcon,
 }: GeoSearchBarProps) {
   const [open, setOpen] = useState(false);
   const [nodeResults, setNodeResults] = useState<GeoTreeNode[]>([]);
@@ -587,7 +592,7 @@ export function GeoSearchBar({
                 className="shrink-0"
               >
                 {selection.type === 'node' ? (
-                  <NodeIcon node={selection.node} />
+                  <SelectedNodeIcon node={selection.node} resolveIcon={selectedNodeIcon} />
                 ) : (
                   <MapPin className="h-4 w-4 text-app-muted" aria-hidden="true" />
                 )}
@@ -790,6 +795,34 @@ export function GeoSearchBar({
       </div>
     </div>
   );
+}
+
+function SelectedNodeIcon({
+  node,
+  resolveIcon,
+}: {
+  node: GeoTreeNode;
+  resolveIcon?: (node: GeoTreeNode) => ResolvedOperationalIcon | undefined;
+}) {
+  const icon = resolveIcon?.(node);
+  const iconUrl = useVisualIdentityPreviewUrl(
+    icon?.assetId ? { kind: 'asset', assetId: icon.assetId } : undefined,
+    20,
+  );
+  const url = iconUrl ?? icon?.url;
+
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt=""
+        aria-hidden="true"
+        className="h-5 w-5 shrink-0"
+        style={{ opacity: icon?.opacity }}
+      />
+    );
+  }
+  return <NodeIcon node={node} />;
 }
 
 const optionClass = (active: boolean): string =>

@@ -1,5 +1,9 @@
 import { bearerToken } from './session';
 
+export type VisualIdentity =
+  | { kind: 'system'; iconCode: string }
+  | { kind: 'asset'; assetId: string };
+
 export type StudioGeoEntityCategory = 'LOCAL' | 'COVERAGE' | 'RESOURCE';
 export type StudioGeoNodeKind = 'GROUP' | 'ENTITY';
 export type StudioGeoSourceDomain = 'location-model' | 'spatial' | 'resource-model';
@@ -61,8 +65,6 @@ export type StudioGeoStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'animated-dot
 
 export type StudioGeoPointVisualConfig = {
   geometryKind: 'POINT';
-  assetId?: string;
-  iconCode?: string;
   color: StudioGeoColorRule;
   opacity: number;
   scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScalePointConfig>;
@@ -99,7 +101,8 @@ export type StudioGeoEntityNode = {
   hint?: string;
   sortOrder: number;
   active: boolean;
-  assetId?: string;
+  /** Projeção pública da identidade canônica do modelo; não integra o snapshot do Studio GEO. */
+  visualIdentity?: VisualIdentity;
   defaultVisible: boolean;
   entity: StudioGeoEntityReference;
   visualConfig?: StudioGeoVisualConfig;
@@ -108,7 +111,7 @@ export type StudioGeoEntityNode = {
 export type StudioGeoNode = StudioGeoGroupNode | StudioGeoEntityNode;
 
 export type StudioGeoCatalog = {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   nodes: StudioGeoNode[];
   /** Whether an explicit Studio GEO publication exists for the current tenant. */
   configured: boolean;

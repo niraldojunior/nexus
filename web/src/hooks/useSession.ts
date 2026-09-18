@@ -3,6 +3,7 @@ import {
   canAdminStudio,
   canEditInventory,
   canEditStudio,
+  canViewOrder,
   canViewStudio,
   getSessionUser,
   isAdmin,
@@ -20,6 +21,9 @@ export type SessionState = {
   canViewStudio: boolean;
   canEditStudio: boolean;
   canAdminStudio: boolean;
+  // Pode visualizar as sessões de Serviços e Ordens do sidebar principal — order.reader,
+  // order.requester, order.operator ou platform.admin. Ver canViewOrder em services/session.ts.
+  canViewOrder: boolean;
   user: SessionUser | null;
 };
 
@@ -39,6 +43,7 @@ function snapshot(): SessionState {
   const studioView = canViewStudio();
   const studioEdit = canEditStudio();
   const studioAdmin = canAdminStudio();
+  const orderView = canViewOrder();
   // getSnapshot precisa devolver referência estável enquanto nada muda, senão o
   // useSyncExternalStore entra em loop de re-render.
   if (
@@ -49,6 +54,7 @@ function snapshot(): SessionState {
     cached.canViewStudio === studioView &&
     cached.canEditStudio === studioEdit &&
     cached.canAdminStudio === studioAdmin &&
+    cached.canViewOrder === orderView &&
     cached.user?.id === user?.id
   ) {
     return cached;
@@ -60,6 +66,7 @@ function snapshot(): SessionState {
     canViewStudio: studioView,
     canEditStudio: studioEdit,
     canAdminStudio: studioAdmin,
+    canViewOrder: orderView,
     user,
   };
   return cached;

@@ -1,6 +1,5 @@
 import {
   Briefcase,
-  Boxes,
   FolderTree,
   LogOut,
   type LucideIcon,
@@ -14,31 +13,14 @@ import {
 } from 'lucide-react';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
-import { RESOURCE_CATEGORY_DEFAULTS } from '../data/resourceCatalogDefaults';
-import {
-  groupResourceCategories,
-  resourceInfraSectionLabel,
-  sidebarCategoryLabel,
-} from '../data/resourceCategoryViews';
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
 import { listServiceCategories } from '../data/serviceCategoryViews';
-import { isCivilInfrastructureCategory } from '../utils/resourceSpecificationForm';
 import NexusMark from './NexusMark';
 
-type PrimaryItemId =
-  | 'conversations'
-  | 'research'
-  | 'geo'
-  | 'resource'
-  | 'service'
-  | 'order'
-  | 'studio';
+type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'service' | 'order' | 'studio';
 
 /**
- * Item de submenu de categoria — a forma comum entre Resource e Service. `sectionLabel` é opcional
- * (só Resource usa, para separar Infraestrutura Civil de Infraestrutura de Rede — ver
- * resourceCategoryItems abaixo); quando presente e diferente do item anterior, o Sidebar insere
- * um cabeçalho de seção antes do item.
+ * Item de submenu de categoria (usado por Service).
  */
 type CategoryMenuItem = { code: string; label: string; sectionLabel?: string };
 
@@ -52,8 +34,6 @@ interface SidebarProps {
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
-  activeResourceCategory: string;
-  resourceMenuOpen: boolean;
   activeServiceCategory: string;
   serviceMenuOpen: boolean;
   settingsOpen?: boolean;
@@ -64,8 +44,6 @@ interface SidebarProps {
   onNewConversation: () => void;
   onNewResearch: () => void;
   onSelectPage: (page: PageId | 'settings') => void;
-  onToggleResourceMenu: () => void;
-  onSelectResourceCategory: (categoryCode: string) => void;
   onToggleServiceMenu: () => void;
   onSelectServiceCategory: (categoryCode: string) => void;
   onOpenRecentItem: (conversationId: string) => void;
@@ -76,35 +54,20 @@ interface SidebarProps {
   sessionUser?: { name: string; email?: string; roles: string[] } | null;
   isAdmin?: boolean;
   canViewStudio?: boolean;
+  canViewOrder?: boolean;
   onLogout?: () => void;
 }
 
 const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
   { id: 'research', label: 'Nova Conversa', icon: Plus },
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
-  { id: 'geo', label: 'Mapa', icon: MapPinned },
-  { id: 'resource', label: 'Recursos', icon: Boxes },
+  { id: 'geo', label: 'Recursos', icon: MapPinned },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
   { id: 'studio', label: 'Studio', icon: Presentation },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
-
-// Rede antes de Civil, espelhando a ordem das abas do catálogo em Configurações (ver
-// ResourceCatalogTab) — cada categoria ganha um `sectionLabel` para o Sidebar desenhar o
-// cabeçalho de seção só na primeira ocorrência de cada grupo.
-const allResourceCategories = groupResourceCategories(RESOURCE_CATEGORY_DEFAULTS).flatMap(
-  (group) => group.categories,
-);
-const resourceCategoryItems: CategoryMenuItem[] = [
-  ...allResourceCategories.filter((category) => !isCivilInfrastructureCategory(category.code)),
-  ...allResourceCategories.filter((category) => isCivilInfrastructureCategory(category.code)),
-].map((category) => ({
-  code: category.code,
-  label: sidebarCategoryLabel(category),
-  sectionLabel: resourceInfraSectionLabel(category.code),
-}));
 
 const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(
   SERVICE_CATEGORY_DEFAULTS,
@@ -116,15 +79,11 @@ export default function Sidebar({
   showMobileToggle = true,
   currentPage,
   activeResearchSessionId,
-  activeResourceCategory,
-  resourceMenuOpen,
   activeServiceCategory,
   serviceMenuOpen,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
-  onToggleResourceMenu,
-  onSelectResourceCategory,
   onToggleServiceMenu,
   onSelectServiceCategory,
   onSelectResearchSession,
@@ -132,6 +91,7 @@ export default function Sidebar({
   sessionUser,
   isAdmin = false,
   canViewStudio = false,
+  canViewOrder = false,
   onLogout,
 }: SidebarProps) {
   // Os módulos com submenu de categoria compartilham a mesma mecânica; só variam os dados.
@@ -147,13 +107,6 @@ export default function Sidebar({
       }
     >
   > = {
-    resource: {
-      items: resourceCategoryItems,
-      open: resourceMenuOpen,
-      activeCode: activeResourceCategory,
-      onToggle: onToggleResourceMenu,
-      onSelect: onSelectResourceCategory,
-    },
     service: {
       items: serviceCategoryItems,
       open: serviceMenuOpen,
@@ -285,16 +238,17 @@ export default function Sidebar({
                   />
                 ))}
               {primaryItems
-                .filter(({ id }) => id !== 'research' && (id !== 'studio' || canViewStudio))
+                .filter(
+                  ({ id }) =>
+                    id !== 'research' &&
+                    (id !== 'studio' || canViewStudio) &&
+                    ((id !== 'service' && id !== 'order') || canViewOrder),
+                )
                 .map(({ id, label, icon: Icon }) => {
                   const isActive =
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
-                    ((id === 'geo' ||
-                      id === 'resource' ||
-                      id === 'service' ||
-                      id === 'order' ||
-                      id === 'studio') &&
+                    ((id === 'geo' || id === 'service' || id === 'order' || id === 'studio') &&
                       currentPage === id);
 
                   const categoryMenu = categoryMenus[id];
@@ -325,9 +279,11 @@ export default function Sidebar({
                           {categoryMenu.items.map((item, index) => {
                             const subItemActive =
                               currentPage === id && categoryMenu.activeCode === item.code;
-                            const previousSectionLabel = categoryMenu.items[index - 1]?.sectionLabel;
+                            const previousSectionLabel =
+                              categoryMenu.items[index - 1]?.sectionLabel;
                             const showSectionHeader =
-                              Boolean(item.sectionLabel) && item.sectionLabel !== previousSectionLabel;
+                              Boolean(item.sectionLabel) &&
+                              item.sectionLabel !== previousSectionLabel;
                             return (
                               <div key={item.code}>
                                 {showSectionHeader ? (
@@ -442,7 +398,9 @@ export default function Sidebar({
                 ) : null}
               </>
             )}
-            {contentCollapsed && <span className="vt-sb-tip">{sessionUser?.name ?? 'Usuário'}</span>}
+            {contentCollapsed && (
+              <span className="vt-sb-tip">{sessionUser?.name ?? 'Usuário'}</span>
+            )}
           </div>
         </div>
       </aside>

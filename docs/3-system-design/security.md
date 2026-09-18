@@ -80,18 +80,19 @@ spoofing.
 
 ## 3. Autorização — RBAC
 
-| Papel              | Pode                                                                     |
-| ------------------ | ------------------------------------------------------------------------ |
-| `inventory.reader` | Ler inventário do próprio tenant                                         |
-| `inventory.editor` | Criar e alterar Geo/Resource/Service                                     |
-| `order.requester`  | Abrir ordens e consultar viabilidade                                     |
-| `order.operator`   | Executar designação, avançar estado de ordem                             |
-| `catalog.admin`    | Manter catálogos (Specifications, RelationshipTypes) — C9                |
-| `studio.reader`    | Consultar modelos e versões publicadas/draft do Studio do próprio tenant |
-| `studio.editor`    | Criar, alterar e validar drafts do Studio do próprio tenant              |
-| `studio.admin`     | Publicar, descartar drafts e executar exclusões lógicas governadas       |
-| `tenant.admin`     | Gerir usuários do próprio tenant                                         |
-| `platform.admin`   | **Cross-tenant**; exclusivo da operação V.tal, com auditoria reforçada   |
+| Papel              | Pode                                                                         |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `inventory.reader` | Ler inventário do próprio tenant                                             |
+| `inventory.editor` | Criar e alterar Geo/Resource/Service                                         |
+| `order.reader`     | Só visualizar Serviços e Ordens (sem abrir, operar ou consultar viabilidade) |
+| `order.requester`  | Abrir ordens e consultar viabilidade                                         |
+| `order.operator`   | Executar designação, avançar estado de ordem                                 |
+| `catalog.admin`    | Manter catálogos (Specifications, RelationshipTypes) — C9                    |
+| `studio.reader`    | Consultar modelos e versões publicadas/draft do Studio do próprio tenant     |
+| `studio.editor`    | Criar, alterar e validar drafts do Studio do próprio tenant                  |
+| `studio.admin`     | Publicar, descartar drafts e executar exclusões lógicas governadas           |
+| `tenant.admin`     | Gerir usuários do próprio tenant                                             |
+| `platform.admin`   | **Cross-tenant**; exclusivo da operação V.tal, com auditoria reforçada       |
 
 **Studio — dois conjuntos de papel, deliberadamente separados.** `STUDIO_EDIT_ROLES`
 (`studio.editor`/`studio.admin`/`platform.admin`) controla o ciclo de vida do envelope de

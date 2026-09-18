@@ -4,10 +4,6 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import App from './App';
 
-vi.mock('./pages/ResourcePage', () => ({
-  default: ({ category }: { category?: string }) => <div>ResourcePage:{category}</div>,
-}));
-
 vi.mock('./pages/NewResearchPage', () => ({
   default: () => <div>NewResearchPage</div>,
 }));
@@ -54,9 +50,9 @@ function setViewport(isMobile: boolean) {
 const base64Url = (value: object): string =>
   btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 
-function seedSession() {
+function seedSession(roles: string[] = ['inventory.reader', 'order.reader']) {
   const exp = Math.floor(Date.now() / 1000) + 3600;
-  const token = `${base64Url({ alg: 'HS256', typ: 'JWT' })}.${base64Url({ sub: 'ana', roles: ['inventory.reader'], exp })}.sig`;
+  const token = `${base64Url({ alg: 'HS256', typ: 'JWT' })}.${base64Url({ sub: 'ana', roles, exp })}.sig`;
   localStorage.setItem('authToken', token);
   localStorage.setItem(
     'authUser',
@@ -64,7 +60,7 @@ function seedSession() {
       id: 'u1',
       externalId: 'ana',
       name: 'Ana',
-      roles: ['inventory.reader'],
+      roles,
       tenantId: 'default',
       status: 'active',
     }),
@@ -84,28 +80,7 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-test('resource submenu opens from Recursos and closes when navigating elsewhere', async () => {
-  const user = userEvent.setup();
-  render(<App />);
-
-  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
-
-  await user.click(screen.getByRole('button', { name: 'Recursos' }));
-  expect(screen.getByRole('button', { name: 'Cliente' })).toBeInTheDocument();
-
-  await user.click(screen.getByRole('button', { name: 'Conversas' }));
-  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
-  expect(screen.getByText('ConversasPage')).toBeInTheDocument();
-});
-
-test('restores the resource category page from the URL on load (F5)', () => {
-  window.history.replaceState({}, '', '/resources/logical-ipam');
-  render(<App />);
-
-  expect(screen.getByText('ResourcePage:Logical.IPAM')).toBeInTheDocument();
-});
-
-test('mobile opens Mapa at the root and canonicalizes the URL to /geo', () => {
+test('mobile opens Recursos (Geo) at the root and canonicalizes the URL to /geo', () => {
   setViewport(true);
   window.history.replaceState({}, '', '/');
   render(<App />);
@@ -118,9 +93,19 @@ test('navigating via the menu updates the URL path', async () => {
   const user = userEvent.setup();
   render(<App />);
 
-  await user.click(screen.getByRole('button', { name: 'Mapa' }));
+  await user.click(screen.getByRole('button', { name: 'Recursos' }));
   expect(window.location.pathname).toBe('/geo');
 
   await user.click(screen.getByRole('button', { name: 'Ordens' }));
   expect(window.location.pathname).toBe('/orders');
+});
+
+test('Serviços e Ordens somem do sidebar e ficam bloqueadas por URL sem papel order.*', () => {
+  seedSession(['inventory.reader']);
+  window.history.replaceState({}, '', '/orders');
+  render(<App />);
+
+  expect(screen.queryByRole('button', { name: 'Serviços' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Ordens' })).not.toBeInTheDocument();
+  expect(screen.getByText('Você não tem permissão para acessar Ordens.')).toBeInTheDocument();
 });

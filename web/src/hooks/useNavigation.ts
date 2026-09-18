@@ -33,10 +33,6 @@ export function useNavigation() {
     navigate(appRoutePath({ page: 'geo' }), { page: 'geo', siteId });
   };
 
-  const goToResource = (resourceId?: string) => {
-    navigate(appRoutePath({ page: 'resource' }), { page: 'resource', resourceId });
-  };
-
   const goToService = (serviceId?: string) => {
     navigate(appRoutePath({ page: 'service' }), { page: 'service', resourceId: serviceId });
   };
@@ -46,5 +42,5 @@ export function useNavigation() {
     setNavParams(null);
   };
 
-  return { navParams, goToGeo, goToResource, goToService, clearNav };
+  return { navParams, goToGeo, goToService, clearNav };
 }

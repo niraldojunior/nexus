@@ -1,7 +1,5 @@
 import type { PageId } from '../types';
-import { RESOURCE_CATEGORY_DEFAULTS } from '../data/resourceCatalogDefaults';
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
-import { DEFAULT_RESOURCE_CATEGORY_CODE } from '../data/resourceCategoryViews';
 import { DEFAULT_SERVICE_CATEGORY_CODE } from '../data/serviceCategoryViews';
 
 /**
@@ -52,8 +50,6 @@ export type AppRoute = {
   sessionId?: string;
   /** Conversa mock legada (`/c/conversation-*`), quando a página é `conversation`. */
   conversationId?: string;
-  /** Categoria ativa do módulo de Recursos, quando a página é `resource`. */
-  resourceCategory?: string;
   /** Categoria ativa do módulo de Serviços, quando a página é `service`. */
   serviceCategory?: string;
   /** Área ativa do Nexus Studio, quando a página é `studio`. */
@@ -63,14 +59,6 @@ export type AppRoute = {
 /** `Equipment.Access` → `equipment-access`; `Access` → `access`. */
 export function categorySlug(code: string): string {
   return code.replace(/\./g, '-').toLowerCase();
-}
-
-/** Resolve um slug de categoria de recurso para o código canônico (fallback: categoria padrão). */
-export function resolveResourceCategorySlug(slug: string): string {
-  const match = RESOURCE_CATEGORY_DEFAULTS.find(
-    (category) => categorySlug(category.code) === slug.toLowerCase(),
-  );
-  return match?.code ?? DEFAULT_RESOURCE_CATEGORY_CODE;
 }
 
 /** Resolve um slug de categoria de serviço para o código canônico (fallback: categoria padrão). */
@@ -109,11 +97,6 @@ export function parseAppRoute(pathname: string, options: { isMobile: boolean }):
   switch (head) {
     case 'geo':
       return { page: 'geo' };
-    case 'resources':
-      return {
-        page: 'resource',
-        resourceCategory: tail ? resolveResourceCategorySlug(tail) : DEFAULT_RESOURCE_CATEGORY_CODE,
-      };
     case 'services':
       return {
         page: 'service',
@@ -146,8 +129,6 @@ export function appRoutePath(route: AppRoute): string {
   switch (route.page) {
     case 'geo':
       return '/geo';
-    case 'resource':
-      return `/resources/${categorySlug(route.resourceCategory ?? DEFAULT_RESOURCE_CATEGORY_CODE)}`;
     case 'service':
       return `/services/${categorySlug(route.serviceCategory ?? DEFAULT_SERVICE_CATEGORY_CODE)}`;
     case 'order':

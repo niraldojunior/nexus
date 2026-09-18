@@ -943,8 +943,8 @@ const routePublishedGeoLayerCatalogRequest = async ({
       const canonical = model?.visualIdentity;
       const visualIdentity =
         canonical?.kind === 'asset'
-          ? (await runtime.studioAssetRepository.get(context.tenantId, canonical.assetId))?.active ===
-            true
+          ? (await runtime.studioAssetRepository.get(context.tenantId, canonical.assetId))
+              ?.active === true
             ? canonical
             : undefined
           : canonical;
@@ -955,9 +955,7 @@ const routePublishedGeoLayerCatalogRequest = async ({
     ...baseCatalog,
     nodes,
   };
-  const publicationChecksum = createHash('sha256')
-    .update(JSON.stringify(projection))
-    .digest('hex');
+  const publicationChecksum = createHash('sha256').update(JSON.stringify(projection)).digest('hex');
   const catalog: StudioGeoCatalog = { ...projection, publicationChecksum };
   response.setHeader('ETag', publicationChecksum);
   await sendJson(response, 200, catalog);
@@ -2031,13 +2029,13 @@ const routeGeoRequest = async ({
           geoContext.tenantId,
           projectId,
           {
-          ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
-          ...(body.description !== undefined
-            ? { description: body.description ? String(body.description) : null }
-            : {}),
-          ...(body.iconDataUrl !== undefined
-            ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
-            : {}),
+            ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
+            ...(body.description !== undefined
+              ? { description: body.description ? String(body.description) : null }
+              : {}),
+            ...(body.iconDataUrl !== undefined
+              ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
+              : {}),
           },
         );
         if (!afterMeta) {
@@ -3644,9 +3642,7 @@ const routeResourceRequest = async ({
       { ...(maxDepth && !Number.isNaN(maxDepth) ? { maxDepth } : {}) },
       context,
     );
-    const portIds = view.components
-      .filter((c) => c.resourceType === 'Port')
-      .map((c) => c.id);
+    const portIds = view.components.filter((c) => c.resourceType === 'Port').map((c) => c.id);
     const activeServicePortIds =
       portIds.length > 0
         ? await serviceService.listActiveSupportingResourceIds(portIds, context)
@@ -6369,8 +6365,14 @@ export const STUDIO_READ_ROLES = [
 export const STUDIO_EDIT_ROLES = ['studio.editor', 'studio.admin', 'platform.admin'] as const;
 export const STUDIO_ADMIN_ROLES = ['studio.admin', 'platform.admin'] as const;
 // order.requester abre ordens e consulta viabilidade (leitura + criação); order.operator executa
-// designação e avança o estado de uma ordem existente (PATCH/DELETE).
-const ORDER_READ_ROLES = ['order.requester', 'order.operator', 'platform.admin'] as const;
+// designação e avança o estado de uma ordem existente (PATCH/DELETE); order.reader é somente
+// leitura, sem criar nem operar — cobre quem só precisa visualizar Serviços/Ordens.
+const ORDER_READ_ROLES = [
+  'order.reader',
+  'order.requester',
+  'order.operator',
+  'platform.admin',
+] as const;
 const ORDER_REQUEST_ROLES = ['order.requester', 'platform.admin'] as const;
 const ORDER_OPERATE_ROLES = ['order.operator', 'platform.admin'] as const;
 

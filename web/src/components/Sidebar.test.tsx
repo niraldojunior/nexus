@@ -15,11 +15,9 @@ afterEach(() => {
 const renderSidebar = (overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) => {
   const props: Parameters<typeof Sidebar>[0] = {
     collapsed: false,
-    currentPage: 'resource',
+    currentPage: 'service',
     activeRecentConversationId: null,
     activeResearchSessionId: null,
-    activeResourceCategory: 'Equipment.Access',
-    resourceMenuOpen: false,
     activeServiceCategory: 'Access',
     serviceMenuOpen: false,
     settingsOpen: false,
@@ -30,11 +28,10 @@ const renderSidebar = (overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) =
     onNewConversation: vi.fn(),
     onNewResearch: vi.fn(),
     onSelectPage: vi.fn(),
-    onToggleResourceMenu: vi.fn(),
-    onSelectResourceCategory: vi.fn(),
     onToggleServiceMenu: vi.fn(),
     onSelectServiceCategory: vi.fn(),
     onOpenRecentItem: vi.fn(),
+    canViewOrder: true,
     ...overrides,
   };
 
@@ -43,67 +40,62 @@ const renderSidebar = (overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) =
 };
 
 test('shows flat category submenu when expanded, without group headers', () => {
-  renderSidebar({ resourceMenuOpen: true });
+  renderSidebar({ serviceMenuOpen: true });
 
-  // No group headers
-  expect(screen.queryByText('Equipamentos')).not.toBeInTheDocument();
-  expect(screen.queryByText('Cabos')).not.toBeInTheDocument();
-  expect(screen.queryByText('Lógicos')).not.toBeInTheDocument();
   // Category items
-  expect(screen.getByRole('button', { name: 'Cliente' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Cabos OSP' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Recursos L2' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Acesso' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Conectividade Empresarial' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Voz' })).toBeInTheDocument();
 });
 
-test('resource menu toggles submenu and category items select the matching category', async () => {
+test('service menu toggles submenu and category items select the matching category', async () => {
   const user = userEvent.setup();
-  const onToggleResourceMenu = vi.fn();
-  const onSelectResourceCategory = vi.fn();
+  const onToggleServiceMenu = vi.fn();
+  const onSelectServiceCategory = vi.fn();
 
-  renderSidebar({ onToggleResourceMenu, onSelectResourceCategory });
+  renderSidebar({ onToggleServiceMenu, onSelectServiceCategory });
 
-  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Acesso' })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: 'Recursos' }));
-  expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole('button', { name: 'Serviços' }));
+  expect(onToggleServiceMenu).toHaveBeenCalledTimes(1);
 
   cleanup();
   renderSidebar({
-    resourceMenuOpen: true,
-    onToggleResourceMenu,
-    onSelectResourceCategory,
+    serviceMenuOpen: true,
+    onToggleServiceMenu,
+    onSelectServiceCategory,
   });
 
-  await user.click(screen.getByRole('button', { name: 'Cliente' }));
-  await user.click(screen.getByRole('button', { name: 'Endereçamento e IPAM' }));
+  await user.click(screen.getByRole('button', { name: 'Acesso' }));
+  await user.click(screen.getByRole('button', { name: 'Voz' }));
 
-  expect(onSelectResourceCategory).toHaveBeenNthCalledWith(1, 'Equipment.CustomerPremises');
-  expect(onSelectResourceCategory).toHaveBeenNthCalledWith(2, 'Logical.IPAM');
+  expect(onSelectServiceCategory).toHaveBeenNthCalledWith(1, 'Access');
+  expect(onSelectServiceCategory).toHaveBeenNthCalledWith(2, 'Voice');
 });
 
-test('resource submenu is hidden when collapsed', () => {
-  renderSidebar({ collapsed: true, resourceMenuOpen: true });
+test('service submenu is hidden when collapsed', () => {
+  renderSidebar({ collapsed: true, serviceMenuOpen: true });
 
-  expect(screen.queryByRole('button', { name: 'Cliente' })).not.toBeInTheDocument();
-  expect(screen.queryByText('Equipamentos')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Acesso' })).not.toBeInTheDocument();
 });
 
 test('primary navigation remains clickable when collapsed', async () => {
   const user = userEvent.setup();
   const onSelectPage = vi.fn();
-  const onToggleResourceMenu = vi.fn();
+  const onToggleServiceMenu = vi.fn();
 
   renderSidebar({
     collapsed: true,
     onSelectPage,
-    onToggleResourceMenu,
+    onToggleServiceMenu,
   });
 
-  await user.click(screen.getByRole('button', { name: 'Mapa' }));
   await user.click(screen.getByRole('button', { name: 'Recursos' }));
+  await user.click(screen.getByRole('button', { name: 'Serviços' }));
 
   expect(onSelectPage).toHaveBeenCalledWith('geo');
-  expect(onToggleResourceMenu).toHaveBeenCalledTimes(1);
+  expect(onToggleServiceMenu).toHaveBeenCalledTimes(1);
 });
 
 test('shows Studio only to authorized users', () => {
@@ -113,6 +105,17 @@ test('shows Studio only to authorized users', () => {
   cleanup();
   renderSidebar({ canViewStudio: false });
   expect(screen.queryByRole('button', { name: 'Studio' })).not.toBeInTheDocument();
+});
+
+test('hides Serviços and Ordens from users without an order role', () => {
+  renderSidebar({ canViewOrder: false });
+  expect(screen.queryByRole('button', { name: 'Serviços' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Ordens' })).not.toBeInTheDocument();
+
+  cleanup();
+  renderSidebar({ canViewOrder: true });
+  expect(screen.getByRole('button', { name: 'Serviços' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Ordens' })).toBeInTheDocument();
 });
 
 test('mobile floating toggle appears by default when collapsed and shows the Nexus mark', () => {

@@ -32,43 +32,116 @@ describe('ordem operacional das camadas', () => {
       { id: 'z-group', kind: 'GROUP', parentNodeId: null, label: 'Z', sortOrder: 20, active: true },
       { id: 'a-group', kind: 'GROUP', parentNodeId: null, label: 'A', sortOrder: 10, active: true },
       {
-        id: 'nested-group', kind: 'GROUP', parentNodeId: 'a-group', label: 'Aninhado', sortOrder: 20, active: true,
+        id: 'nested-group',
+        kind: 'GROUP',
+        parentNodeId: 'a-group',
+        label: 'Aninhado',
+        sortOrder: 20,
+        active: true,
       },
       {
-        id: 'cdoe', kind: 'ENTITY', parentNodeId: 'a-group', label: 'CDOE', sortOrder: 10, active: true, defaultVisible: true,
-        entity: { category: 'RESOURCE', sourceDomain: 'resource-model', sourceType: 'RESOURCE_TYPE', sourceId: 'CDOE' },
+        id: 'cdoe',
+        kind: 'ENTITY',
+        parentNodeId: 'a-group',
+        label: 'CDOE',
+        sortOrder: 10,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'RESOURCE',
+          sourceDomain: 'resource-model',
+          sourceType: 'RESOURCE_TYPE',
+          sourceId: 'CDOE',
+        },
       },
       {
-        id: 'coverage', kind: 'ENTITY', parentNodeId: 'nested-group', label: 'Cobertura', sortOrder: 10, active: true, defaultVisible: true,
-        entity: { category: 'COVERAGE', sourceDomain: 'spatial', sourceType: 'GPON_AGGREGATE', sourceId: 'gpon' },
+        id: 'coverage',
+        kind: 'ENTITY',
+        parentNodeId: 'nested-group',
+        label: 'Cobertura',
+        sortOrder: 10,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'COVERAGE',
+          sourceDomain: 'spatial',
+          sourceType: 'GPON_AGGREGATE',
+          sourceId: 'gpon',
+        },
       },
       {
-        id: 'tie-b', kind: 'ENTITY', parentNodeId: 'z-group', label: 'B', sortOrder: 10, active: true, defaultVisible: true,
-        entity: { category: 'LOCAL', sourceDomain: 'location-model', sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId: 'B' },
+        id: 'tie-b',
+        kind: 'ENTITY',
+        parentNodeId: 'z-group',
+        label: 'B',
+        sortOrder: 10,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'LOCAL',
+          sourceDomain: 'location-model',
+          sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+          sourceId: 'B',
+        },
       },
       {
-        id: 'tie-a', kind: 'ENTITY', parentNodeId: 'z-group', label: 'A', sortOrder: 10, active: true, defaultVisible: true,
-        entity: { category: 'LOCAL', sourceDomain: 'location-model', sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId: 'A' },
+        id: 'tie-a',
+        kind: 'ENTITY',
+        parentNodeId: 'z-group',
+        label: 'A',
+        sortOrder: 10,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'LOCAL',
+          sourceDomain: 'location-model',
+          sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+          sourceId: 'A',
+        },
       },
       {
-        id: 'inactive', kind: 'ENTITY', parentNodeId: 'a-group', label: 'Inativa', sortOrder: 1, active: false, defaultVisible: true,
-        entity: { category: 'RESOURCE', sourceDomain: 'resource-model', sourceType: 'RESOURCE_TYPE', sourceId: 'INACTIVE' },
+        id: 'inactive',
+        kind: 'ENTITY',
+        parentNodeId: 'a-group',
+        label: 'Inativa',
+        sortOrder: 1,
+        active: false,
+        defaultVisible: true,
+        entity: {
+          category: 'RESOURCE',
+          sourceDomain: 'resource-model',
+          sourceType: 'RESOURCE_TYPE',
+          sourceId: 'INACTIVE',
+        },
       },
     ],
   };
 
   it('achata a árvore na mesma ordem do controle, com o primeiro item mais frontal', () => {
-    expect(mapLayerEntities(catalog).map((node) => node.id)).toEqual(['cdoe', 'coverage', 'tie-a', 'tie-b']);
+    expect(mapLayerEntities(catalog).map((node) => node.id)).toEqual([
+      'cdoe',
+      'coverage',
+      'tie-a',
+      'tie-b',
+    ]);
     expect(mapLayerVisualRank(mapLayerEntities(catalog)[0], catalog)).toBe(0);
     expect(mapLayerVisualRank(undefined, catalog)).toBe(-1);
   });
 
   it('inverte a prioridade apenas para o desenho no canvas', () => {
-    expect(mapLayerEntitiesForDraw(catalog).map((node) => node.id)).toEqual(['tie-b', 'tie-a', 'coverage', 'cdoe']);
+    expect(mapLayerEntitiesForDraw(catalog).map((node) => node.id)).toEqual([
+      'tie-b',
+      'tie-a',
+      'coverage',
+      'cdoe',
+    ]);
   });
 
   it('mantém a ordem hierárquica ao listar descendentes', () => {
-    expect(descendantEntities(catalog, 'a-group').map((node) => node.id)).toEqual(['cdoe', 'coverage']);
+    expect(descendantEntities(catalog, 'a-group').map((node) => node.id)).toEqual([
+      'cdoe',
+      'coverage',
+    ]);
   });
 });
 
@@ -362,7 +435,12 @@ describe('nodeForMapFeature', () => {
 
   it('resolve a entidade publicada por sourceModelType/sourceModelId, sem depender de rótulo/id de camada', () => {
     const node = nodeForMapFeature(
-      { kind: 'site', shape: 'point', sourceModelType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceModelId: 'CO' },
+      {
+        kind: 'site',
+        shape: 'point',
+        sourceModelType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+        sourceModelId: 'CO',
+      },
       publishedCatalog,
     );
     expect(node?.id).toBe('stations');
@@ -420,14 +498,22 @@ describe('nodeForMapFeature', () => {
       ],
     };
     const siteNode = nodeForMapFeature(
-      { kind: 'site', shape: 'point', sourceModelType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceModelId: 'CO' },
+      {
+        kind: 'site',
+        shape: 'point',
+        sourceModelType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+        sourceModelId: 'CO',
+      },
       catalog,
     );
     expect(siteNode?.id).toBe('stations');
   });
 
   it('sem sourceModelId e catálogo publicado (fallback=false), não resolve nada — nenhuma heurística legada entra em jogo', () => {
-    const node = nodeForMapFeature({ kind: 'site', shape: 'point', sublabel: 'CO' }, publishedCatalog);
+    const node = nodeForMapFeature(
+      { kind: 'site', shape: 'point', sublabel: 'CO' },
+      publishedCatalog,
+    );
     expect(node).toBeUndefined();
   });
 
@@ -451,7 +537,10 @@ describe('nodeForMapFeature', () => {
       ...publishedCatalog,
       nodes: publishedCatalog.nodes.map((node) =>
         node.id === 'olts' && node.kind === 'ENTITY'
-          ? { ...node, visualConfig: { ...(node.visualConfig as StudioGeoPointVisualConfig), opacity: 0.5 } }
+          ? {
+              ...node,
+              visualConfig: { ...(node.visualConfig as StudioGeoPointVisualConfig), opacity: 0.5 },
+            }
           : node,
       ),
     };
@@ -507,6 +596,57 @@ describe('published catalog reconciliation', () => {
   });
 });
 
+describe('mapLayerTree defesa contra ciclo', () => {
+  it('não estoura a pilha quando um id duplicado do catálogo cria um grupo ancestral de si mesmo', () => {
+    // Catálogo corrompido: dois nós compartilham o id "a" — um legítimo na raiz, outro
+    // (dado inconsistente fora do fluxo de publicação validado) com `parentNodeId` apontando
+    // para o próprio id "a". Ao expandir o nó raiz "a", seus filhos incluem essa duplicata, que
+    // reaparece na mesma trilha de ancestrais e recursaria para sempre sem o corte de ciclo.
+    const cyclicCatalog: StudioGeoCatalog = {
+      schemaVersion: 2,
+      configured: true,
+      environmentId: 'cyclic',
+      fallback: false,
+      nodes: [
+        {
+          id: 'a',
+          kind: 'GROUP',
+          parentNodeId: null,
+          label: 'A raiz',
+          sortOrder: 10,
+          active: true,
+        },
+        {
+          id: 'a',
+          kind: 'GROUP',
+          parentNodeId: 'a',
+          label: 'A duplicado',
+          sortOrder: 20,
+          active: true,
+        },
+        {
+          id: 'leaf',
+          kind: 'ENTITY',
+          parentNodeId: 'a',
+          label: 'Leaf',
+          sortOrder: 10,
+          active: true,
+          defaultVisible: true,
+          entity: {
+            category: 'RESOURCE',
+            sourceDomain: 'resource-model',
+            sourceType: 'RESOURCE_TYPE',
+            sourceId: 'CDOE',
+          },
+        },
+      ],
+    };
+
+    expect(() => mapLayerEntities(cyclicCatalog)).not.toThrow();
+    expect(mapLayerEntities(cyclicCatalog).map((node) => node.id)).toEqual(['leaf']);
+  });
+});
+
 describe('readStoredLayers / writeStoredLayers', () => {
   const ENV = 'env-a';
 
@@ -519,9 +659,15 @@ describe('readStoredLayers / writeStoredLayers', () => {
   });
 
   it('round-trip: grava e lê de volta', () => {
-    const visibility = { ...ALL_MAP_LAYERS_VISIBLE, resourceDropCable: false, 'coverage-gpon': false };
+    const visibility = {
+      ...ALL_MAP_LAYERS_VISIBLE,
+      resourceDropCable: false,
+      'coverage-gpon': false,
+    };
     writeStoredLayers(visibility, ENV);
-    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV })).toEqual(visibility);
+    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV })).toEqual(
+      visibility,
+    );
   });
 
   it('JSON inválido cai no default', () => {
@@ -562,12 +708,12 @@ describe('readStoredLayers / writeStoredLayers', () => {
   it('dois environmentId isolam as preferências entre si', () => {
     writeStoredLayers({ ...ALL_MAP_LAYERS_VISIBLE, stations: false }, 'env-x');
     writeStoredLayers({ ...ALL_MAP_LAYERS_VISIBLE, stations: true }, 'env-y');
-    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-x' }).stations).toBe(
-      false,
-    );
-    expect(readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-y' }).stations).toBe(
-      true,
-    );
+    expect(
+      readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-x' }).stations,
+    ).toBe(false);
+    expect(
+      readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-y' }).stations,
+    ).toBe(true);
   });
 });
 
@@ -600,7 +746,10 @@ describe('readStoredExpandedGroups / writeStoredExpandedGroups', () => {
   });
 
   it('retorna todos os grupos expandidos por default', () => {
-    const defaultExpanded = readStoredExpandedGroups({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: ENV });
+    const defaultExpanded = readStoredExpandedGroups({
+      ...MAP_LAYER_CATALOG_FALLBACK,
+      environmentId: ENV,
+    });
     expect(defaultExpanded.has('locations')).toBe(true);
     expect(defaultExpanded.has('coverage')).toBe(true);
     expect(defaultExpanded.has('netwinInfrastructure')).toBe(true);
@@ -642,7 +791,11 @@ describe('migração de chaves legadas (sem namespace)', () => {
       'nexus.geo.mapLayers',
       JSON.stringify({ ...ALL_MAP_LAYERS_VISIBLE, stations: false }),
     );
-    const emptyCatalog = { ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-empty-1', fallback: false };
+    const emptyCatalog = {
+      ...MAP_LAYER_CATALOG_FALLBACK,
+      environmentId: 'env-empty-1',
+      fallback: false,
+    };
     expect(readStoredLayers(emptyCatalog)).toEqual(ALL_MAP_LAYERS_VISIBLE);
     expect(window.localStorage.getItem('nexus.geo.mapLayers')).not.toBeNull();
   });

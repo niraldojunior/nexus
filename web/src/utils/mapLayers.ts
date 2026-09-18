@@ -20,7 +20,13 @@ export type ViewportShape = 'sites' | 'resource-points' | 'resource-lines';
 export type MapLayerTreeNode = StudioGeoNode & { children: MapLayerTreeNode[] };
 
 const group = (id: string, label: string, sortOrder: number, hint?: string): StudioGeoNode => ({
-  id, kind: 'GROUP', parentNodeId: null, label, hint, sortOrder, active: true,
+  id,
+  kind: 'GROUP',
+  parentNodeId: null,
+  label,
+  hint,
+  sortOrder,
+  active: true,
 });
 const entity = (
   id: string,
@@ -31,11 +37,29 @@ const entity = (
   sourceId: string,
   hint?: string,
 ): StudioGeoEntityNode => ({
-  id, kind: 'ENTITY', parentNodeId, label, hint, sortOrder, active: true, defaultVisible: true,
+  id,
+  kind: 'ENTITY',
+  parentNodeId,
+  label,
+  hint,
+  sortOrder,
+  active: true,
+  defaultVisible: true,
   entity: {
-    category: sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION' ? 'LOCAL' : sourceType === 'RESOURCE_TYPE' ? 'RESOURCE' : 'COVERAGE',
-    sourceDomain: sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION' ? 'location-model' : sourceType === 'RESOURCE_TYPE' ? 'resource-model' : 'spatial',
-    sourceType, sourceId,
+    category:
+      sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION'
+        ? 'LOCAL'
+        : sourceType === 'RESOURCE_TYPE'
+          ? 'RESOURCE'
+          : 'COVERAGE',
+    sourceDomain:
+      sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION'
+        ? 'location-model'
+        : sourceType === 'RESOURCE_TYPE'
+          ? 'resource-model'
+          : 'spatial',
+    sourceType,
+    sourceId,
   },
 });
 
@@ -49,19 +73,54 @@ export const MAP_LAYER_CATALOG_FALLBACK: StudioGeoCatalog = {
     group('coverage', 'Cobertura', 20, 'Manchas agregadas por tema — hoje só GPON'),
     group('netwinInfrastructure', 'Infraestrutura Civil', 30),
     group('resources', 'Recursos de Rede', 40),
-    entity('stations', 'locations', 'Estações', 10, 'GEOGRAPHIC_SITE_SPECIFICATION', 'legacy-stations'),
-    entity('siteNetwork', 'locations', 'Sites de Rede', 20, 'GEOGRAPHIC_SITE_SPECIFICATION', 'legacy-site-network'),
-    entity('siteService', 'locations', 'Sites de Serviço', 30, 'GEOGRAPHIC_SITE_SPECIFICATION', 'legacy-site-service'),
+    entity(
+      'stations',
+      'locations',
+      'Estações',
+      10,
+      'GEOGRAPHIC_SITE_SPECIFICATION',
+      'legacy-stations',
+    ),
+    entity(
+      'siteNetwork',
+      'locations',
+      'Sites de Rede',
+      20,
+      'GEOGRAPHIC_SITE_SPECIFICATION',
+      'legacy-site-network',
+    ),
+    entity(
+      'siteService',
+      'locations',
+      'Sites de Serviço',
+      30,
+      'GEOGRAPHIC_SITE_SPECIFICATION',
+      'legacy-site-service',
+    ),
     entity('netwinTower', 'locations', 'Torres', 40, 'RESOURCE_TYPE', 'legacy-tower'),
     entity('coverage-gpon', 'coverage', 'Cobertura GPON', 10, 'GPON_AGGREGATE', 'gpon-aggregate'),
     entity('netwinPole', 'netwinInfrastructure', 'Postes', 10, 'RESOURCE_TYPE', 'legacy-pole'),
     entity('netwinDuct', 'netwinInfrastructure', 'Dutos', 20, 'RESOURCE_TYPE', 'legacy-duct'),
-    entity('netwinManhole', 'netwinInfrastructure', 'Caixas Subterrâneas', 30, 'RESOURCE_TYPE', 'legacy-manhole'),
+    entity(
+      'netwinManhole',
+      'netwinInfrastructure',
+      'Caixas Subterrâneas',
+      30,
+      'RESOURCE_TYPE',
+      'legacy-manhole',
+    ),
     entity('resourceCdoe', 'resources', 'CDOEs', 10, 'RESOURCE_TYPE', 'legacy-cdoe'),
     entity('resourceCdoi', 'resources', 'CDOIs', 20, 'RESOURCE_TYPE', 'legacy-cdoi'),
     entity('resourceCeo', 'resources', 'CEOs', 30, 'RESOURCE_TYPE', 'legacy-ceo'),
     entity('resourceDio', 'resources', 'DIOs', 40, 'RESOURCE_TYPE', 'legacy-dio'),
-    entity('resourceFiberCable', 'resources', 'Cabos de Fibra', 50, 'RESOURCE_TYPE', 'legacy-fiber-cable'),
+    entity(
+      'resourceFiberCable',
+      'resources',
+      'Cabos de Fibra',
+      50,
+      'RESOURCE_TYPE',
+      'legacy-fiber-cable',
+    ),
     entity('resourceDropCable', 'resources', 'Cabo Drop', 60, 'RESOURCE_TYPE', 'legacy-drop-cable'),
   ],
 };
@@ -81,10 +140,24 @@ export const mapLayerTree = (
     children.push(node);
     childrenByParent.set(node.parentNodeId, children);
   }
-  const create = (node: StudioGeoNode): MapLayerTreeNode => ({
-    ...node,
-    children: (childrenByParent.get(node.id) ?? []).sort(compare).map(create),
-  });
+  // Defesa contra catálogo publicado com ciclo (nó que acaba sendo ancestral de si mesmo) — a
+  // validação do Studio (STUDIO_GEO_NODE_CYCLE) deveria impedir isso na publicação, mas um
+  // catálogo corrompido por fora desse caminho (dado antigo, migração manual) faria `create`
+  // recursar infinitamente e derrubar a página inteira (RangeError: Maximum call stack size
+  // exceeded). Corta o ciclo em vez de estourar a pilha.
+  const ancestry = new Set<string>();
+  const create = (node: StudioGeoNode): MapLayerTreeNode => {
+    if (ancestry.has(node.id)) {
+      console.error(
+        `mapLayerTree: ciclo detectado no catálogo publicado envolvendo o nó "${node.id}" — filhos ignorados.`,
+      );
+      return { ...node, children: [] };
+    }
+    ancestry.add(node.id);
+    const children = (childrenByParent.get(node.id) ?? []).sort(compare).map(create);
+    ancestry.delete(node.id);
+    return { ...node, children };
+  };
   const prune = (node: MapLayerTreeNode): MapLayerTreeNode | undefined => {
     if (!pruneEmptyGroups) return node;
     return node.kind === 'ENTITY' || node.children.length > 0 ? node : undefined;
@@ -124,8 +197,13 @@ export function mapLayerEntitiesForDraw(catalog: StudioGeoCatalog): StudioGeoEnt
   return [...mapLayerEntities(catalog)].reverse();
 }
 
-export const descendantEntities = (catalog: StudioGeoCatalog, groupId: string): StudioGeoEntityNode[] => {
-  const group = catalog.nodes.find((node) => node.id === groupId && node.kind === 'GROUP' && node.active);
+export const descendantEntities = (
+  catalog: StudioGeoCatalog,
+  groupId: string,
+): StudioGeoEntityNode[] => {
+  const group = catalog.nodes.find(
+    (node) => node.id === groupId && node.kind === 'GROUP' && node.active,
+  );
   if (!group) return [];
   const result: StudioGeoEntityNode[] = [];
   const visit = (node: MapLayerTreeNode): void => {
@@ -200,13 +278,20 @@ const LEGACY_SOURCE_BY_FEATURE = (
   }
   if (feature.typeCode === 'Tower') return 'legacy-tower';
   if (feature.typeCode === 'Pole') return 'legacy-pole';
-  if (['Duct', 'RisingTube', 'CableTunnel', 'Pedestal', 'SupportBracket', 'IronPipe'].includes(feature.typeCode ?? '')) return 'legacy-duct';
+  if (
+    ['Duct', 'RisingTube', 'CableTunnel', 'Pedestal', 'SupportBracket', 'IronPipe'].includes(
+      feature.typeCode ?? '',
+    )
+  )
+    return 'legacy-duct';
   if (feature.typeCode === 'Manhole') return 'legacy-manhole';
   if (feature.typeCode === 'DIO') return 'legacy-dio';
   if (feature.typeCode === 'SpliceClosure') return 'legacy-ceo';
-  if (['Fiber', 'DistributionCable', 'BackboneCable'].includes(feature.typeCode ?? '')) return 'legacy-fiber-cable';
+  if (['Fiber', 'DistributionCable', 'BackboneCable'].includes(feature.typeCode ?? ''))
+    return 'legacy-fiber-cable';
   if (feature.typeCode === 'DropCable') return 'legacy-drop-cable';
-  if (feature.typeCode === 'CTO') return feature.label?.toUpperCase().includes('CDOI') ? 'legacy-cdoi' : 'legacy-cdoe';
+  if (feature.typeCode === 'CTO')
+    return feature.label?.toUpperCase().includes('CDOI') ? 'legacy-cdoi' : 'legacy-cdoe';
   return undefined;
 };
 
@@ -216,7 +301,8 @@ export function nodeForMapFeature(
   roleByCode?: ReadonlyMap<string, unknown>,
 ): StudioGeoEntityNode | undefined {
   const sourceId =
-    feature.sourceModelId ?? (catalog.fallback ? LEGACY_SOURCE_BY_FEATURE(feature, roleByCode) : undefined);
+    feature.sourceModelId ??
+    (catalog.fallback ? LEGACY_SOURCE_BY_FEATURE(feature, roleByCode) : undefined);
   if (!sourceId) return undefined;
   const sourceType = feature.sourceModelType;
   return mapLayerEntities(catalog).find(
@@ -271,10 +357,14 @@ export function viewportInclude(
     if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
     // A publicação sempre declara a geometria. A inferência abaixo existe exclusivamente para o
     // catálogo canônico de compatibilidade enquanto ainda não há publicação Studio GEO.
-    const geometryKind = node.visualConfig?.geometryKind ?? (catalog.fallback ? fallbackGeometryKind(node) : undefined);
+    const geometryKind =
+      node.visualConfig?.geometryKind ??
+      (catalog.fallback ? fallbackGeometryKind(node) : undefined);
     if (node.entity.category === 'LOCAL' && geometryKind === 'POINT') shapes.add('sites');
-    if (node.entity.category === 'RESOURCE' && geometryKind === 'POINT') shapes.add('resource-points');
-    if (node.entity.category === 'RESOURCE' && geometryKind === 'LINE') shapes.add('resource-lines');
+    if (node.entity.category === 'RESOURCE' && geometryKind === 'POINT')
+      shapes.add('resource-points');
+    if (node.entity.category === 'RESOURCE' && geometryKind === 'LINE')
+      shapes.add('resource-lines');
   }
   const result = [...shapes];
   return result.length === 3 ? undefined : result;
@@ -326,7 +416,12 @@ export function readStoredLayers(
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return defaults;
     const stored = parsed as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(defaults).map(([id, fallback]) => [id, typeof stored[id] === 'boolean' ? stored[id] : fallback]));
+    return Object.fromEntries(
+      Object.entries(defaults).map(([id, fallback]) => [
+        id,
+        typeof stored[id] === 'boolean' ? stored[id] : fallback,
+      ]),
+    );
   } catch {
     return defaults;
   }
@@ -335,7 +430,10 @@ export function readStoredLayers(
 export function writeStoredLayers(visibility: MapLayerVisibility, environmentId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(namespacedKey(STORAGE_KEY_BASE, environmentId), JSON.stringify(visibility));
+    window.localStorage.setItem(
+      namespacedKey(STORAGE_KEY_BASE, environmentId),
+      JSON.stringify(visibility),
+    );
   } catch {
     // Storage indisponível: a preferência só não persiste.
   }
@@ -345,7 +443,9 @@ export function readStoredLayerControlOpen(environmentId: string, defaultOpen = 
   if (typeof window === 'undefined') return defaultOpen;
   migrateLegacyKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId);
   try {
-    const raw = window.localStorage.getItem(namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId));
+    const raw = window.localStorage.getItem(
+      namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId),
+    );
     if (raw === null) return defaultOpen;
     return raw === 'true';
   } catch {
@@ -356,7 +456,10 @@ export function readStoredLayerControlOpen(environmentId: string, defaultOpen = 
 export function writeStoredLayerControlOpen(open: boolean, environmentId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId), open ? 'true' : 'false');
+    window.localStorage.setItem(
+      namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId),
+      open ? 'true' : 'false',
+    );
   } catch {
     // Storage indisponível: a preferência só não persiste.
   }
@@ -370,19 +473,26 @@ export function readStoredExpandedGroups(
   if (typeof window === 'undefined') return defaultSet;
   migrateLegacyKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId);
   try {
-    const raw = window.localStorage.getItem(namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId));
+    const raw = window.localStorage.getItem(
+      namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId),
+    );
     if (!raw) return defaultSet;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return defaultSet;
     const validIds = new Set(allGroupIds);
-    const filtered = (parsed as unknown[]).filter((id): id is string => typeof id === 'string' && validIds.has(id));
+    const filtered = (parsed as unknown[]).filter(
+      (id): id is string => typeof id === 'string' && validIds.has(id),
+    );
     return new Set(filtered);
   } catch {
     return defaultSet;
   }
 }
 
-export function writeStoredExpandedGroups(expandedGroups: Set<string>, environmentId: string): void {
+export function writeStoredExpandedGroups(
+  expandedGroups: Set<string>,
+  environmentId: string,
+): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(

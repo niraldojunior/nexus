@@ -4,7 +4,7 @@
  */
 
 export type NavigationParams = {
-  page: 'geo' | 'resource' | 'service';
+  page: 'geo' | 'service';
   siteId?: string;
   resourceId?: string;
 };

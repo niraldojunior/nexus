@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, KeyRound, Loader2, Plus, Trash2, UserCog, X } from 'lucide-react';
 import {
   ASSIGNABLE_ROLES,
@@ -10,6 +10,7 @@ import {
   setUserStatus,
   type AdminUser,
 } from '../../services/authApi';
+import PasswordChangeModal from '../../components/PasswordChangeModal';
 import { PasswordStrengthField } from '../../components/PasswordStrengthField';
 import Field from '../../components/Field';
 import { isPasswordValid } from '../../utils/passwordPolicy';
@@ -278,12 +279,15 @@ export function UsersTab() {
       ) : null}
 
       {resetUser ? (
-        <ResetPasswordModal
-          user={resetUser}
+        <PasswordChangeModal
+          isOpen={Boolean(resetUser)}
+          mode="admin"
+          userSubtitle={`${resetUser.name} · ${resetUser.email ?? resetUser.externalId}`}
           onClose={() => setResetUser(null)}
-          onSubmit={(password) => {
+          onSubmitAdmin={async (password) => {
+            const userId = resetUser.id;
             setResetUser(null);
-            void runAction(resetUser.id, () => resetUserPassword(resetUser.id, password));
+            await runAction(userId, () => resetUserPassword(userId, password));
           }}
         />
       ) : null}
@@ -462,90 +466,6 @@ function EditRolesModal({
   );
 }
 
-function ResetPasswordModal({
-  user,
-  onClose,
-  onSubmit,
-}: {
-  user: AdminUser;
-  onClose: () => void;
-  onSubmit: (password: string) => void;
-}) {
-  const titleId = useId();
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-
-  useEscapeToClose(true, onClose);
-
-  const mismatch = confirm.length > 0 && password !== confirm;
-  const canSubmit = isPasswordValid(password) && password === confirm;
-
-  return (
-    <Modal
-      title={
-        <ModalTitle
-          title="Redefinir senha"
-          subtitle={`${user.name} · ${user.email ?? user.externalId}`}
-          onClose={onClose}
-        />
-      }
-      onClose={onClose}
-      width={460}
-      footer={
-        <>
-          <Button variant="secondary" type="button" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            variant="dark"
-            type="button"
-            onClick={() => onSubmit(password)}
-            disabled={!canSubmit}
-            iconLeft={<KeyRound className="h-4 w-4" />}
-          >
-            Redefinir senha
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <PasswordStrengthField
-          label="Nova senha"
-          value={password}
-          onChange={setPassword}
-          autoFocus
-          showGenerator
-        />
-
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor={`${titleId}-confirm`}
-            className="text-[0.78rem] font-medium text-app-muted"
-          >
-            Confirmar senha
-          </label>
-          <input
-            id={`${titleId}-confirm`}
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
-            className="h-11 rounded-xl border border-app-border bg-white px-3 text-[0.92rem] text-app-text outline-none focus:border-app-accent-border"
-            placeholder="••••••••••••"
-          />
-          {mismatch ? (
-            <p className="text-[0.76rem] text-status-red">As senhas não conferem.</p>
-          ) : null}
-        </div>
-
-        <p className="text-[0.76rem] text-app-muted">
-          Redefinir a senha encerra as sessões ativas do usuário.
-        </p>
-      </div>
-    </Modal>
-  );
-}
-
 function RoleChip({
   role,
   active,
@@ -562,7 +482,7 @@ function RoleChip({
       className={`rounded-full border px-2.5 py-1 text-[0.72rem] font-medium transition ${
         active
           ? 'border-app-accent-border bg-app-accent-soft text-app-text'
-          : 'border-app-border bg-white text-app-muted hover:bg-black/5'
+          : 'vt-hover-muted border-app-border bg-app-panel text-app-muted'
       }`}
     >
       {role}

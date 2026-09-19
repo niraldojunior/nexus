@@ -83,7 +83,7 @@ function TabHeader({
         <button
           type="button"
           onClick={onReset}
-          className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-app-border bg-white px-2.5 py-1.5 text-[0.76rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
+          className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.76rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
         >
           <RotateCcw className="h-3.5 w-3.5 text-app-muted" />
           Restaurar padrão
@@ -114,8 +114,8 @@ function PointColor({
 
   return (
     <>
-      <div className="flex items-center gap-4 rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-app-border/80 bg-black/[0.02]">
+      <div className="flex items-center gap-4 rounded-[12px] border border-app-border bg-app-panel p-3.5 shadow-sm">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] border border-app-border/80 bg-[var(--surface-muted)]">
           {previewUrl && (
             <img src={previewUrl} alt="Pré-visualização do ícone do ponto" className="h-12 w-12" />
           )}
@@ -137,7 +137,7 @@ function PointColor({
         onChange={(color) => onChange({ ...config, color })}
       />
 
-      <div className="rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
+      <div className="rounded-[12px] border border-app-border bg-app-panel p-3.5 shadow-sm">
         <OpacityField
           label="Transparência do ponto"
           value={config.opacity}
@@ -172,7 +172,7 @@ function LineColor({
         onChange={(stroke) => onChange({ ...config, stroke })}
       />
 
-      <div className="space-y-4 rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
+      <div className="space-y-4 rounded-[12px] border border-app-border bg-app-panel p-3.5 shadow-sm">
         <StrokeStyleField
           label="Estilo da linha"
           value={config.strokeStyle}
@@ -186,7 +186,7 @@ function LineColor({
           canEdit={canEdit}
           onChange={(opacity) => onChange({ ...config, opacity })}
         />
-        <div className="rounded-[10px] border border-app-border/80 bg-black/[0.02] p-4 text-center">
+        <div className="rounded-[10px] border border-app-border/80 bg-[var(--surface-muted)] p-4 text-center">
           <span className="mb-2 block text-[0.72rem] text-app-muted">
             Pré-visualização do traço
           </span>
@@ -233,7 +233,7 @@ function PolygonColor({
         onChange={(stroke) => onChange({ ...config, stroke })}
       />
 
-      <div className="space-y-4 rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
+      <div className="space-y-4 rounded-[12px] border border-app-border bg-app-panel p-3.5 shadow-sm">
         <StrokeStyleField
           label="Estilo da borda"
           value={config.strokeStyle}
@@ -257,7 +257,7 @@ function PolygonColor({
         onChange={(fill) => onChange({ ...config, fill })}
       />
 
-      <div className="rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
+      <div className="rounded-[12px] border border-app-border bg-app-panel p-3.5 shadow-sm">
         <OpacityField
           label="Transparência do preenchimento"
           value={config.fillOpacity}
@@ -266,7 +266,7 @@ function PolygonColor({
         />
       </div>
 
-      <div className="rounded-[10px] border border-app-border/80 bg-black/[0.02] p-4 text-center">
+      <div className="rounded-[10px] border border-app-border/80 bg-[var(--surface-muted)] p-4 text-center">
         <span className="mb-2 block text-[0.72rem] text-app-muted">
           Pré-visualização do polígono
         </span>

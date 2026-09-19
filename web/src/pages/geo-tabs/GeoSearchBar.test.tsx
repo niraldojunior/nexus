@@ -1198,13 +1198,13 @@ describe('GeoSearchBar filtro de escopo (RF-013)', () => {
 
     const shell = screen.getByPlaceholderText('Pesquise no Nexus').parentElement!;
     const scopeButton = screen.getByLabelText('Modo de busca: Pesquisa geral');
-    expect(shell.className).toContain('bg-white');
+    expect(shell.className).toContain('bg-app-panel');
     expect(scopeButton.className).not.toContain('bg-app-accent-soft');
 
     fireEvent.click(scopeButton);
     fireEvent.click(screen.getByRole('option', { name: /Apenas Locais/ }));
 
-    expect(shell.className).toContain('bg-white');
+    expect(shell.className).toContain('bg-app-panel');
     expect(screen.getByLabelText('Modo de busca: Apenas Locais').className).toContain(
       'bg-app-accent-soft',
     );

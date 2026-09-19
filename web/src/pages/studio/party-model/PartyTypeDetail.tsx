@@ -96,7 +96,7 @@ export function PartyTypeDetail({ partyType, canMutate, onUpdated, onDeactivated
         </div>
 
         <div className="mt-3.5 flex">
-          <div className="inline-flex items-center gap-1 rounded-xl bg-black/[0.04] p-1">
+          <div className="inline-flex items-center gap-1 rounded-xl bg-[var(--surface-muted)] p-1">
             {([
               ['overview', 'Geral'],
               ['characteristics', 'Características'],
@@ -106,7 +106,7 @@ export function PartyTypeDetail({ partyType, canMutate, onUpdated, onDeactivated
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${activeTab === tab ? 'bg-white font-semibold text-app-text shadow-sm' : 'text-app-muted hover:text-app-text'}`}
+                className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${activeTab === tab ? 'bg-app-panel font-semibold text-app-text shadow-sm' : 'text-app-muted hover:text-app-text'}`}
               >
                 {label}
               </button>
@@ -129,11 +129,11 @@ export function PartyTypeDetail({ partyType, canMutate, onUpdated, onDeactivated
                   </Button>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-[0.8rem] font-semibold text-app-text">Título *<input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent" /></label>
-                  <label className="block text-[0.8rem] font-semibold text-app-text">Papel (roleName) *<input value={draft.roleName} onChange={(event) => setDraft({ ...draft, roleName: event.target.value })} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-mono font-normal outline-none focus:border-app-accent" /></label>
-                  <label className="block text-[0.8rem] font-semibold text-app-text">Chave *<input value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-mono font-normal outline-none focus:border-app-accent" /></label>
+                  <label className="block text-[0.8rem] font-semibold text-app-text">Título *<input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent" /></label>
+                  <label className="block text-[0.8rem] font-semibold text-app-text">Papel (roleName) *<input value={draft.roleName} onChange={(event) => setDraft({ ...draft, roleName: event.target.value })} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-mono font-normal outline-none focus:border-app-accent" /></label>
+                  <label className="block text-[0.8rem] font-semibold text-app-text">Chave *<input value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-mono font-normal outline-none focus:border-app-accent" /></label>
                 </div>
-                <label className="block text-[0.8rem] font-semibold text-app-text">Descrição<textarea value={draft.description ?? ''} onChange={(event) => setDraft({ ...draft, description: event.target.value })} rows={3} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent" /></label>
+                <label className="block text-[0.8rem] font-semibold text-app-text">Descrição<textarea value={draft.description ?? ''} onChange={(event) => setDraft({ ...draft, description: event.target.value })} rows={3} className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent" /></label>
               </>
             ) : (
               <div className="space-y-6">

@@ -32,7 +32,7 @@ export function ConfigurationPage() {
                 className={`flex w-full items-center gap-[9px] rounded-[11px] border px-[11px] py-[7px] text-left transition ${
                   active
                     ? 'vt-yellow-selected text-app-text'
-                    : 'border-transparent text-app-text hover:border-app-border hover:bg-white'
+                    : 'vt-hover-muted border-transparent text-app-text hover:border-app-border'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -43,7 +43,7 @@ export function ConfigurationPage() {
         </div>
       </aside>
 
-      <section className="min-w-0 flex-1 overflow-y-auto bg-white px-8 py-8 max-md:px-5 max-md:py-6">
+      <section className="min-w-0 flex-1 overflow-y-auto bg-app-bg px-8 py-8 max-md:px-5 max-md:py-6">
         {tab === 'users' ? <UsersTab /> : tab === 'environment' ? <EnvironmentTab /> : <EventsTab />}
       </section>
     </div>

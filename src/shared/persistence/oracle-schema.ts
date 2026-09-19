@@ -10,6 +10,7 @@ const CLOB_COLUMNS = new Set([
   'allowed_target_categories',
   'allowed_values',
   'applicable_to_entity_types',
+  'avatar_url',
   'baseline_snapshot',
   'before_state',
   'characteristics',
@@ -53,6 +54,7 @@ const JSON_COLUMNS = new Set(
         'description',
         'message',
         'icon_data_url',
+        'avatar_url',
         'observation',
         // `note` é anotação de plataforma em texto livre em toda tabela onde aparece
         // (geo_project_site, tmf_service_order, tmf_resource_order, tmf_geographic_site) —

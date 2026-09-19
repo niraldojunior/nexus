@@ -112,7 +112,7 @@ export function LocationSpecImpactModal({
               <p className="text-[0.88rem] text-app-text leading-relaxed">
                 Você está prestes a marcar <strong>{spec.name}</strong> para inativação. Conforme o
                 cânone arquitetural C6, a publicação aplicará a inativação lógica
-                (<code className="mx-1 rounded bg-black/[0.05] px-1 py-0.5 text-[0.8rem]">lifecycleStatus=Retired</code>).
+                (<code className="mx-1 rounded bg-[var(--surface-muted)] px-1 py-0.5 text-[0.8rem]">lifecycleStatus=Retired</code>).
                 A alteração só será materializada quando o draft do Studio for publicado; locais existentes
                 serão preservados.
               </p>

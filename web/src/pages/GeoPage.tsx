@@ -107,7 +107,7 @@ import {
   AddressDetailPanel,
   type AddressPinLocation,
   type AddressLocationResolution,
-  BASE_MAP_LAYERS,
+  getBaseMapLayers,
   GeoSearchBar,
   HierarchySidebar,
   type HierarchySidebarTab,
@@ -2475,9 +2475,21 @@ export function GoogleMapPanel({
   // Assets SVG são carregados uma vez pelo client compartilhado e só atualizam os markers que
   // os referenciam quando o data URL chega; ícones nativos continuam inteiramente síncronos.
   const [assetDataUrls, setAssetDataUrls] = useState<ReadonlyMap<string, string>>(new Map());
-  const [baseLayerId, setBaseLayerId] = useState(BASE_MAP_LAYERS[0]?.id ?? 'roadmap');
+  const { user } = useSession();
+  const theme = user?.theme;
+  const baseMapLayers = useMemo(() => getBaseMapLayers(theme), [theme]);
+  const [baseLayerId, setBaseLayerId] = useState(baseMapLayers[0]?.id ?? 'roadmap');
   const selectedBaseLayer =
-    BASE_MAP_LAYERS.find((layer) => layer.id === baseLayerId) ?? BASE_MAP_LAYERS[0];
+    baseMapLayers.find((layer) => layer.id === baseLayerId) ?? baseMapLayers[0];
+
+  useEffect(() => {
+    if (mapRef.current && mapsReady) {
+      mapRef.current.setMapTypeId(selectedBaseLayer.googleMapTypeId);
+      mapRef.current.setOptions({
+        styles: selectedBaseLayer.mapStyles,
+      });
+    }
+  }, [selectedBaseLayer, mapsReady]);
 
   useEffect(() => {
     closeBalloonRef.current = onCloseBalloon;
@@ -3848,7 +3860,11 @@ export function GoogleMapPanel({
         onWheelCapture={handleManualNavigation}
       />
       <MapLoadingBar busy={busy || mapsLoading} />
-      <MapBaseLayerSelector value={baseLayerId} onChange={setBaseLayerId} />
+      <MapBaseLayerSelector
+        options={baseMapLayers}
+        value={baseLayerId}
+        onChange={setBaseLayerId}
+      />
       <MapLocateButton onLocate={handleDeviceLocate} />
       <MapLayerControl
         catalog={mapLayerCatalog}

@@ -13,10 +13,13 @@ export const LOCATION_CATEGORY_ICONS: Record<GeoSpecCategory, LucideIcon> = {
   SubSite: Layers,
 };
 
+// Tons de categoria via os tokens semânticos de status (--status-*-soft já tem variante
+// translúcida no tema escuro) em vez de paletas fixas do Tailwind (amber-50/sky-50/purple-50),
+// que não invertem e ficavam claras demais sobre fundo escuro.
 export const LOCATION_CATEGORY_ICON_TONES: Record<GeoSpecCategory, string> = {
-  Region: 'border-amber-200 bg-amber-50 text-amber-600',
-  Site: 'border-sky-200 bg-sky-50 text-sky-600',
-  SubSite: 'border-purple-200 bg-purple-50 text-purple-600',
+  Region: 'border-status-amber/30 bg-status-amber-soft text-status-amber',
+  Site: 'border-status-blue/30 bg-status-blue-soft text-status-blue',
+  SubSite: 'border-status-purple/30 bg-status-purple-soft text-status-purple',
 };
 
 // D-GEO-003 foi superada: FunctionalGroup deixou de ser categoria válida (ver
@@ -34,6 +37,6 @@ export function locationCategoryIcon(category: string): LucideIcon {
 export function locationCategoryIconTone(category: string): string {
   return (
     LOCATION_CATEGORY_ICON_TONES[category as GeoSpecCategory] ??
-    'border-app-border bg-black/[0.04] text-app-muted'
+    'border-app-border bg-[var(--surface-muted)] text-app-muted'
   );
 }

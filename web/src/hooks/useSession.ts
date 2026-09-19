@@ -55,7 +55,11 @@ function snapshot(): SessionState {
     cached.canEditStudio === studioEdit &&
     cached.canAdminStudio === studioAdmin &&
     cached.canViewOrder === orderView &&
-    cached.user?.id === user?.id
+    cached.user?.id === user?.id &&
+    cached.user?.avatarUrl === user?.avatarUrl &&
+    cached.user?.theme === user?.theme &&
+    cached.user?.name === user?.name &&
+    cached.user?.email === user?.email
   ) {
     return cached;
   }

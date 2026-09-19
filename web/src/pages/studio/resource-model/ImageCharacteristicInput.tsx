@@ -65,7 +65,7 @@ export function ImageCharacteristicInput({
     }
     return (
       <div className="flex flex-col items-center justify-center gap-1.5 w-full">
-        <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[12px] border border-app-border bg-slate-50 flex items-center justify-center p-1 shadow-2xs">
+        <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[12px] border border-app-border bg-[var(--surface-muted)] flex items-center justify-center p-1 shadow-2xs">
           {!imgLoadError ? (
             <img
               src={value}
@@ -103,7 +103,7 @@ export function ImageCharacteristicInput({
 
       <div className="flex flex-wrap items-center gap-2">
         {value ? (
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[10px] border border-app-border bg-slate-50 flex items-center justify-center p-0.5">
+          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[10px] border border-app-border bg-[var(--surface-muted)] flex items-center justify-center p-0.5">
             {!imgLoadError ? (
               <img
                 src={value}
@@ -121,7 +121,7 @@ export function ImageCharacteristicInput({
           type="button"
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.8rem] font-medium text-app-text hover:bg-app-accent-soft hover:border-app-accent transition disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.8rem] font-medium text-app-text hover:bg-app-accent-soft hover:border-app-accent transition disabled:opacity-50"
         >
           <Upload className="h-3.5 w-3.5 text-app-muted" />
           <span>{value ? 'Substituir imagem' : 'Upload imagem'}</span>
@@ -164,7 +164,7 @@ export function ImageCharacteristicInput({
             ariaLabel ||
             (name ? `URL ou referência da imagem para ${name}` : 'URL ou referência da imagem')
           }
-          className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+          className="w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
         />
       )}
     </div>

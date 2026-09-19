@@ -115,7 +115,7 @@ export function ResourceNodeMoveModal({
             <select
               value={selectedParentId}
               onChange={(e) => setSelectedParentId(e.target.value)}
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
             >
               <option value="">Raiz do Catálogo</option>
               {groupOptions.map((g) => (
@@ -138,7 +138,7 @@ export function ResourceNodeMoveModal({
               type="number"
               value={sortOrder}
               onChange={(e) => setSortOrder(Number(e.target.value))}
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
             />
           </div>
 

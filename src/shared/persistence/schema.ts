@@ -654,6 +654,8 @@ export const SCHEMA_SQL = `
         external_id TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         email TEXT,
+        avatar_url TEXT,
+        theme TEXT CHECK(theme IN ('light','dark')),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -2016,6 +2018,11 @@ const MIGRATIONS_SQL_V19_VISUAL_IDENTITY_AUTHORITY = `
     ON tmf_geo_site_spec_visual_identity(tenant_id, icon_asset_id);
 `;
 
+const MIGRATIONS_SQL_V20_USER_PROFILE = `
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT CHECK(theme IN ('light','dark'));
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2087,6 +2094,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 19,
     name: 'visual-identity-authority',
     sql: MIGRATIONS_SQL_V19_VISUAL_IDENTITY_AUTHORITY,
+  },
+  {
+    version: 20,
+    name: 'user-profile-avatar-theme',
+    sql: MIGRATIONS_SQL_V20_USER_PROFILE,
   },
 ];
 

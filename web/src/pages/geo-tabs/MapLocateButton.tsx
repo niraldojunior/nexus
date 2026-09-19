@@ -116,7 +116,7 @@ export function MapLocateButton({
       {errorMsg ? (
         <div
           role="alert"
-          className="max-w-[240px] rounded-[10px] border border-red-200 bg-white px-3 py-2 text-[0.78rem] leading-snug text-red-700 shadow-map-control-lg"
+          className="max-w-[240px] rounded-[10px] border border-status-red/30 bg-app-panel px-3 py-2 text-[0.78rem] leading-snug text-status-red shadow-map-control-lg"
         >
           {errorMsg}
         </div>
@@ -127,7 +127,7 @@ export function MapLocateButton({
           className={`max-w-[240px] rounded-[999px] border px-2.5 py-1 text-[0.72rem] font-semibold leading-snug tracking-[0.02em] shadow-map-control ${
             poor
               ? 'border-status-amber/30 bg-status-amber-soft text-status-amber'
-              : 'border-app-border bg-white text-app-muted'
+              : 'border-app-border bg-app-panel text-app-muted'
           }`}
         >
           {poor
@@ -142,7 +142,7 @@ export function MapLocateButton({
         aria-busy={locating}
         disabled={locating}
         onClick={handleLocate}
-        className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-app-border bg-white text-app-text shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent disabled:opacity-70"
+        className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-app-border bg-app-panel text-app-text shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent disabled:opacity-70"
       >
         {locating ? (
           <Loader2 className="h-5 w-5 animate-spin text-app-muted" aria-hidden="true" />

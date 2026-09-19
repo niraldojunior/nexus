@@ -137,6 +137,25 @@ button {
   --vt-yellow-selected-border: #E8C34A;
 }
 
+:root {
+  --vt-yellow-focus-ring-width: 4px;
+  --vt-yellow-focus-ring-color: rgba(255, 217, 25, 0.2);
+  /* Seta do <select class="geo-input"> — SVG inline não lê var() de cor, então o
+     tema escola troca a stroke por uma versão clara do mesmo ícone. */
+  --geo-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+[data-theme='dark'] {
+  --border-input-strong: #3D3E46;
+  --vt-yellow-selected-bg: rgba(255, 217, 25, 0.15);
+  --vt-yellow-selected-border: rgba(255, 217, 25, 0.35);
+  /* Mesmo anel de foco do tema claro, um pouco mais fino e discreto — sobre
+     fundo escuro o amarelo satura mais e a espessura de 4px ficava pesada. */
+  --vt-yellow-focus-ring-width: 2px;
+  --vt-yellow-focus-ring-color: rgba(255, 217, 25, 0.16);
+  --geo-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23DADAE3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
 @layer components {
   /* Botão de envio do composer sempre amarelo — o estado desabilitado (input vazio)
      só muda o cursor, não a cor (feedback constante da ação primária). */
@@ -160,7 +179,7 @@ button {
   .vt-searchbar:focus-within,
   .vt-searchbar-flat:focus-within {
     border-color: var(--vt-yellow);
-    box-shadow: 0 0 0 4px rgba(255, 217, 25, 0.2);
+    box-shadow: 0 0 0 var(--vt-yellow-focus-ring-width) var(--vt-yellow-focus-ring-color);
   }
   .vt-card-interactive {
     border-color: var(--border-strong);
@@ -249,11 +268,42 @@ button {
     color: #ffffff;
   }
 
+  /* No tema escuro, `--surface-ink` (#121214) fica próximo demais do canvas da página
+     (`--surface-app`, #181919) — a coluna "Studio Control" perdia contorno visível,
+     pedido explícito para corrigir. Só no dark: iguala ao tom da sidebar principal e
+     acrescenta uma borda para demarcar a área. No claro o ink escuro já contrasta o
+     bastante com o canvas branco e continua como estava. */
+  [data-theme='dark'] .vt-studio-control {
+    background: var(--surface-sidebar);
+    border: 1px solid var(--sidebar-border);
+  }
+
   /* Conversa recente ativa (ResearchHistoryPage, dentro da sidebar principal):
      mesmo tratamento do item de nav ativo acima — mesmo amarelo, mesma borda. */
   .vt-sb-recent-active {
     background: var(--vt-yellow-selected-bg);
     border: 1px solid var(--vt-yellow-selected-border);
+  }
+
+  /* Hover de "Conversas recentes" (toggle da seção + linha de cada conversa):
+     mesmo token que os itens de nav principal (.vt-sb-btn:hover), para o
+     estilo ficar uniforme entre Recursos/Serviços e a lista de conversas. */
+  .vt-sb-recent-toggle:hover,
+  .vt-sb-recent-row:hover {
+    background: var(--sidebar-item-hover);
+  }
+
+  /* Hover neutro genérico (botões ghost/paginação) — substitui `hover:bg-neutral-*`
+     fixo, que não escurece no tema escuro e fica quase invisível sobre fundo escuro. */
+  .vt-hover-muted:hover {
+    background: var(--surface-muted-hover);
+  }
+
+  /* Hover destrutivo (arquivar/excluir) — equivalente escuro de `hover:bg-red-50
+     hover:text-red-600`, usando os tokens de status já existentes. */
+  .vt-hover-danger:hover {
+    background: var(--status-red-soft);
+    color: var(--status-red);
   }
 
   /* Escopo do Studio: reduz o espaçamento inferior do cabeçalho PageHead
@@ -280,13 +330,13 @@ button {
      painéis Geo etc.): borda --border-input-strong em repouso e anel amarelo no foco,
      uniformizado com comboboxes e botões. */
   .geo-input {
-    @apply h-[39.6px] w-full rounded-[14px] border bg-white px-[10.8px] text-[0.81rem] font-medium text-app-text transition;
+    @apply h-[39.6px] w-full rounded-[14px] border bg-app-panel px-[10.8px] text-[0.81rem] font-medium text-app-text transition;
     border-color: var(--border-input-strong);
     box-shadow: none;
   }
   .geo-input:focus {
     border-color: var(--vt-yellow);
-    box-shadow: 0 0 0 4px rgba(255, 217, 25, 0.2);
+    box-shadow: 0 0 0 var(--vt-yellow-focus-ring-width) var(--vt-yellow-focus-ring-color);
   }
 
   /* Variante compacta para linhas inline de painéis de detalhe (ResourceOverviewTab etc.):
@@ -321,7 +371,7 @@ select.geo-input {
   height: 2.42rem;
   border-radius: 14px;
   border-color: var(--border-input-strong);
-  background-color: #ffffff;
+  background-color: var(--surface-card);
   padding-left: 0.66rem;
   font-size: 0.79rem;
   background-image:
@@ -330,7 +380,7 @@ select.geo-input {
       transparent calc(100% - 37px),
       rgba(255, 217, 25, 0.18) calc(100% - 37px)
     ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    var(--geo-select-arrow);
   background-repeat: no-repeat;
   background-position:
     right 0 top 0,
@@ -352,13 +402,13 @@ select.geo-input:hover {
       transparent calc(100% - 37px),
       rgba(255, 217, 25, 0.28) calc(100% - 37px)
     ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23243041' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    var(--geo-select-arrow);
 }
 
 select.geo-input:focus {
   border-color: var(--vt-yellow);
   box-shadow:
-    0 0 0 4px rgba(255, 217, 25, 0.2),
+    0 0 0 var(--vt-yellow-focus-ring-width) var(--vt-yellow-focus-ring-color),
     inset 0 0 0 1px rgba(36, 48, 65, 0.04);
 }
 
@@ -657,6 +707,41 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
   border: 0;
   background: transparent;
   padding: 0;
+}
+
+/* highlight.js/styles/github.css é um tema claro fixo (tokens em cinza/preto). No
+   dark mode o fundo do bloco (--surface-muted) escurece mas os tokens continuam
+   escuros — texto quase invisível. Sobrescreve só o necessário para legibilidade,
+   sem trocar o tema do highlight.js. */
+[data-theme='dark'] .markdown-content .hljs {
+  color: var(--text-primary);
+  background: transparent;
+}
+[data-theme='dark'] .markdown-content .hljs-comment,
+[data-theme='dark'] .markdown-content .hljs-quote {
+  color: var(--text-tertiary);
+}
+[data-theme='dark'] .markdown-content .hljs-keyword,
+[data-theme='dark'] .markdown-content .hljs-selector-tag,
+[data-theme='dark'] .markdown-content .hljs-literal,
+[data-theme='dark'] .markdown-content .hljs-name,
+[data-theme='dark'] .markdown-content .hljs-tag {
+  color: var(--status-purple);
+}
+[data-theme='dark'] .markdown-content .hljs-string,
+[data-theme='dark'] .markdown-content .hljs-attr,
+[data-theme='dark'] .markdown-content .hljs-symbol,
+[data-theme='dark'] .markdown-content .hljs-bullet,
+[data-theme='dark'] .markdown-content .hljs-addition {
+  color: var(--status-green);
+}
+[data-theme='dark'] .markdown-content .hljs-title,
+[data-theme='dark'] .markdown-content .hljs-section,
+[data-theme='dark'] .markdown-content .hljs-number {
+  color: var(--status-blue);
+}
+[data-theme='dark'] .markdown-content .hljs-deletion {
+  color: var(--status-red);
 }
 
 .markdown-content blockquote {

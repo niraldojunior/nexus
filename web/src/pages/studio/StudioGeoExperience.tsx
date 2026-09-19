@@ -707,7 +707,7 @@ export function StudioGeoExperience({
               ? 'ring-2 ring-app-accent border-app-accent bg-app-accent-soft text-app-text font-semibold'
               : isSelected
                 ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
-                : 'border-transparent text-app-text hover:bg-black/[0.04]'
+                : 'border-transparent text-app-text vt-hover-muted'
           }`}
           style={{ paddingLeft: `${Math.max(depth * 16 + 8, 8)}px` }}
         >
@@ -787,7 +787,7 @@ export function StudioGeoExperience({
                   e.stopPropagation();
                   removeNode(node.id);
                 }}
-                className="hidden h-5 w-5 shrink-0 items-center justify-center rounded p-0.5 text-app-muted hover:bg-white hover:text-red-600 group-hover:flex"
+                className="hidden h-5 w-5 shrink-0 items-center justify-center rounded p-0.5 text-app-muted vt-hover-muted hover:text-red-600 group-hover:flex"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -852,7 +852,7 @@ export function StudioGeoExperience({
                     <div
                       role="menu"
                       aria-label="Tipo de nó a incluir"
-                      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+                      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
                     >
                       <button
                         type="button"
@@ -983,13 +983,13 @@ export function StudioGeoExperience({
 
                 {/* Abas no estilo segmented control pill */}
                 <div className="mt-3.5 flex">
-                  <div className="inline-flex items-center rounded-xl bg-black/[0.04] p-1 gap-1">
+                  <div className="inline-flex items-center rounded-xl bg-[var(--surface-muted)] p-1 gap-1">
                     <button
                       type="button"
                       onClick={() => setActiveTab('overview')}
                       className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                         activeTab === 'overview'
-                          ? 'bg-white text-app-text font-semibold shadow-sm'
+                          ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                           : 'text-app-muted hover:text-app-text'
                       }`}
                     >
@@ -1002,7 +1002,7 @@ export function StudioGeoExperience({
                           onClick={() => setActiveTab('icon-color')}
                           className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                             activeTab === 'icon-color'
-                              ? 'bg-white text-app-text font-semibold shadow-sm'
+                              ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                               : 'text-app-muted hover:text-app-text'
                           }`}
                         >
@@ -1014,7 +1014,7 @@ export function StudioGeoExperience({
                           onClick={() => setActiveTab('size')}
                           className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                             activeTab === 'size'
-                              ? 'bg-white text-app-text font-semibold shadow-sm'
+                              ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                               : 'text-app-muted hover:text-app-text'
                           }`}
                         >
@@ -1062,7 +1062,7 @@ export function StudioGeoExperience({
                     </div>
 
                     {selected.kind === 'ENTITY' ? (
-                      <div className="rounded-[12px] border border-app-border bg-black/[0.01] p-3.5 space-y-3.5">
+                      <div className="rounded-[12px] border border-app-border bg-[var(--surface-muted)] p-3.5 space-y-3.5">
                         <div>
                           <label className="block text-[0.78rem] font-semibold text-app-text mb-1.5">
                             Tipo de Entidade
@@ -1075,7 +1075,7 @@ export function StudioGeoExperience({
                               className={`flex items-center justify-center gap-1.5 rounded-[10px] border py-2 text-[0.8rem] font-medium transition ${
                                 selected.entity.category === 'RESOURCE'
                                   ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
-                                  : 'border-app-border bg-white text-app-muted hover:text-app-text'
+                                  : 'border-app-border bg-app-panel text-app-muted hover:text-app-text'
                               }`}
                             >
                               <Box className="h-3.5 w-3.5" />
@@ -1088,7 +1088,7 @@ export function StudioGeoExperience({
                               className={`flex items-center justify-center gap-1.5 rounded-[10px] border py-2 text-[0.8rem] font-medium transition ${
                                 selected.entity.category === 'LOCAL'
                                   ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
-                                  : 'border-app-border bg-white text-app-muted hover:text-app-text'
+                                  : 'border-app-border bg-app-panel text-app-muted hover:text-app-text'
                               }`}
                             >
                               <Layers className="h-3.5 w-3.5" />
@@ -1101,7 +1101,7 @@ export function StudioGeoExperience({
                               className={`flex items-center justify-center gap-1.5 rounded-[10px] border py-2 text-[0.8rem] font-medium transition ${
                                 selected.entity.category === 'COVERAGE'
                                   ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
-                                  : 'border-app-border bg-white text-app-muted hover:text-app-text'
+                                  : 'border-app-border bg-app-panel text-app-muted hover:text-app-text'
                               }`}
                             >
                               <Globe className="h-3.5 w-3.5" />
@@ -1120,7 +1120,7 @@ export function StudioGeoExperience({
                             value={selected.entity.sourceId}
                             disabled={!canMutate}
                             onChange={(event) => handleEntitySourceChange(event.target.value)}
-                            className="w-full rounded-[8px] border border-app-border bg-white px-3 py-1.5 text-[0.84rem] text-app-text disabled:bg-transparent"
+                            className="w-full rounded-[8px] border border-app-border bg-app-panel px-3 py-1.5 text-[0.84rem] text-app-text disabled:bg-transparent"
                           >
                             <option value="">Selecione a entidade de origem…</option>
                             {getEligibleListForCategory(selected.entity.category).map((item) => (

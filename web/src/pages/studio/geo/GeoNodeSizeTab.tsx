@@ -54,7 +54,7 @@ function VisibilityToggle({
       aria-pressed={visible}
       onClick={onToggle}
       className={`flex items-center gap-1.5 rounded-[6px] px-2 py-1 text-[0.74rem] font-semibold transition ${
-        visible ? 'bg-status-green-soft text-status-green' : 'bg-black/[0.05] text-app-muted'
+        visible ? 'bg-status-green-soft text-status-green' : 'bg-[var(--surface-muted)] text-app-muted'
       }`}
     >
       {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -87,8 +87,8 @@ function BandCard({
       key={bandKey}
       className={`rounded-[12px] border p-3 transition ${
         visible
-          ? 'border-app-border bg-white shadow-sm'
-          : 'border-app-border/60 bg-black/[0.02] opacity-75'
+          ? 'border-app-border bg-app-panel shadow-sm'
+          : 'border-app-border/60 bg-[var(--surface-muted)] opacity-75'
       }`}
     >
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -152,7 +152,7 @@ export function GeoNodeSizeTab({ node, visualConfig, canEdit, onChange }: GeoNod
           <button
             type="button"
             onClick={() => onChange(scaleBandDefaults(visualConfig, node))}
-            className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-app-border bg-white px-2.5 py-1.5 text-[0.76rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
+            className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.76rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
           >
             <RotateCcw className="h-3.5 w-3.5 text-app-muted" />
             Restaurar padrão
@@ -196,7 +196,7 @@ export function GeoNodeSizeTab({ node, visualConfig, canEdit, onChange }: GeoNod
                     className="flex-1 cursor-pointer accent-app-accent"
                   />
                   <div
-                    className="flex shrink-0 items-center justify-center rounded-[8px] border border-app-border/80 bg-black/[0.02] p-1"
+                    className="flex shrink-0 items-center justify-center rounded-[8px] border border-app-border/80 bg-[var(--surface-muted)] p-1"
                     style={{
                       width: `${Math.max(36, bandConfig.sizePx + 8)}px`,
                       height: `${Math.max(36, bandConfig.sizePx + 8)}px`,

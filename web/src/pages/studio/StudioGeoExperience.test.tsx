@@ -119,7 +119,7 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
 
     expect(screen.getByRole('heading', { name: 'Novo Grupo' })).toBeInTheDocument();
     expect(screen.getByDisplayValue('Novo Grupo')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Geral' })).toHaveClass('bg-white');
+    expect(screen.getByRole('button', { name: 'Geral' })).toHaveClass('bg-app-panel');
   });
 
   it('escolher "Entidade Visual" cria "Nova Entidade" com categoria Recurso pré-selecionada', async () => {

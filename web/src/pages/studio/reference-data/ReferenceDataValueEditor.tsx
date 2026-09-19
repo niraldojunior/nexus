@@ -98,7 +98,7 @@ export function ReferenceDataValueEditor({ setId, canMutate }: ReferenceDataValu
   };
 
   const inputClass =
-    'w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent';
+    'w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent';
 
   return (
     <div className="space-y-3">

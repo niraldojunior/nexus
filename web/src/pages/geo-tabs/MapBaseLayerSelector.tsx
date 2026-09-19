@@ -11,6 +11,10 @@ export type MapBaseLayer = {
   // Item visível mas ainda não selecionável (ex.: Geonet, aguardando fonte de tiles).
   disabled?: boolean;
   hint?: string;
+  // Só usado pelo tom 'branco': troca a miniatura clara pela escura quando o MUB
+  // correspondente também está no tema escuro (ver DARK_BLANK_STYLES) — sem isso a
+  // miniatura mentiria sobre a cor real do mapa.
+  previewDark?: boolean;
 };
 
 // O basemap é contexto, não conteúdo: POI comercial some por inteiro e os demais POIs
@@ -19,6 +23,24 @@ export type MapBaseLayer = {
 const BASEMAP_STYLES: GoogleMapStyle[] = [
   { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+];
+
+export const DARK_BASEMAP_STYLES: GoogleMapStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1B1C1F' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#181919' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8A8899' }] },
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6A6878' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#26272B' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#1B1C1F' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9B99A8' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#33343A' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1F2023' }] },
+  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#242529' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#121214' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#51525C' }] },
+  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#BCC1D6' }] },
 ];
 
 // MUB "Branco": zera vias, água, POI e limites de lote — só sobra o rótulo de
@@ -36,20 +58,45 @@ const BLANK_STYLES: GoogleMapStyle[] = [
   { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
 ];
 
-export const BASE_MAP_LAYERS: readonly MapBaseLayer[] = [
+// Mesmo papel do "Branco", com a mesma paleta neutra do restante do chrome escuro
+// (`--surface-app` #181919 / texto `--text-tertiary` #8A8899) — canvas escuro liso para
+// as manchas de cobertura GPON e de Projeto não brigarem com o basemap.
+const DARK_BLANK_STYLES: GoogleMapStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#181919' }] },
+  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8A8899' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#181919' }, { weight: 3 }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#181919' }] },
+  { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
+];
+
+// Satélite/híbrido: a imagem de base não é estilizável (é foto), só as camadas de rótulo e
+// POI desenhadas por cima — por isso não há um "geometry" escuro aqui, diferente do
+// DARK_BASEMAP_STYLES do roadmap. Escurece só o texto/POI para não competir com a foto.
+const DARK_SATELLITE_LABEL_STYLES: GoogleMapStyle[] = [
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#DADAE3' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#181919' }, { weight: 2.5 }] },
+];
+
+export const getBaseMapLayers = (theme?: 'light' | 'dark'): readonly MapBaseLayer[] => [
   {
     id: 'roadmap',
     label: 'Mapa',
     googleMapTypeId: 'roadmap',
     previewTone: 'mapa',
-    mapStyles: BASEMAP_STYLES,
+    mapStyles: theme === 'dark' ? DARK_BASEMAP_STYLES : BASEMAP_STYLES,
   },
   {
     id: 'satellite',
     label: 'Satélite',
     googleMapTypeId: 'hybrid',
     previewTone: 'satelite',
-    mapStyles: BASEMAP_STYLES,
+    mapStyles: theme === 'dark' ? DARK_SATELLITE_LABEL_STYLES : BASEMAP_STYLES,
   },
   {
     id: 'blank',
@@ -57,7 +104,8 @@ export const BASE_MAP_LAYERS: readonly MapBaseLayer[] = [
     // Precisa ser `roadmap`: o tile de satélite ignora `styles`.
     googleMapTypeId: 'roadmap',
     previewTone: 'branco',
-    mapStyles: BLANK_STYLES,
+    mapStyles: theme === 'dark' ? DARK_BLANK_STYLES : BLANK_STYLES,
+    previewDark: theme === 'dark',
   },
   {
     id: 'geonet',
@@ -68,7 +116,9 @@ export const BASE_MAP_LAYERS: readonly MapBaseLayer[] = [
     disabled: true,
     hint: 'em breve',
   },
-] as const;
+];
+
+export const BASE_MAP_LAYERS: readonly MapBaseLayer[] = getBaseMapLayers('light');
 
 type MapBaseLayerSelectorProps = {
   options?: readonly MapBaseLayer[];
@@ -76,7 +126,7 @@ type MapBaseLayerSelectorProps = {
   onChange: (layerId: string) => void;
 };
 
-function MapPreviewArtwork({ tone }: { tone: MapBaseLayer['previewTone'] }) {
+function MapPreviewArtwork({ tone, dark = false }: { tone: MapBaseLayer['previewTone']; dark?: boolean }) {
   if (tone === 'mapa') {
     return (
       <>
@@ -108,7 +158,18 @@ function MapPreviewArtwork({ tone }: { tone: MapBaseLayer['previewTone'] }) {
   }
 
   if (tone === 'branco') {
-    return (
+    // Espelha DARK_BLANK_STYLES/BLANK_STYLES: a miniatura precisa mostrar a cor real do
+    // MUB nesse tema, senão vende um preview claro para um mapa que renderiza escuro.
+    return dark ? (
+      <>
+        <div className="absolute inset-0 bg-[#181919]" />
+        <div className="absolute inset-x-1 top-2 h-px bg-[#26272B]" />
+        <div className="absolute inset-x-1 bottom-2 h-px bg-[#26272B]" />
+        <div className="absolute bottom-[7px] left-1.5 text-[0.5rem] font-medium leading-none text-[#8A8899]">
+          Icaraí
+        </div>
+      </>
+    ) : (
       <>
         <div className="absolute inset-0 bg-white" />
         <div className="absolute inset-x-1 top-2 h-px bg-[#e4e7eb]" />
@@ -155,7 +216,7 @@ function LayerPreview({
         layer.disabled ? 'opacity-50' : ''
       }`}
     >
-      <MapPreviewArtwork tone={layer.previewTone} />
+      <MapPreviewArtwork tone={layer.previewTone} dark={layer.previewDark} />
       <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-[6px] bg-white/90 text-app-text shadow-sm">
         <Icon className="h-3 w-3" />
       </span>
@@ -235,7 +296,7 @@ export function MapBaseLayerSelector({
           title={`Trocar para ${alternateLayer.label}`}
           onClick={() => onChange(alternateLayer.id)}
           onDoubleClick={selectNextLayer}
-          className="rounded-[10px] border border-app-border bg-white p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+          className="rounded-[10px] border border-app-border bg-app-panel p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
         >
           <LayerPreview layer={alternateLayer} />
         </button>
@@ -254,7 +315,7 @@ export function MapBaseLayerSelector({
         title={`Base cartográfica: ${selectedLayer.label} — duplo clique para o próximo`}
         onClick={() => setOpen((current) => !current)}
         onDoubleClick={selectNextLayer}
-        className="rounded-[10px] border border-app-border bg-white p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+        className="rounded-[10px] border border-app-border bg-app-panel p-1 shadow-map-control transition hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
       >
         <LayerPreview layer={selectedLayer} />
       </button>
@@ -264,7 +325,7 @@ export function MapBaseLayerSelector({
           id={listboxId}
           role="listbox"
           aria-label="Opções de base cartográfica"
-          className="absolute bottom-[calc(100%+8px)] left-0 flex gap-1.5 rounded-[12px] border border-app-border bg-white p-1.5 shadow-map-control-lg"
+          className="absolute bottom-[calc(100%+8px)] left-0 flex gap-1.5 rounded-[12px] border border-app-border bg-app-panel p-1.5 shadow-map-control-lg"
         >
           {options.map((option) => {
             const selected = option.id === selectedLayer?.id;

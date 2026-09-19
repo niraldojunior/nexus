@@ -203,12 +203,12 @@ export function StudioPage({
   if (!activeItem) return null;
 
   return (
-    <div className="h-full overflow-y-auto bg-white px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]">
+    <div className="h-full overflow-y-auto bg-app-bg px-[11px] py-4 sm:px-[17px] sm:py-6 lg:px-[22px]">
       <div
         className="relative mx-auto grid gap-5 lg:grid-cols-[202px_minmax(0,1fr)]"
         style={{ maxWidth: 'var(--content-max)' }}
       >
-        <aside className="relative h-fit rounded-[10px] bg-app-ink-soft p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
+        <aside className="vt-studio-control relative h-fit rounded-[10px] bg-app-ink-soft p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
           <div className="flex items-center gap-3 px-3 pb-4 pt-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-app-accent-soft text-app-accent">
               <Presentation className="h-5 w-5" strokeWidth={1.8} />

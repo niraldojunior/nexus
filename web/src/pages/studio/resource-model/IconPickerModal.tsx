@@ -99,7 +99,7 @@ export function IconPickerModal({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar ícone por nome, indústria ou finalidade..."
-            className="w-full rounded-[12px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            className="w-full rounded-[12px] border border-app-border bg-app-panel pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
           />
         </div>
 
@@ -125,7 +125,7 @@ export function IconPickerModal({
                     className={`flex flex-col items-center justify-center h-12 rounded-[10px] border transition cursor-pointer p-1.5 ${
                       isSelected
                         ? activeBorderClass
-                        : `border-app-border bg-white ${defaultIconColorClass}`
+                        : `border-app-border bg-app-panel ${defaultIconColorClass}`
                     }`}
                   >
                     <IconComponent className="h-5 w-5 shrink-0" />

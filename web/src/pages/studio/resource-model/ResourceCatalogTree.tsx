@@ -340,7 +340,7 @@ export function ResourceCatalogTree({
               ? 'ring-2 ring-app-accent border-app-accent bg-app-accent-soft text-app-text font-semibold'
               : isSelected
                 ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold'
-                : 'border-transparent text-app-text hover:bg-black/[0.04]'
+                : 'border-transparent text-app-text vt-hover-muted'
           }`}
           style={{ paddingLeft: `${Math.max(level * 16 + 8, 8)}px` }}
         >
@@ -413,7 +413,7 @@ export function ResourceCatalogTree({
                     const rect = e.currentTarget.getBoundingClientRect();
                     onAddChild(node, rect);
                   }}
-                  className="rounded p-1 text-app-muted hover:bg-white hover:text-app-text"
+                  className="rounded p-1 text-app-muted vt-hover-muted hover:text-app-text"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -425,7 +425,7 @@ export function ResourceCatalogTree({
                   e.stopPropagation();
                   onImpactNode(node);
                 }}
-                className="rounded p-1 text-app-muted hover:bg-white hover:text-red-600"
+                className="rounded p-1 text-app-muted vt-hover-muted hover:text-red-600"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -461,7 +461,7 @@ export function ResourceCatalogTree({
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
             placeholder="Buscar nós por nome ou código..."
-            className="w-full rounded-[14px] border border-app-border bg-white pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            className="w-full rounded-[14px] border border-app-border bg-app-panel pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
           />
         </div>
       )}

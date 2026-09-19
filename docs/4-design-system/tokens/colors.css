@@ -13,7 +13,8 @@
   --vt-yellow-light: #FFE047;  /* hover / lift */
   --vt-yellow-dim: rgba(255, 217, 25, 0.10); /* tint wash */
   --vt-yellow-tint: #FEF7DC;   /* opaque wash — active nav, selected rows */
-  --vt-ink: #181919;           /* brand mark ink (logo, text on yellow) */
+  --vt-ink: #181919;           /* brand mark ink — text on SOLID saturated yellow (avatar, primary button). Stays dark in both themes: the yellow itself never dims. */
+  --vt-yellow-ink-soft: #9a7d00; /* text on SOFT/tinted yellow washes (ring badges, Badge brand tone) — unlike --vt-ink this one flips for dark mode */
 
   /* ---- Neutral ramp ---------------------------------------- */
   --neutral-0: #FFFFFF;
@@ -119,4 +120,71 @@
   --bg-card: var(--surface-card);
   --focus-ring: rgba(255, 217, 25, 0.55);
   --ring: var(--vt-yellow);
+}
+
+[data-theme='dark'] {
+  /* ---- Rampa neutra invertida ------------------------------ */
+  --neutral-0: #181919;
+  --neutral-50: #1F2023;
+  --neutral-100: #26272B;
+  --neutral-200: #2E2F35;
+  --neutral-300: #3D3E46;
+  --neutral-400: #51525C;
+  --neutral-500: #8A8899;
+  --neutral-600: #BCC1D6;
+  --neutral-700: #DADAE3;
+  --neutral-900: #FAFAFB;
+
+  /* ---- Surfaces -------------------------------------------- */
+  --surface-app: #181919;
+  --surface-card: #1F2023;
+  --surface-card-hover: #26272B;
+  --surface-subtle: #1F2023;
+  --surface-muted: #26272B;
+  --surface-muted-hover: #2E2F35;
+  --surface-inset: #26272B;
+  --surface-ink: #121214;
+
+  /* ---- Sidebar --------------------------------------------- */
+  /* Um tom acima de --surface-app, aproximando de --surface-card — pedido
+     explícito para o cinza não ficar "quase preto" no tema escuro. */
+  --surface-sidebar: #1E1F22;
+  --sidebar-bg: #1E1F22;
+  --sidebar-border: #2E2F35;
+  --sidebar-fg: #BCC1D6;
+  --sidebar-fg-active: #FAFAFB;
+  --sidebar-item-hover: #26272B;
+  --sidebar-item-active: rgba(255, 217, 25, 0.15);
+  --sidebar-section: #8A8899;
+
+  /* ---- Borders --------------------------------------------- */
+  --border: #2E2F35;
+  --border-strong: #3D3E46;
+
+  /* ---- Text ------------------------------------------------- */
+  --text-primary: #FAFAFB;
+  --text-secondary: #DADAE3;
+  --text-tertiary: #8A8899;
+  --text-disabled: #51525C;
+  --text-on-dark: #FAFAFB;
+  --text-on-dark-dim: rgba(250, 250, 251, 0.55);
+
+  /* ---- Brand / Accents in Dark Mode ------------------------- */
+  /* --vt-ink NÃO é redefinido aqui: continua escuro nos dois temas porque
+     sempre aparece sobre --vt-yellow sólido (avatar, botão primário), que o
+     tema escuro não escurece. Quem precisa inverter é o texto sobre washes
+     translúcidos de amarelo (ring badges) — por isso o token dedicado abaixo. */
+  --vt-yellow-ink-soft: var(--text-primary);
+
+  /* ---- Status softs (translúcidos sobre fundo escuro) ------- */
+  --status-green-soft: rgba(16, 185, 129, 0.15);
+  --status-blue-soft: rgba(59, 130, 246, 0.15);
+  --status-amber-soft: rgba(245, 158, 11, 0.15);
+  --status-red-soft: rgba(239, 68, 68, 0.15);
+  --status-purple-soft: rgba(139, 92, 246, 0.15);
+
+  /* ---- Conversa -------------------------------------------- */
+  --chat-user-bubble: #26272B;
+  --chat-assistant-bg: transparent;
+  --composer-bg: #1F2023;
 }

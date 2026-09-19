@@ -215,17 +215,17 @@ export function LocationModelStudio({
                 type="button"
                 aria-pressed={categoryFilter === category}
                 onClick={() => setCategoryFilter(category)}
-                className={`rounded-[8px] border px-2 py-1 text-[0.76rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${categoryFilter === category ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold' : 'border-transparent font-medium text-app-muted hover:bg-black/[0.04] hover:text-app-text'}`}
+                className={`rounded-[8px] border px-2 py-1 text-[0.76rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${categoryFilter === category ? 'border-app-accent bg-app-accent-soft text-app-text font-semibold' : 'border-transparent font-medium text-app-muted vt-hover-muted hover:text-app-text'}`}
               >
                 {label}
               </button>
             ))}
           </div>
-          {showSearch && <div className="relative mb-3"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" /><input autoFocus value={filterText} onChange={(event) => setFilterText(event.target.value)} placeholder="Buscar tipos de locais por nome..." aria-label="Buscar tipos de locais" className="w-full rounded-[14px] border border-app-border bg-white py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" /></div>}
+          {showSearch && <div className="relative mb-3"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" /><input autoFocus value={filterText} onChange={(event) => setFilterText(event.target.value)} placeholder="Buscar tipos de locais por nome..." aria-label="Buscar tipos de locais" className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" /></div>}
           <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto p-1 pr-2">
             {visibleSpecs.length === 0 ? <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum tipo de local encontrado.</div> : visibleSpecs.map((spec) => {
               const selected = spec.localId === selectedSpecId;
-              return <button key={spec.localId} type="button" aria-pressed={selected} onClick={() => setSelectedSpecId(spec.localId)} className={`flex w-full items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-left text-[0.85rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border' : 'border-transparent text-app-text hover:bg-black/[0.04]'}`}>
+              return <button key={spec.localId} type="button" aria-pressed={selected} onClick={() => setSelectedSpecId(spec.localId)} className={`flex w-full items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-left text-[0.85rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border' : 'border-transparent text-app-text vt-hover-muted'}`}>
                 <span className="flex min-w-0 items-center gap-1.5"><LocationSpecItemIcon spec={spec} /><span className="truncate" title={spec.name}>{spec.name}</span></span>
                 {spec.bootstrapProtected && <span title="Protegido pelo bootstrap"><Shield className="h-3.5 w-3.5 shrink-0 text-amber-600" /></span>}
               </button>;

@@ -19,7 +19,7 @@ const TONES: Record<BadgeTone, { bg: string; fg: string }> = {
   amber: { bg: 'var(--status-amber-soft)', fg: 'var(--status-amber)' },
   red: { bg: 'var(--status-red-soft)', fg: 'var(--status-red)' },
   purple: { bg: 'var(--status-purple-soft)', fg: 'var(--status-purple)' },
-  brand: { bg: 'var(--vt-yellow-dim)', fg: '#9a7d00' },
+  brand: { bg: 'var(--vt-yellow-dim)', fg: 'var(--vt-yellow-ink-soft)' },
   ink: { bg: 'var(--surface-ink)', fg: 'var(--vt-yellow)' },
 };
 

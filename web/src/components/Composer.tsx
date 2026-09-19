@@ -16,7 +16,7 @@ interface ComposerProps {
   placeholder: string;
   size: 'hero' | 'compact';
   modelLabel: string;
-  qualityLabel: string;
+  qualityLabel?: string;
   autoFocus?: boolean;
   /** When provided together with `onModelChange`, the model badge becomes a real dropdown. */
   models?: ComposerModelOption[];
@@ -134,21 +134,23 @@ export default function Composer({
             {modelLabel}
           </span>
         )}
-        <span
-          style={{
-            height: 28,
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '0 10px',
-            background: 'var(--surface-card)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            font: 'var(--text-label)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          {qualityLabel}
-        </span>
+        {qualityLabel ? (
+          <span
+            style={{
+              height: 28,
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '0 10px',
+              background: 'var(--surface-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              font: 'var(--text-label)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            {qualityLabel}
+          </span>
+        ) : null}
       </div>
     </div>
   );

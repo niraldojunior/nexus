@@ -181,7 +181,7 @@ export function ReferenceDataStudio({
                 onChange={(event) => setFilterText(event.target.value)}
                 placeholder="Buscar conjunto..."
                 aria-label="Buscar conjunto"
-                className="w-full rounded-[10px] border border-app-border bg-white py-1.5 pl-8 pr-3 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
+                className="w-full rounded-[10px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
               />
             </div>
             {canEdit && isEditing && (
@@ -218,7 +218,7 @@ export function ReferenceDataStudio({
                   className={`w-full rounded-[10px] border p-3 text-left text-[0.88rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${
                     selectedSet?.id === item.id
                       ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
-                      : 'border-app-border text-app-text hover:bg-black/[0.02]'
+                      : 'border-app-border text-app-text vt-hover-muted'
                   }`}
                 >
                   <span className="block truncate font-medium">{item.name}</span>

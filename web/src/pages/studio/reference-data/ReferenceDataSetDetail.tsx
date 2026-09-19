@@ -125,7 +125,7 @@ export function ReferenceDataSetDetail({ set, canMutate, onUpdated, onDeactivate
                   <input
                     value={draft.name}
                     onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                    className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent"
+                    className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent"
                   />
                 </label>
                 <label className="block text-[0.8rem] font-semibold text-app-text">
@@ -133,7 +133,7 @@ export function ReferenceDataSetDetail({ set, canMutate, onUpdated, onDeactivate
                   <input
                     value={draft.key}
                     onChange={(event) => setDraft({ ...draft, key: event.target.value })}
-                    className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-mono font-normal outline-none focus:border-app-accent"
+                    className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-mono font-normal outline-none focus:border-app-accent"
                   />
                 </label>
               </div>
@@ -143,7 +143,7 @@ export function ReferenceDataSetDetail({ set, canMutate, onUpdated, onDeactivate
                   value={draft.description ?? ''}
                   onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                   rows={2}
-                  className="mt-1.5 w-full rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent"
+                  className="mt-1.5 w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal outline-none focus:border-app-accent"
                 />
               </label>
             </>

@@ -204,7 +204,7 @@ export function LocationSpecDetail({
           )}
         </div>
         <div className="mt-3.5 flex">
-          <div className="inline-flex items-center gap-1 rounded-xl bg-black/[0.04] p-1">
+          <div className="inline-flex items-center gap-1 rounded-xl bg-[var(--surface-muted)] p-1">
             {(
               [
                 ['overview', 'Geral'],
@@ -216,7 +216,7 @@ export function LocationSpecDetail({
                 key={tab}
                 type="button"
                 onClick={() => setActiveTab(tab)}
-                className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${activeTab === tab ? 'bg-white font-semibold text-app-text shadow-sm' : 'text-app-muted hover:text-app-text'}`}
+                className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${activeTab === tab ? 'bg-app-panel font-semibold text-app-text shadow-sm' : 'text-app-muted hover:text-app-text'}`}
               >
                 {label}
               </button>
@@ -235,7 +235,7 @@ export function LocationSpecDetail({
                   value={spec.name}
                   onChange={(event) => onPatch({ name: event.target.value })}
                   placeholder="Ex.: Central Office, Pavimento..."
-                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                 />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -246,7 +246,7 @@ export function LocationSpecDetail({
                     onChange={(event) =>
                       onPatch({ category: event.target.value as GeoSpecCategory })
                     }
-                    className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent"
+                    className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent"
                   >
                     {Object.entries(LOCATION_CATEGORY_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -260,7 +260,7 @@ export function LocationSpecDetail({
                   <select
                     value={spec.siteRole}
                     onChange={(event) => onPatch({ siteRole: event.target.value as GeoSiteRole })}
-                    className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent"
+                    className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent"
                   >
                     {Object.entries(ROLE_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -270,7 +270,7 @@ export function LocationSpecDetail({
                   </select>
                 </label>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-[12px] border border-app-border bg-black/[0.01] p-4">
+              <div className="flex items-center justify-between gap-3 rounded-[12px] border border-app-border bg-[var(--surface-muted)] p-4">
                 <div className="min-w-0">
                   <span className="block text-[0.8rem] font-semibold text-app-text">
                     Identidade visual
@@ -283,7 +283,7 @@ export function LocationSpecDetail({
                 <button
                   type="button"
                   onClick={() => setVisualIdentityPickerOpen(true)}
-                  className="flex shrink-0 items-center gap-2 rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
+                  className="flex shrink-0 items-center gap-2 rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
                 >
                   {visualIdentityPreviewUrl ? (
                     <img src={visualIdentityPreviewUrl} alt="" className="h-5 w-5" />
@@ -300,7 +300,7 @@ export function LocationSpecDetail({
                   value={spec.description ?? ''}
                   onChange={(event) => onPatch({ description: event.target.value })}
                   placeholder="Descreva a finalidade deste tipo de local..."
-                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] font-normal text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                 />
               </label>
             </div>
@@ -378,7 +378,7 @@ export function LocationSpecDetail({
                         openCharacteristic(row);
                       }
                     }}
-                    className="group flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 transition hover:bg-black/[0.02]"
+                    className="group flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 transition vt-hover-muted"
                   >
                     <div className="min-w-0">
                       <h4 className="truncate text-[0.88rem] font-semibold text-app-text">
@@ -437,7 +437,7 @@ export function LocationSpecDetail({
                         otherSpecs.map((item) => (
                           <label
                             key={item.localId}
-                            className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[0.82rem] text-app-text hover:bg-black/[0.02]"
+                            className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[0.82rem] text-app-text vt-hover-muted"
                           >
                             <input
                               type="checkbox"
@@ -461,7 +461,7 @@ export function LocationSpecDetail({
                       {ids.map((id) => (
                         <span
                           key={id}
-                          className="rounded-[8px] border border-app-border bg-white px-2.5 py-1 text-[0.78rem] font-medium text-app-text"
+                          className="rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1 text-[0.78rem] font-medium text-app-text"
                         >
                           {allSpecs.find((item) => item.localId === id)?.name ?? id}
                         </span>

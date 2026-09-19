@@ -91,21 +91,7 @@ export const settingsSections: SettingsSectionGroup[] = [
     title: 'Configurações',
     items: [
       { id: 'general', label: 'Geral' },
-      { id: 'account', label: 'Conta' },
-      { id: 'privacy', label: 'Privacidade' },
-      { id: 'billing', label: 'Cobrança' },
-      { id: 'usage', label: 'Uso' },
-      { id: 'capabilities', label: 'Capacidades' },
-      { id: 'claude-code', label: 'Nexus Code' },
-      { id: 'claude-chrome', label: 'Nexus in Chrome' },
-    ],
-  },
-  {
-    title: 'Personalizar',
-    items: [
-      { id: 'skills', label: 'Habilidades' },
-      { id: 'connectors', label: 'Conectores' },
-      { id: 'plugins', label: 'Plugins' },
+      { id: 'visual', label: 'Visual' },
     ],
   },
 ];

@@ -359,7 +359,7 @@ export function ResourceRelationshipRulesPanel({
                     : undefined
                 }
                 className={`group min-h-12 px-3.5 py-2.5 transition flex items-center justify-between gap-3 ${
-                  canMutate ? 'cursor-pointer hover:bg-black/[0.02] focus:outline-none' : ''
+                  canMutate ? 'cursor-pointer vt-hover-muted focus:outline-none' : ''
                 }`}
               >
                 <p className="min-w-0 truncate whitespace-nowrap text-[0.88rem] text-app-text">
@@ -464,7 +464,7 @@ export function ResourceRelationshipRulesPanel({
                   setFormTargetKind(kinds[0] ?? 'RESOURCE_TYPE');
                   setFormTargetId('');
                 }}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-black/[0.03] disabled:text-app-muted"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
               >
                 {selectRelationshipTypes.map((t) => (
                   <option key={t.code} value={t.code}>
@@ -479,7 +479,7 @@ export function ResourceRelationshipRulesPanel({
                 <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                   Tipo de alvo
                 </label>
-                <div className="inline-flex rounded-xl bg-black/[0.04] p-1 gap-1">
+                <div className="inline-flex rounded-xl bg-[var(--surface-muted)] p-1 gap-1">
                   {allowedTargetKinds.map((kind) => (
                     <button
                       key={kind}
@@ -490,7 +490,7 @@ export function ResourceRelationshipRulesPanel({
                       }}
                       className={`rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition disabled:opacity-60 ${
                         formTargetKind === kind
-                          ? 'bg-white text-app-text font-semibold shadow-sm'
+                          ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                           : 'text-app-muted hover:text-app-text'
                       }`}
                     >
@@ -509,7 +509,7 @@ export function ResourceRelationshipRulesPanel({
                 id="form-rule-target-id"
                 value={formTargetId}
                 onChange={(e) => setFormTargetId(e.target.value)}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-black/[0.03] disabled:text-app-muted"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
               >
                 <option value="">Selecione…</option>
                 {targetOptions.map((opt) => (
@@ -524,13 +524,13 @@ export function ResourceRelationshipRulesPanel({
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                 Quantidade permitida
               </label>
-              <div className="inline-flex rounded-xl bg-black/[0.04] p-1 gap-1 mb-2">
+              <div className="inline-flex rounded-xl bg-[var(--surface-muted)] p-1 gap-1 mb-2">
                 <button
                   type="button"
                   onClick={() => setFormCardinalityMode('none')}
                   className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
                     formCardinalityMode === 'none'
-                      ? 'bg-white text-app-text font-semibold shadow-sm'
+                      ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                       : 'text-app-muted hover:text-app-text'
                   }`}
                 >
@@ -541,7 +541,7 @@ export function ResourceRelationshipRulesPanel({
                   onClick={() => setFormCardinalityMode('one')}
                   className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
                     formCardinalityMode === 'one'
-                      ? 'bg-white text-app-text font-semibold shadow-sm'
+                      ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                       : 'text-app-muted hover:text-app-text'
                   }`}
                 >
@@ -552,7 +552,7 @@ export function ResourceRelationshipRulesPanel({
                   onClick={() => setFormCardinalityMode('max')}
                   className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
                     formCardinalityMode === 'max'
-                      ? 'bg-white text-app-text font-semibold shadow-sm'
+                      ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                       : 'text-app-muted hover:text-app-text'
                   }`}
                 >
@@ -571,7 +571,7 @@ export function ResourceRelationshipRulesPanel({
                     value={formCardinalityMax}
                     onChange={(e) => setFormCardinalityMax(e.target.value)}
                     aria-label="Quantidade máxima"
-                    className="w-32 rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent font-mono"
+                    className="w-32 rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent font-mono"
                   />
                   <p className="text-[0.76rem] text-app-muted mt-1">
                     Número máximo de instâncias deste alvo que um recurso de origem pode conter ou ligar.

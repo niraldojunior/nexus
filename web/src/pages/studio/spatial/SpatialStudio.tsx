@@ -261,7 +261,7 @@ export function SpatialStudio({
           </label>
           <div className="mt-3 space-y-1">
             {filtered.map((location) => (
-              <button type="button" key={location.id} onClick={() => setSelectedId(location.id)} className={`w-full rounded-[10px] p-3 text-left ${location.id === selectedId ? 'bg-app-accent-soft' : 'hover:bg-black/[0.02]'}`}>
+              <button type="button" key={location.id} onClick={() => setSelectedId(location.id)} className={`w-full rounded-[10px] p-3 text-left ${location.id === selectedId ? 'bg-app-accent-soft' : 'vt-hover-muted'}`}>
                 <p className="text-[0.88rem] font-semibold text-app-text">{valueOf(location, 'name')}</p>
                 <p className="mt-1 text-[0.76rem] text-app-muted">{valueOf(location, 'coverageType')} · {location.validFor?.endDateTime ? 'Encerrada' : 'Ativa'}</p>
               </button>
@@ -454,7 +454,7 @@ function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: Ge
             />
           </label>
           <div className="mt-4 overflow-hidden rounded-[10px] border border-app-border">
-            <div ref={mapElement} className="h-[360px] bg-neutral-100" />
+            <div ref={mapElement} className="h-[360px] bg-[var(--surface-muted)]" />
             {!GOOGLE_MAPS_KEY ? (
               <p className="p-3 text-[0.82rem] text-app-muted">
                 Google Maps não está configurado neste ambiente. Configure a chave para desenhar a cobertura.

@@ -9,6 +9,8 @@ type UserRow = {
   externalId: string;
   name: string;
   email: string | null;
+  avatarUrl: string | null;
+  theme: string | null;
   status: string | null;
   roles: string | null;
   tenantId: string | null;
@@ -20,12 +22,15 @@ type UserRow = {
 };
 
 export type UserStatus = 'active' | 'disabled';
+export type UserTheme = 'light' | 'dark';
 
 export type UserRecord = {
   id: string;
   externalId: string;
   name: string;
   email?: string;
+  avatarUrl?: string;
+  theme?: UserTheme;
   status: UserStatus;
   roles: string[];
   tenantId: string;
@@ -43,10 +48,17 @@ export type NewUserInput = {
   externalId: string;
   name: string;
   email?: string;
+  avatarUrl?: string;
+  theme?: UserTheme;
   status?: UserStatus;
   roles?: string[];
   tenantId?: string;
   passwordHash?: string;
+};
+
+export type UserProfileUpdate = {
+  avatarUrl?: string | null;
+  theme?: UserTheme;
 };
 
 // Campos de seguranca alteraveis apos a criacao. Todos opcionais: o chamador seta so o
@@ -61,8 +73,8 @@ export type UserSecurityUpdate = {
 };
 
 const CORE_COLUMNS =
-  'id, external_id AS externalId, name, email, status, roles, tenant_id AS tenantId, ' +
-  'token_version AS tokenVersion, last_login_at AS lastLoginAt, ' +
+  'id, external_id AS externalId, name, email, avatar_url AS avatarUrl, theme, status, roles, ' +
+  'tenant_id AS tenantId, token_version AS tokenVersion, last_login_at AS lastLoginAt, ' +
   'created_at AS createdAt, updated_at AS updatedAt';
 
 const parseRoles = (raw: string | null): string[] => {
@@ -89,9 +101,11 @@ const toRecord = (row: UserRow): UserRecord => {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
-  // email e last_login_at sao anulaveis no banco, mas opcionais no dominio: devolver a
-  // linha crua vazaria `null` para campos tipados `?: string`.
+  // email, avatarUrl e last_login_at sao anulaveis no banco, mas opcionais no dominio:
+  // devolver a linha crua vazaria `null` para campos tipados `?: string`.
   if (row.email) record.email = row.email;
+  if (row.avatarUrl) record.avatarUrl = row.avatarUrl;
+  if (row.theme === 'dark' || row.theme === 'light') record.theme = row.theme;
   if (row.lastLoginAt) record.lastLoginAt = row.lastLoginAt;
   return record;
 };
@@ -231,6 +245,35 @@ export class OracleUserRepository {
       assignments.push('last_login_at = ?');
       params.push(update.lastLoginAt);
     }
+    assignments.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(id);
+
+    await this.db.run(`UPDATE users SET ${assignments.join(', ')} WHERE id = ?`, params);
+
+    return await this.getById(id);
+  }
+
+  // Update de perfil self-service: atualiza avatar e/ou tema do próprio usuário.
+  // Monta o SET dinamicamente para não enviar binds nulos em colunas que não mudaram.
+  async updateProfile(id: string, update: UserProfileUpdate): Promise<UserRecord | undefined> {
+    const existing = await this.getById(id);
+    if (!existing) return undefined;
+
+    const assignments: string[] = [];
+    const params: unknown[] = [];
+
+    if (update.avatarUrl !== undefined) {
+      assignments.push('avatar_url = ?');
+      params.push(update.avatarUrl || null);
+    }
+    if (update.theme !== undefined) {
+      assignments.push('theme = ?');
+      params.push(update.theme);
+    }
+
+    if (assignments.length === 0) return existing;
+
     assignments.push('updated_at = ?');
     params.push(new Date().toISOString());
     params.push(id);

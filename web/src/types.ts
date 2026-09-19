@@ -11,18 +11,7 @@ export type PageId =
 
 export type RecentGroup = 'none' | 'date' | 'project';
 
-export type SettingsSection =
-  | 'general'
-  | 'account'
-  | 'privacy'
-  | 'billing'
-  | 'usage'
-  | 'capabilities'
-  | 'claude-code'
-  | 'claude-chrome'
-  | 'skills'
-  | 'connectors'
-  | 'plugins';
+export type SettingsSection = 'general' | 'visual';
 
 export interface AttachmentItem {
   id: string;

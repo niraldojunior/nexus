@@ -219,7 +219,7 @@ export function ResourceSpecificationFormModal({
               onChange={(e) => setName(e.target.value)}
               disabled={readOnly}
               placeholder="Ex.: OLT Huawei MA5800-X7"
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
             />
           </div>
 
@@ -229,7 +229,7 @@ export function ResourceSpecificationFormModal({
                 Descrição {readOnly ? '' : '(Opcional)'}
               </label>
               {readOnly ? (
-                <div className="rounded-[14px] border border-app-border bg-slate-50 px-3 py-2 text-[0.84rem] text-app-text">
+                <div className="rounded-[14px] border border-app-border bg-[var(--surface-muted)] px-3 py-2 text-[0.84rem] text-app-text">
                   {description}
                 </div>
               ) : (
@@ -238,7 +238,7 @@ export function ResourceSpecificationFormModal({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Descreva a finalidade desta especificação..."
-                  className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                  className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                 />
               )}
             </div>
@@ -250,7 +250,7 @@ export function ResourceSpecificationFormModal({
                 Fabricante {readOnly ? '' : '(Opcional)'}
               </label>
               {readOnly ? (
-                <div className="rounded-[14px] border border-app-border bg-slate-50 px-3 py-2 text-[0.84rem] text-app-text">
+                <div className="rounded-[14px] border border-app-border bg-[var(--surface-muted)] px-3 py-2 text-[0.84rem] text-app-text">
                   {manufacturerOptions.find((role) => role.partyId === manufacturerPartyId)?.party
                     .name ?? editingSpec?.relatedParty?.find((party) => party.role === 'manufacturer')?.name}
                 </div>
@@ -258,7 +258,7 @@ export function ResourceSpecificationFormModal({
                 <select
                   value={manufacturerPartyId}
                   onChange={(e) => setManufacturerPartyId(e.target.value)}
-                  className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+                  className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
                 >
                   <option value="">Nenhum</option>
                   {manufacturerOptions.map((role) => (
@@ -284,7 +284,7 @@ export function ResourceSpecificationFormModal({
                     <h4 className="mb-1.5 text-[0.76rem] font-semibold uppercase tracking-wide text-app-muted">
                       {section.group}
                     </h4>
-                    <div className="divide-y divide-app-border rounded-[16px] border border-app-border bg-white overflow-hidden">
+                    <div className="divide-y divide-app-border rounded-[16px] border border-app-border bg-app-panel overflow-hidden">
                       {section.rows.map((row) => {
                         const listOptions =
                           row.valueType === 'list'
@@ -299,7 +299,7 @@ export function ResourceSpecificationFormModal({
                         return (
                           <div
                             key={row.key}
-                            className="p-3 hover:bg-black/[0.01] transition grid grid-cols-1 sm:grid-cols-[1fr_200px] gap-2 items-center"
+                            className="p-3 vt-hover-muted transition grid grid-cols-1 sm:grid-cols-[1fr_200px] gap-2 items-center"
                           >
                             <div className="min-w-0 pr-2">
                               <span className="font-semibold text-[0.84rem] text-app-text truncate">
@@ -359,7 +359,7 @@ export function ResourceSpecificationFormModal({
                                       ),
                                     )
                                   }
-                                  className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                                  className="w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                                 >
                                   <option value="">{readOnly ? 'Não especificado' : 'Selecione uma opção...'}</option>
                                   {listOptions.map((opt) => (
@@ -394,7 +394,7 @@ export function ResourceSpecificationFormModal({
                                         ? '{"chave":"valor"}'
                                         : 'Valor da característica'
                                   }
-                                  className="w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                                  className="w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                                 />
                               )}
                             </div>

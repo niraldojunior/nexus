@@ -141,7 +141,7 @@ export function LocationCharacteristicFormModal({
               disabled={readOnly}
               onChange={(event) => setRow((current) => ({ ...current, name: event.target.value }))}
               placeholder="Ex.: capacidade_portas"
-              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
             />
           </label>
           <label className="block text-[0.8rem] font-semibold text-app-text">
@@ -151,7 +151,7 @@ export function LocationCharacteristicFormModal({
               disabled={readOnly}
               onChange={(event) => setRow((current) => ({ ...current, group: event.target.value }))}
               placeholder="Ex.: Técnico"
-              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
             />
           </label>
         </div>
@@ -165,7 +165,7 @@ export function LocationCharacteristicFormModal({
               setRow((current) => ({ ...current, description: event.target.value }))
             }
             placeholder="Descreva a finalidade desta característica..."
-            className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+            className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
           />
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -183,7 +183,7 @@ export function LocationCharacteristicFormModal({
                   hasDefaultValue: false,
                 }));
               }}
-              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+              className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
             >
               {VALUE_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -222,7 +222,7 @@ export function LocationCharacteristicFormModal({
                       : {}),
                   }))
                 }
-                className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+                className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
               >
                 <option value="">Opções digitadas manualmente</option>
                 {referenceDataSets.map((set) => (
@@ -240,7 +240,7 @@ export function LocationCharacteristicFormModal({
                   setRow((current) => ({ ...current, allowedValuesText: event.target.value }))
                 }
                 placeholder="Opção 1, Opção 2, Opção 3..."
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 font-mono text-[0.82rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 font-mono text-[0.82rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
               />
             )}
           </div>
@@ -291,7 +291,7 @@ export function LocationCharacteristicFormModal({
                   onChange={(event) =>
                     setRow((current) => ({ ...current, valueText: event.target.value }))
                   }
-                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
                 >
                   <option value="">Selecione um padrão...</option>
                   {listOptions.map((option) => (
@@ -318,7 +318,7 @@ export function LocationCharacteristicFormModal({
                   placeholder={
                     row.valueType === 'json' ? '{"chave":"valor"}' : 'Valor da característica'
                   }
-                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-slate-50"
+                  className="mt-1.5 w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] font-normal text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)]"
                 />
               )}
             </label>

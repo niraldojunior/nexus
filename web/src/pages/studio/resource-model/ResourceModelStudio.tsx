@@ -449,7 +449,7 @@ export function ResourceModelStudio({
                     <div
                       role="menu"
                       aria-label="Tipo de nó a incluir"
-                      className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+                      className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
                     >
                       <button
                         type="button"
@@ -554,7 +554,7 @@ export function ResourceModelStudio({
           <div
             role="menu"
             aria-label="Tipo de nó a incluir"
-            className="fixed z-50 w-52 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+            className="fixed z-50 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
             style={{
               top: `${Math.min(createMenuAnchorRect.bottom + 4, window.innerHeight - 90)}px`,
               left: `${Math.max(12, Math.min(createMenuAnchorRect.left, window.innerWidth - 220))}px`,

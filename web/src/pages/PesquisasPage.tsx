@@ -105,7 +105,7 @@ export const ConversasPage: React.FC<{
   const totalPages = Math.ceil(filteredSessions.length / ITEMS_PER_PAGE);
 
   return (
-    <div className="min-h-full bg-white px-6 pb-8">
+    <div className="min-h-full bg-app-bg px-6 pb-8">
       {archiveTarget ? (
         <ArchiveConfirmModal
           sessionTitle={archiveTarget.title}
@@ -197,7 +197,7 @@ export const ConversasPage: React.FC<{
                 <div
                   key={session.id}
                   onClick={() => onSelectSession(session.id)}
-                  className="vt-card-interactive group flex items-center p-4 text-left hover:!bg-neutral-50 hover:!border-neutral-300"
+                  className="vt-card-interactive group flex items-center p-4 text-left"
                 >
                   <div className="flex-1 min-w-0">
                     <h3
@@ -225,7 +225,7 @@ export const ConversasPage: React.FC<{
                   </div>
                   <button
                     onClick={(e) => handleDelete(session.id, e)}
-                    className="ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                    className="vt-hover-danger ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition group-hover:opacity-100"
                     title="Arquivar conversa"
                   >
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
@@ -240,7 +240,7 @@ export const ConversasPage: React.FC<{
                 <button
                   onClick={() => setPage(Math.max(1, page - 1))}
                   disabled={page === 1}
-                  className="px-3.5 py-1.5 border border-app-border rounded-lg text-app-text hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
+                  className="vt-hover-muted px-3.5 py-1.5 border border-app-border rounded-lg text-app-text disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
                 >
                   Anterior
                 </button>
@@ -252,7 +252,7 @@ export const ConversasPage: React.FC<{
                       className={`px-3 py-1.5 rounded-lg text-sm transition ${
                         p === page
                           ? 'bg-app-accent text-app-ink font-semibold'
-                          : 'border border-app-border text-app-text hover:bg-neutral-100'
+                          : 'vt-hover-muted border border-app-border text-app-text'
                       }`}
                     >
                       {p}
@@ -262,7 +262,7 @@ export const ConversasPage: React.FC<{
                 <button
                   onClick={() => setPage(Math.min(totalPages, page + 1))}
                   disabled={page === totalPages}
-                  className="px-3.5 py-1.5 border border-app-border rounded-lg text-app-text hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
+                  className="vt-hover-muted px-3.5 py-1.5 border border-app-border rounded-lg text-app-text disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
                 >
                   Próxima
                 </button>

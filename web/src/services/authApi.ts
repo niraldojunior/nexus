@@ -64,6 +64,15 @@ export const changeOwnPassword = (currentPassword: string, newPassword: string):
     body: { currentPassword, newPassword },
   });
 
+export const updateProfile = (patch: {
+  avatarUrl?: string | null;
+  theme?: 'light' | 'dark';
+}): Promise<SessionUser> =>
+  requestJson<SessionUser>(`${API_BASE_URL}/auth/profile`, {
+    method: 'PATCH',
+    body: patch,
+  });
+
 // ---- Administração de usuários (papéis tenant.admin / platform.admin) ----
 
 export const listUsers = (): Promise<AdminUser[]> =>

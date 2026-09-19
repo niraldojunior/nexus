@@ -70,7 +70,7 @@ export function PasswordStrengthField({
       <label htmlFor={inputId} className="text-[0.78rem] font-medium text-app-muted">
         {label}
       </label>
-      <div className="flex items-center gap-2 rounded-xl border border-app-border bg-white px-3 focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/20">
+      <div className="flex items-center gap-2 rounded-xl border border-app-border bg-app-panel px-3 focus-within:border-app-accent focus-within:shadow-[0_0_0_var(--vt-yellow-focus-ring-width)_var(--vt-yellow-focus-ring-color)]">
         <Lock className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
         <input
           ref={inputRef}
@@ -86,7 +86,7 @@ export function PasswordStrengthField({
         <button
           type="button"
           onClick={() => setRevealed((current) => !current)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-app-muted transition hover:bg-black/5"
+          className="vt-hover-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-app-muted transition"
           aria-label={revealed ? 'Ocultar senha' : 'Mostrar senha'}
           title={revealed ? 'Ocultar senha' : 'Mostrar senha'}
         >
@@ -99,7 +99,7 @@ export function PasswordStrengthField({
           <button
             type="button"
             onClick={handleGenerate}
-            className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-[0.8rem] font-medium text-app-text transition hover:border-app-accent-border hover:bg-app-accent-soft"
+            className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3 text-[0.8rem] font-medium text-app-text transition hover:border-app-accent-border hover:bg-app-accent-soft"
           >
             <Sparkles className="h-3.5 w-3.5" /> Gerar senha segura
           </button>
@@ -107,7 +107,7 @@ export function PasswordStrengthField({
             <button
               type="button"
               onClick={() => void handleCopy()}
-              className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-white px-3 text-[0.8rem] font-medium text-app-muted transition hover:border-app-accent-border hover:bg-app-accent-soft"
+              className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3 text-[0.8rem] font-medium text-app-muted transition hover:border-app-accent-border hover:bg-app-accent-soft"
             >
               {copied ? (
                 <>

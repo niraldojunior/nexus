@@ -240,7 +240,14 @@ export function MapLayerControl({
     return (
       <div
         key={node.id}
-        className="rounded-[10px] border border-app-border/70 p-2 mb-2 last:mb-0"
+        // Fundo com o mesmo tom "muted" usado em wells/painéis subordinados (ver
+        // `locationCategoryIconTone`), para o grupo se destacar do painel por trás em vez
+        // de só flutuar por cima com borda. A borda usa `border-app-border` sem modificador
+        // de opacidade: como `app-border` mapeia para uma CSS var em hex (não um tripleto
+        // RGB), o Tailwind não consegue aplicar `/NN` — a classe simplesmente não é gerada
+        // e a borda cai no `currentColor` (a cor do texto), que no tema escuro é quase
+        // branco. Era esse o contorno branco de alto contraste reportado.
+        className="rounded-[10px] border border-app-border bg-[var(--surface-muted)] p-2 mb-2 last:mb-0"
         style={{ marginLeft: `${depth * 6}px` }}
       >
         <div className="flex items-center gap-1.5">
@@ -289,7 +296,7 @@ export function MapLayerControl({
           // para as camadas dentro de um grupo expandido ficarem visualmente mais próximas
           // umas das outras.
           <div
-            className={`mt-1.5 flex flex-col gap-[3.24px] border-t border-app-border/60 pt-1.5 ${
+            className={`mt-1.5 flex flex-col gap-[3.24px] border-t border-app-border pt-1.5 ${
               !hasMultipleChildren ? 'justify-end' : ''
             }`}
           >
@@ -314,7 +321,7 @@ export function MapLayerControl({
           aria-expanded={false}
           title="Camadas do mapa"
           onClick={() => handleSetOpen(true)}
-          className="relative flex h-10 w-10 items-center justify-center rounded-[10px] border border-app-border bg-white text-app-text shadow-map-control transition-all duration-200 ease-out hover:border-app-accent-border hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent active:scale-95"
+          className="relative flex h-10 w-10 items-center justify-center rounded-[10px] border border-app-border bg-app-panel text-app-text shadow-map-control transition-all duration-200 ease-out hover:border-app-accent-border hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent active:scale-95"
         >
           <Layers className="h-5 w-5" aria-hidden="true" />
           {!allVisible ? (
@@ -333,9 +340,9 @@ export function MapLayerControl({
           id={panelId}
           role="dialog"
           aria-label="Camadas do mapa"
-          className="relative right-0 top-0 max-h-[calc(100vh-96px)] w-[260px] overflow-y-auto rounded-[14px] border border-app-border bg-white p-2.5 shadow-map-control-lg animate-in fade-in zoom-in-95 duration-200 ease-out"
+          className="relative right-0 top-0 max-h-[calc(100vh-96px)] w-[260px] overflow-y-auto rounded-[14px] border border-app-border bg-app-panel p-2.5 shadow-map-control-lg animate-in fade-in zoom-in-95 duration-200 ease-out"
         >
-          <div className="flex items-center justify-between px-1 pb-2 pt-0.5 border-b border-app-border/50 mb-2">
+          <div className="flex items-center justify-between px-1 pb-2 pt-0.5 border-b border-app-border mb-2">
             <div className="flex items-center gap-1.5">
               <Layers className="h-4 w-4 text-app-muted" />
               <span className="font-display text-[0.82rem] font-bold text-app-text">Camadas do Mapa</span>
@@ -356,7 +363,7 @@ export function MapLayerControl({
             <button
               type="button"
               onClick={onReset}
-              className="mt-2.5 w-full rounded-[10px] border border-app-border/60 bg-black/[0.02] px-2 py-1.5 text-center text-[0.76rem] font-semibold text-app-text transition hover:bg-app-accent-soft hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
+              className="mt-2.5 w-full rounded-[10px] border border-app-border bg-[var(--surface-muted)] px-2 py-1.5 text-center text-[0.76rem] font-semibold text-app-text transition hover:bg-app-accent-soft hover:border-app-accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
             >
               Restaurar padrão
             </button>

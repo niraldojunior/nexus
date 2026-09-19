@@ -185,7 +185,7 @@ export function PartyCharacteristicCatalogEditor({
   };
 
   const inputClass =
-    'w-full rounded-[10px] border border-app-border bg-white px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent';
+    'w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent';
 
   return (
     <div className="space-y-3">
@@ -470,7 +470,7 @@ export function PartyCharacteristicCatalogEditor({
                             <td>{item.group || '—'}</td>
                             <td>{item.description || '—'}</td>
                             <td>
-                              <span className="text-[0.78rem] font-mono px-1.5 py-0.5 rounded bg-black/[0.04] text-app-muted">
+                              <span className="text-[0.78rem] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-muted)] text-app-muted">
                                 {VALUE_TYPE_OPTIONS.find((opt) => opt.value === item.valueType)
                                   ?.label ?? item.valueType}
                               </span>

@@ -485,13 +485,16 @@ export function GeoSearchBar({
   // visível — como se a barra tivesse esticado para baixo para mostrar as opções
   // (estilo Google Maps), em vez de um menu flutuante grudado por cima dela.
   const scopeRestricted = scope !== 'all';
+  // Só a borda muda de cor no foco (sem o ring que existia antes) — com o ring, a borda
+  // amarela do foco e o anel translúcido logo dentro dela desenhavam uma segunda linha
+  // redundante, como se a caixa tivesse dupla moldura.
   const standaloneChromeClass =
-    'rounded-2xl border border-app-border shadow-map-control focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15';
-  const shellClass = `flex h-12 items-center bg-white transition ${
+    'rounded-2xl border border-app-border shadow-map-control focus-within:border-app-accent-border';
+  const shellClass = `flex h-12 items-center bg-app-panel transition ${
     showDropdown ? 'rounded-t-2xl' : standaloneChromeClass
   }`;
   const cardWrapClass = showDropdown
-    ? 'rounded-2xl border border-app-border shadow-map-control-lg transition focus-within:border-app-accent-border focus-within:ring-[0.5px] focus-within:ring-app-focus/15'
+    ? 'rounded-2xl border border-app-border shadow-map-control-lg transition focus-within:border-app-accent-border'
     : '';
   const ScopeIcon = SCOPE_ICONS[scope];
   const activeScope = GEO_SEARCH_SCOPES.find((candidate) => candidate.id === scope);
@@ -522,7 +525,7 @@ export function GeoSearchBar({
               <button
                 type="button"
                 onClick={onOpenMainMenu}
-                className="ml-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-black/5"
+                className="ml-1.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition vt-hover-muted"
                 aria-label="Abrir menu principal"
               >
                 <NexusMark className="h-8 w-8" />
@@ -535,7 +538,7 @@ export function GeoSearchBar({
                 className={`${showMenuMark ? 'ml-0.5' : 'ml-1.5'} flex h-9 w-9 items-center justify-center rounded-full transition ${
                   scopeRestricted
                     ? 'bg-app-accent-soft hover:brightness-[0.98]'
-                    : 'hover:bg-black/5'
+                    : 'vt-hover-muted'
                 }`}
                 aria-label={`Modo de busca: ${activeScope?.label ?? 'Pesquisa geral'}`}
                 title={activeScope?.label ?? 'Pesquisa geral'}
@@ -552,7 +555,7 @@ export function GeoSearchBar({
                   role="listbox"
                   aria-label="Modo de busca"
                   onMouseDown={(event) => event.preventDefault()}
-                  className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-white py-1.5 shadow-map-control-lg"
+                  className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-app-panel py-1.5 shadow-map-control-lg"
                 >
                   {GEO_SEARCH_SCOPES.map((candidate) => {
                     const Icon = SCOPE_ICONS[candidate.id];
@@ -565,7 +568,7 @@ export function GeoSearchBar({
                         aria-selected={active}
                         onClick={() => selectScope(candidate.id)}
                         className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition ${
-                          active ? 'bg-app-accent-soft' : 'hover:bg-black/5'
+                          active ? 'bg-app-accent-soft' : 'vt-hover-muted'
                         }`}
                       >
                         <Icon
@@ -632,7 +635,13 @@ export function GeoSearchBar({
                   setOpen(true);
                 }}
                 onKeyDown={handleKeyDown}
-                className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-1.5 pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none"
+                // A regra global `:focus-visible` (docs/4-design-system/tokens/base.css)
+                // acende um box-shadow amarelo em TODO elemento focável por padrão — aqui
+                // duplicava a moldura amarela que a própria barra já acende (via
+                // `focus-within:border-app-accent-border` no invólucro). `.vt-composer` e
+                // `.vt-searchbar` já suprimem esse box-shadow no input quando o contêiner
+                // em volta assume o indicador de foco; mesmo padrão aqui.
+                className="h-full min-w-0 flex-1 rounded-l-2xl bg-transparent pl-1.5 pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none focus-visible:shadow-none"
                 placeholder={SCOPE_PLACEHOLDER[scope]}
                 id="geo-search-input"
                 autoComplete="off"
@@ -657,7 +666,7 @@ export function GeoSearchBar({
                     onToggleHierarchy?.();
                   }
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition hover:bg-black/5"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
                 aria-label={hasSearchToClear ? 'Limpar busca' : 'Fechar hierarquia'}
               >
                 <X className="h-4 w-4" />
@@ -668,7 +677,7 @@ export function GeoSearchBar({
               <button
                 type="button"
                 onClick={onToggleHierarchy}
-                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-black/5"
+                className="flex h-8 w-8 items-center justify-center rounded-full transition vt-hover-muted"
                 aria-label="Abrir hierarquia"
                 title="Hierarquia"
               >
@@ -694,7 +703,7 @@ export function GeoSearchBar({
           {showDropdown ? (
             <div
               onMouseDown={(event) => event.preventDefault()}
-              className="max-h-80 overflow-y-auto rounded-b-2xl bg-white"
+              className="max-h-80 overflow-y-auto rounded-b-2xl bg-app-panel"
             >
               {!hasText ? (
                 <div>
@@ -719,7 +728,7 @@ export function GeoSearchBar({
                       <div
                         key={option.entryKey}
                         className={`group flex items-center ${
-                          index === highlighted ? 'bg-app-accent-soft' : 'hover:bg-black/5'
+                          index === highlighted ? 'bg-app-accent-soft' : 'vt-hover-muted'
                         }`}
                       >
                         <button
@@ -739,7 +748,7 @@ export function GeoSearchBar({
                         <button
                           type="button"
                           onClick={() => remove(option.entryKey)}
-                          className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-app-muted transition hover:bg-black/10"
+                          className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
                           aria-label={`Remover ${label} do histórico`}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -843,4 +852,4 @@ function SelectedNodeIcon({
 }
 
 const optionClass = (active: boolean): string =>
-  `flex w-full items-center gap-2.5 px-3 py-2 text-left transition ${active ? 'bg-app-accent-soft' : 'hover:bg-black/5'}`;
+  `flex w-full items-center gap-2.5 px-3 py-2 text-left transition ${active ? 'bg-app-accent-soft' : 'vt-hover-muted'}`;

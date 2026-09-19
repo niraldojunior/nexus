@@ -172,7 +172,7 @@ export function ResourceCharacteristicFormModal({
                 onChange={(e) => setRow((prev) => ({ ...prev, name: e.target.value }))}
                 disabled={readOnly}
                 placeholder="Ex.: capacidade_portas"
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />
             </div>
             <div>
@@ -183,7 +183,7 @@ export function ResourceCharacteristicFormModal({
                 onChange={(e) => setRow((prev) => ({ ...prev, group: e.target.value }))}
                 disabled={readOnly}
                 placeholder="Ex.: Técnico"
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />
             </div>
           </div>
@@ -196,7 +196,7 @@ export function ResourceCharacteristicFormModal({
               onChange={(e) => setRow((prev) => ({ ...prev, description: e.target.value }))}
               disabled={readOnly}
               placeholder="Descreva a finalidade desta característica..."
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
             />
           </div>
 
@@ -213,7 +213,7 @@ export function ResourceCharacteristicFormModal({
                 }));
               }}
               disabled={readOnly}
-              className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
             >
               {VALUE_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -238,7 +238,7 @@ export function ResourceCharacteristicFormModal({
                   }))
                 }
                 disabled={readOnly}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                 aria-label="Conjunto de referência"
               >
                 <option value="">Opções digitadas manualmente</option>
@@ -254,7 +254,7 @@ export function ResourceCharacteristicFormModal({
                   onChange={(e) => setRow((prev) => ({ ...prev, allowedValuesText: e.target.value }))}
                   disabled={readOnly}
                   placeholder="Opção 1, Opção 2, Opção 3..."
-                  className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 font-mono text-[0.82rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                  className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 font-mono text-[0.82rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                 />
               )}
             </div>
@@ -292,7 +292,7 @@ export function ResourceCharacteristicFormModal({
                 value={row.valueText}
                 disabled={readOnly}
                 onChange={(e) => setRow((prev) => ({ ...prev, valueText: e.target.value }))}
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               >
                 <option value="">Selecione um padrão...</option>
                 {listOptions.map((opt) => (
@@ -319,7 +319,7 @@ export function ResourceCharacteristicFormModal({
                     ? '{"chave":"valor"}'
                     : 'Valor da característica'
                 }
-                className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-slate-50 disabled:text-app-text"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />
             )}
           </div>

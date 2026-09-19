@@ -360,7 +360,7 @@ export const ResearchPage: React.FC<{
 
   if (loadingSession) {
     return (
-      <div className="flex items-center justify-center h-full bg-white">
+      <div className="flex items-center justify-center h-full bg-app-bg">
         <div className="text-center">
           <NexusLoadingMark size={40} className="mx-auto mb-4 h-10 w-10" />
           <p className="text-app-muted">Carregando conversa...</p>
@@ -371,7 +371,7 @@ export const ResearchPage: React.FC<{
 
   if (!session) {
     return (
-      <div className="flex items-center justify-center h-full bg-white">
+      <div className="flex items-center justify-center h-full bg-app-bg">
         <div className="text-center text-app-muted">
           <p>Conversa não encontrada</p>
         </div>
@@ -380,9 +380,9 @@ export const ResearchPage: React.FC<{
   }
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-app-bg">
       {/* Fixed Header - Top */}
-      <div className="flex-shrink-0 border-b border-app-border bg-white px-6 py-4">
+      <div className="flex-shrink-0 border-b border-app-border bg-app-bg px-6 py-4">
         <div className="flex w-full items-center justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Diamond size={7} />
@@ -400,8 +400,16 @@ export const ResearchPage: React.FC<{
 
       {/* Error message */}
       {error && (
-        <div className="flex-shrink-0 px-6 py-3 bg-red-50 border-b border-red-200">
-          <p className="text-sm text-red-700">{error}</p>
+        <div
+          className="flex-shrink-0 px-6 py-3"
+          style={{
+            background: 'var(--status-red-soft)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.25)',
+          }}
+        >
+          <p className="text-sm" style={{ color: 'var(--status-red)' }}>
+            {error}
+          </p>
         </div>
       )}
 
@@ -455,7 +463,7 @@ export const ResearchPage: React.FC<{
                             return (
                               <div
                                 key={pending.confirmationToken}
-                                className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3"
+                                className="flex flex-wrap items-center justify-between gap-3 bg-app-panel px-4 py-3"
                                 style={{
                                   border: '1px solid var(--border)',
                                   borderLeft: '3px solid var(--vt-yellow)',
@@ -487,7 +495,7 @@ export const ResearchPage: React.FC<{
                                       {pending.items.map((item) => (
                                         <div
                                           key={`${item.manufacturerName}-${item.equipmentType}-${item.model}`}
-                                          className="bg-white px-3 py-2 text-[0.88rem] text-app-text"
+                                          className="bg-app-bg px-3 py-2 text-[0.88rem] text-app-text"
                                           style={{
                                             border: '1px solid var(--border)',
                                             borderRadius: 'var(--radius-md)',
@@ -545,7 +553,7 @@ export const ResearchPage: React.FC<{
       </div>
 
       {/* Fixed Input Area - Bottom */}
-      <div className="flex-shrink-0 px-6 py-4 bg-white">
+      <div className="flex-shrink-0 px-6 py-4 bg-app-bg">
         <div className="mx-auto w-full" style={{ maxWidth: 'var(--thread-max)' }}>
           <form
             onSubmit={(e) => {

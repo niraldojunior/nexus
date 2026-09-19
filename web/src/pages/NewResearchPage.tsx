@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileText, Layers3, MapPinned, Workflow, Zap } from 'lucide-react';
+import { Briefcase, FolderTree, MapPinned, Sparkles } from 'lucide-react';
 import Composer from '../components/Composer';
 
 interface NewResearchPageProps {
@@ -17,34 +17,34 @@ const AVAILABLE_MODELS = [
 
 const promptStarters = [
   {
+    icon: Sparkles,
+    label: 'Primeiros passos',
+    prompt:
+      'Se apresente: quem é você, o que é o V.tal Nexus e qual o seu contexto de suporte (módulos, dados e o que você pode me ajudar a fazer aqui).',
+  },
+  {
     icon: MapPinned,
     label: 'Locais',
     prompt:
       'Quero explorar um Local. Mostre os atributos de GeographicSite, Address e Location e como eles se relacionam no modelo TMF.',
   },
   {
-    icon: Layers3,
+    icon: MapPinned,
     label: 'Recursos',
     prompt:
       'Ajude-me a analisar o inventário de Recursos: quais PhysicalResource e LogicalResource existem e como estão associados?',
   },
   {
-    icon: Workflow,
+    icon: Briefcase,
     label: 'Serviços',
     prompt:
       'Quero modelar um Serviço. Explique como estruturar CFS e RFS e o vínculo com SubscriberID neste caso.',
   },
   {
-    icon: Zap,
+    icon: FolderTree,
     label: 'Ordens',
     prompt:
       'Preciso checar a viabilidade de uma Ordem. Descreva os passos de qualificação e fulfillment para este pedido.',
-  },
-  {
-    icon: FileText,
-    label: 'Especificação TMF',
-    prompt:
-      'Gere uma especificação TMF-first para o seguinte cenário, preservando interoperabilidade ODA:',
   },
 ];
 
@@ -105,7 +105,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-white px-7 py-9">
+    <div className="relative flex min-h-screen items-center justify-center bg-app-bg px-7 py-9">
       <div className="flex w-full flex-col items-center" style={{ maxWidth: 'var(--thread-max)' }}>
         {/* Greeting */}
         <h1
@@ -140,7 +140,6 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
             placeholder="Pergunte sobre Locais, Recursos, Serviços, Ordens ou gere uma especificação..."
             size="hero"
             modelLabel={model}
-            qualityLabel="TMF-first"
             models={AVAILABLE_MODELS}
             onModelChange={setModel}
             autoFocus

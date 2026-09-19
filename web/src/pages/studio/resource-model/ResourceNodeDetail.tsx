@@ -706,13 +706,13 @@ export function ResourceNodeDetail({
 
         {/* Tabs — segmented control pill */}
         <div className="mt-3.5 flex">
-          <div className="inline-flex items-center rounded-xl bg-black/[0.04] p-1 gap-1">
+          <div className="inline-flex items-center rounded-xl bg-[var(--surface-muted)] p-1 gap-1">
             <button
               type="button"
               onClick={() => handleTabChange('overview')}
               className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                 activeTab === 'overview'
-                  ? 'bg-white text-app-text font-semibold shadow-sm'
+                  ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                   : 'text-app-muted hover:text-app-text'
               }`}
             >
@@ -724,12 +724,12 @@ export function ResourceNodeDetail({
                 onClick={() => handleTabChange('characteristics')}
                 className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                   activeTab === 'characteristics'
-                    ? 'bg-white text-app-text font-semibold shadow-sm'
+                    ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                     : 'text-app-muted hover:text-app-text'
                 }`}
               >
                 Características
-                <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">
+                <span className="rounded-full bg-[var(--surface-muted)] px-1.5 py-0.2 text-[0.7rem]">
                   {context?.resourceType.resourceTypeCharacteristic?.length ?? 0}
                 </span>
               </button>
@@ -740,12 +740,12 @@ export function ResourceNodeDetail({
                 onClick={() => handleTabChange('specifications')}
                 className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                   activeTab === 'specifications'
-                    ? 'bg-white text-app-text font-semibold shadow-sm'
+                    ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                     : 'text-app-muted hover:text-app-text'
                 }`}
               >
                 Especificações
-                <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">
+                <span className="rounded-full bg-[var(--surface-muted)] px-1.5 py-0.2 text-[0.7rem]">
                   {specifications.length}
                 </span>
               </button>
@@ -756,12 +756,12 @@ export function ResourceNodeDetail({
                 onClick={() => handleTabChange('relations')}
                 className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
                   activeTab === 'relations'
-                    ? 'bg-white text-app-text font-semibold shadow-sm'
+                    ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                     : 'text-app-muted hover:text-app-text'
                 }`}
               >
                 Relações
-                <span className="rounded-full bg-black/[0.06] px-1.5 py-0.2 text-[0.7rem]">
+                <span className="rounded-full bg-[var(--surface-muted)] px-1.5 py-0.2 text-[0.7rem]">
                   {relationshipRulesCount}
                 </span>
               </button>
@@ -798,7 +798,7 @@ export function ResourceNodeDetail({
                       onChange={(e) => handleTextChange('name', e.target.value)}
                       onBlur={() => void flush()}
                       placeholder="Ex: Optical Line Terminal"
-                      className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                      className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                     />
                   </div>
 
@@ -813,7 +813,7 @@ export function ResourceNodeDetail({
                         onChange={(e) => handleTextChange('code', e.target.value)}
                         onBlur={() => void flush()}
                         placeholder="Ex: OLT"
-                        className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                        className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                       />
                     </div>
                   )}
@@ -829,12 +829,12 @@ export function ResourceNodeDetail({
                     onChange={(e) => handleTextChange('description', e.target.value)}
                     onBlur={() => void flush()}
                     placeholder="Descrição funcional do nó no catálogo de recursos..."
-                    className="w-full rounded-[14px] border border-app-border bg-white px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+                    className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
                   />
                 </div>
 
                 {!isGroup && (
-                  <div className="flex items-center justify-between gap-3 rounded-[12px] border border-app-border bg-black/[0.01] p-4">
+                  <div className="flex items-center justify-between gap-3 rounded-[12px] border border-app-border bg-[var(--surface-muted)] p-4">
                     <div className="min-w-0">
                       <span className="block text-[0.8rem] font-semibold text-app-text">
                         Identidade visual
@@ -853,7 +853,7 @@ export function ResourceNodeDetail({
                     <button
                       type="button"
                       onClick={() => setVisualIdentityPickerOpen(true)}
-                      className="flex shrink-0 items-center gap-2 rounded-[10px] border border-app-border bg-white px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
+                      className="flex shrink-0 items-center gap-2 rounded-[10px] border border-app-border bg-app-panel px-3 py-2 text-[0.82rem] font-semibold text-app-text shadow-sm transition hover:border-app-accent-border hover:bg-app-accent-soft active:scale-95"
                     >
                       {visualIdentityPreviewUrl ? (
                         <img src={visualIdentityPreviewUrl} alt="" className="h-5 w-5" />
@@ -866,18 +866,18 @@ export function ResourceNodeDetail({
                 )}
 
                 {!isGroup && (
-                  <div className="space-y-3 rounded-[12px] border border-app-border bg-black/[0.01] p-4">
+                  <div className="space-y-3 rounded-[12px] border border-app-border bg-[var(--surface-muted)] p-4">
                     <div>
                       <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
                         Natureza do Recurso
                       </label>
-                      <div className="inline-flex rounded-xl bg-black/[0.04] p-1 gap-1">
+                      <div className="inline-flex rounded-xl bg-[var(--surface-muted)] p-1 gap-1">
                         <button
                           type="button"
                           onClick={() => handleNatureChange('PhysicalResource')}
                           className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
                             formNature === 'PhysicalResource'
-                              ? 'bg-white text-app-text font-semibold shadow-sm'
+                              ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                               : 'text-app-muted hover:text-app-text'
                           }`}
                         >
@@ -889,7 +889,7 @@ export function ResourceNodeDetail({
                           onClick={() => handleNatureChange('LogicalResource')}
                           className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition ${
                             formNature === 'LogicalResource'
-                              ? 'bg-white text-app-text font-semibold shadow-sm'
+                              ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                               : 'text-app-muted hover:text-app-text'
                           }`}
                         >
@@ -936,7 +936,7 @@ export function ResourceNodeDetail({
                                     className={`flex items-start gap-2 rounded-[10px] border px-3 py-2 text-left transition ${
                                       selected
                                         ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border'
-                                        : 'border-app-border bg-white hover:border-app-accent/60'
+                                        : 'border-app-border bg-app-panel hover:border-app-accent/60'
                                     }`}
                                   >
                                     <Icon
@@ -1134,7 +1134,7 @@ export function ResourceNodeDetail({
                     <div
                       key={row.key}
                       onClick={() => handleOpenEditCharacteristic(row)}
-                      className="group min-h-12 px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
+                      className="group min-h-12 px-3.5 py-2.5 vt-hover-muted cursor-pointer transition flex items-center justify-between gap-3"
                       role="button"
                       tabIndex={0}
                       title={row.description || undefined}
@@ -1225,7 +1225,7 @@ export function ResourceNodeDetail({
                         handleOpenViewSpec(spec);
                       }
                     }}
-                    className="group min-h-12 px-3.5 py-2.5 hover:bg-black/[0.02] cursor-pointer transition flex items-center justify-between gap-3"
+                    className="group min-h-12 px-3.5 py-2.5 vt-hover-muted cursor-pointer transition flex items-center justify-between gap-3"
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {

@@ -57,7 +57,7 @@ export const ArchiveConfirmModal: React.FC<{
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-md border border-app-border bg-white px-3.5 py-1.5 text-[0.84rem] text-app-text transition hover:bg-neutral-100"
+          className="vt-hover-muted rounded-md border border-app-border bg-app-panel px-3.5 py-1.5 text-[0.84rem] text-app-text transition"
         >
           Cancelar
         </button>
@@ -241,7 +241,7 @@ export const ResearchHistoryPage: React.FC<{
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
-            className="mt-3 flex w-full items-center rounded-md px-2.5 py-1.5 text-left transition hover:bg-neutral-100"
+            className="vt-sb-recent-toggle mt-3 flex w-full items-center rounded-md px-2.5 py-1.5 text-left transition"
             aria-expanded={expanded}
             aria-label={expanded ? 'Recolher conversas recentes' : 'Expandir conversas recentes'}
             title={expanded ? 'Recolher' : 'Expandir'}
@@ -268,7 +268,7 @@ export const ResearchHistoryPage: React.FC<{
                   className={`group relative flex h-[30px] items-center rounded-md px-2.5 text-left transition ${
                     activeSessionId === session.id
                       ? 'vt-sb-recent-active text-app-text font-medium'
-                      : 'border border-transparent text-app-text hover:bg-neutral-100'
+                      : 'vt-sb-recent-row border border-transparent text-app-text'
                   }`}
                   style={{ color: 'var(--sidebar-fg)' }}
                 >
@@ -291,7 +291,7 @@ export const ResearchHistoryPage: React.FC<{
                       cancelEdit();
                     }
                   }}
-                  className="w-full rounded border border-app-border bg-white px-2 py-0.5 text-xs text-app-text outline-none"
+                  className="w-full rounded border border-app-border bg-app-panel px-2 py-0.5 text-xs text-app-text outline-none"
                 />
               ) : (
                 <button
@@ -305,7 +305,7 @@ export const ResearchHistoryPage: React.FC<{
               )}
             </div>
             {editingSessionId === session.id ? null : (
-              <div className="pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded bg-white/90 pl-1 opacity-0 shadow-sm transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+              <div className="pointer-events-none absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded bg-app-panel pl-1 opacity-0 shadow-sm transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                 <button
                   type="button"
                   onClick={(e) => beginEdit(session, e)}

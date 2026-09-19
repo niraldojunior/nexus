@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, FileText, FolderTree, MapPin, MapPinned, Workflow, Zap } from 'lucide-react';
+import { Briefcase, Download, FileText, FolderTree, MapPin, MapPinned } from 'lucide-react';
 import ClaudeBurst from './components/ClaudeBurst';
 import CopilotPendingResponse from './components/CopilotPendingResponse';
 import Diamond from './components/Diamond';
@@ -23,7 +23,7 @@ import { useSession } from './hooks/useSession';
 import { logout as logoutRequest } from './services/authApi';
 import { clearSession } from './services/session';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from './utils/chatScroll';
-import { initialConversations, initialRecentItems, settingsSections } from './data/mockData';
+import { initialConversations, initialRecentItems } from './data/mockData';
 import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
 import { clearGeoViewParams } from './utils/geoViewState';
@@ -39,8 +39,8 @@ import { Conversation, ConversationEntry, PageId, RecentGroup, SettingsSection }
 
 const assistantChips = [
   { icon: MapPinned, label: 'Explorar Geo' },
-  { icon: Workflow, label: 'Modelar Service' },
-  { icon: Zap, label: 'Checar Order' },
+  { icon: Briefcase, label: 'Modelar Service' },
+  { icon: FolderTree, label: 'Checar Order' },
   { icon: FileText, label: 'Gerar especificação' },
 ];
 
@@ -55,7 +55,7 @@ const domainMeta: Record<
   service: {
     title: 'Service',
     subtitle: 'Para quê / quem? CFS, RFS e SubscriberID',
-    icon: Workflow,
+    icon: Briefcase,
   },
   order: { title: 'Order', subtitle: 'Viabilidade, qualificação e fulfillment', icon: FolderTree },
 };
@@ -106,7 +106,7 @@ function AssistantHome({
                 if (label.includes('Service')) onNavigate('service');
                 if (label.includes('Order')) onNavigate('order');
               }}
-              className="group flex items-center gap-2 rounded-2xl border border-app-border bg-white px-3.5 py-2 text-[0.92rem] font-medium text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-white"
+              className="group flex items-center gap-2 rounded-2xl border border-app-border bg-app-panel px-3.5 py-2 text-[0.92rem] font-medium text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-panel"
             >
               <Diamond size={5} className="opacity-40 transition-opacity group-hover:opacity-100" />
               <Icon className="h-5 w-5 text-app-muted" />
@@ -140,7 +140,7 @@ function DomainPage({
   const meta = domainMeta[page];
 
   return (
-    <div className="min-h-full bg-white px-5 pb-5 pt-2">
+    <div className="min-h-full bg-app-bg px-5 pb-5 pt-2">
       <div className="mx-auto" style={{ maxWidth: 'var(--content-max)' }}>
         <PageHead title={meta.title} subtitle={meta.subtitle} />
         <EmptyState
@@ -194,7 +194,7 @@ function ConversationPage({
           </div>
           <button
             type="button"
-            className="rounded-[999px] border border-app-border bg-white px-5 py-2.5 text-[1rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
+            className="rounded-[999px] border border-app-border bg-app-panel px-5 py-2.5 text-[1rem] font-semibold text-app-text shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
           >
             Compartilhar
           </button>
@@ -213,7 +213,7 @@ function ConversationPage({
                     {pendingUserMessageId === entry.id ? (
                       <div ref={activeTurnAnchorRef} className="h-1 w-full" />
                     ) : null}
-                    <div className="ml-auto w-fit max-w-[840px] rounded-[24px] border border-app-border bg-white px-6 py-5 shadow-sm">
+                    <div className="ml-auto w-fit max-w-[840px] rounded-[24px] border border-app-border bg-app-panel px-6 py-5 shadow-sm">
                       <p className="text-[1.02rem] leading-[1.6] tracking-[-0.01em] text-app-text">
                         {entry.content}
                       </p>
@@ -242,7 +242,14 @@ function ConversationPage({
             qualityLabel="Baixo"
           />
           {errorMessage ? (
-            <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            <p
+              className="mt-2 rounded-xl px-4 py-2 text-sm"
+              style={{
+                background: 'var(--status-red-soft)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                color: 'var(--status-red)',
+              }}
+            >
               {errorMessage}
             </p>
           ) : null}
@@ -275,13 +282,13 @@ function AssistantEntry({ entry }: { entry: ConversationEntry }) {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  className="rounded-2xl border border-app-border bg-white p-3 shadow-soft"
+                  className="rounded-2xl border border-app-border bg-app-panel p-3 shadow-soft"
                 >
                   <GoogleDriveMark className="h-6 w-6" />
                 </button>
                 <button
                   type="button"
-                  className="rounded-[999px] border border-app-border bg-white px-8 py-4 text-[1.05rem] font-medium text-app-text shadow-soft"
+                  className="rounded-[999px] border border-app-border bg-app-panel px-8 py-4 text-[1.05rem] font-medium text-app-text shadow-soft"
                 >
                   <Download className="mr-2 inline h-5 w-5" />
                   Baixar
@@ -343,7 +350,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
-  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('skills');
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSection>('general');
 
   // Locais (Geo), Configurações e Studio abrem com o conteúdo em foco: recolhe a barra lateral ao entrar.
   // No mobile a barra é um drawer sobreposto e começa sempre fechada.
@@ -607,7 +614,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   };
 
   return (
-    <div className="flex h-screen bg-white text-app-text">
+    <div className="flex h-screen bg-app-bg text-app-text">
       <Sidebar
         collapsed={sidebarCollapsed}
         isMobile={isMobile}
@@ -761,7 +768,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       <SettingsModal
         isOpen={settingsOpen}
         activeSection={activeSettingsSection}
-        sections={settingsSections}
         onClose={() => setSettingsOpen(false)}
         onSelectSection={setActiveSettingsSection}
       />

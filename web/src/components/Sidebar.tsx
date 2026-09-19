@@ -11,6 +11,8 @@ import {
   Presentation,
   Settings,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
 import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
@@ -51,7 +53,7 @@ interface SidebarProps {
   researchSessionRefreshTrigger?: number;
   // Sessão atual: identidade no rodapé, "Sair" e a entrada de administração de Usuários
   // (só para admin). Ver useSession/App.
-  sessionUser?: { name: string; email?: string; roles: string[] } | null;
+  sessionUser?: { name: string; email?: string; avatarUrl?: string | null; roles: string[] } | null;
   isAdmin?: boolean;
   canViewStudio?: boolean;
   canViewOrder?: boolean;
@@ -61,7 +63,7 @@ interface SidebarProps {
 const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
   { id: 'research', label: 'Nova Conversa', icon: Plus },
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
-  { id: 'geo', label: 'Recursos', icon: MapPinned },
+  { id: 'geo', label: 'Locais e Recursos', icon: MapPinned },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
   { id: 'studio', label: 'Studio', icon: Presentation },
@@ -116,6 +118,37 @@ export default function Sidebar({
     },
   };
 
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const [avatarTriggerRect, setAvatarTriggerRect] = useState<DOMRect | null>(null);
+  const avatarButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return;
+    const handleClose = () => setAvatarMenuOpen(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAvatarMenuOpen(false);
+        avatarButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener('resize', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [avatarMenuOpen]);
+
+  const handleAvatarClick = () => {
+    if (!contentCollapsed) return;
+    if (avatarButtonRef.current) {
+      setAvatarTriggerRect(avatarButtonRef.current.getBoundingClientRect());
+      setAvatarMenuOpen((open) => !open);
+    }
+  };
+
   // No mobile a sidebar é um drawer sobreposto (sempre com conteúdo completo);
   // no desktop ela recolhe para um rail fino de ícones. `contentCollapsed` só
   // é verdadeiro no caso do rail — o drawer mobile nunca esconde os rótulos.
@@ -159,11 +192,11 @@ export default function Sidebar({
         {/* SidebarHeader — compacto: a lista de itens começa logo abaixo da marca. */}
         <div className="flex flex-shrink-0 items-center px-2 pt-1.5 pb-0.5">
           <div
-            className="vt-sb-btn vt-sb-btn-lg w-full"
+            className="vt-sb-btn vt-sb-btn-lg w-full !gap-1.5"
             style={{ justifyContent: contentCollapsed ? 'center' : 'flex-start' }}
           >
             {!contentCollapsed ? (
-              <NexusMark className="h-[22px] w-[22px] shrink-0" />
+              <NexusMark className="h-[26px] w-[26px] shrink-0" ink="var(--text-primary)" />
             ) : (
               // No rail recolhido, o botão é a marca do Nexus; o hover revela o ícone de
               // abrir a sidebar — a troca é só CSS, sem estado; o clique expande a barra.
@@ -174,9 +207,12 @@ export default function Sidebar({
                 aria-label="Expandir barra lateral"
                 title="Expandir"
               >
-                <NexusMark className="h-[22px] w-[22px] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                <NexusMark
+                  className="h-[26px] w-[26px] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
+                  ink="var(--text-primary)"
+                />
                 <PanelLeftOpen
-                  className="absolute h-[18px] w-[18px] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                  className="absolute h-[20px] w-[20px] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
                   strokeWidth={1.8}
                 />
               </button>
@@ -186,7 +222,7 @@ export default function Sidebar({
                 style={{
                   fontFamily: 'var(--font-display)',
                   fontWeight: 600,
-                  fontSize: 17,
+                  fontSize: 20,
                   letterSpacing: 'var(--tracking-snug)',
                   color: 'var(--text-primary)',
                   flex: 1,
@@ -341,69 +377,123 @@ export default function Sidebar({
         </div>
 
         <div className="flex-shrink-0 border-t border-app-border p-2">
-          <div
-            className="vt-sb-btn vt-sb-btn-lg w-full"
-            style={{ justifyContent: contentCollapsed ? 'center' : 'flex-start' }}
-          >
-            <div
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                background: 'var(--vt-yellow)',
-                color: 'var(--vt-ink)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 600,
-                fontSize: 12,
-                flexShrink: 0,
-              }}
+          {contentCollapsed ? (
+            <button
+              ref={avatarButtonRef}
+              type="button"
+              onClick={handleAvatarClick}
+              aria-haspopup="menu"
+              aria-expanded={avatarMenuOpen}
+              className="vt-sb-btn vt-sb-btn-lg w-full flex items-center justify-center p-1 rounded-xl transition hover:bg-app-accent-soft"
+              title="Menu do usuário"
             >
-              {initialOf(sessionUser?.name)}
-            </div>
-            {!contentCollapsed && (
-              <>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-app-text">
-                    {sessionUser?.name ?? 'Administrador'}
-                  </div>
-                  <div className="truncate text-[0.75rem] text-app-muted">
-                    {sessionUser?.email ?? 'admin@vtal.com.br'}
-                  </div>
+              {sessionUser?.avatarUrl ? (
+                <img
+                  src={sessionUser.avatarUrl}
+                  alt={sessionUser.name}
+                  className="h-7 w-7 rounded-full object-cover border border-app-border"
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'var(--vt-yellow)',
+                    color: 'var(--vt-ink)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    flexShrink: 0,
+                  }}
+                >
+                  {initialOf(sessionUser?.name)}
                 </div>
+              )}
+              {!avatarMenuOpen && (
+                <span className="vt-sb-tip">{sessionUser?.name ?? 'Usuário'}</span>
+              )}
+            </button>
+          ) : (
+            <div className="vt-sb-btn vt-sb-btn-lg w-full flex items-center gap-2.5">
+              {sessionUser?.avatarUrl ? (
+                <img
+                  src={sessionUser.avatarUrl}
+                  alt={sessionUser.name}
+                  className="h-7 w-7 rounded-full object-cover border border-app-border"
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'var(--vt-yellow)',
+                    color: 'var(--vt-ink)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    flexShrink: 0,
+                  }}
+                >
+                  {initialOf(sessionUser?.name)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-app-text">
+                  {sessionUser?.name ?? 'Administrador'}
+                </div>
+                <div className="truncate text-[0.75rem] text-app-muted">
+                  {sessionUser?.email ?? 'admin@vtal.com.br'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectPage('settings');
+                  closeMobileDrawer();
+                }}
+                className="rounded p-1 text-app-muted hover:text-app-text"
+                title="Preferências"
+              >
+                <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
+              {onLogout ? (
                 <button
                   type="button"
                   onClick={() => {
-                    onSelectPage('settings');
+                    onLogout();
                     closeMobileDrawer();
                   }}
-                  className="rounded p-1 text-app-muted hover:text-app-text"
-                  title="Configurações"
+                  className="rounded p-1 text-app-muted hover:text-red-600"
+                  title="Sair"
                 >
-                  <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
                 </button>
-                {onLogout ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onLogout();
-                      closeMobileDrawer();
-                    }}
-                    className="rounded p-1 text-app-muted hover:text-red-600"
-                    title="Sair"
-                  >
-                    <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
-                  </button>
-                ) : null}
-              </>
-            )}
-            {contentCollapsed && (
-              <span className="vt-sb-tip">{sessionUser?.name ?? 'Usuário'}</span>
-            )}
-          </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </aside>
+
+      {avatarMenuOpen && avatarTriggerRect && (
+        <AvatarFloatingMenu
+          rect={avatarTriggerRect}
+          onClose={() => setAvatarMenuOpen(false)}
+          onOpenSettings={() => {
+            setAvatarMenuOpen(false);
+            onSelectPage('settings');
+          }}
+          onLogout={() => {
+            setAvatarMenuOpen(false);
+            onLogout?.();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -441,5 +531,56 @@ function NavItem({
       )}
       {collapsed && <span className="vt-sb-tip">{label}</span>}
     </button>
+  );
+}
+
+function AvatarFloatingMenu({
+  rect,
+  onClose,
+  onOpenSettings,
+  onLogout,
+}: {
+  rect: DOMRect;
+  onClose: () => void;
+  onOpenSettings: () => void;
+  onLogout: () => void;
+}) {
+  const width = 190;
+  // Abre à direita do rail de 58px, alinhado com o rodapé
+  const left = Math.min(rect.right + 10, window.innerWidth - width - 12);
+  const bottom = Math.max(12, window.innerHeight - rect.bottom);
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        role="menu"
+        style={{ left, bottom, width }}
+        className="fixed z-50 flex flex-col overflow-hidden rounded-[16px] border border-app-border bg-app-panel p-1.5 shadow-modal"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onOpenSettings}
+          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[0.88rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+        >
+          <Settings className="h-4 w-4 text-app-muted" strokeWidth={1.8} />
+          <span>Preferências</span>
+        </button>
+
+        <div className="my-1 border-t border-app-border" />
+
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onLogout}
+          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[0.88rem] font-medium text-status-red transition hover:bg-status-red-soft"
+        >
+          <LogOut className="h-4 w-4 text-status-red" strokeWidth={1.8} />
+          <span>Sair</span>
+        </button>
+      </div>
+    </>,
+    document.body,
   );
 }

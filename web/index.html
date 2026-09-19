@@ -6,13 +6,29 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>V.tal Nexus</title>
     <style>
-      /* Evita o flash de fundo cinza antes do CSS principal carregar — o canvas do
-         novo design system é branco plano (ver docs/4-design-system/tokens/colors.css). */
+      /* Evita o flash antes do CSS principal carregar — respeita data-theme */
       html,
       body {
         background: #ffffff;
       }
+      html[data-theme='dark'],
+      html[data-theme='dark'] body {
+        background: #181919;
+      }
     </style>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('authUser');
+          if (raw) {
+            var u = JSON.parse(raw);
+            if (u && (u.theme === 'dark' || u.theme === 'light')) {
+              document.documentElement.setAttribute('data-theme', u.theme);
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

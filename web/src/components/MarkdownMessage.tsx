@@ -47,7 +47,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
                   onClick={() => {
                     void handleCopy(rawCode);
                   }}
-                  className="absolute right-2 top-2 rounded-lg border border-app-border bg-white px-2.5 py-1 text-xs font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
+                  className="absolute right-2 top-2 rounded-lg border border-app-border bg-app-panel px-2.5 py-1 text-xs font-semibold text-app-muted shadow-soft transition hover:border-app-accent-border hover:bg-app-accent-soft"
                   aria-label="Copiar codigo"
                 >
                   {copiedCode === rawCode ? 'Copiado' : 'Copiar'}

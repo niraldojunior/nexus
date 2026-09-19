@@ -9,6 +9,8 @@ export type SessionUser = {
   externalId: string;
   name: string;
   email?: string;
+  avatarUrl?: string | null;
+  theme?: 'light' | 'dark';
   roles: string[];
   tenantId: string;
   status: string;
@@ -47,12 +49,30 @@ export const bearerToken = (): string => getToken() ?? '';
 export const setSession = (session: { token: string; user: SessionUser }): void => {
   localStorage.setItem(TOKEN_KEY, session.token);
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  if (session.user.theme === 'dark' || session.user.theme === 'light') {
+    document.documentElement.setAttribute('data-theme', session.user.theme);
+  }
+  notify();
+};
+
+export const updateSessionUser = (patch: Partial<SessionUser>): void => {
+  const current = getSessionUser();
+  if (!current) return;
+  const updated: SessionUser = { ...current, ...patch };
+  if (patch.avatarUrl === null) {
+    delete updated.avatarUrl;
+  }
+  localStorage.setItem(USER_KEY, JSON.stringify(updated));
+  if (updated.theme === 'dark' || updated.theme === 'light') {
+    document.documentElement.setAttribute('data-theme', updated.theme);
+  }
   notify();
 };
 
 export const clearSession = (): void => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  document.documentElement.removeAttribute('data-theme');
   notify();
 };
 

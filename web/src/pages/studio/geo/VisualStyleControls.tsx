@@ -113,7 +113,7 @@ export function ColorRuleEditor({
   const defaults = DEFAULT_STATUS_COLORS[category];
 
   return (
-    <div className="space-y-3 rounded-[12px] border border-app-border bg-white p-3.5 shadow-sm">
+    <div className="space-y-3 rounded-[12px] border border-app-border bg-app-panel p-3.5 shadow-sm">
       <div>
         <h5 className="text-[0.84rem] font-semibold text-app-text">{title}</h5>
         {description && <p className="text-[0.76rem] text-app-muted">{description}</p>}
@@ -135,7 +135,7 @@ export function ColorRuleEditor({
             className={`rounded-[8px] border px-3 py-1.5 text-[0.8rem] font-medium transition ${
               rule.mode === option.value
                 ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
-                : 'border-app-border bg-white text-app-muted hover:text-app-text'
+                : 'border-app-border bg-app-panel text-app-muted hover:text-app-text'
             }`}
           >
             {option.label}
@@ -276,7 +276,7 @@ export function StrokeStyleField({
             className={`flex flex-col items-center gap-1.5 rounded-[8px] border px-3 py-2 text-[0.78rem] font-medium transition ${
               value === option.value
                 ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
-                : 'border-app-border text-app-muted hover:bg-black/[0.02]'
+                : 'border-app-border text-app-muted vt-hover-muted'
             }`}
           >
             <svg width="110" height="8" aria-hidden="true">

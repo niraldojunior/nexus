@@ -537,6 +537,55 @@ const routeRequest = async ({
     return;
   }
 
+  if (request.method === 'PATCH' && url.pathname === '/v1/auth/profile') {
+    const context = await buildRequestContext(request, config);
+    const user = await requireUser(runtime, context);
+    const body = await readBody(request);
+
+    const update: { avatarUrl?: string | null; theme?: 'light' | 'dark' } = {};
+
+    if (body.avatarUrl !== undefined) {
+      if (body.avatarUrl === null || body.avatarUrl === '') {
+        update.avatarUrl = null;
+      } else if (typeof body.avatarUrl === 'string') {
+        if (body.avatarUrl.length > 500_000) {
+          throw new AppError('avatarUrl excede o tamanho máximo permitido (500KB)', {
+            code: 'INVALID_INPUT',
+            statusCode: 400,
+          });
+        }
+        update.avatarUrl = body.avatarUrl;
+      } else {
+        throw new AppError('avatarUrl deve ser string ou null', {
+          code: 'INVALID_INPUT',
+          statusCode: 400,
+        });
+      }
+    }
+
+    if (body.theme !== undefined) {
+      if (body.theme === 'light' || body.theme === 'dark') {
+        update.theme = body.theme;
+      } else {
+        throw new AppError("theme deve ser 'light' ou 'dark'", {
+          code: 'INVALID_INPUT',
+          statusCode: 400,
+        });
+      }
+    }
+
+    const updated = await userRepository.updateProfile(user.id, update);
+    if (!updated) {
+      throw new AppError('Usuário não encontrado', {
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+
+    sendJson(response, 200, updated);
+    return;
+  }
+
   // Users API — administração de contas, restrita a papéis de admin (RBAC). Uma sessão
   // autenticada não-admin recebe 403; o token estático (máquina) carrega os papéis admin
   // por padrão, preservando scripts e testes de integração.

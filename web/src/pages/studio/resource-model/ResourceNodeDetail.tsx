@@ -41,6 +41,7 @@ import {
 } from '../../../services/resourceApi';
 import {
   buildCharacteristicPayload,
+  partitionCharacteristicRowsByLevel,
   resourceCharacteristicRowsFrom,
   type ResourceCharacteristicRow,
 } from '../../../utils/resourceCharacteristicsForm';
@@ -65,6 +66,61 @@ const VALUE_TYPE_LABELS: Record<ResourceCharacteristicRow['valueType'], string> 
   list: 'Lista de opções',
   json: 'JSON livre',
 };
+
+// Uma linha da lista de características do tipo, extraída para não duplicar a mesma marcação nas
+// duas seções (especificação/instância) da aba Características (issue #273).
+function CharacteristicListRow({
+  row,
+  canMutate,
+  deleting,
+  onOpen,
+  onDelete,
+}: {
+  row: ResourceCharacteristicRow;
+  canMutate: boolean;
+  deleting: boolean;
+  onOpen: (row: ResourceCharacteristicRow) => void;
+  onDelete: (row: ResourceCharacteristicRow) => void;
+}) {
+  return (
+    <div
+      onClick={() => onOpen(row)}
+      className="group min-h-12 px-3.5 py-2.5 vt-hover-muted cursor-pointer transition flex items-center justify-between gap-3"
+      role="button"
+      tabIndex={0}
+      title={row.description || undefined}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(row);
+        }
+      }}
+    >
+      <div className="min-w-0">
+        <h4 className="text-[0.88rem] text-app-text truncate">
+          <span className="font-bold">{row.name}</span>{' '}
+          <span className="font-normal text-app-muted">
+            ({row.group ? `${row.group} · ` : ''}{VALUE_TYPE_LABELS[row.valueType] ?? row.valueType})
+          </span>
+        </h4>
+      </div>
+      {canMutate && (
+        <button
+          type="button"
+          title="Remover característica"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(row);
+          }}
+          disabled={deleting}
+          className="hidden group-hover:flex group-focus-within:flex rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 shrink-0"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export type ResourceNodeDetailProps = {
   catalogId: string;
@@ -1123,55 +1179,43 @@ export function ResourceNodeDetail({
                 <p className="text-[0.88rem] font-medium">Nenhuma característica cadastrada.</p>
                 <p className="text-[0.78rem]">
                   As características definidas aqui serão herdadas por toda especificação deste
-                  tipo.
+                  tipo, e cada recurso poderá preencher as de nível de instância.
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-app-border rounded-[18px] border border-app-border overflow-hidden">
-                {typeCharacteristicRows.map((row) => {
-                  const canMutateCharacteristic = canEdit && isEditing;
-                  return (
-                    <div
-                      key={row.key}
-                      onClick={() => handleOpenEditCharacteristic(row)}
-                      className="group min-h-12 px-3.5 py-2.5 vt-hover-muted cursor-pointer transition flex items-center justify-between gap-3"
-                      role="button"
-                      tabIndex={0}
-                      title={row.description || undefined}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleOpenEditCharacteristic(row);
-                        }
-                      }}
-                    >
-                      <div className="min-w-0">
-                        <h4 className="text-[0.88rem] font-semibold text-app-text truncate">
-                          {row.name}
+              (() => {
+                const canMutateCharacteristic = canEdit && isEditing;
+                const { specification, instance } =
+                  partitionCharacteristicRowsByLevel(typeCharacteristicRows);
+                const sections: Array<{ heading: string; rows: ResourceCharacteristicRow[] }> = [
+                  { heading: `Nível de especificação (${specification.length})`, rows: specification },
+                  { heading: `Nível de instância (${instance.length})`, rows: instance },
+                ].filter((section) => section.rows.length > 0);
+
+                return (
+                  <div className="space-y-4">
+                    {sections.map((section) => (
+                      <div key={section.heading}>
+                        <h4 className="mb-1.5 text-[0.76rem] font-semibold uppercase tracking-wide text-app-muted">
+                          {section.heading}
                         </h4>
-                        <p className="text-[0.78rem] text-app-muted truncate">
-                          {row.group ? `${row.group} · ` : ''}
-                          {VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}
-                        </p>
+                        <div className="divide-y divide-app-border rounded-[18px] border border-app-border overflow-hidden">
+                          {section.rows.map((row) => (
+                            <CharacteristicListRow
+                              key={row.key}
+                              row={row}
+                              canMutate={canMutateCharacteristic}
+                              deleting={characteristicDeletingKey === row.key}
+                              onOpen={handleOpenEditCharacteristic}
+                              onDelete={(r) => void handleDeleteCharacteristic(r)}
+                            />
+                          ))}
+                        </div>
                       </div>
-                      {canMutateCharacteristic && (
-                        <button
-                          type="button"
-                          title="Remover característica"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleDeleteCharacteristic(row);
-                          }}
-                          disabled={characteristicDeletingKey === row.key}
-                          className="hidden group-hover:flex group-focus-within:flex rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+                );
+              })()
             )}
           </div>
         )}

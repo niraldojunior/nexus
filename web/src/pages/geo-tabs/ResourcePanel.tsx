@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Boxes,
   ChevronLeft,
+  FileText,
   History as HistoryIcon,
   Info as InfoIcon,
   Layers3,
@@ -12,10 +13,13 @@ import {
 import { useResourceDetail } from '../../hooks/useResourceDetail';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
+import { useResourceComponents } from '../../hooks/useResourceComponents';
+import { useResourceConnections } from '../../hooks/useResourceConnections';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
 import { updateResource, type PhysicalResourcePayload } from '../../services/resourceApi';
 import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
+import { dedupeResourceConnections } from '../../utils/resourceConnections';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { streetViewTargetsForGeometry } from '../../utils/streetViewTargets';
 import { resourceStreetViewMarker } from '../../utils/streetViewMarker';
@@ -29,9 +33,11 @@ import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import { StreetViewHero } from '../../components/StreetViewHero';
 import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
 import { PanelBarButton } from './PanelBarButton';
+import { PanelTabBar } from './PanelTabBar';
 import { CoordinateStreetView } from './CoordinateStreetView';
 import { usePanelExit } from './usePanelExit';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
+import { ResourceAboutTab } from './ResourceAboutTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
 import { ResourceComponentsTab } from './ResourceComponentsTab';
 import { ResourceConnectionsView } from './ResourceConnectionsView';
@@ -94,8 +100,29 @@ export function ResourcePanel({
   const isPort = node.resourceType === 'Port';
   const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
   const { service: portService, hasActiveService, loading: portServiceLoading, error: portServiceError } = usePortService(resourceId, isPort);
+  // Carregados aqui (não dentro das abas) para o badge do "Componentes"/"Conexões" e o
+  // conteúdo da aba usarem o mesmo fetch — evita duplicar chamada ao backend, que atende
+  // em série (AGENTS §3). Porta não tem árvore de componentes própria (usa "Recursos
+  // atendidos", derivado de usePortDetail).
+  const {
+    components,
+    truncated: componentsTruncated,
+    loading: componentsLoading,
+    error: componentsError,
+    reload: reloadComponents,
+  } = useResourceComponents(resourceId, { enabled: !isPort });
+  const {
+    connections,
+    loading: connectionsLoading,
+    error: connectionsError,
+    reload: reloadConnections,
+  } = useResourceConnections(resourceId);
+  // Conta direto+indireto (toda a árvore recursiva já vem em `components`, ver
+  // useResourceComponents) e deduplica `connectedTo` simétrico — mesma regra do contador
+  // e da lista da aba "Conexões" (ResourceConnectionsTab.tsx).
+  const connectionsCount = dedupeResourceConnections(connections).length;
   const [tab, setTab] = useState<
-    'overview' | 'components' | 'connections' | 'service' | 'history'
+    'overview' | 'about' | 'components' | 'connections' | 'service' | 'history'
   >('overview');
   // ONT alimentada pelo drop ativo — só existe quando a fiação física segue conectada,
   // mesmo em churn (sem RFS/CFS ativos). Entra na lista de "Recursos atendidos" da Porta.
@@ -192,13 +219,24 @@ export function ResourcePanel({
 
   const body = (
     <div className="grid gap-4">
-      <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
+      <PanelTabBar activeTab={tab} className="border-b border-app-border pb-3">
         <PanelBarButton
           icon={InfoIcon}
           label="Geral"
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
+        {/* "Sobre" concentra as características do recurso (spec + instância, issue #273) — sem
+            sentido para Porta hoje, que não tem especificação/definições de instância no seu
+            detalhe (ResourcePortDetail). Mesmo gate de !isPort do StreetViewHero abaixo. */}
+        {!isPort ? (
+          <PanelBarButton
+            icon={FileText}
+            label="Sobre"
+            active={tab === 'about'}
+            onClick={() => setTab('about')}
+          />
+        ) : null}
         {isPort ? (
           <PanelBarButton
             icon={Boxes}
@@ -211,7 +249,7 @@ export function ResourcePanel({
           <PanelBarButton
             icon={Boxes}
             label="Componentes"
-            badge={detail?.childCount}
+            badge={components.length}
             active={tab === 'components'}
             onClick={() => setTab('components')}
           />
@@ -219,6 +257,7 @@ export function ResourcePanel({
         <PanelBarButton
           icon={Network}
           label="Conexões"
+          badge={connectionsCount}
           active={tab === 'connections'}
           onClick={() => setTab('connections')}
         />
@@ -236,7 +275,7 @@ export function ResourcePanel({
           active={tab === 'history'}
           onClick={() => setTab('history')}
         />
-      </div>
+      </PanelTabBar>
 
       {tab === 'overview' ? (
         isPort ? (
@@ -273,6 +312,21 @@ export function ResourcePanel({
               </div>
             ) : null}
           </div>
+        ) : detailLoading ? (
+          <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            Carregando detalhes do recurso…
+          </div>
+        ) : detailError ? (
+          <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
+            {detailError}
+          </div>
+        ) : null
+      ) : null}
+
+      {tab === 'about' && !isPort ? (
+        detail ? (
+          <ResourceAboutTab detail={detail} canEdit={canEdit} onPatch={patchResource} />
         ) : detailLoading ? (
           <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -332,7 +386,11 @@ export function ResourcePanel({
           </div>
         ) : (
           <ResourceComponentsTab
-            resourceId={resourceId}
+            components={components}
+            truncated={componentsTruncated}
+            loading={componentsLoading}
+            error={componentsError}
+            reload={reloadComponents}
             onOpenResource={onOpenResource}
             onOpenPort={onOpenPort}
           />
@@ -341,10 +399,13 @@ export function ResourcePanel({
 
       {tab === 'connections' ? (
         <ResourceConnectionsView
-          resourceId={resourceId}
           nodeId={node.id}
           onSimulate={onDropSimulation}
           onPreview={onPreview}
+          connections={connections}
+          connectionsLoading={connectionsLoading}
+          connectionsError={connectionsError}
+          onReloadConnections={reloadConnections}
         />
       ) : null}
 
@@ -368,7 +429,7 @@ export function ResourcePanel({
   if (isMobile) {
     return (
       <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
-        {!isPort ? <StreetViewHero marker={heroMarker} /> : null}
+        {!isPort && tab === 'overview' ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
         <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
       </BottomSheet>
@@ -380,7 +441,7 @@ export function ResourcePanel({
       className={`geo-detail-panel ${isClosing ? 'geo-detail-panel-exit' : ''} ${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       <OverlayScrollArea className="overflow-x-hidden">
-        {!isPort ? <StreetViewHero marker={heroMarker} /> : null}
+        {!isPort && tab === 'overview' ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
         <div className="px-3 py-3">{body}</div>
       </OverlayScrollArea>

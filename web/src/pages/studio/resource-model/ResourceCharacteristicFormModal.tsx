@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Tag } from 'lucide-react';
+import { AlertCircle, Boxes, Layers, Tag } from 'lucide-react';
 import type { ResourceCharacteristicRow } from '../../../utils/resourceCharacteristicsForm';
 import {
   emptyResourceCharacteristicRow,
@@ -172,7 +172,7 @@ export function ResourceCharacteristicFormModal({
                 onChange={(e) => setRow((prev) => ({ ...prev, name: e.target.value }))}
                 disabled={readOnly}
                 placeholder="Ex.: capacidade_portas"
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />
             </div>
             <div>
@@ -183,7 +183,7 @@ export function ResourceCharacteristicFormModal({
                 onChange={(e) => setRow((prev) => ({ ...prev, group: e.target.value }))}
                 disabled={readOnly}
                 placeholder="Ex.: Técnico"
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />
             </div>
           </div>
@@ -196,8 +196,53 @@ export function ResourceCharacteristicFormModal({
               onChange={(e) => setRow((prev) => ({ ...prev, description: e.target.value }))}
               disabled={readOnly}
               placeholder="Descreva a finalidade desta característica..."
-              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+              className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
             />
+          </div>
+
+          <div>
+            <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">Nível</label>
+            <div className="inline-flex rounded-xl bg-[var(--surface-muted)] p-1 gap-1">
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => setRow((prev) => ({ ...prev, characteristicLevel: 'specification' }))}
+                className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition disabled:cursor-default ${
+                  row.characteristicLevel === 'specification'
+                    ? 'bg-app-panel text-app-text font-semibold shadow-sm'
+                    : 'text-app-muted hover:text-app-text'
+                }`}
+              >
+                <Layers className="h-4 w-4 text-sky-600" />
+                Especificação
+              </button>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => setRow((prev) => ({ ...prev, characteristicLevel: 'instance' }))}
+                className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition disabled:cursor-default ${
+                  row.characteristicLevel === 'instance'
+                    ? 'bg-app-panel text-app-text font-semibold shadow-sm'
+                    : 'text-app-muted hover:text-app-text'
+                }`}
+              >
+                <Boxes className="h-4 w-4 text-purple-600" />
+                Instância
+              </button>
+            </div>
+            <p className="mt-1.5 text-[0.78rem] text-app-muted">
+              {row.characteristicLevel === 'instance'
+                ? 'Cada recurso preenche o seu valor. O valor padrão abaixo é só a sugestão inicial.'
+                : 'O valor é definido em cada especificação e vale para todos os recursos dela.'}
+            </p>
+            {isEditing &&
+              editingRow?.characteristicLevel === 'specification' &&
+              row.characteristicLevel === 'instance' && (
+                <p className="mt-1 text-[0.76rem]" style={{ color: 'var(--status-red)' }}>
+                  Alterar o nível descarta os valores já preenchidos nas especificações deste tipo
+                  na próxima edição delas.
+                </p>
+              )}
           </div>
 
           <div>
@@ -213,7 +258,7 @@ export function ResourceCharacteristicFormModal({
                 }));
               }}
               disabled={readOnly}
-              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+              className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
             >
               {VALUE_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -238,7 +283,7 @@ export function ResourceCharacteristicFormModal({
                   }))
                 }
                 disabled={readOnly}
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                 aria-label="Conjunto de referência"
               >
                 <option value="">Opções digitadas manualmente</option>
@@ -254,7 +299,7 @@ export function ResourceCharacteristicFormModal({
                   onChange={(e) => setRow((prev) => ({ ...prev, allowedValuesText: e.target.value }))}
                   disabled={readOnly}
                   placeholder="Opção 1, Opção 2, Opção 3..."
-                  className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 font-mono text-[0.82rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                  className="geo-input font-mono disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                 />
               )}
             </div>
@@ -262,7 +307,11 @@ export function ResourceCharacteristicFormModal({
 
           <div>
             <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-              {row.valueType === 'image' ? 'Valor padrão (imagem)' : 'Valor padrão'}
+              {row.valueType === 'image'
+                ? 'Valor padrão (imagem)'
+                : row.characteristicLevel === 'instance'
+                  ? 'Valor padrão sugerido'
+                  : 'Valor padrão'}
             </label>
             {row.valueType === 'image' ? (
               <ImageCharacteristicInput
@@ -292,7 +341,7 @@ export function ResourceCharacteristicFormModal({
                 value={row.valueText}
                 disabled={readOnly}
                 onChange={(e) => setRow((prev) => ({ ...prev, valueText: e.target.value }))}
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               >
                 <option value="">Selecione um padrão...</option>
                 {listOptions.map((opt) => (
@@ -319,7 +368,7 @@ export function ResourceCharacteristicFormModal({
                     ? '{"chave":"valor"}'
                     : 'Valor da característica'
                 }
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />
             )}
           </div>

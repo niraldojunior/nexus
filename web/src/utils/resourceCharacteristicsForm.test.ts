@@ -3,7 +3,9 @@ import {
   specCharacteristicRowsFromType,
   buildCharacteristicPayload,
   characteristicRowsValid,
+  emptyResourceCharacteristicRow,
   imageReferenceError,
+  partitionCharacteristicRowsByLevel,
   resourceCharacteristicRowsFrom,
   type ResourceCharacteristicRow,
 } from './resourceCharacteristicsForm';
@@ -94,6 +96,7 @@ describe('imageReferenceError & buildCharacteristicPayload', () => {
         name: 'icon',
         valueType: 'image',
         valueText: reference,
+        characteristicLevel: 'specification',
       },
     ]);
 
@@ -125,9 +128,22 @@ describe('buildCharacteristicPayload & resourceCharacteristicRowsFrom', () => {
         description: 'Quantidade de portas PON',
         valueType: 'integer',
         valueText: '16',
+        characteristicLevel: 'specification',
       },
-      { key: '2', name: 'attenuation', valueType: 'decimal', valueText: '1.5' },
-      { key: '3', name: 'isSplitter', valueType: 'boolean', valueText: 'true' },
+      {
+        key: '2',
+        name: 'attenuation',
+        valueType: 'decimal',
+        valueText: '1.5',
+        characteristicLevel: 'specification',
+      },
+      {
+        key: '3',
+        name: 'isSplitter',
+        valueType: 'boolean',
+        valueText: 'true',
+        characteristicLevel: 'specification',
+      },
       {
         key: '4',
         name: 'connectorType',
@@ -135,8 +151,15 @@ describe('buildCharacteristicPayload & resourceCharacteristicRowsFrom', () => {
         valueType: 'list',
         allowedValuesText: 'SC/APC, LC/APC, FC/UPC',
         valueText: 'SC/APC',
+        characteristicLevel: 'specification',
       },
-      { key: '5', name: 'tag', valueType: 'string', valueText: 'gpon' },
+      {
+        key: '5',
+        name: 'tag',
+        valueType: 'string',
+        valueText: 'gpon',
+        characteristicLevel: 'instance',
+      },
     ];
 
     expect(characteristicRowsValid(rows)).toBe(true);
@@ -158,7 +181,7 @@ describe('buildCharacteristicPayload & resourceCharacteristicRowsFrom', () => {
         allowedValues: ['SC/APC', 'LC/APC', 'FC/UPC'],
         value: 'SC/APC',
       },
-      { name: 'tag', valueType: 'string', value: 'gpon' },
+      { name: 'tag', valueType: 'string', value: 'gpon', characteristicLevel: 'instance' },
     ]);
   });
 
@@ -184,5 +207,78 @@ describe('buildCharacteristicPayload & resourceCharacteristicRowsFrom', () => {
     expect(rows[1]?.valueText).toBe('SC/APC');
     expect(rows[1]?.allowedValues).toEqual(['SC/APC', 'LC/APC']);
     expect(rows[1]?.allowedValuesText).toBe('SC/APC, LC/APC');
+  });
+});
+
+describe('characteristicLevel — especificação x instância (issue #273)', () => {
+  it('emptyResourceCharacteristicRow nasce em nível de especificação', () => {
+    expect(emptyResourceCharacteristicRow().characteristicLevel).toBe('specification');
+  });
+
+  it('resourceCharacteristicRowsFrom: ausência do campo, valor de instância e lixo', () => {
+    const rows = resourceCharacteristicRowsFrom([
+      { name: 'legado', value: 'v', valueType: 'string' },
+      { name: 'porInstancia', value: 'v', valueType: 'string', characteristicLevel: 'instance' },
+      // @ts-expect-error valor inválido só para exercitar o fallback defensivo
+      { name: 'lixo', value: 'v', valueType: 'string', characteristicLevel: 'qualquer-coisa' },
+    ]);
+    expect(rows.map((r) => r.characteristicLevel)).toEqual([
+      'specification',
+      'instance',
+      'specification',
+    ]);
+  });
+
+  it('buildCharacteristicPayload omite o campo para specification e emite para instance (round-trip estável)', () => {
+    const payload = buildCharacteristicPayload([
+      { key: '1', name: 'a', valueType: 'string', valueText: 'x', characteristicLevel: 'specification' },
+      { key: '2', name: 'b', valueType: 'string', valueText: 'y', characteristicLevel: 'instance' },
+    ]);
+    expect(payload[0]).not.toHaveProperty('characteristicLevel');
+    expect(payload[1]?.characteristicLevel).toBe('instance');
+
+    // Round-trip: reconvertendo o payload para rows preserva o nível original.
+    const rows = resourceCharacteristicRowsFrom(payload);
+    expect(rows.map((r) => r.characteristicLevel)).toEqual(['specification', 'instance']);
+  });
+
+  it('specCharacteristicRowsFromType tira o nível do tipo, não da spec, e órfãs caem em specification', () => {
+    const typeChars = [
+      {
+        name: 'macAddress',
+        value: '',
+        valueType: 'string',
+        characteristicLevel: 'instance' as const,
+      },
+      { name: 'firmwareBase', value: 'v1', valueType: 'string' },
+    ];
+    // specChar divergente de propósito: se o nível fosse lido daqui, o teste falharia.
+    const specChars = [
+      { name: 'macAddress', value: 'AA:BB', valueType: 'string' },
+      { name: 'orfaAntiga', value: 'dado', valueType: 'string' },
+    ];
+
+    const rows = specCharacteristicRowsFromType(typeChars, specChars);
+
+    expect(rows.map((r) => r.name)).toEqual(['macAddress', 'firmwareBase', 'orfaAntiga']);
+    expect(rows.map((r) => r.characteristicLevel)).toEqual([
+      'instance',
+      'specification',
+      'specification',
+    ]);
+  });
+
+  it('partitionCharacteristicRowsByLevel separa nos dois agrupamentos preservando a ordem', () => {
+    const rows: ResourceCharacteristicRow[] = [
+      { key: '1', name: 'a', valueType: 'string', valueText: '', characteristicLevel: 'specification' },
+      { key: '2', name: 'b', valueType: 'string', valueText: '', characteristicLevel: 'instance' },
+      { key: '3', name: 'c', valueType: 'string', valueText: '', characteristicLevel: 'specification' },
+      { key: '4', name: 'd', valueType: 'string', valueText: '', characteristicLevel: 'instance' },
+    ];
+
+    const { specification, instance } = partitionCharacteristicRowsByLevel(rows);
+
+    expect(specification.map((r) => r.name)).toEqual(['a', 'c']);
+    expect(instance.map((r) => r.name)).toEqual(['b', 'd']);
   });
 });

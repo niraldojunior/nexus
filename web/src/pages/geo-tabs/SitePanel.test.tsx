@@ -183,7 +183,7 @@ describe('SitePanel', () => {
     });
     const room = spec({
       id: 'spec-room',
-      name: 'Room',
+      name: 'Sala',
       code: 'ROOM',
       category: 'SubSite',
       allowedParentSpecIds: ['spec-co'],

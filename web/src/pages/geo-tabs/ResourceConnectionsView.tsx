@@ -2,22 +2,31 @@ import { useId, useState } from 'react';
 import { ResourceConnectionsTab } from './ResourceConnectionsTab';
 import { SchematicTab } from './SchematicTab';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
+import type { ResourceConnection } from '../../services/resourceApi';
 import type { DropSimulation } from './ViabilityTab';
 
 export type ResourceConnectionsViewProps = {
-  resourceId: string;
   nodeId: string;
   /** @deprecated Relações não navegam mais para o painel do recurso relacionado. */
   onOpenResource?: (id: string) => void;
   onSimulate: (simulation: DropSimulation | null) => void;
   onPreview: (node: GeoTreeNode | null) => void;
+  // Carregadas em `ResourcePanel` (mesmo dado do contador da aba "Conexões") — ver
+  // ResourceConnectionsTab.tsx para o motivo de não buscar de novo aqui.
+  connections: ResourceConnection[];
+  connectionsLoading: boolean;
+  connectionsError: string | null;
+  onReloadConnections: () => void;
 };
 
 export function ResourceConnectionsView({
-  resourceId,
   nodeId,
   onSimulate,
   onPreview,
+  connections,
+  connectionsLoading,
+  connectionsError,
+  onReloadConnections,
 }: ResourceConnectionsViewProps) {
   const [tab, setTab] = useState<'relationships' | 'schematic'>('relationships');
   const idPrefix = useId();
@@ -32,7 +41,7 @@ export function ResourceConnectionsView({
         <div
           role="tablist"
           aria-label="Conexões do recurso"
-          className="inline-flex items-center gap-1 rounded-xl bg-black/[0.04] p-1"
+          className="inline-flex items-center gap-1 rounded-xl bg-[var(--surface-muted)] p-1"
         >
           <button
             type="button"
@@ -44,7 +53,7 @@ export function ResourceConnectionsView({
             onClick={() => setTab('relationships')}
             className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
               tab === 'relationships'
-                ? 'bg-white text-app-text font-semibold shadow-sm'
+                ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                 : 'text-app-muted hover:text-app-text'
             }`}
           >
@@ -60,7 +69,7 @@ export function ResourceConnectionsView({
             onClick={() => setTab('schematic')}
             className={`rounded-lg px-3.5 py-1.5 text-[0.82rem] font-medium transition ${
               tab === 'schematic'
-                ? 'bg-white text-app-text font-semibold shadow-sm'
+                ? 'bg-app-panel text-app-text font-semibold shadow-sm'
                 : 'text-app-muted hover:text-app-text'
             }`}
           >
@@ -71,7 +80,12 @@ export function ResourceConnectionsView({
 
       {tab === 'relationships' ? (
         <div id={relationshipsPanelId} role="tabpanel" aria-labelledby={relationshipsTabId}>
-          <ResourceConnectionsTab resourceId={resourceId} />
+          <ResourceConnectionsTab
+            connections={connections}
+            loading={connectionsLoading}
+            error={connectionsError}
+            reload={onReloadConnections}
+          />
         </div>
       ) : (
         <div id={schematicPanelId} role="tabpanel" aria-labelledby={schematicTabId}>

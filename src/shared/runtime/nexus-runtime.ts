@@ -161,8 +161,12 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
         name: party.name,
       };
     },
-    lookupPartyRoles: async (partyId) =>
-      (await partyService.listPartyRoles({ partyId })).map((role) => ({
+    // `tenantId` vem do módulo Resource (via `tenantOf(context)` na chamada real) — sem repassar,
+    // `partyService.listPartyRoles` cai no tenant 'default' independente da sessão real, e a
+    // checagem de papel ativo de fabricante/vendor falha com 409 mesmo com o papel corretamente
+    // cadastrado e ativo no tenant de fato em uso.
+    lookupPartyRoles: async (partyId, tenantId) =>
+      (await partyService.listPartyRoles({ partyId, tenantId })).map((role) => ({
         name: role.name,
         status: role.status,
       })),

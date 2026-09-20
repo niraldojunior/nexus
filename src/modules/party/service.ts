@@ -163,7 +163,15 @@ export class PartyService {
     query?: PartyRoleQuery,
     context?: RequestContext,
   ): Promise<PartyRole[]> {
-    return await this.repository.listPartyRoles({ ...query, tenantId: tenantOf(context) });
+    // Rotas HTTP sempre têm `context` (tenant real da sessão) e devem vencer. Chamadas
+    // server-to-server sem contexto de requisição (ex.: `lookupPartyRoles` injetado no módulo
+    // Resource para validar papel de fabricante/vendor) não têm um `RequestContext` à mão, mas
+    // sabem o tenant — passam via `query.tenantId` explicitamente. Sem este fallback, essas
+    // chamadas caíam sempre no tenant 'default', mesmo quando a sessão real era outro tenant
+    // (ex. 'vtal') — o papel existia e estava ativo, só que no tenant errado, e a checagem de
+    // fabricante/vendor falhava com 409 mesmo com tudo cadastrado corretamente.
+    const tenantId = context?.tenantId ?? query?.tenantId ?? DEFAULT_TENANT_ID;
+    return await this.repository.listPartyRoles({ ...query, tenantId });
   }
 
   private async emit(

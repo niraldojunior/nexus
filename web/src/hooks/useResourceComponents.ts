@@ -27,7 +27,7 @@ const loadComponents = (
  */
 export function useResourceComponents(
   resourceId: string,
-  options?: { maxDepth?: number },
+  options?: { maxDepth?: number; enabled?: boolean },
 ): {
   components: ResourceComponentNode[];
   truncated: boolean;
@@ -36,6 +36,7 @@ export function useResourceComponents(
   reload: () => void;
 } {
   const maxDepth = options?.maxDepth;
+  const enabled = options?.enabled ?? true;
   const [components, setComponents] = useState<ResourceComponentNode[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,6 +45,13 @@ export function useResourceComponents(
   const reload = useCallback(() => setRevision((current) => current + 1), []);
 
   useEffect(() => {
+    if (!enabled) {
+      setComponents([]);
+      setTruncated(false);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     setComponents([]);
     setTruncated(false);
@@ -73,7 +81,7 @@ export function useResourceComponents(
     return () => {
       cancelled = true;
     };
-  }, [resourceId, maxDepth, revision]);
+  }, [resourceId, maxDepth, enabled, revision]);
 
   return { components, truncated, loading, error, reload };
 }

@@ -1,12 +1,18 @@
 import { AlertCircle, ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
-import { useResourceConnections } from '../../hooks/useResourceConnections';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { useResourceTypeVisualIdentities } from '../../hooks/useResourceTypeVisualIdentities';
 import { resourceIconFor } from '../../utils/resourceIcon';
+import { dedupeResourceConnections } from '../../utils/resourceConnections';
 import type { ResourceConnection } from '../../services/resourceApi';
 
 export type ResourceConnectionsTabProps = {
-  resourceId: string;
+  // As conexões já vêm carregadas de `ResourcePanel` via `useResourceConnections` — o mesmo
+  // dado alimenta o contador da aba "Conexões". Buscar aqui de novo duplicaria a chamada ao
+  // backend, que atende em série (AGENTS §3).
+  connections: ResourceConnection[];
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
   /** @deprecated Relações não navegam mais para o painel do recurso relacionado. */
   onOpenResource?: (id: string) => void;
 };
@@ -31,8 +37,12 @@ function formatGroupHeader(relationshipType: string, direction: 'outgoing' | 'in
   return `${relationshipType} (${direction === 'outgoing' ? 'saída' : 'entrada'})`;
 }
 
-export function ResourceConnectionsTab({ resourceId }: ResourceConnectionsTabProps) {
-  const { connections, loading, error, reload } = useResourceConnections(resourceId);
+export function ResourceConnectionsTab({
+  connections,
+  loading,
+  error,
+  reload,
+}: ResourceConnectionsTabProps) {
   const presentationForResourceType = useResourceTypeVisualIdentities();
 
   if (loading) {
@@ -72,22 +82,13 @@ export function ResourceConnectionsTab({ resourceId }: ResourceConnectionsTabPro
 
   // `connectedTo` é simétrica. A mesma aresta pode estar persistida nos dois sentidos e a
   // projeção a encontra como entrada e saída; para a leitura operacional, ela é uma conexão só.
-  const uniqueConnections = new Map<string, ResourceConnection>();
-  for (const connection of connections) {
-    const key =
-      connection.relationshipType === 'connectedTo'
-        ? `${connection.relationshipType}::${connection.resource.id}`
-        : `${connection.relationshipType}::${connection.direction}::${connection.resource.id}`;
-    const existing = uniqueConnections.get(key);
-    if (!existing || (existing.direction === 'incoming' && connection.direction === 'outgoing')) {
-      uniqueConnections.set(key, connection);
-    }
-  }
+  // Mesma dedução usada no contador da aba "Conexões" em ResourcePanel.tsx.
+  const uniqueConnections = dedupeResourceConnections(connections);
 
   // Agrupa conexões por (relationshipType + direction).
   const grouped = new Map<string, { label: string; direction: 'outgoing' | 'incoming'; items: ResourceConnection[] }>();
 
-  for (const conn of uniqueConnections.values()) {
+  for (const conn of uniqueConnections) {
     const key = `${conn.relationshipType}::${conn.direction}`;
     const existing = grouped.get(key);
     if (existing) {

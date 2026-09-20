@@ -323,4 +323,95 @@ describe('ResourceNodeDetail', () => {
       expect(screen.getByText('Nenhuma relação configurada.')).toBeInTheDocument();
     });
   });
+
+  it('renders two characteristic groupings (specification and instance) with counters (issue #273)', async () => {
+    const user = userEvent.setup();
+    const { getResourceTypeCatalogContext } = await import('../../../services/resourceCatalogApi');
+    vi.mocked(getResourceTypeCatalogContext).mockResolvedValueOnce({
+      resourceType: {
+        '@type': 'ResourceType',
+        id: 'rt-1',
+        href: '/v1/resource-types/rt-1',
+        categoryCode: 'Infrastructure.Active',
+        code: 'OLT',
+        name: 'OLT',
+        status: 'active',
+        nature: 'PhysicalResource',
+        mapPresence: false,
+        resourceTypeCharacteristic: [
+          { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16 },
+          { name: 'power', valueType: 'decimal', characteristicLevel: 'specification', value: 2.5 },
+          { name: 'mac', valueType: 'string', characteristicLevel: 'instance', value: '00:11:22:33:44:55' },
+        ],
+      },
+      catalogPaths: [],
+      specifications: [],
+    });
+
+    render(
+      <ResourceNodeDetail
+        catalogId="cat-1"
+        node={mockLeafNode}
+        canEdit={true}
+        isEditing={false}
+        wasActiveAtBaseline={true}
+        onImpact={vi.fn()}
+        onReactivate={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Características/ })).toHaveTextContent('3');
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Características/ }));
+
+    expect(screen.getByText('Características do tipo (3)')).toBeInTheDocument();
+    expect(screen.getByText('Nível de especificação (2)')).toBeInTheDocument();
+    expect(screen.getByText('Nível de instância (1)')).toBeInTheDocument();
+    expect(screen.getByText('ports')).toBeInTheDocument();
+    expect(screen.getByText('power')).toBeInTheDocument();
+    expect(screen.getByText('mac')).toBeInTheDocument();
+  });
+
+  it('omits section headings when only one level of characteristics exists (issue #273)', async () => {
+    const user = userEvent.setup();
+    const { getResourceTypeCatalogContext } = await import('../../../services/resourceCatalogApi');
+    vi.mocked(getResourceTypeCatalogContext).mockResolvedValueOnce({
+      resourceType: {
+        '@type': 'ResourceType',
+        id: 'rt-1',
+        href: '/v1/resource-types/rt-1',
+        categoryCode: 'Infrastructure.Active',
+        code: 'OLT',
+        name: 'OLT',
+        status: 'active',
+        nature: 'PhysicalResource',
+        mapPresence: false,
+        resourceTypeCharacteristic: [
+          { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: null },
+        ],
+      },
+      catalogPaths: [],
+      specifications: [],
+    });
+
+    render(
+      <ResourceNodeDetail
+        catalogId="cat-1"
+        node={mockLeafNode}
+        canEdit={true}
+        isEditing={false}
+        wasActiveAtBaseline={true}
+        onImpact={vi.fn()}
+        onReactivate={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: /^Características/ }));
+
+    expect(screen.getByText('Características do tipo (1)')).toBeInTheDocument();
+    expect(screen.getByText('Nível de especificação (1)')).toBeInTheDocument();
+    expect(screen.queryByText(/Nível de instância/)).not.toBeInTheDocument();
+  });
 });

@@ -1,6 +1,11 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import { buildHref, type EventService, type RelatedParty } from '../../shared/tmf/index.js';
+import {
+  buildHref,
+  type CharacteristicLevel,
+  type EventService,
+  type RelatedParty,
+} from '../../shared/tmf/index.js';
 import type {
   CreateLogicalResourceInput,
   CreatePhysicalResourceInput,
@@ -90,6 +95,7 @@ type ResourceServiceDependencies = {
     | undefined;
   lookupPartyRoles?: (
     partyId: string,
+    tenantId: string,
   ) => Promise<Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>>;
   /**
    * Porta de leitura para validar `targetId` de uma regra de relação cujo `targetKind` seja
@@ -137,13 +143,15 @@ export class ResourceService {
         name: resourceType.name,
         '@referredType': 'ResourceType',
       },
-      resourceSpecificationCharacteristic: assertCanonicalCharacteristics(
-        input.resourceSpecificationCharacteristic ?? [],
+      resourceSpecificationCharacteristic: assertNoInstanceLevelCharacteristics(
+        assertCanonicalCharacteristics(input.resourceSpecificationCharacteristic ?? []),
+        resourceType,
       ),
       relatedParty: await normalizeSpecificationRelatedParties(
         input.relatedParty,
         this.dependencies.lookupParty,
         this.dependencies.lookupPartyRoles,
+        tenantOf(context),
       ),
       tenantId: tenantOf(context),
       ...(input.description ? { description: input.description } : {}),
@@ -172,6 +180,22 @@ export class ResourceService {
       input.resourceTypeId !== undefined
         ? await this.getResourceTypeByIdOrThrow(input.resourceTypeId, context)
         : undefined;
+    // Validar só quando o input traz characteristics — nunca revalidar `current.resourceSpecificationCharacteristic`.
+    // Se validássemos o array preservado, uma característica promovida a nível de instância *depois*
+    // de a spec já ter salvo um valor faria toda edição futura da spec (até um simples rename) falhar
+    // com 400 para sempre (issue #273). O fetch extra do tipo só acontece nesse ramo.
+    // `includeInactive: true` — este fetch só lê `resourceTypeCharacteristic` para saber quais nomes
+    // são de nível instância; não é o guard de criação (que corretamente bloqueia spec nova sob tipo
+    // inativo). Sem isso, editar qualquer campo (até um rename) numa spec cujo tipo foi arquivado
+    // depois passa a quebrar com 409 RESOURCE_TYPE_INACTIVE — regressão real observada em produção.
+    const resourceSpecificationCharacteristic =
+      input.resourceSpecificationCharacteristic !== undefined
+        ? assertNoInstanceLevelCharacteristics(
+            assertCanonicalCharacteristics(input.resourceSpecificationCharacteristic),
+            nextResourceType ??
+              (await this.getResourceTypeByIdOrThrow(current.resourceTypeId, context, true)),
+          )
+        : current.resourceSpecificationCharacteristic;
 
     const updated = await this.repository.upsertResourceSpecification({
       ...current,
@@ -188,15 +212,14 @@ export class ResourceService {
             },
           }
         : {}),
-      resourceSpecificationCharacteristic: assertCanonicalCharacteristics(
-        input.resourceSpecificationCharacteristic ?? current.resourceSpecificationCharacteristic,
-      ),
+      resourceSpecificationCharacteristic,
       relatedParty:
         input.relatedParty !== undefined
           ? await normalizeSpecificationRelatedParties(
               input.relatedParty,
               this.dependencies.lookupParty,
               this.dependencies.lookupPartyRoles,
+              tenantOf(context),
             )
           : current.relatedParty,
       ...(input.description !== undefined ? { description: input.description } : {}),
@@ -1891,6 +1914,7 @@ export class ResourceService {
         input.relatedParty,
         this.dependencies.lookupParty,
         this.dependencies.lookupPartyRoles,
+        tenantOf(context),
       ),
       resourceRelationship: [],
       characteristic: input.characteristic ?? [],
@@ -1964,6 +1988,7 @@ export class ResourceService {
             input.relatedParty,
             this.dependencies.lookupParty,
             this.dependencies.lookupPartyRoles,
+            tenantOf(context),
           )
         : current.relatedParty,
       resourceRelationship: current.resourceRelationship,
@@ -2658,7 +2683,12 @@ const resolveResourceTypeMapConfiguration = (
 // níveis: `manufacturer`/`networkType` já são campos de primeira classe (relatedParty/categoryCode),
 // não fazem sentido como characteristic solto em nenhum dos dois.
 const assertCanonicalCharacteristics = <
-  T extends { name: string; valueType?: string; group?: string },
+  T extends {
+    name: string;
+    valueType?: string;
+    group?: string;
+    characteristicLevel?: CharacteristicLevel;
+  },
 >(
   characteristics: T[],
 ): T[] => {
@@ -2694,13 +2724,63 @@ const assertCanonicalCharacteristics = <
       },
     );
   }
+  const invalidLevel = characteristics.find(
+    (characteristic) =>
+      characteristic.characteristicLevel !== undefined &&
+      characteristic.characteristicLevel !== 'specification' &&
+      characteristic.characteristicLevel !== 'instance',
+  );
+  if (invalidLevel) {
+    throw new AppError(
+      `${invalidLevel.name}.characteristicLevel must be "specification" or "instance"`,
+      {
+        code: 'RESOURCE_CHARACTERISTIC_LEVEL_INVALID',
+        statusCode: 400,
+      },
+    );
+  }
+  // Normaliza: ausência já significa 'specification' (issue #273), então não persistimos as duas
+  // representações do mesmo significado — o campo só sobrevive quando é 'instance'.
+  return characteristics.map((characteristic) =>
+    characteristic.characteristicLevel === 'specification'
+      ? { ...characteristic, characteristicLevel: undefined }
+      : characteristic,
+  );
+};
+
+// Só a ResourceSpecification chama isto (issue #273): o nível é declarado no ResourceType (a
+// definição), e a spec é só preenchimento de valor. Uma característica marcada 'instance' no tipo
+// não tem lugar no array da spec — se chegar aqui, rejeita alto em vez de descartar em silêncio,
+// porque o cliente (MCP, rota TMF634 direta, script de carga) acredita ter gravado aquele valor.
+const assertNoInstanceLevelCharacteristics = <T extends { name: string }>(
+  characteristics: T[],
+  resourceType: Pick<ResourceType, 'resourceTypeCharacteristic'>,
+): T[] => {
+  const instanceLevelNames = new Set(
+    (resourceType.resourceTypeCharacteristic ?? [])
+      .filter((characteristic) => characteristic.characteristicLevel === 'instance')
+      .map((characteristic) => characteristic.name),
+  );
+  const offending = characteristics.find((characteristic) =>
+    instanceLevelNames.has(characteristic.name),
+  );
+  if (offending) {
+    throw new AppError(
+      `${offending.name} is defined as an instance-level characteristic and cannot be set on a resource specification`,
+      {
+        code: 'RESOURCE_SPEC_CHARACTERISTIC_LEVEL_INVALID',
+        statusCode: 400,
+      },
+    );
+  }
   return characteristics;
 };
 
 const normalizeSpecificationRelatedParties = async (
   relatedParty: RelatedParty[] | undefined,
-  lookupParty?: ResourceServiceDependencies['lookupParty'],
-  lookupPartyRoles?: ResourceServiceDependencies['lookupPartyRoles'],
+  lookupParty: ResourceServiceDependencies['lookupParty'] | undefined,
+  lookupPartyRoles: ResourceServiceDependencies['lookupPartyRoles'] | undefined,
+  tenantId: string,
 ): Promise<RelatedParty[]> => {
   const parties = await normalizeRelatedParties(relatedParty, lookupParty);
   const manufacturers = parties.filter((party) => party.role === 'manufacturer');
@@ -2711,7 +2791,7 @@ const normalizeSpecificationRelatedParties = async (
     });
   }
   if (manufacturers.length === 1 && lookupPartyRoles) {
-    const roles = await lookupPartyRoles(manufacturers[0]!.id);
+    const roles = await lookupPartyRoles(manufacturers[0]!.id, tenantId);
     if (!roles.some((role) => role.name === 'manufacturer' && role.status === 'active')) {
       throw new AppError('manufacturer party must have an active manufacturer role', {
         code: 'RESOURCE_SPEC_MANUFACTURER_ROLE_INVALID',
@@ -2727,8 +2807,9 @@ const normalizeSpecificationRelatedParties = async (
 // aceitar na instância reabriria a duplicação desnormalizada que eliminamos ao fechar a #171.
 const normalizePhysicalResourceRelatedParties = async (
   relatedParty: RelatedParty[] | undefined,
-  lookupParty?: ResourceServiceDependencies['lookupParty'],
-  lookupPartyRoles?: ResourceServiceDependencies['lookupPartyRoles'],
+  lookupParty: ResourceServiceDependencies['lookupParty'] | undefined,
+  lookupPartyRoles: ResourceServiceDependencies['lookupPartyRoles'] | undefined,
+  tenantId: string,
 ): Promise<RelatedParty[]> => {
   const parties = await normalizeRelatedParties(relatedParty, lookupParty);
   const manufacturers = parties.filter((party) => party.role === 'manufacturer');
@@ -2749,7 +2830,7 @@ const normalizePhysicalResourceRelatedParties = async (
     });
   }
   if (vendors.length === 1 && lookupPartyRoles) {
-    const roles = await lookupPartyRoles(vendors[0]!.id);
+    const roles = await lookupPartyRoles(vendors[0]!.id, tenantId);
     if (!roles.some((role) => role.name === 'vendor' && role.status === 'active')) {
       throw new AppError('vendor party must have an active vendor role', {
         code: 'PHYSICAL_RESOURCE_VENDOR_ROLE_INVALID',

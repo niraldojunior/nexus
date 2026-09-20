@@ -22,6 +22,9 @@ export const PanelBarButton = forwardRef<
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
+      // `data-tab-active` é o alvo que PanelTabBar localiza para o auto-scroll (scrollIntoView)
+      // quando a aba muda — sem isso, a faixa não tem como saber qual botão trazer à vista.
+      data-tab-active={active ? 'true' : undefined}
       className={`flex w-[72px] shrink-0 flex-col items-center gap-1 rounded-[14px] px-2 py-1.5 text-center transition ${
         active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
       }`}
@@ -31,7 +34,10 @@ export const PanelBarButton = forwardRef<
           active ? 'border-app-accent-border bg-app-accent' : 'border-app-border bg-app-accent-soft'
         }`}
       >
-        <Icon className="h-4 w-4" aria-hidden="true" />
+        {/* Ativo = círculo em amarelo sólido (bg-app-accent); `--vt-ink` é o token dedicado a
+            texto/ícone sobre amarelo sólido (nunca clareia no tema escuro, ao contrário de
+            `text-app-text`, que fica branco e ficava ilegível sobre o amarelo). */}
+        <Icon className={`h-4 w-4 ${active ? 'text-[var(--vt-ink)]' : ''}`} aria-hidden="true" />
         {badge ? (
           <span className="absolute -right-1 -top-1 rounded-[999px] bg-white px-1 text-[0.6rem] font-semibold text-app-muted shadow-soft">
             {badge}

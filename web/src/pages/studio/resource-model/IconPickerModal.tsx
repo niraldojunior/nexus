@@ -99,7 +99,7 @@ export function IconPickerModal({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar ícone por nome, indústria ou finalidade..."
-            className="w-full rounded-[12px] border border-app-border bg-app-panel pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            className="geo-input pl-8 pr-3"
           />
         </div>
 

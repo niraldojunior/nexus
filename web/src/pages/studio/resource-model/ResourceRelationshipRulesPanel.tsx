@@ -464,7 +464,7 @@ export function ResourceRelationshipRulesPanel({
                   setFormTargetKind(kinds[0] ?? 'RESOURCE_TYPE');
                   setFormTargetId('');
                 }}
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
               >
                 {selectRelationshipTypes.map((t) => (
                   <option key={t.code} value={t.code}>
@@ -509,7 +509,7 @@ export function ResourceRelationshipRulesPanel({
                 id="form-rule-target-id"
                 value={formTargetId}
                 onChange={(e) => setFormTargetId(e.target.value)}
-                className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
               >
                 <option value="">Selecione…</option>
                 {targetOptions.map((opt) => (
@@ -571,7 +571,7 @@ export function ResourceRelationshipRulesPanel({
                     value={formCardinalityMax}
                     onChange={(e) => setFormCardinalityMax(e.target.value)}
                     aria-label="Quantidade máxima"
-                    className="w-32 rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.88rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent font-mono"
+                    className="geo-input font-mono w-32"
                   />
                   <p className="text-[0.76rem] text-app-muted mt-1">
                     Número máximo de instâncias deste alvo que um recurso de origem pode conter ou ligar.

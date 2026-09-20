@@ -412,9 +412,8 @@ describe('ResourceOverviewTab', () => {
     expect(await screen.findByText('1. Caminho e Tipo de Recurso no Catálogo')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Definição do recurso' })).toBeInTheDocument();
 
-    // Seleciona outra especificação e salva
-    const specSelect = await screen.findByLabelText('Especificação');
-    fireEvent.change(specSelect, { target: { value: 'spec-cto-nokia' } });
+    // Seleciona outra especificação (lista à direita, não mais um <select>) e salva
+    fireEvent.click(await screen.findByRole('option', { name: 'CTO Nokia' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alteração' }));
 
@@ -422,4 +421,7 @@ describe('ResourceOverviewTab', () => {
       expect(onPatch).toHaveBeenCalledWith({ resourceSpecificationId: 'spec-cto-nokia' });
     });
   });
+
+  // As características de instância (issue #273) saíram desta aba para ResourceAboutTab (aba
+  // "Sobre") — ver ResourceAboutTab.test.tsx para a cobertura equivalente.
 });

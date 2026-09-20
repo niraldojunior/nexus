@@ -1,5 +1,6 @@
 export type {
   Characteristic,
+  CharacteristicLevel,
   CharacteristicValue,
   EntityRef,
   Pagination,

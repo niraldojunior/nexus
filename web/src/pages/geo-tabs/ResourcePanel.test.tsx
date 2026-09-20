@@ -40,17 +40,17 @@ vi.mock('./ResourceHistoryTab', () => ({
 }));
 vi.mock('./ResourceComponentsTab', () => ({
   ResourceComponentsTab: ({
-    resourceId,
+    components,
   }: {
-    resourceId: string;
-  }) => <div>Componentes de {resourceId}</div>,
+    components: Array<{ id: string }>;
+  }) => <div>Componentes ({components.length})</div>,
 }));
 vi.mock('./ResourceConnectionsView', () => ({
   ResourceConnectionsView: ({
-    resourceId,
+    connections,
   }: {
-    resourceId: string;
-  }) => <div>Conexões de {resourceId}</div>,
+    connections: Array<{ resource: { id: string } }>;
+  }) => <div>Conexões ({connections.length})</div>,
 }));
 
 const node: GeoTreeNode = {
@@ -134,7 +134,7 @@ function defaultMocks() {
     error: null,
   });
   mocks.useResourceComponents.mockReturnValue({
-    components: [],
+    components: [{ id: 'comp-1' }, { id: 'comp-2' }],
     truncated: false,
     loading: false,
     error: null,
@@ -197,10 +197,10 @@ describe('ResourcePanel', () => {
     renderPanel();
 
     fireEvent.click(screen.getByRole('button', { name: '2Componentes' }));
-    expect(screen.getByText('Componentes de cto-1')).toBeInTheDocument();
+    expect(screen.getByText('Componentes (2)')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Conexões' }));
-    expect(screen.getByText('Conexões de cto-1')).toBeInTheDocument();
+    expect(screen.getByText('Conexões (0)')).toBeInTheDocument();
   });
 
   it('especializa a Porta sem chrome geográfico, renomeia a aba e mostra drops e a ONT', () => {

@@ -2,7 +2,7 @@
 // — espelha `serviceSpecificationForm.ts`, mas para o array TMF `Characteristic` (que carrega um
 // `value` de tipo livre, `unknown`) em vez do `ServiceSpecCharacteristic` (que já é tipado como
 // texto). Usado pela aba "Características" em `ResourceNodeDetail`.
-import type { ResourceCharacteristic } from '../services/resourceApi';
+import type { CharacteristicLevel, ResourceCharacteristic } from '../services/resourceApi';
 
 export type CharacteristicValueType =
   | 'string'
@@ -35,6 +35,12 @@ export type ResourceCharacteristicRow = {
    * Referência. Mutuamente exclusivo com `allowedValues` — ver Characteristic em shared/tmf/types.ts.
    */
   referenceDataSetKey?: string | null;
+  /**
+   * Nível em que a característica é preenchida (issue #273) — obrigatório na linha (nunca opcional)
+   * para o render nunca precisar reaplicar o default silenciosamente. Ausência no dado de origem
+   * (characteristic legada) já é resolvida para `'specification'` antes de chegar aqui.
+   */
+  characteristicLevel: CharacteristicLevel;
 };
 
 let rowKeySeq = 0;
@@ -56,8 +62,20 @@ function valueToText(value: unknown, valueType: CharacteristicValueType): string
   return String(value);
 }
 
+/** Ausência ⇒ `'specification'` (issue #273); qualquer valor que não seja `'instance'` é tratado
+ *  como especificação — defensivo contra JSON legado ou lixo vindo de integração externa. */
+function resolveCharacteristicLevel(level: unknown): CharacteristicLevel {
+  return level === 'instance' ? 'instance' : 'specification';
+}
+
 export function emptyResourceCharacteristicRow(): ResourceCharacteristicRow {
-  return { key: nextRowKey(), name: '', valueType: 'string', valueText: '' };
+  return {
+    key: nextRowKey(),
+    name: '',
+    valueType: 'string',
+    valueText: '',
+    characteristicLevel: 'specification',
+  };
 }
 
 export function resourceCharacteristicRowsFrom(
@@ -77,8 +95,23 @@ export function resourceCharacteristicRowsFrom(
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
       referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
+      characteristicLevel: resolveCharacteristicLevel(characteristic.characteristicLevel),
     };
   });
+}
+
+/** Particiona as linhas nos dois agrupamentos da aba Características (issue #273), preservando a
+ *  ordem original em cada balde. */
+export function partitionCharacteristicRowsByLevel(rows: ResourceCharacteristicRow[]): {
+  specification: ResourceCharacteristicRow[];
+  instance: ResourceCharacteristicRow[];
+} {
+  const specification: ResourceCharacteristicRow[] = [];
+  const instance: ResourceCharacteristicRow[] = [];
+  for (const row of rows) {
+    (row.characteristicLevel === 'instance' ? instance : specification).push(row);
+  }
+  return { specification, instance };
 }
 
 /**
@@ -117,9 +150,15 @@ export function specCharacteristicRowsFromType(
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
       referenceDataSetKey: source.referenceDataSetKey ?? typeChar.referenceDataSetKey ?? null,
+      // O nível vem sempre do tipo, nunca da spec (issue #273) — o tipo é a autoridade sobre a
+      // definição, a spec só ecoa um valor. Um `specChar` legado com nível divergente não deve
+      // "rebaixar" a característica na UI.
+      characteristicLevel: resolveCharacteristicLevel(typeChar.characteristicLevel),
     };
   });
 
+  // Órfãs (sem correspondência no tipo) não têm de onde herdar o nível — ficam como especificação,
+  // o mesmo default de qualquer characteristic sem o campo (issue #273), e continuam preservadas.
   const orphaned = (specCharacteristics ?? [])
     .filter((c) => !matchedNames.has(c.name))
     .map((c) => {
@@ -134,6 +173,7 @@ export function specCharacteristicRowsFromType(
         allowedValues: c.allowedValues,
         allowedValuesText: c.allowedValues ? c.allowedValues.join(', ') : '',
         referenceDataSetKey: c.referenceDataSetKey ?? null,
+        characteristicLevel: 'specification' as CharacteristicLevel,
       };
     });
 
@@ -163,8 +203,9 @@ export function imageReferenceError(valueText: string): string | null {
   }
 }
 
-/** Converte o texto editado de volta ao tipo declarado — usado só ao salvar. */
-function coerceValue(valueText: string, valueType: CharacteristicValueType): unknown {
+/** Converte o texto editado de volta ao tipo declarado — usado ao salvar, e reusado pelo painel de
+ *  instância do módulo Geo (issue #273) para não duplicar a regra de coerção. */
+export function coerceValue(valueText: string, valueType: CharacteristicValueType): unknown {
   const normalizedValue = valueType === 'image' ? valueText.trim() : valueText;
   switch (valueType) {
     case 'boolean':
@@ -213,6 +254,10 @@ export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): R
         ...(row.group?.trim() ? { group: row.group.trim() } : {}),
         ...(allowedValues && allowedValues.length > 0 ? { allowedValues } : {}),
         ...(referenceDataSetKey ? { referenceDataSetKey } : {}),
+        // Ausência já significa 'specification' (issue #273) — simétrico à normalização do backend
+        // em assertCanonicalCharacteristics (service.ts). Emitir o campo nos dois casos criaria duas
+        // representações do mesmo significado e um PATCH idempotente pareceria uma diferença real.
+        ...(row.characteristicLevel === 'instance' ? { characteristicLevel: 'instance' as const } : {}),
       };
     });
 }

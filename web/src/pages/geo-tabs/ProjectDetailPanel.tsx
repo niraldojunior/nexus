@@ -50,6 +50,7 @@ import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { readProjectIcon, ProjectIconError } from '../../utils/projectIconImage';
 import { PROJECT_STATUS_OPTIONS } from '../../utils/geoLabels';
 import { PanelBarButton } from './PanelBarButton';
+import { PanelTabBar } from './PanelTabBar';
 
 const projectSearchCache = new Map<string, GeoTreeNode[]>();
 
@@ -573,10 +574,11 @@ export function ProjectDetailPanel({
     ) : null;
 
   const tabBar = (
-    <div
-      className="flex flex-wrap gap-1 border-b border-app-border px-3 py-2"
+    <PanelTabBar
+      activeTab={tab}
+      className="border-b border-app-border px-3 py-2"
       role="tablist"
-      aria-label="Conteúdo do projeto"
+      ariaLabel="Conteúdo do projeto"
     >
       {(
         [
@@ -599,7 +601,7 @@ export function ProjectDetailPanel({
           ariaLabel={label}
         />
       ))}
-    </div>
+    </PanelTabBar>
   );
   const addResourceButton = (mode: 'infrastructure' | 'resources') =>
     canEdit ? (

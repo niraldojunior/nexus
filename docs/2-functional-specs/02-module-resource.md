@@ -9,7 +9,7 @@ TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 | Campo                   | Valor                                                              |
 | ----------------------- | ------------------------------------------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD02-RES                                                  |
-| **Versão**              | 1.14 — draft                                                       |
+| **Versão**              | 1.15 — draft                                                       |
 | **Data**                | Setembro 2026                                                      |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001                                               |
 | **HLD predecessor**     | VTN-HLD-MOD01-GEO (Geographic)                                     |
@@ -385,6 +385,7 @@ Atributos canônicos da entidade ResourceSpecification (TMF634):
 | **RN-005** | Spec em Retired preserva Resources existentes mas bloqueia criação de novos.                                              |
 | **RN-006** | resourceSpecRelationship containsAsChild define implicitamente regras de contenção física (REQ-MOD02-007).                |
 | **RN-007** | Toda alteração no catálogo gera Audit Trail e evento TMF688.                                                              |
+| **RN-008** | Toda characteristic definida no ResourceType tem um nível ([#273](https://github.com/niraldojunior/nexus/issues/273)): `specification` (padrão — valor definido na ResourceSpecification, vale para todos os Resources dela) ou `instance` (valor preenchido por exemplar, no Resource). Ausência do campo em characteristic legada é lida como `specification`, sem backfill. A ResourceSpecification só preenche/exibe as de nível `specification`; o Resource só preenche/exibe as de nível `instance`. |
 
 ### 6.8 Critérios de Aceite
 
@@ -703,7 +704,7 @@ Atributos canônicos da entidade Resource (PhysicalResource | LogicalResource) (
 | `usageState`             | enum       |     Sim     | idle                                                                                         | active                                            | busy.         |
 | `place`                  | EntityRef  |     Não     | GeographicSite ou GeographicLocation (Módulo 1) onde o Resource está fisicamente.            |
 | `relatedParty`           | array      |     Não     | Owner, manufacturer, vendor (Módulo 6).                                                      |
-| `resourceCharacteristic` | array      |     Não     | Atributos específicos da instância conforme spec (serial, MAC, capacidade configurada etc.). |
+| `resourceCharacteristic` | array      |     Não     | Atributos específicos da instância conforme spec (serial, MAC, capacidade configurada etc.). Só recebe as characteristics que o ResourceType declara como nível `instance` ([#273](https://github.com/niraldojunior/nexus/issues/273), ver RN-008 de REQ-MOD02-001); as de nível `specification` são preenchidas na ResourceSpecification, não aqui. |
 | `resourceRelationship`   | array      |     Não     | Relações com outros Resources (parent/child, conectado-a, alimentado-por). REQ-MOD02-024.    |
 | `validFor`               | TimePeriod |     Não     | Período de validade.                                                                         |
 | `startOperatingDate`     | datetime   |     Não     | Data de início de operação.                                                                  |
@@ -3807,6 +3808,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.12   | Setembro 2026 | Engenharia — V.tal Nexus | Atualização de referências técnicas para Oracle-only / execução local (C10): path computation e migração de Installation Point (§4.4, §17.2, §35) descritas como CONNECT BY nativo do Oracle, sem menção a portabilidade PostgreSQL; repositório referenciado em REQ-MOD02-001 passa a Oracle. |
 | 1.13   | Setembro 2026 | Engenharia — V.tal Nexus | Reformulação da Modelagem de Recursos no Studio ([#230](https://github.com/niraldojunior/nexus/issues/230)): identidade agregada 1:1 folha↔ResourceType (`ResourceCatalogNode` tipo `RESOURCE_TYPE` cria e gerencia seu `ResourceType` atomicamente), autosave robusto com revisão monotônica e bloqueio de publicação, catálogo governado de `ResourceRelationshipType` e regras permitidas de relacionamento por tipo (`ResourceTypeRelationshipRule` para destinos ResourceType e GeographicSiteSpecification), modal de Characteristics com suporte a Reference Data Sets e agrupamento de características por seção em especificações. |
 | 1.14   | Setembro 2026 | Engenharia — V.tal Nexus | Canonização de modelo e governança comercial do recurso ([#251](https://github.com/niraldojunior/nexus/issues/251)): characteristic canônica `model` com tipagem estrita; `ResourceSpecification` com edição governada de `manufacturer` via Studio; `PhysicalResource` com suporte a `vendor` de aquisição (RN-002) e bloqueio de `manufacturer` direto na instância; filtros de busca `relatedPartyId` e `relatedPartyRole` (RF-004) implementados e indexáveis no Oracle 19c; remoção física e definitiva das colunas mortas `manufacturer` e `model` de `tmf_physical_resource`. |
+| 1.15   | Setembro 2026 | Engenharia — V.tal Nexus | Nível de característica — especificação × instância ([#273](https://github.com/niraldojunior/nexus/issues/273)): novo eixo `characteristicLevel` (`specification`, padrão, ou `instance`) no `Characteristic` canônico; RN-008 em REQ-MOD02-001 e nota em REQ-MOD02-005 (§10.3) sobre o corte de preenchimento; aba Características do Studio passa a exibir os dois agrupamentos; modal de ResourceSpecification só preenche/exibe nível especificação; painel do recurso no módulo Geo passa a preencher o nível instância por exemplar. |
 
 ---
 

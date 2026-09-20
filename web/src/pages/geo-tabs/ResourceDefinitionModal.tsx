@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   Cpu,
-  Factory,
   Folder,
   Loader2,
   Radio,
@@ -20,10 +19,7 @@ import {
   type ResourceCatalogTreeNode,
 } from '../../services/resourceCatalogApi';
 import type { ResourceSpecification } from '../../services/resourceApi';
-import {
-  buildModelSpecificationOptions,
-  readSpecificationManufacturer,
-} from '../../utils/resourceSpecificationForm';
+import { buildModelSpecificationOptions } from '../../utils/resourceSpecificationForm';
 
 export type ResourceDefinitionModalProps = {
   currentSpecification: ResourceSpecification;
@@ -135,7 +131,7 @@ function CatalogTreePicker({
           className={`group flex items-center justify-between gap-1 rounded-[8px] border px-2 py-1 text-[0.82rem] transition cursor-pointer ${
             isSelected
               ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
-              : 'border-transparent text-app-text hover:bg-black/[0.04]'
+              : 'border-transparent text-app-text vt-hover-muted'
           }`}
           style={{ paddingLeft: `${Math.max(level * 14 + 6, 6)}px` }}
         >
@@ -177,7 +173,7 @@ function CatalogTreePicker({
   };
 
   return (
-    <div className="flex flex-col rounded-[10px] border border-app-border bg-white">
+    <div className="flex flex-col rounded-[10px] border border-app-border bg-app-panel">
       <div className="flex items-center gap-2 border-b border-app-border px-2.5 py-1.5">
         <Search className="h-3.5 w-3.5 text-app-muted shrink-0" />
         <input
@@ -195,6 +191,53 @@ function CatalogTreePicker({
   );
 }
 
+// Lista de especificações do tipo selecionado à esquerda — sem fabricante como filtro
+// intermediário (é atributo interno da especificação, não uma decisão do usuário aqui).
+function SpecificationListPicker({
+  specifications,
+  selectedId,
+  onSelect,
+}: {
+  specifications: ResourceSpecification[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div
+      role="listbox"
+      aria-label="Especificação"
+      className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-[10px] border border-app-border bg-app-panel p-1.5"
+    >
+      {specifications.map((spec) => {
+        const isSelected = spec.id === selectedId;
+        return (
+          <div
+            key={spec.id}
+            role="option"
+            aria-selected={isSelected}
+            tabIndex={0}
+            onClick={() => onSelect(spec.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(spec.id);
+              }
+            }}
+            className={`flex min-w-0 cursor-pointer items-center gap-1.5 rounded-[8px] border px-2 py-1 text-[0.82rem] transition ${
+              isSelected
+                ? 'border-app-accent bg-app-accent-soft font-semibold text-app-text'
+                : 'border-transparent text-app-text vt-hover-muted'
+            }`}
+          >
+            <Cpu className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+            <span className="truncate">{spec.name}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ResourceDefinitionModal({
   currentSpecification,
   onCommit,
@@ -206,10 +249,10 @@ export function ResourceDefinitionModal({
 
   // Árvore do catálogo padrão
   const [treeNodes, setTreeNodes] = useState<ResourceCatalogTreeNode[]>([]);
-  // Seleção guiada: Caminho → Tipo de Recurso → Fabricante (filtro) → Especificação
+  // Seleção guiada: Caminho → Tipo de Recurso → Especificação. Fabricante não é escolha do
+  // usuário aqui — é atributo interno da especificação (issue nova, ver título simplificado).
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedResourceType, setSelectedResourceType] = useState<CatalogResourceTypeRef | null>(null);
-  const [manufacturerFilter, setManufacturerFilter] = useState<string>('ALL');
   const [selectedSpecificationId, setSelectedSpecificationId] = useState<string>(
     currentSpecification.id,
   );
@@ -288,9 +331,13 @@ export function ResourceDefinitionModal({
     void listResourceSpecifications({ resourceTypeId: typeId, includeEnded: false })
       .then((specs) => {
         if (cancelled) return;
-        // Mescla a especificação atual caso ela não venha na página ou esteja ended
+        // Mescla a especificação atual caso ela não venha na página ou esteja ended — só quando
+        // `typeId` ainda é o tipo original dela. Sem essa guarda, trocar para outro tipo sem
+        // especificação cadastrada mantinha a spec antiga "fantasma" na lista mesclada, e o botão
+        // Salvar continuava habilitado mesmo sem nada selecionável à direita.
+        const belongsToRequestedType = currentSpecification.resourceTypeId === typeId;
         const exists = specs.some((s) => s.id === currentSpecification.id);
-        const merged = exists ? specs : [currentSpecification, ...specs];
+        const merged = belongsToRequestedType && !exists ? [currentSpecification, ...specs] : specs;
         setTypeSpecs(merged);
 
         // Se a spec selecionada não pertence a este tipo, reseta para a primeira do novo tipo
@@ -313,38 +360,19 @@ export function ResourceDefinitionModal({
     };
   }, [selectedResourceType?.id, currentSpecification]);
 
-  // Fabricantes distintos para o tipo selecionado (filtro puro)
-  const manufacturerOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const spec of typeSpecs) {
-      const m = readSpecificationManufacturer(spec);
-      if (m && m !== '-') names.add(m);
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [typeSpecs]);
-
-  // Especificações visíveis após o filtro de fabricante
-  const visibleSpecifications = useMemo(() => {
-    const base = buildModelSpecificationOptions(
-      typeSpecs,
-      selectedResourceType?.id ?? currentSpecification.resourceTypeId ?? '',
-    );
-    if (manufacturerFilter === 'ALL') return base;
-    return base.filter((s) => readSpecificationManufacturer(s) === manufacturerFilter);
-  }, [typeSpecs, selectedResourceType?.id, currentSpecification.resourceTypeId, manufacturerFilter]);
-
-  // Fabricante muda: ajusta a spec selecionada se a atual não estiver mais nas visíveis
-  useEffect(() => {
-    if (visibleSpecifications.length > 0 && !visibleSpecifications.some((s) => s.id === selectedSpecificationId)) {
-      const first = visibleSpecifications[0];
-      if (first) setSelectedSpecificationId(first.id);
-    }
-  }, [visibleSpecifications, selectedSpecificationId]);
+  // Especificações do tipo selecionado, ordenadas por modelo
+  const visibleSpecifications = useMemo(
+    () =>
+      buildModelSpecificationOptions(
+        typeSpecs,
+        selectedResourceType?.id ?? currentSpecification.resourceTypeId ?? '',
+      ),
+    [typeSpecs, selectedResourceType?.id, currentSpecification.resourceTypeId],
+  );
 
   const handleSelectTypeFromTree = (type: CatalogResourceTypeRef, pathLabel: string) => {
     setSelectedResourceType(type);
     setSelectedPath(pathLabel);
-    setManufacturerFilter('ALL');
   };
 
   const handleSave = async () => {
@@ -369,12 +397,9 @@ export function ResourceDefinitionModal({
           <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-app-accent-soft text-app-text">
             <Cpu className="h-5 w-5" />
           </div>
-          <div>
-            <h3 className="font-semibold text-app-text text-[0.98rem]">Definição do recurso</h3>
-            <p className="text-[0.78rem] text-app-muted">
-              Troca guiada: Caminho → Tipo de Recurso → Fabricante → Especificação
-            </p>
-          </div>
+          {/* `Modal` já envolve `title` num único <h3> — um segundo aqui duplicava o heading
+              "Definição do recurso" com o mesmo nome acessível (getByRole('heading') ambíguo). */}
+          <span className="font-semibold text-app-text text-[0.98rem]">Definição do recurso</span>
         </div>
       }
       footer={
@@ -410,92 +435,49 @@ export function ResourceDefinitionModal({
           </div>
         ) : (
           <>
-            {/* Nível 1: Caminho na árvore */}
-            <div className="space-y-1">
-              <label className="flex items-center gap-1.5 text-[0.76rem] font-semibold uppercase tracking-[0.06em] text-app-muted">
-                <Radio className="h-3.5 w-3.5" />
-                <span>1. Caminho e Tipo de Recurso no Catálogo</span>
-              </label>
-              <CatalogTreePicker
-                nodes={treeNodes}
-                selectedTypeId={selectedResourceType?.id ?? currentSpecification.resourceTypeId ?? null}
-                onSelectType={handleSelectTypeFromTree}
-              />
-              {selectedPath ? (
-                <p className="px-1 text-[0.75rem] text-app-muted">
-                  Caminho selecionado: <span className="font-medium text-app-text">{selectedPath}</span>
-                </p>
-              ) : null}
-            </div>
-
-            {/* Nível 2 + 3: Tipo (consequência) e Fabricante (filtro) */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="space-y-1">
+            {/* 70% caminho/tipo, 30% especificação — clicar num tipo à esquerda troca a
+                lista de especificações à direita; o usuário fecha a escolha ali. */}
+            <div className="grid grid-cols-[7fr_3fr] gap-2.5">
+              <div className="min-w-0 space-y-1">
                 <label className="flex items-center gap-1.5 text-[0.76rem] font-semibold uppercase tracking-[0.06em] text-app-muted">
-                  <Boxes className="h-3.5 w-3.5" />
-                  <span>2. Tipo do Recurso</span>
+                  <Radio className="h-3.5 w-3.5" />
+                  <span>1. Caminho e Tipo de Recurso no Catálogo</span>
                 </label>
-                <input
-                  readOnly
-                  disabled
-                  value={
-                    selectedResourceType?.name ?? '—'
-                  }
-                  className="geo-input bg-slate-50 text-app-muted cursor-not-allowed"
+                <CatalogTreePicker
+                  nodes={treeNodes}
+                  selectedTypeId={selectedResourceType?.id ?? currentSpecification.resourceTypeId ?? null}
+                  onSelectType={handleSelectTypeFromTree}
                 />
+                {selectedPath ? (
+                  <p className="px-1 text-[0.75rem] text-app-muted">
+                    Caminho selecionado: <span className="font-medium text-app-text">{selectedPath}</span>
+                  </p>
+                ) : null}
               </div>
 
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="flex items-center gap-1.5 text-[0.76rem] font-semibold uppercase tracking-[0.06em] text-app-muted">
-                  <Factory className="h-3.5 w-3.5" />
-                  <span>3. Fabricante (filtro de busca)</span>
+                  <Cpu className="h-3.5 w-3.5" />
+                  <span>Especificação</span>
                 </label>
-                <select
-                  value={manufacturerFilter}
-                  onChange={(e) => setManufacturerFilter(e.target.value)}
-                  className="geo-input"
-                  aria-label="Filtrar por Fabricante"
-                >
-                  <option value="ALL">Todos os fabricantes ({manufacturerOptions.length})</option>
-                  {manufacturerOptions.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
+
+                {specsLoading ? (
+                  <div className="flex items-center gap-2 py-2 text-[0.82rem] text-app-muted">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Carregando…</span>
+                  </div>
+                ) : visibleSpecifications.length === 0 ? (
+                  <p className="rounded-[8px] border border-dashed border-app-border p-3 text-[0.82rem] text-app-muted text-center">
+                    Nenhuma especificação encontrada para este tipo.
+                  </p>
+                ) : (
+                  <SpecificationListPicker
+                    specifications={visibleSpecifications}
+                    selectedId={selectedSpecificationId}
+                    onSelect={setSelectedSpecificationId}
+                  />
+                )}
               </div>
-            </div>
-
-            {/* Nível 4: Especificação final */}
-            <div className="space-y-1">
-              <label className="flex items-center gap-1.5 text-[0.76rem] font-semibold uppercase tracking-[0.06em] text-app-muted">
-                <Cpu className="h-3.5 w-3.5" />
-                <span>4. Especificação</span>
-              </label>
-
-              {specsLoading ? (
-                <div className="flex items-center gap-2 py-2 text-[0.82rem] text-app-muted">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Carregando especificações…</span>
-                </div>
-              ) : visibleSpecifications.length === 0 ? (
-                <p className="rounded-[8px] border border-dashed border-app-border p-3 text-[0.82rem] text-app-muted text-center">
-                  Nenhuma especificação encontrada para este tipo e fabricante.
-                </p>
-              ) : (
-                <select
-                  value={selectedSpecificationId}
-                  onChange={(e) => setSelectedSpecificationId(e.target.value)}
-                  className="geo-input"
-                  aria-label="Especificação"
-                >
-                  {visibleSpecifications.map((spec) => (
-                    <option key={spec.id} value={spec.id}>
-                      {spec.name}
-                    </option>
-                  ))}
-                </select>
-              )}
             </div>
           </>
         )}

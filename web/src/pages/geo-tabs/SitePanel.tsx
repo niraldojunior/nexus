@@ -28,6 +28,7 @@ import { StreetViewHero } from '../../components/StreetViewHero';
 import { DOCK_WIDTH_CLASS, DOCK_ELEVATION_CLASS } from './dock';
 import { Modal } from './Modal';
 import { PanelBarButton } from './PanelBarButton';
+import { PanelTabBar } from './PanelTabBar';
 import { usePanelExit } from './usePanelExit';
 import { SiteOverviewTab } from './SiteOverviewTab';
 import { SiteSubSitesTab } from './SiteSubSitesTab';
@@ -231,12 +232,12 @@ export function SitePanel({
     <div className="px-2 py-6 text-center text-[0.86rem] text-app-muted">Carregando local…</div>
   ) : detail.site ? (
     <div className="grid gap-4">
-      <div className="flex flex-wrap gap-1 border-b border-app-border pb-3">
+      <PanelTabBar activeTab={tab} className="border-b border-app-border pb-3">
         <PanelBarButton icon={InfoIcon} label="Geral" active={tab === 'overview'} onClick={() => setTab('overview')} />
         <PanelBarButton icon={Building2} label="Sub-locais" active={tab === 'subsites'} onClick={() => setTab('subsites')} />
         <PanelBarButton icon={Boxes} label="Recursos" active={tab === 'resources'} onClick={() => setTab('resources')} />
         <PanelBarButton icon={HistoryIcon} label="Histórico" active={tab === 'history'} onClick={() => setTab('history')} />
-      </div>
+      </PanelTabBar>
 
       {tab === 'overview' ? (
         <SiteOverviewTab

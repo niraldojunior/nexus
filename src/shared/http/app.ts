@@ -5682,7 +5682,7 @@ const buildResourceWorkspaceSnapshot = async ({
     context,
   );
   const resourceTypes = await resourceService.listResourceTypes(context);
-  const manufacturerOptions = await loadAllManufacturerOptions(partyService);
+  const manufacturerOptions = await loadAllManufacturerOptions(partyService, context);
 
   const items = await getResourceWorkspaceItems(
     tab,
@@ -5743,15 +5743,21 @@ const loadAllResourceSpecifications = async (
   return collected;
 };
 
-const loadAllManufacturerOptions = async (partyService: PartyService): Promise<Party[]> => {
+const loadAllManufacturerOptions = async (
+  partyService: PartyService,
+  context?: RequestContext,
+): Promise<Party[]> => {
   const collected: Party[] = [];
   for (let offset = 0; ; offset += RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE) {
-    const items = await partyService.listPartyRoles({
-      limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
-      offset,
-      status: 'active',
-      name: 'manufacturer',
-    });
+    const items = await partyService.listPartyRoles(
+      {
+        limit: RESOURCE_WORKSPACE_LOOKUP_PAGE_SIZE,
+        offset,
+        status: 'active',
+        name: 'manufacturer',
+      },
+      context,
+    );
     for (const role of items) {
       if (role.party['@referredType'] !== 'Organization') continue;
       collected.push({

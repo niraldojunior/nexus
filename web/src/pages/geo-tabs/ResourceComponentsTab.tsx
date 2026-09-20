@@ -6,7 +6,7 @@ import {
   Info,
   Loader2,
 } from 'lucide-react';
-import { useResourceComponents } from '../../hooks/useResourceComponents';
+import type { ResourceComponentNode } from '../../services/resourceApi';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { ResourceStateLights } from './ResourceStateLights';
 import { portDropState } from '../../utils/portDropState';
@@ -14,17 +14,28 @@ import { resourceIconFor } from '../../utils/resourceIcon';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 
 export type ResourceComponentsTabProps = {
-  resourceId: string;
+  // A árvore recursiva (containsAsChild, todos os níveis) já vem carregada de `ResourcePanel`
+  // via `useResourceComponents` — o mesmo dado alimenta o contador da aba (issue: contador
+  // recursivo de componentes). Buscar aqui de novo duplicaria a chamada ao backend, que
+  // atende em série (AGENTS §3).
+  components: ResourceComponentNode[];
+  truncated: boolean;
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
   onOpenResource: (id: string) => void;
   onOpenPort?: (node: GeoTreeNode) => void;
 };
 
 export function ResourceComponentsTab({
-  resourceId,
+  components,
+  truncated,
+  loading,
+  error,
+  reload,
   onOpenResource,
   onOpenPort,
 }: ResourceComponentsTabProps) {
-  const { components, truncated, loading, error, reload } = useResourceComponents(resourceId);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
 
   const toggleCollapse = (id: string) => {

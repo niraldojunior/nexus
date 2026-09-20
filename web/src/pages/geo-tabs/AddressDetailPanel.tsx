@@ -25,6 +25,7 @@ import { addressStreetViewMarker } from '../../utils/streetViewMarker';
 import { CoordinateStreetView } from './CoordinateStreetView';
 import { IconInfoRow } from './IconInfoRow';
 import { PanelBarButton } from './PanelBarButton';
+import { PanelTabBar } from './PanelTabBar';
 import { usePanelExit } from './usePanelExit';
 import { PrecisionBadge } from './PrecisionBadge';
 import { ViabilityTab, type DropSimulation } from './ViabilityTab';
@@ -163,7 +164,7 @@ export function AddressDetailPanel({
     <>
       {/* Barra de ações abaixo do título, mesmo padrão dos painéis de Site e
           Recurso. O Street View fica ao lado da coordenada, como nos demais campos. */}
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-app-border pb-3">
+      <PanelTabBar activeTab={tab} className="mb-4 border-b border-app-border pb-3">
         <PanelBarButton
           icon={InfoIcon}
           label="Geral"
@@ -178,7 +179,7 @@ export function AddressDetailPanel({
             onClick={() => setTab('viability')}
           />
         ) : null}
-      </div>
+      </PanelTabBar>
       {tab === 'viability' && activeLocation ? (
         <ViabilityTab origin={activeLocation.coordinates} onSimulate={handleSimulate} />
       ) : (

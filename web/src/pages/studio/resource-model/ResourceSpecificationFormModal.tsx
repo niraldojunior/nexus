@@ -96,11 +96,11 @@ export function ResourceSpecificationFormModal({
       setError('O nome da especificação é obrigatório.');
       return;
     }
-    if (!characteristicRowsValid(rows)) {
+    if (!characteristicRowsValid(visibleRows)) {
       setError('Toda característica precisa de um nome.');
       return;
     }
-    const invalidImage = rows.find(
+    const invalidImage = visibleRows.find(
       (row) => row.valueType === 'image' && imageReferenceError(row.valueText),
     );
     if (invalidImage) {
@@ -110,7 +110,7 @@ export function ResourceSpecificationFormModal({
 
     try {
       setSubmitting(true);
-      const characteristics = buildCharacteristicPayload(rows);
+      const characteristics = buildCharacteristicPayload(visibleRows);
       const manufacturerRole = manufacturerOptions.find((role) => role.partyId === manufacturerPartyId);
       // Sempre envia `relatedParty` explicitamente — inclusive `[]` quando não há fabricante — porque
       // o backend preserva `current.relatedParty` quando o campo vem `undefined` (service.ts), e
@@ -149,10 +149,20 @@ export function ResourceSpecificationFormModal({
     }
   };
 
+  // Este modal só preenche/exibe características de nível de especificação (issue #273) — as de
+  // nível de instância pertencem ao painel do recurso, no módulo Geo. `specCharacteristicRowsFromType`
+  // continua devolvendo todas as linhas (contrato do utilitário, issue #216); a filtragem é só aqui,
+  // numa única fonte derivada que alimenta render, validação e payload — nunca filtrar em mais de
+  // um lugar, para não arriscar perder valor salvo por divergência entre os filtros.
+  // Órfãs (sem correspondência no tipo) não têm nível declarado em lugar nenhum e caem em
+  // 'specification' por padrão (ver resourceCharacteristicsForm.ts) — continuam visíveis aqui,
+  // preservando o comportamento da issue #216.
+  const visibleRows = rows.filter((row) => row.characteristicLevel !== 'instance');
+
   // Agrupa as linhas por `group` (fallback "Geral"), preservando a ordem de primeira ocorrência —
-  // uma seção por grupo em vez de uma tabela única (plano §9).
+  // uma seção por grupo em vez de uma tabela única (plano §9). `group` é ortogonal ao nível.
   const groupedRows: Array<{ group: string; rows: ResourceCharacteristicRow[] }> = [];
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const groupName = row.group?.trim() || 'Geral';
     const bucket = groupedRows.find((g) => g.group === groupName);
     if (bucket) bucket.rows.push(row);
@@ -219,7 +229,7 @@ export function ResourceSpecificationFormModal({
               onChange={(e) => setName(e.target.value)}
               disabled={readOnly}
               placeholder="Ex.: OLT Huawei MA5800-X7"
-              className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+              className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
             />
           </div>
 
@@ -238,7 +248,7 @@ export function ResourceSpecificationFormModal({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Descreva a finalidade desta especificação..."
-                  className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                  className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                 />
               )}
             </div>
@@ -258,7 +268,7 @@ export function ResourceSpecificationFormModal({
                 <select
                   value={manufacturerPartyId}
                   onChange={(e) => setManufacturerPartyId(e.target.value)}
-                  className="w-full rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.84rem] text-app-text outline-none focus:border-app-accent"
+                  className="geo-input"
                 >
                   <option value="">Nenhum</option>
                   {manufacturerOptions.map((role) => (
@@ -276,6 +286,11 @@ export function ResourceSpecificationFormModal({
               <p className="rounded-[14px] border border-dashed border-app-border px-3 py-3 text-[0.82rem] text-app-muted text-center">
                 Este tipo de recurso ainda não tem características definidas na aba
                 "Características".
+              </p>
+            ) : visibleRows.length === 0 ? (
+              <p className="rounded-[14px] border border-dashed border-app-border px-3 py-3 text-[0.82rem] text-app-muted text-center">
+                Este tipo não tem características de nível de especificação. As de nível de
+                instância são preenchidas no recurso, não na especificação.
               </p>
             ) : (
               <div className="space-y-4 max-h-[320px] overflow-y-auto pr-1">
@@ -359,7 +374,7 @@ export function ResourceSpecificationFormModal({
                                       ),
                                     )
                                   }
-                                  className="w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                                  className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                                 >
                                   <option value="">{readOnly ? 'Não especificado' : 'Selecione uma opção...'}</option>
                                   {listOptions.map((opt) => (
@@ -394,7 +409,7 @@ export function ResourceSpecificationFormModal({
                                         ? '{"chave":"valor"}'
                                         : 'Valor da característica'
                                   }
-                                  className="w-full rounded-[10px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                                  className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                                 />
                               )}
                             </div>

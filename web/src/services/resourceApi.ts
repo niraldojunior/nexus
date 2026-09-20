@@ -68,6 +68,13 @@ export type TimePeriod = {
   endDateTime?: string;
 };
 
+/**
+ * Nível em que a característica é preenchida. Só tem significado onde `ResourceCharacteristic` atua
+ * como *definição* (`ResourceType.resourceTypeCharacteristic`), nunca em arrays de valor
+ * (`PhysicalResource.characteristic`). Ausência ⇒ `'specification'` (issue #273).
+ */
+export type CharacteristicLevel = 'specification' | 'instance';
+
 export type ResourceCharacteristic = {
   name: string;
   value: unknown;
@@ -77,6 +84,8 @@ export type ResourceCharacteristic = {
   allowedValues?: string[];
   /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
   referenceDataSetKey?: string | null;
+  /** Ver `CharacteristicLevel` (issue #273). Presente apenas quando `'instance'`. */
+  characteristicLevel?: CharacteristicLevel;
 };
 
 export type ResourceSpecification = {
@@ -348,7 +357,13 @@ export type ResourceCatalogPath = {
 };
 
 export type ResourceTypeCatalogContext = {
-  resourceType: Pick<ResourceType, 'id' | 'code' | 'name' | 'visualIdentity'>;
+  // `resourceTypeCharacteristic` incluído para o painel de instância (módulo Geo) resolver as
+  // definições de nível `'instance'` sem disparar um segundo request (issue #273) — o backend já
+  // devolve o ResourceType completo, só o Pick aqui era estreito.
+  resourceType: Pick<
+    ResourceType,
+    'id' | 'code' | 'name' | 'visualIdentity' | 'resourceTypeCharacteristic'
+  >;
   catalogPaths: ResourceCatalogPath[];
 };
 

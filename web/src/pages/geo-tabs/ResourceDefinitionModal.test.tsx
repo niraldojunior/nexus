@@ -20,6 +20,7 @@ vi.mock('../../services/resourceCatalogApi', () => ({
 const TYPES: ResourceType[] = [
   { '@type': 'ResourceType', id: 'type-cto', href: '', code: 'CTO', name: 'CTO', categoryCode: 'Infrastructure.Passive', status: 'active' },
   { '@type': 'ResourceType', id: 'type-splitter', href: '', code: 'Splitter', name: 'Splitter', categoryCode: 'Infrastructure.Passive', status: 'active' },
+  { '@type': 'ResourceType', id: 'type-empty', href: '', code: 'Vazio', name: 'Vazio', categoryCode: 'Infrastructure.Passive', status: 'active' },
 ];
 
 const SPECS: ResourceSpecification[] = [
@@ -86,6 +87,17 @@ const CATALOG_SNAPSHOT = {
           status: 'active' as const,
           sortOrder: 2,
         },
+        {
+          id: 'node-empty',
+          catalogId: 'catalog-1',
+          code: 'Vazio',
+          name: 'Vazio',
+          kind: 'RESOURCE_TYPE' as const,
+          resourceTypeId: 'type-empty',
+          resourceType: TYPES[2],
+          status: 'active' as const,
+          sortOrder: 3,
+        },
       ],
     },
   ],
@@ -100,6 +112,7 @@ describe('ResourceDefinitionModal', () => {
     mocks.getResourceModelSnapshotSource.mockResolvedValue(CATALOG_SNAPSHOT);
     mocks.listResourceSpecifications.mockImplementation(({ resourceTypeId }: { resourceTypeId?: string }) => {
       if (resourceTypeId === 'type-splitter') return Promise.resolve([SPECS[2]]);
+      if (resourceTypeId === 'type-empty') return Promise.resolve([]);
       return Promise.resolve([SPECS[0], SPECS[1]]);
     });
   });
@@ -123,10 +136,13 @@ describe('ResourceDefinitionModal', () => {
 
     expect(await screen.findByText('Definição do recurso')).toBeInTheDocument();
     expect(screen.getByText('Telecom')).toBeInTheDocument();
-    expect(screen.getByLabelText('Especificação')).toHaveValue('spec-a');
+    expect(await screen.findByRole('option', { name: 'CTO A' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 
-  it('permite filtrar por fabricante', async () => {
+  it('trocar o tipo de recurso na árvore atualiza a lista de especificações à direita', async () => {
     render(
       <ResourceDefinitionModal
         currentSpecification={SPECS[0]!}
@@ -135,15 +151,11 @@ describe('ResourceDefinitionModal', () => {
       />,
     );
 
-    await screen.findByLabelText('Especificação');
+    await screen.findByRole('option', { name: 'CTO A' });
+    fireEvent.click(screen.getByText('Splitter'));
 
-    const manufacturerSelect = screen.getByLabelText('Filtrar por Fabricante');
-    fireEvent.change(manufacturerSelect, { target: { value: 'Nokia' } });
-
-    await waitFor(() => {
-      const specSelect = screen.getByLabelText('Especificação');
-      expect(specSelect).toHaveValue('spec-b');
-    });
+    expect(await screen.findByRole('option', { name: 'Splitter A' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'CTO A' })).not.toBeInTheDocument();
   });
 
   it('salvar chama onCommit com o id da nova especificação e fecha o modal', async () => {
@@ -158,9 +170,7 @@ describe('ResourceDefinitionModal', () => {
       />,
     );
 
-    await screen.findByLabelText('Especificação');
-
-    fireEvent.change(screen.getByLabelText('Especificação'), { target: { value: 'spec-b' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'CTO B' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar alteração' }));
 
     await waitFor(() => {
@@ -183,5 +193,28 @@ describe('ResourceDefinitionModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('sem especificação selecionada, desabilita Salvar e não chama onCommit', async () => {
+    const onCommit = vi.fn();
+    render(
+      <ResourceDefinitionModal
+        currentSpecification={SPECS[0]!}
+        onCommit={onCommit}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('option', { name: 'CTO A' });
+    fireEvent.click(screen.getByText('Vazio'));
+
+    expect(
+      await screen.findByText('Nenhuma especificação encontrada para este tipo.'),
+    ).toBeInTheDocument();
+    const saveButton = screen.getByRole('button', { name: 'Salvar alteração' });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(saveButton);
+    expect(onCommit).not.toHaveBeenCalled();
   });
 });

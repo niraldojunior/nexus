@@ -267,8 +267,8 @@ export function SiteAddressModal({
                 onClick={() => switchBase(option)}
                 className={`flex items-center justify-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[0.82rem] font-semibold transition ${
                   base === option
-                    ? 'border border-app-accent-border bg-white text-app-text shadow-sm'
-                    : 'border border-transparent text-app-muted hover:bg-white/60'
+                    ? 'border border-app-accent-border bg-app-panel text-app-text shadow-sm'
+                    : 'border border-transparent text-app-muted hover:bg-app-panel/60'
                 }`}
               >
                 {option === 'google' ? <GoogleMapsIcon /> : <VtalIcon />}
@@ -283,7 +283,7 @@ export function SiteAddressModal({
             Endereço
           </label>
           <div className="relative">
-            <div className="flex items-center gap-2 rounded-[12px] border border-app-border bg-white px-3">
+            <div className="flex items-center gap-2 rounded-[12px] border border-app-border bg-app-panel px-3">
               <Search className="h-3.5 w-3.5 shrink-0 text-app-muted" aria-hidden />
               <input
                 value={query}
@@ -305,7 +305,7 @@ export function SiteAddressModal({
             {predictionsVisible ? (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setPredictionsOpen(false)} />
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft">
                   {base === 'geonet'
                     ? geonetPredictions.map((candidate) => (
                         <button

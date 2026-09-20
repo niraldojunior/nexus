@@ -334,6 +334,12 @@ button {
     border-color: var(--border-input-strong);
     box-shadow: none;
   }
+  textarea.geo-input {
+    height: auto;
+    min-height: 60px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
   .geo-input:focus {
     border-color: var(--vt-yellow);
     box-shadow: 0 0 0 var(--vt-yellow-focus-ring-width) var(--vt-yellow-focus-ring-color);
@@ -420,6 +426,24 @@ textarea {
    aparece no hover e fecha sozinho quando o mouse sai, então o X é redundante. */
 .gm-style-iw button.gm-ui-hover-effect {
   display: none !important;
+}
+
+/* O InfoWindow nativo do Google Maps (balão de preview, GeoPage.tsx MapBalloonCard) despeja
+   sua própria casca — cartão e bico da seta — direto no DOM do mapa, fora da árvore React;
+   `app-panel`/`app-text` no conteúdo não alcançam essa casca. No tema escuro ela ficava
+   sempre branca (só o texto interno acompanhava). `.gm-style-iw-c` é o cartão e
+   `.gm-style-iw-tc::after` é o bico — nomes de classe internos do Maps JS API, estáveis há
+   anos, sem hook público equivalente. */
+[data-theme='dark'] .gm-style-iw-c {
+  background-color: var(--surface-card) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45) !important;
+}
+[data-theme='dark'] .gm-style-iw-d {
+  background-color: var(--surface-card) !important;
+  color: var(--text-primary);
+}
+[data-theme='dark'] .gm-style-iw-tc::after {
+  background-color: var(--surface-card) !important;
 }
 
 input:focus,

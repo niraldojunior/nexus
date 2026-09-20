@@ -942,3 +942,189 @@ test('ResourceService: validates vendor and forbids manufacturer on PhysicalReso
   });
   assert.equal(updated.relatedParty?.length, 0);
 });
+
+// REGRESSÃO: `lookupPartyRoles` precisa receber o tenant da requisição (via `tenantOf(context)`),
+// não um tenant fixo. Antes deste fix, `nexus-runtime.ts` chamava `partyService.listPartyRoles`
+// sem `context`, o que sempre resolvia para o tenant 'default' — então um papel de fabricante
+// cadastrado e ativo em qualquer outro tenant (ex.: 'vtal') nunca era encontrado, e
+// `createResourceSpecification`/`updateResourceSpecification` falhavam com 409
+// RESOURCE_SPEC_MANUFACTURER_ROLE_INVALID mesmo com tudo certo no cadastro.
+test('ResourceService: lookupPartyRoles recebe o tenant da requisição, não um tenant fixo', async () => {
+  const repository = new ResourceRepository();
+  const partyManufacturer = {
+    id: 'party-mfg-vtal-1',
+    '@referredType': 'Organization',
+    href: '/party/party-mfg-vtal-1',
+    name: 'VANTIVA',
+  };
+
+  // Simula um diretório de papéis por tenant: o papel de fabricante da VANTIVA só existe (e está
+  // ativo) sob o tenant 'vtal' — nunca sob 'default'. Isso reproduz fielmente o cenário relatado:
+  // papel cadastrado e ativo no tenant real da sessão, mas ausente no tenant 'default'.
+  const rolesByTenant: Record<string, Record<string, Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>>> = {
+    vtal: { [partyManufacturer.id]: [{ name: 'manufacturer', status: 'active' }] },
+    default: { [partyManufacturer.id]: [] },
+  };
+  const receivedTenantIds: string[] = [];
+
+  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never, {
+    lookupParty: (id) => (id === partyManufacturer.id ? partyManufacturer : undefined),
+    lookupPartyRoles: async (partyId, tenantId) => {
+      receivedTenantIds.push(tenantId);
+      return rolesByTenant[tenantId]?.[partyId] ?? [];
+    },
+  });
+
+  // 1. Sob o tenant 'vtal' (o da sessão real), o papel é encontrado e a spec salva normalmente.
+  const spec = await service.createResourceSpecification(
+    {
+      name: 'ONT VANTIVA',
+      resourceTypeId: 'rt-ont',
+      relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+    },
+    { tenantId: 'vtal' } as never,
+  );
+  assert.equal(spec.relatedParty?.[0]?.id, partyManufacturer.id);
+  assert.ok(receivedTenantIds.includes('vtal'));
+
+  // 2. A prova de que o tenant é propagado (e não fixo): sob 'default' o mesmo fabricante não tem
+  // papel ativo cadastrado, e a operação deve falhar — se o tenant estivesse hardcoded para
+  // 'vtal' (ou para qualquer valor fixo), este caso passaria incorretamente.
+  await assert.rejects(
+    service.createResourceSpecification(
+      {
+        name: 'ONT VANTIVA (default)',
+        resourceTypeId: 'rt-ont',
+        relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+      },
+      { tenantId: 'default' } as never,
+    ),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'RESOURCE_SPEC_MANUFACTURER_ROLE_INVALID' &&
+      error.statusCode === 409,
+  );
+  assert.ok(receivedTenantIds.includes('default'));
+});
+
+test('ResourceService: characteristicLevel on ResourceType and ResourceSpecification (RN-008, issue #273)', async () => {
+  const repository = new ResourceRepository();
+  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never);
+
+  const catalog = await service.createResourceCatalog({
+    code: 'catalog-char-level',
+    name: 'Catálogo Nível de Característica',
+  });
+
+  const leaf = await service.createResourceCatalogNode(catalog.id, {
+    code: 'node-char-level-olt',
+    name: 'OLT Char Level',
+    kind: 'RESOURCE_TYPE',
+    nature: 'PhysicalResource',
+    resourceTypeCharacteristic: [
+      { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16 },
+      { name: 'serial_number_logic', valueType: 'string', characteristicLevel: 'instance', value: 'SN-DEFAULT' },
+      { name: 'legacy_spec_char', valueType: 'string', value: 'def' },
+    ],
+  });
+  const resourceTypeId = leaf.resourceTypeId!;
+
+  // 1. updateResourceType: round-trip com normalização (omite 'specification', preserva 'instance')
+  const updatedType = await service.updateResourceType(resourceTypeId, {
+    resourceTypeCharacteristic: [
+      { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16 },
+      { name: 'mac', valueType: 'string', characteristicLevel: 'instance', value: '00:11:22:33:44:55' },
+    ],
+  });
+  const portsChar = updatedType.resourceTypeCharacteristic?.find((c) => c.name === 'ports');
+  const macChar = updatedType.resourceTypeCharacteristic?.find((c) => c.name === 'mac');
+  assert.equal(portsChar?.characteristicLevel, undefined); // normalizado: omite quando 'specification'
+  assert.equal(macChar?.characteristicLevel, 'instance');
+
+  // 2. updateResourceType: rejeita nível inválido (400)
+  await assert.rejects(
+    service.updateResourceType(resourceTypeId, {
+      resourceTypeCharacteristic: [
+        { name: 'bad_level', valueType: 'string', characteristicLevel: 'invalid' as never, value: null },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'RESOURCE_CHARACTERISTIC_LEVEL_INVALID' &&
+      error.statusCode === 400,
+  );
+
+  // 3. createResourceSpecification: rejeita característica de nível instância (400)
+  await assert.rejects(
+    service.createResourceSpecification({
+      name: 'Spec com Char de Instância',
+      resourceTypeId,
+      resourceSpecificationCharacteristic: [
+        { name: 'mac', value: '00:11:22:33:44:55' },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'RESOURCE_SPEC_CHARACTERISTIC_LEVEL_INVALID' &&
+      error.statusCode === 400,
+  );
+
+  // 4. createResourceSpecification: aceita características de nível especificação ou legadas
+  const validSpec = await service.createResourceSpecification({
+    name: 'Spec Válida',
+    resourceTypeId,
+    resourceSpecificationCharacteristic: [
+      { name: 'ports', value: 32 },
+    ],
+  });
+  assert.equal(validSpec.resourceSpecificationCharacteristic?.length, 1);
+  assert.equal(validSpec.resourceSpecificationCharacteristic?.[0]?.name, 'ports');
+
+  // 5. CASO-ARMADILHA: updateResourceSpecification chamado apenas com { name } numa spec cujo array
+  // existente conteria uma característica posteriormente promovida a instância DEVE TER SUCESSO
+  // (a validação só roda sobre input.resourceSpecificationCharacteristic quando fornecido)
+  const specRenamed = await service.updateResourceSpecification(validSpec.id, {
+    name: 'Spec Válida Renomeada',
+  });
+  assert.equal(specRenamed.name, 'Spec Válida Renomeada');
+  assert.equal(specRenamed.resourceSpecificationCharacteristic?.length, 1);
+
+  // 6. updateResourceSpecification com novo array: rejeita se contiver characteristic de nível instância
+  await assert.rejects(
+    service.updateResourceSpecification(validSpec.id, {
+      resourceSpecificationCharacteristic: [
+        { name: 'mac', value: 'AA:BB:CC:DD:EE:FF' },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'RESOURCE_SPEC_CHARACTERISTIC_LEVEL_INVALID' &&
+      error.statusCode === 400,
+  );
+
+  // 7. REGRESSÃO: editar uma spec (mesmo só o nome) cujo ResourceType foi desativado depois de a
+  // spec existir NÃO pode falhar com 409 RESOURCE_TYPE_INACTIVE. O fetch do tipo, feito aqui só
+  // para ler `resourceTypeCharacteristic` na validação de nível, tem que ignorar o status do tipo
+  // (`includeInactive: true`) — esse fetch não é o guard de criação, que corretamente segue
+  // bloqueando spec nova sob tipo inativo (caso 8).
+  await service.updateResourceType(resourceTypeId, { status: 'inactive' });
+  const specEditedUnderInactiveType = await service.updateResourceSpecification(validSpec.id, {
+    name: 'Spec Válida Renomeada de Novo',
+    resourceSpecificationCharacteristic: [{ name: 'ports', value: 48 }],
+  });
+  assert.equal(specEditedUnderInactiveType.name, 'Spec Válida Renomeada de Novo');
+  assert.equal(specEditedUnderInactiveType.resourceSpecificationCharacteristic?.[0]?.value, 48);
+
+  // 8. createResourceSpecification continua bloqueada sob tipo inativo (comportamento pré-existente,
+  // intencional — não é o bug do caso 7).
+  await assert.rejects(
+    service.createResourceSpecification({
+      name: 'Spec Nova Sob Tipo Inativo',
+      resourceTypeId,
+    }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'RESOURCE_TYPE_INACTIVE' &&
+      error.statusCode === 409,
+  );
+});

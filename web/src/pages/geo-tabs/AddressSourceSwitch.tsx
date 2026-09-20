@@ -32,8 +32,8 @@ export function AddressSourceSwitch({
             onClick={() => onChoose(source)}
             className={`flex min-w-0 flex-col gap-0.5 rounded-[9px] px-2.5 py-1.5 text-left transition ${
               selected
-                ? 'border border-app-accent-border bg-white text-app-text shadow-sm'
-                : 'border border-transparent text-app-muted hover:bg-white/60'
+                ? 'border border-app-accent-border bg-app-panel text-app-text shadow-sm'
+                : 'border border-transparent text-app-muted hover:bg-app-panel/60'
             }`}
           >
             <span className="flex items-center gap-1.5 text-[0.78rem] font-semibold">

@@ -5,6 +5,14 @@ export type TimePeriod = {
 
 export type CharacteristicValue = string | number | boolean | Record<string, unknown> | null;
 
+/**
+ * Nível em que a característica é preenchida. Só tem significado onde o `Characteristic` atua como
+ * *definição* (ex.: `ResourceType.resourceTypeCharacteristic`), nunca em arrays de valor
+ * (`Resource.characteristic`). Ausência ⇒ `'specification'` (issue #273) — característica legada
+ * sem o campo é tratada como especificação, sem backfill.
+ */
+export type CharacteristicLevel = 'specification' | 'instance';
+
 export type Characteristic = {
   group?: string;
   name: string;
@@ -29,6 +37,8 @@ export type Characteristic = {
    * `allowedValues`; mantido opcional para não quebrar characteristics existentes com lista inline.
    */
   referenceDataSetKey?: string;
+  /** Ver `CharacteristicLevel` (issue #273). Presente apenas quando `'instance'`. */
+  characteristicLevel?: CharacteristicLevel;
 };
 
 export type EntityRef = {

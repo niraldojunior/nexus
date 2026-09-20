@@ -1,9 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * V.tal Nexus — Modal. Generaliza o `ArchiveConfirmModal` de
  * `pages/ResearchHistoryPage.tsx` para reuso fora da família de conversa:
  * scrim escuro, `.vt-popover` (hairline + `--shadow-lg`), `--radius-xl`.
+ * Renderizado no `document.body` via portal para nunca ficar preso no container pai.
  *
  * Foco previsível (issue #191, hardening de acessibilidade do Studio): ao abrir, o foco vai para
  * o painel do diálogo; ao fechar (Escape ou `onClose`), volta para o elemento que tinha foco antes
@@ -45,7 +47,7 @@ export default function Modal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30"
       onClick={closeOnClickOutside ? onClose : undefined}
@@ -81,6 +83,7 @@ export default function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

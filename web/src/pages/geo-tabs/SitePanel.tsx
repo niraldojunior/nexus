@@ -178,6 +178,7 @@ export function SitePanel({
     status: GeoSiteStatus;
     parentSiteId: string | null;
     note: string | null;
+    characteristic: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
   }>) => {
     if (!currentSiteId) return;
     await patchJson(`/v1/geo/sites/${currentSiteId}`, patch);

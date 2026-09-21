@@ -106,6 +106,7 @@ export class PartyService {
       id,
       href: buildHref('partyRole', id),
       name: input.name.trim(),
+      ...(input.roleTypeId ? { roleTypeId: input.roleTypeId } : {}),
       status: input.status ?? 'active',
       partyId: party.id,
       party: {

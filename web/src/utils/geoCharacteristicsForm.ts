@@ -2,10 +2,17 @@
 // — espelha `resourceCharacteristicsForm.ts`, mas para `GeoSpecCharacteristic` (que usa
 // `defaultValue` em vez de `value`, e carrega `mandatory` como flag própria em vez de inferida).
 // Usado pela aba "Características" em `LocationSpecDetail`.
-import type { GeoSpecCharacteristic } from '../services/geoApi';
+import type { GeoCharacteristicLevel, GeoSpecCharacteristic } from '../services/geoApi';
 
 export type CharacteristicValueType =
-  'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json';
+  | 'string'
+  | 'integer'
+  | 'decimal'
+  | 'boolean'
+  | 'date'
+  | 'list'
+  | 'organization'
+  | 'json';
 
 /**
  * Linha editável de característica de local — `key` só existe no cliente (identidade de lista no
@@ -30,6 +37,10 @@ export type GeoCharacteristicRow = {
    * Referência. Mutuamente exclusivo com `allowedValues`.
    */
   referenceDataSetKey?: string | null;
+  /**
+   * Nível em que a característica é preenchida — 'specification' (na spec) ou 'instance' (no local).
+   */
+  characteristicLevel: GeoCharacteristicLevel;
 };
 
 let rowKeySeq = 0;
@@ -51,6 +62,10 @@ function valueToText(value: unknown, valueType: CharacteristicValueType): string
   return String(value);
 }
 
+function resolveCharacteristicLevel(level: unknown): GeoCharacteristicLevel {
+  return level === 'instance' ? 'instance' : 'specification';
+}
+
 export function emptyGeoCharacteristicRow(): GeoCharacteristicRow {
   return {
     key: nextRowKey(),
@@ -59,6 +74,7 @@ export function emptyGeoCharacteristicRow(): GeoCharacteristicRow {
     valueText: '',
     hasDefaultValue: false,
     mandatory: false,
+    characteristicLevel: 'specification',
   };
 }
 
@@ -84,12 +100,26 @@ export function geoCharacteristicRowsFrom(
       allowedValues,
       allowedValuesText: allowedValues ? allowedValues.join(', ') : '',
       referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
+      characteristicLevel: resolveCharacteristicLevel(characteristic.characteristicLevel),
     };
   });
 }
 
+/** Particiona as linhas nos dois agrupamentos da aba Características, preservando a ordem original. */
+export function partitionGeoCharacteristicRowsByLevel(rows: GeoCharacteristicRow[]): {
+  specification: GeoCharacteristicRow[];
+  instance: GeoCharacteristicRow[];
+} {
+  const specification: GeoCharacteristicRow[] = [];
+  const instance: GeoCharacteristicRow[] = [];
+  for (const row of rows) {
+    (row.characteristicLevel === 'instance' ? instance : specification).push(row);
+  }
+  return { specification, instance };
+}
+
 /** Converte o texto editado de volta ao tipo declarado — usado só ao salvar. */
-function coerceValue(valueText: string, valueType: CharacteristicValueType): unknown {
+export function coerceValue(valueText: string, valueType: CharacteristicValueType): unknown {
   switch (valueType) {
     case 'boolean':
       if (valueText !== 'true' && valueText !== 'false') {
@@ -138,10 +168,12 @@ export function buildGeoCharacteristicPayload(
       // duas — a referência tem prioridade quando ambas chegam preenchidas do formulário.
       const referenceDataSetKey =
         row.valueType === 'list' && row.referenceDataSetKey ? row.referenceDataSetKey : undefined;
-      const allowedValues =
-        row.valueType === 'list' && !referenceDataSetKey
-          ? (parseAllowedValues(row.allowedValuesText) ?? row.allowedValues)
-          : undefined;
+      let allowedValues: string[] | undefined;
+      if (row.valueType === 'organization') {
+        allowedValues = row.allowedValues && row.allowedValues.length > 0 ? row.allowedValues : undefined;
+      } else if (row.valueType === 'list' && !referenceDataSetKey) {
+        allowedValues = parseAllowedValues(row.allowedValuesText) ?? row.allowedValues;
+      }
       return {
         name: row.name.trim(),
         valueType: row.valueType,
@@ -151,6 +183,7 @@ export function buildGeoCharacteristicPayload(
         ...(row.group?.trim() ? { group: row.group.trim() } : {}),
         ...(allowedValues && allowedValues.length > 0 ? { allowedValues } : {}),
         ...(referenceDataSetKey ? { referenceDataSetKey } : {}),
+        ...(row.characteristicLevel === 'instance' ? { characteristicLevel: 'instance' as const } : {}),
       };
     });
 }

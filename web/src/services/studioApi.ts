@@ -7,6 +7,7 @@ export type StudioDomain =
   | 'location-model'
   | 'spatial'
   | 'studio-geo'
+  | 'organizations'
   | 'parties'
   | 'reference-data'
   | 'rules-workflows'

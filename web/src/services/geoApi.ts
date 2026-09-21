@@ -108,6 +108,8 @@ export type GeoSpecCategory = 'Region' | 'Site' | 'SubSite';
 // (onde ele cabe na hierarquia). Ver src/modules/geo/domain.ts GeographicSiteRole.
 export type GeoSiteRole = 'grouping' | 'network' | 'property' | 'service';
 
+export type GeoCharacteristicLevel = 'specification' | 'instance';
+
 export type GeoSpecCharacteristic = {
   group?: string;
   name: string;
@@ -120,6 +122,7 @@ export type GeoSpecCharacteristic = {
   allowedValues?: Array<string | number | boolean>;
   /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
   referenceDataSetKey?: string | null;
+  characteristicLevel?: GeoCharacteristicLevel;
 };
 
 export type GeoSpec = {

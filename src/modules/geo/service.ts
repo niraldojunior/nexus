@@ -3068,6 +3068,10 @@ export class GeoService {
 
     for (const definition of spec.specCharacteristic) {
       const key = definition.name.trim().toLowerCase();
+      if (definition.characteristicLevel === 'instance') {
+        // Características de nível de instância são preenchidas no local, não na especificação.
+        continue;
+      }
       if (!byName.has(key) && definition.defaultValue !== undefined) {
         byName.set(key, {
           ...(definition.group ? { group: definition.group } : {}),
@@ -3546,6 +3550,20 @@ const normalizeSpecCharacteristics = (
 const validateCharacteristicDefinition = (
   definition: GeographicSiteSpecificationCharacteristic,
 ): void => {
+  if (definition.valueType === 'organization') {
+    if (!definition.allowedValues || definition.allowedValues.length === 0) {
+      throw new AppError('organization characteristic must define at least one allowed role', {
+        code: 'GEO_SPEC_CHARACTERISTIC_VALIDATOR_INVALID',
+        statusCode: 400,
+      });
+    }
+    if (definition.referenceDataSetKey) {
+      throw new AppError('organization characteristic cannot use referenceDataSetKey', {
+        code: 'GEO_SPEC_CHARACTERISTIC_VALIDATOR_INVALID',
+        statusCode: 400,
+      });
+    }
+  }
   if (definition.regex && definition.valueType !== 'string') {
     throw new AppError('regex validator is only supported for string characteristics', {
       code: 'GEO_SPEC_CHARACTERISTIC_VALIDATOR_INVALID',

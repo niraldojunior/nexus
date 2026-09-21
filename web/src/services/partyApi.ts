@@ -23,7 +23,7 @@ export type PartyQuery = {
 export type Characteristic = {
   name: string;
   value: unknown;
-  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json';
+  valueType?: 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json' | 'image';
   allowedValues?: string[];
 };
 
@@ -57,11 +57,17 @@ export type PartyRoleQuery = {
   offset: number;
 };
 
+export type TimePeriod = {
+  startDateTime?: string;
+  endDateTime?: string;
+};
+
 export type PartyRole = {
   '@type': 'PartyRole';
   id: string;
   href: string;
   name: string;
+  roleTypeId?: string;
   status: PartyRoleStatus;
   partyId: string;
   party: {
@@ -71,17 +77,21 @@ export type PartyRole = {
     name?: string;
   };
   partyRoleCharacteristic?: Characteristic[];
+  validFor?: TimePeriod;
 };
 
 export type CreatePartyRoleInput = {
   partyId: string;
   name: string;
+  roleTypeId?: string;
   partyRoleCharacteristic?: Characteristic[];
+  validFor?: TimePeriod;
 };
 
 export type UpdatePartyRoleInput = {
   status?: PartyRoleStatus;
   partyRoleCharacteristic?: Characteristic[];
+  validFor?: TimePeriod;
 };
 
 const authHeaders = (): HeadersInit => ({
@@ -132,6 +142,10 @@ export async function listParties(query: PartyQuery): Promise<Party[]> {
   return await requestJson<Party[]>(buildListUrl('/partyManagement/v4/party', query));
 }
 
+export async function getParty(id: string): Promise<Party> {
+  return await requestJson<Party>(`${API_BASE_URL}/partyManagement/v4/party/${id}`);
+}
+
 export async function createParty(input: CreatePartyInput): Promise<Party> {
   return await requestJson<Party>(`${API_BASE_URL}/partyManagement/v4/party`, {
     method: 'POST',
@@ -143,6 +157,12 @@ export async function updateParty(id: string, input: UpdatePartyInput): Promise<
   return await requestJson<Party>(`${API_BASE_URL}/partyManagement/v4/party/${id}`, {
     method: 'PATCH',
     body: input,
+  });
+}
+
+export async function deleteParty(id: string): Promise<Party> {
+  return await requestJson<Party>(`${API_BASE_URL}/partyManagement/v4/party/${id}`, {
+    method: 'DELETE',
   });
 }
 
@@ -181,4 +201,14 @@ export async function deletePartyRole(id: string): Promise<PartyRole> {
   return await requestJson<PartyRole>(`${API_BASE_URL}/partyRoleManagement/v4/partyRole/${id}`, {
     method: 'DELETE',
   });
+}
+
+export async function listOrganizationsByRoleTypeIds(
+  roleTypeIds: string[],
+): Promise<Array<{ id: string; name: string }>> {
+  if (roleTypeIds.length === 0) return [];
+  const searchParams = new URLSearchParams({ ids: roleTypeIds.join(',') });
+  return await requestJson<Array<{ id: string; name: string }>>(
+    `/api/v1/parties/by-role-types?${searchParams.toString()}`,
+  );
 }

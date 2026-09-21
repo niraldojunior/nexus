@@ -5,6 +5,7 @@ import { Button } from '../../../components/ui';
 import {
   buildGeoCharacteristicPayload,
   geoCharacteristicRowsFrom,
+  partitionGeoCharacteristicRowsByLevel,
   type GeoCharacteristicRow,
 } from '../../../utils/geoCharacteristicsForm';
 import type { LocationModelDraftSpec } from './locationModelDraft';
@@ -17,6 +18,7 @@ import {
 } from './locationCategoryPresentation';
 import { VisualIdentityPickerModal } from '../../../components/VisualIdentityPickerModal';
 import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPreviewUrl';
+import { CharacteristicListRow } from '../shared/CharacteristicListRow';
 
 const ROLE_LABELS: Record<GeoSiteRole, string> = {
   grouping: 'Agrupamento',
@@ -32,6 +34,7 @@ const VALUE_TYPE_LABELS: Record<string, string> = {
   boolean: 'Booleano',
   date: 'Data',
   list: 'Lista de opções',
+  organization: 'Organização',
   json: 'JSON livre',
 };
 
@@ -364,48 +367,41 @@ export function LocationSpecDetail({
                 <p className="text-[0.88rem] font-medium">Nenhuma característica cadastrada.</p>
               </div>
             ) : (
-              <div className="divide-y divide-app-border overflow-hidden rounded-[18px] border border-app-border">
-                {characteristicRows.map((row) => (
-                  <div
-                    key={row.key}
-                    onClick={() => openCharacteristic(row)}
-                    role="button"
-                    tabIndex={0}
-                    title={row.description || undefined}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        openCharacteristic(row);
-                      }
-                    }}
-                    className="group flex cursor-pointer items-center justify-between gap-3 px-3.5 py-2.5 transition vt-hover-muted"
-                  >
-                    <div className="min-w-0">
-                      <h4 className="truncate text-[0.88rem] font-semibold text-app-text">
-                        {row.name}
-                      </h4>
-                      <p className="truncate text-[0.78rem] text-app-muted">
-                        {row.group ? `${row.group} · ` : ''}
-                        {VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}
-                      </p>
-                    </div>
-                    {canMutate && (
-                      <button
-                        type="button"
-                        title="Remover característica"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          deleteCharacteristic(row);
-                        }}
-                        disabled={characteristicDeletingKey === row.key}
-                        className="hidden shrink-0 rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50 group-hover:flex group-focus-within:flex"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+              (() => {
+                const { specification, instance } =
+                  partitionGeoCharacteristicRowsByLevel(characteristicRows);
+                const sections: Array<{ heading: string; rows: GeoCharacteristicRow[] }> = [
+                  { heading: `Nível de especificação (${specification.length})`, rows: specification },
+                  { heading: `Nível de instância (${instance.length})`, rows: instance },
+                ].filter((section) => section.rows.length > 0);
+
+                return (
+                  <div className="space-y-4">
+                    {sections.map((section) => (
+                      <div key={section.heading}>
+                        <h4 className="mb-1.5 text-[0.76rem] font-semibold uppercase tracking-wide text-app-muted">
+                          {section.heading}
+                        </h4>
+                        <div className="divide-y divide-app-border overflow-hidden rounded-[18px] border border-app-border">
+                          {section.rows.map((row) => (
+                            <CharacteristicListRow
+                              key={row.key}
+                              variant="row"
+                              name={row.name}
+                              typeLabel={VALUE_TYPE_LABELS[row.valueType] ?? row.valueType}
+                              group={row.group}
+                              mandatory={row.mandatory}
+                              onClick={() => openCharacteristic(row)}
+                              onDelete={canMutate ? () => deleteCharacteristic(row) : undefined}
+                              deleteDisabled={characteristicDeletingKey === row.key}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()
             )}
           </div>
         )}

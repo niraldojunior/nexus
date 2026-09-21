@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import {
+  BadgeCheck,
   Bot,
   Briefcase,
+  Building2,
   Database,
   FileStack,
   Layers3,
@@ -9,7 +11,6 @@ import {
   Network,
   Presentation,
   ShieldCheck,
-  Users,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
@@ -17,7 +18,8 @@ import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
 import { StudioGovernanceOverview } from '../components/StudioGovernanceOverview';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
-import { PartyModelStudio } from './studio/party-model/PartyModelStudio';
+import { OrganizationsPage } from './studio/organizations/OrganizationsPage';
+import { RolesPage } from './studio/party-roles/RolesPage';
 import { ReferenceDataStudio } from './studio/reference-data/ReferenceDataStudio';
 import { StudioGeoExperience } from './studio/StudioGeoExperience';
 import { GeoProjectWorkflowStudio } from './studio/rules-workflows/GeoProjectWorkflowStudio';
@@ -32,7 +34,8 @@ const studioDomainBySection: Partial<Record<StudioSection, StudioDomain>> = {
   'location-model': 'location-model',
   spatial: 'spatial',
   'studio-geo': 'studio-geo',
-  parties: 'parties',
+  organizations: 'organizations',
+  'party-roles': 'parties',
   'reference-data': 'reference-data',
   'rules-workflows': 'rules-workflows',
   templates: 'templates',
@@ -95,10 +98,16 @@ const studioNavigation: StudioNavGroup[] = [
     label: 'Dados mestres',
     items: [
       {
-        id: 'parties',
-        label: 'Partes',
-        description: 'Organizações, indivíduos, papéis e contatos.',
-        icon: Users,
+        id: 'organizations',
+        label: 'Organizações',
+        description: 'Empresas e entidades do ecossistema e seus papéis.',
+        icon: Building2,
+      },
+      {
+        id: 'party-roles',
+        label: 'Papéis',
+        description: 'Papéis que uma organização pode exercer no Nexus.',
+        icon: BadgeCheck,
       },
       {
         id: 'reference-data',
@@ -297,9 +306,19 @@ export function StudioPage({
                 onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
               />
             </div>
-          ) : section === 'parties' ? (
+          ) : section === 'organizations' ? (
             <div>
-              <PartyModelStudio
+              <OrganizationsPage
+                canEdit={canEdit}
+                canAdmin={canAdmin}
+                isEditing={isEditing}
+                onRegisterCaptureDraft={handleRegisterCaptureDraft}
+                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
+              />
+            </div>
+          ) : section === 'party-roles' ? (
+            <div>
+              <RolesPage
                 canEdit={canEdit}
                 canAdmin={canAdmin}
                 isEditing={isEditing}

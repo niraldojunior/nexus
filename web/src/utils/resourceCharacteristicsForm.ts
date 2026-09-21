@@ -12,6 +12,7 @@ export type CharacteristicValueType =
   | 'date'
   | 'image'
   | 'list'
+  | 'organization'
   | 'json';
 
 /**
@@ -242,10 +243,12 @@ export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): R
       // duas — a referência tem prioridade quando ambas chegam preenchidas do formulário.
       const referenceDataSetKey =
         row.valueType === 'list' && row.referenceDataSetKey ? row.referenceDataSetKey : undefined;
-      const allowedValues =
-        row.valueType === 'list' && !referenceDataSetKey
-          ? (parseAllowedValues(row.allowedValuesText) ?? row.allowedValues)
-          : undefined;
+      let allowedValues: string[] | undefined;
+      if (row.valueType === 'organization') {
+        allowedValues = row.allowedValues && row.allowedValues.length > 0 ? row.allowedValues : undefined;
+      } else if (row.valueType === 'list' && !referenceDataSetKey) {
+        allowedValues = parseAllowedValues(row.allowedValuesText) ?? row.allowedValues;
+      }
       return {
         name: row.name.trim(),
         valueType: row.valueType,

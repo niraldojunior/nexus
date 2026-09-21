@@ -27,6 +27,7 @@ export type Characteristic = {
     | 'image'
     | 'list'
     | 'enum'
+    | 'organization'
     | 'json';
   /** Opções permitidas quando `valueType === 'list'` ou `'enum'`, digitadas inline. */
   allowedValues?: string[];

@@ -17,6 +17,7 @@ export type PartyQuery = {
 export type PartyRoleQuery = {
   partyId?: string;
   name?: string;
+  roleTypeId?: string;
   status?: PartyRoleStatus;
   limit?: number;
   offset?: number;
@@ -40,6 +41,7 @@ export type PartyRole = {
   id: string;
   href: string;
   name: string;
+  roleTypeId?: string;
   status: PartyRoleStatus;
   party: EntityRef;
   partyId: string;
@@ -68,6 +70,7 @@ export type UpdatePartyInput = Partial<CreatePartyInput>;
 export type CreatePartyRoleInput = {
   partyId: string;
   name: string;
+  roleTypeId?: string;
   status?: PartyRoleStatus;
   partyRoleCharacteristic?: Characteristic[];
   validFor?: TimePeriod;

@@ -274,6 +274,13 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'visual-identity-authority') {
         await this.applyVisualIdentityAuthorityMigration(connection);
       }
+      if (batch.name === 'party-role-type-multi-instance') {
+        await this.dropLegacyPartyRoleTypeUniqueConstraints(connection);
+        await this.backfillPartyRoleTypeCharacteristicRoleTypeId(connection);
+      }
+      if (batch.name === 'party-role-type-id') {
+        await this.backfillPartyRoleRoleTypeId(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -762,6 +769,77 @@ export class OracleDatabase implements DatabaseClient {
       connection,
       `ALTER TABLE ${table} ADD CONSTRAINT ${constraintName}
        CHECK (shape IN ('point', 'line', 'polygon'))`,
+    );
+  }
+
+  /**
+   * V22/V23 (issue #275, papéis múltiplos por roleName): `party_role_type` nasceu com
+   * UNIQUE(tenant_id, type_key) e UNIQUE(tenant_id, role_name) de quando só se permitia uma
+   * instância por tipo. O DDL canônico não os declara mais, mas um namespace Oracle criado antes
+   * desta migration ainda os carrega fisicamente — `CREATE TABLE IF NOT EXISTS` não retroage. Sem
+   * este drop, publicar um segundo papel com o mesmo roleName (ex.: dois "manufacturer") falha com
+   * ORA-00001, surfaced como 500 genérico. Os nomes são gerados pelo Oracle (SYS_C...), por isso a
+   * descoberta é em runtime via user_constraints, mesmo padrão de `widenGeoMapFeatureShapeCheck`.
+   */
+  private async dropLegacyPartyRoleTypeUniqueConstraints(connection: Connection): Promise<void> {
+    const table = prefixed('party_role_type', this.config.objectPrefix);
+    const existing = await connection.execute<{ constraint_name: string }>(
+      `SELECT constraint_name AS "constraint_name"
+         FROM user_constraints
+        WHERE table_name = :1 AND constraint_type = 'U'`,
+      [table.toUpperCase()],
+      QUERY_OPTIONS,
+    );
+    for (const row of existing.rows ?? []) {
+      await connection.execute(`ALTER TABLE ${table} DROP CONSTRAINT ${row.constraint_name}`);
+    }
+  }
+
+  /**
+   * V22 adicionou a coluna `role_type_id` a `party_role_type_characteristic`, mas só o backfill
+   * preenche a FK para registros criados antes da migration — sem ele, `PartyRoleTypeCharacteristicRepository`
+   * (que passou a filtrar por `role_type_id`) não enxerga características antigas gravadas por
+   * `role_name`.
+   */
+  private async backfillPartyRoleTypeCharacteristicRoleTypeId(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const characteristics = prefixed('party_role_type_characteristic', prefix);
+    const roleTypes = prefixed('party_role_type', prefix);
+    await connection.execute(
+      `UPDATE ${characteristics} c
+          SET role_type_id = (
+                SELECT prt.id FROM ${roleTypes} prt
+                 WHERE prt.tenant_id = c.tenant_id AND prt.role_name = c.role_name
+                 FETCH FIRST 1 ROWS ONLY
+              )
+        WHERE c.role_type_id IS NULL AND c.role_name IS NOT NULL`,
+      [],
+      { autoCommit: true },
+    );
+  }
+
+  /**
+   * V24: `tmf_party_role` precisa de `role_type_id` para vincular cada atribuição operacional ao
+   * `party_role_type` exato que lhe deu origem — sem ele, a UI resolvia o PartyRoleType por
+   * `roleName` (ambíguo quando 2+ role types compartilham o mesmo nome). O backfill é best-effort:
+   * se existirem múltiplos PartyRoleType com o mesmo roleName, associa o mais antigo (`ORDER BY
+   * created_at`). Idempotente — só preenche linhas onde `role_type_id IS NULL`.
+   */
+  private async backfillPartyRoleRoleTypeId(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const roles = prefixed('tmf_party_role', prefix);
+    const roleTypes = prefixed('party_role_type', prefix);
+    await connection.execute(
+      `UPDATE ${roles} r
+          SET role_type_id = (
+                SELECT prt.id FROM ${roleTypes} prt
+                 WHERE prt.tenant_id = r.tenant_id AND prt.role_name = r.name
+                 ORDER BY prt.created_at
+                 FETCH FIRST 1 ROWS ONLY
+              )
+        WHERE r.role_type_id IS NULL AND r.name IS NOT NULL`,
+      [],
+      { autoCommit: true },
     );
   }
 

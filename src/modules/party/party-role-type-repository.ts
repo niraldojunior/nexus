@@ -55,15 +55,13 @@ export class PartyRoleTypeRepository {
     return row ? fromRow(row) : null;
   }
 
-  public async findByKeyOrRoleName(
-    tenantId: string,
-    key: string,
-    roleName: string,
-  ): Promise<PartyRoleType | null> {
+  // Múltiplos papéis do mesmo roleName são permitidos (ex.: "Fabricante de ONT" e "Fabricante de
+  // OLT" ambos com roleName=manufacturer, cada um com seu próprio catálogo de characteristics via
+  // role_type_id) — só a `key` (slug único por papel) precisa ser exclusiva.
+  public async findByKey(tenantId: string, key: string): Promise<PartyRoleType | null> {
     const row = await this.db.get<PartyRoleTypeRow>(
-      `${SELECT_PARTY_ROLE_TYPE}
-        WHERE tenant_id = ? AND (type_key = ? OR role_name = ?)`,
-      [tenantId, key, roleName],
+      `${SELECT_PARTY_ROLE_TYPE} WHERE tenant_id = ? AND type_key = ?`,
+      [tenantId, key],
     );
     return row ? fromRow(row) : null;
   }
@@ -107,10 +105,14 @@ export class PartyRoleTypeRepository {
             WHERE tenant_id = ? AND role_name = ?`,
           [nextRoleName, now, tenantId, current.roleName],
         );
+        // Renomeia somente os PartyRole vinculados a este PartyRoleType específico, não todos os
+        // homônimos de outro PartyRoleType. Se role_type_id ainda não foi preenchido (dados
+        // pré-migration V24), o fallback por roleName continua correto porque antes da V24 só
+        // existia um PartyRoleType por roleName.
         await this.db.run(
           `UPDATE tmf_party_role SET name = ?, updated_at = ?
-            WHERE tenant_id = ? AND name = ?`,
-          [nextRoleName, now, tenantId, current.roleName],
+            WHERE tenant_id = ? AND (role_type_id = ? OR (role_type_id IS NULL AND name = ?))`,
+          [nextRoleName, now, tenantId, id, current.roleName],
         );
       }
     });
@@ -133,6 +135,78 @@ export class PartyRoleTypeRepository {
       [1, new Date().toISOString(), tenantId, id],
     );
     return result.changes > 0 ? await this.get(tenantId, id) : null;
+  }
+
+  public async listOrganizationsByRoleTypeIds(
+    tenantId: string,
+    roleTypeIds: string[],
+  ): Promise<Array<{ id: string; name: string }>> {
+    if (roleTypeIds.length === 0) return [];
+    const placeholders = roleTypeIds.map(() => '?').join(', ');
+    return await this.db.all<{ id: string; name: string }>(
+      `SELECT DISTINCT p.id, p.name
+         FROM tmf_party p
+         JOIN tmf_party_role r ON r.party_id = p.id
+        WHERE r.role_type_id IN (${placeholders})
+          AND (r.tenant_id = ? OR r.tenant_id IS NULL)
+          AND r.status = 'active'
+          AND p.status = 'active'
+        ORDER BY p.name`,
+      [...roleTypeIds, tenantId],
+    );
+  }
+
+  public async getUsage(
+    tenantId: string,
+    roleName: string,
+    roleTypeId?: string,
+  ): Promise<{
+    organizationCount: number;
+    organizations: Array<{ id: string; name: string }>;
+    resourceSpecificationCount: number;
+  }> {
+    // Busca organizações com party_role ativo — por role_type_id quando disponível (preciso),
+    // fallback por roleName (pré-migration V24 ou chamadas legadas).
+    const orgFilter = roleTypeId
+      ? { clause: 'r.role_type_id = ?', param: roleTypeId }
+      : { clause: 'r.name = ?', param: roleName };
+    const orgRows = await this.db.all<{ id: string; name: string }>(
+      `SELECT DISTINCT p.id, p.name
+         FROM tmf_party p
+         JOIN tmf_party_role r ON r.party_id = p.id
+        WHERE ${orgFilter.clause}
+          AND (r.tenant_id = ? OR r.tenant_id IS NULL)
+          AND r.status = 'active'
+          AND p.status = 'active'
+        ORDER BY p.name`,
+      [orgFilter.param, tenantId],
+    );
+
+    // Contagem de especificações de recurso que referenciam papéis deste tipo (ex.: manufacturer)
+    let resourceSpecificationCount = 0;
+    try {
+      const resCountRow = await this.db.get<{ count: unknown }>(
+        `SELECT COUNT(DISTINCT s.id) AS "count"
+           FROM resource_specification s
+           JOIN resource_spec_related_party rp ON rp.specification_id = s.id
+          WHERE rp.role = ?
+            AND (s.tenant_id = ? OR s.tenant_id IS NULL)
+            AND s.status = 'active'`,
+        [roleName, tenantId],
+      );
+      if (resCountRow && resCountRow.count !== undefined && resCountRow.count !== null) {
+        resourceSpecificationCount = Number(resCountRow.count);
+      }
+    } catch {
+      // Se a tabela ou coluna de relacionamento não existir em algum ambiente de teste isolado
+      resourceSpecificationCount = 0;
+    }
+
+    return {
+      organizationCount: orgRows.length,
+      organizations: orgRows,
+      resourceSpecificationCount,
+    };
   }
 
   public async ensureSupplierSeed(tenantId: string): Promise<void> {

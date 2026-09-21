@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ResourceCharacteristic } from '../../services/resourceApi';
 import { coerceValue, type CharacteristicValueType } from '../../utils/resourceCharacteristicsForm';
 import { listReferenceDataSets, listReferenceDataValues } from '../../services/studioReferenceDataApi';
+import { getParty, listOrganizationsByRoleTypeIds } from '../../services/partyApi';
 import { ImageCharacteristicInput } from '../studio/resource-model/ImageCharacteristicInput';
 import { Info } from './InfoRow';
 import { InlineEditRow } from './InlineEditRow';
@@ -41,6 +42,25 @@ export function ResourceInstanceCharacteristics({
   // ao entrar em edição — nunca no mount do painel (mesmo padrão de `startEditStatusCode` em
   // ResourceOverviewTab.tsx, que também busca catálogo só quando o usuário clica para editar).
   const [referenceOptions, setReferenceOptions] = useState<Record<string, string[]>>({});
+  const [roleOrganizations, setRoleOrganizations] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [resolvedOrgNames, setResolvedOrgNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    // Hidrata nomes de organizações para characteristics com valueType === 'organization'
+    const orgDefs = definitions.filter((d) => d.valueType === 'organization');
+    for (const def of orgDefs) {
+      const partyId = valueToText(characteristic?.find((c) => c.name === def.name)?.value);
+      if (partyId && !resolvedOrgNames[partyId]) {
+        void getParty(partyId)
+          .then((party) => {
+            setResolvedOrgNames((prev) => ({ ...prev, [partyId]: party.name }));
+          })
+          .catch(() => {
+            // Em caso de falha no get individual, mantém o ID como fallback
+          });
+      }
+    }
+  }, [definitions, characteristic, resolvedOrgNames]);
 
   if (definitions.length === 0) return null;
 
@@ -61,6 +81,21 @@ export function ResourceInstanceCharacteristics({
         .catch(() => {
           setReferenceOptions((prev) => ({ ...prev, [setKey]: [] }));
         });
+    }
+    if (def.valueType === 'organization' && def.allowedValues && def.allowedValues.length > 0) {
+      const cacheKey = def.allowedValues.sort().join(',');
+      if (!roleOrganizations[cacheKey]) {
+        void listOrganizationsByRoleTypeIds(def.allowedValues)
+          .then((orgs) => {
+            setRoleOrganizations((prev) => ({ ...prev, [cacheKey]: orgs }));
+            for (const org of orgs) {
+              setResolvedOrgNames((prev) => ({ ...prev, [org.id]: org.name }));
+            }
+          })
+          .catch(() => {
+            setRoleOrganizations((prev) => ({ ...prev, [cacheKey]: [] }));
+          });
+      }
     }
   };
 
@@ -95,6 +130,11 @@ export function ResourceInstanceCharacteristics({
             ? (def.referenceDataSetKey ? referenceOptions[def.referenceDataSetKey] : def.allowedValues) ?? []
             : [];
 
+        const displayValue =
+          def.valueType === 'organization' && currentText
+            ? resolvedOrgNames[currentText] ?? currentText
+            : currentText;
+
         if (!canEdit) {
           if (def.valueType === 'image') {
             return currentText ? (
@@ -113,8 +153,8 @@ export function ResourceInstanceCharacteristics({
               />
             ) : null;
           }
-          return currentText ? (
-            <Info key={def.name} label={def.name} value={currentText} />
+          return displayValue ? (
+            <Info key={def.name} label={def.name} value={displayValue} />
           ) : null;
         }
 
@@ -137,13 +177,16 @@ export function ResourceInstanceCharacteristics({
           );
         }
 
+        const orgCacheKey = (def.allowedValues ?? []).sort().join(',');
+        const orgOptions = roleOrganizations[orgCacheKey] ?? [];
+
         return (
           <InlineEditRow
             key={def.name}
             label={def.name}
             editing={editing}
             onActivate={() => startEdit(def, currentText)}
-            value={currentText || <span className="text-app-muted">—</span>}
+            value={displayValue || <span className="text-app-muted">—</span>}
           >
             {def.valueType === 'boolean' ? (
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -173,6 +216,22 @@ export function ResourceInstanceCharacteristics({
                 {listOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
+                  </option>
+                ))}
+              </select>
+            ) : def.valueType === 'organization' ? (
+              <select
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={() => commit(def)}
+                aria-label={def.name}
+                className="geo-input geo-input-inline"
+              >
+                <option value="">—</option>
+                {orgOptions.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
                   </option>
                 ))}
               </select>

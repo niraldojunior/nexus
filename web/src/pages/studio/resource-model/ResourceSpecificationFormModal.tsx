@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { FileCode, AlertCircle } from 'lucide-react';
 import type { ResourceType, ResourceSpecification } from '../../../services/resourceApi';
 import { createResourceSpecification, updateResourceSpecification } from '../../../services/resourceApi';
-import { listPartyRoles, type PartyRole } from '../../../services/partyApi';
+import { listOrganizationsByRoleTypeIds } from '../../../services/partyApi';
 import {
   buildCharacteristicPayload,
   characteristicRowsValid,
@@ -41,8 +41,7 @@ export function ResourceSpecificationFormModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [rows, setRows] = useState<ResourceCharacteristicRow[]>([]);
-  const [manufacturerPartyId, setManufacturerPartyId] = useState('');
-  const [manufacturerOptions, setManufacturerOptions] = useState<PartyRole[]>([]);
+  const [roleOrganizations, setRoleOrganizations] = useState<Record<string, Array<{ id: string; name: string }>>>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -57,34 +56,31 @@ export function ResourceSpecificationFormModal({
           editingSpec.resourceSpecificationCharacteristic,
         ),
       );
-      setManufacturerPartyId(
-        editingSpec.relatedParty?.find((party) => party.role === 'manufacturer')?.id ?? '',
-      );
     } else {
       setName('');
       setDescription('');
       setRows(resourceCharacteristicRowsFrom(resourceType.resourceTypeCharacteristic));
-      setManufacturerPartyId('');
     }
     setError(null);
   }, [isOpen, editingSpec, resourceType]);
 
-  // Opções de fabricante vêm de PartyRole com role "manufacturer" ativa — mesmo catálogo que o
-  // SupplierRecordsTab do Party Studio administra; não duplicar o loader pesado do workspace.
   useEffect(() => {
-    if (!isOpen || readOnly) return;
-    let cancelled = false;
-    listPartyRoles({ name: 'manufacturer', status: 'active', limit: 200, offset: 0 })
-      .then((roles) => {
-        if (!cancelled) setManufacturerOptions(roles);
-      })
-      .catch(() => {
-        if (!cancelled) setManufacturerOptions([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, readOnly]);
+    if (!isOpen) return;
+    const orgCharacteristics = rows.filter(
+      (r) => r.valueType === 'organization' && r.allowedValues && r.allowedValues.length > 0,
+    );
+    for (const char of orgCharacteristics) {
+      const cacheKey = (char.allowedValues ?? []).sort().join(',');
+      if (!cacheKey || roleOrganizations[cacheKey]) continue;
+      void listOrganizationsByRoleTypeIds(char.allowedValues ?? [])
+        .then((orgs) => {
+          setRoleOrganizations((prev) => ({ ...prev, [cacheKey]: orgs }));
+        })
+        .catch(() => {
+          setRoleOrganizations((prev) => ({ ...prev, [cacheKey]: [] }));
+        });
+    }
+  }, [isOpen, rows, roleOrganizations]);
 
   if (!isOpen) return null;
 
@@ -111,34 +107,19 @@ export function ResourceSpecificationFormModal({
     try {
       setSubmitting(true);
       const characteristics = buildCharacteristicPayload(visibleRows);
-      const manufacturerRole = manufacturerOptions.find((role) => role.partyId === manufacturerPartyId);
-      // Sempre envia `relatedParty` explicitamente — inclusive `[]` quando não há fabricante — porque
-      // o backend preserva `current.relatedParty` quando o campo vem `undefined` (service.ts), e
-      // esse é o único jeito de *remover* um fabricante pela UI.
-      const relatedParty = manufacturerRole
-        ? [
-            {
-              id: manufacturerRole.partyId,
-              '@referredType': manufacturerRole.party['@referredType'],
-              role: 'manufacturer',
-              name: manufacturerRole.party.name,
-            },
-          ]
-        : [];
       const saved =
         isEditing && editingSpec
           ? await updateResourceSpecification(editingSpec.id, {
               name: name.trim(),
               description: description.trim() || undefined,
               resourceSpecificationCharacteristic: characteristics,
-              relatedParty,
+              relatedParty: editingSpec.relatedParty,
             })
           : await createResourceSpecification({
               name: name.trim(),
               resourceTypeId: resourceType.id,
               description: description.trim() || undefined,
               resourceSpecificationCharacteristic: characteristics,
-              relatedParty,
             });
       if (onSaved) onSaved(saved);
       onClose();
@@ -254,33 +235,6 @@ export function ResourceSpecificationFormModal({
             </div>
           )}
 
-          {(!readOnly || manufacturerPartyId) && (
-            <div>
-              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-                Fabricante {readOnly ? '' : '(Opcional)'}
-              </label>
-              {readOnly ? (
-                <div className="rounded-[14px] border border-app-border bg-[var(--surface-muted)] px-3 py-2 text-[0.84rem] text-app-text">
-                  {manufacturerOptions.find((role) => role.partyId === manufacturerPartyId)?.party
-                    .name ?? editingSpec?.relatedParty?.find((party) => party.role === 'manufacturer')?.name}
-                </div>
-              ) : (
-                <select
-                  value={manufacturerPartyId}
-                  onChange={(e) => setManufacturerPartyId(e.target.value)}
-                  className="geo-input"
-                >
-                  <option value="">Nenhum</option>
-                  {manufacturerOptions.map((role) => (
-                    <option key={role.partyId} value={role.partyId}>
-                      {role.party.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          )}
-
           <div>
             {rows.length === 0 ? (
               <p className="rounded-[14px] border border-dashed border-app-border px-3 py-3 text-[0.82rem] text-app-muted text-center">
@@ -310,6 +264,8 @@ export function ResourceSpecificationFormModal({
                                     .filter(Boolean)
                                 : row.allowedValues) ?? []
                             : [];
+                        const orgCacheKey = (row.allowedValues ?? []).sort().join(',');
+                        const orgOptions = roleOrganizations[orgCacheKey] ?? [];
 
                         return (
                           <div
@@ -380,6 +336,26 @@ export function ResourceSpecificationFormModal({
                                   {listOptions.map((opt) => (
                                     <option key={opt} value={opt}>
                                       {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : row.valueType === 'organization' ? (
+                                <select
+                                  value={row.valueText}
+                                  disabled={readOnly}
+                                  onChange={(e) =>
+                                    setRows((prev) =>
+                                      prev.map((r) =>
+                                        r.key === row.key ? { ...r, valueText: e.target.value } : r,
+                                      ),
+                                    )
+                                  }
+                                  className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+                                >
+                                  <option value="">{readOnly ? 'Não especificado' : 'Selecione uma organização...'}</option>
+                                  {orgOptions.map((org) => (
+                                    <option key={org.id} value={org.id}>
+                                      {org.name}
                                     </option>
                                   ))}
                                 </select>

@@ -198,6 +198,15 @@ button {
     border-bottom-color: var(--border-input-strong);
   }
 
+  /* Dark mode: campos de formulário (input/select/textarea) do Studio (Papéis e Organizações)
+     — pedido explícito para remover o anel/glow de foco e deixar só a borda amarela já aplicada
+     via `focus:border-app-accent` inline nesses componentes. */
+  [data-theme='dark'] .vt-studio-scope input:focus,
+  [data-theme='dark'] .vt-studio-scope select:focus,
+  [data-theme='dark'] .vt-studio-scope textarea:focus {
+    box-shadow: none;
+  }
+
   /* Hero composer (Nova Conversa): com uma linha, o cursor deve sentar no centro
      vertical do campo — o textarea ocupa a altura toda e centra o texto. */
   .vt-composer-hero textarea {

@@ -1,7 +1,10 @@
-// Adapter de Governance para o domínio 'parties' (Studio → Partes, issue #220/#191). O snapshot
+// Adapter de Governance para o domínio 'parties' (Studio → Papéis, issue #220/#191/#275). O snapshot
 // cobre o catálogo de PartyRoleType (ex.: "Fornecedores"/manufacturer) e suas characteristics
-// declaradas — não instâncias TMF632/669 de Party/PartyRole, que seguem operacionais e fora do
-// fluxo de draft/publish (mesma separação que resource-model faz entre catálogo e inventário).
+// declaradas — as instâncias de organizações agora são governadas pelo adapter 'organizations'
+// (issue #275). As instâncias operacionais de PartyRole seguem fora do fluxo de catálogo.
+//
+// Como o editor é snapshot-local (em memória), `restoreBaselineOnDiscard = false` evita reverter
+// estado canônico no descarte de rascunho.
 
 import { AppError } from '../../../shared/errors/app-error.js';
 import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
@@ -21,6 +24,8 @@ export type PartyRoleTypeCharacteristicSnapshot = {
   /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
   referenceDataSetKey?: string | null;
   sortOrder?: number;
+  mandatory?: boolean;
+  defaultValue?: string | null;
 };
 
 export type PartyRoleTypeSnapshot = {
@@ -43,6 +48,7 @@ const VALUE_TYPES: PartyRoleTypeCharacteristicValueType[] = [
 
 export class PartiesStudioAdapter implements StudioDomainAdapter {
   public readonly domain = 'parties';
+  public readonly restoreBaselineOnDiscard = false;
 
   constructor(
     private readonly partyRoleTypeRepository: PartyRoleTypeRepository,
@@ -69,7 +75,6 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
     }
 
     const keys = new Set<string>();
-    const roleNames = new Set<string>();
     for (let index = 0; index < types.length; index += 1) {
       const type = types[index];
       const path = `partyRoleTypes[${index}]`;
@@ -83,9 +88,7 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
       } else keys.add(key.toLowerCase());
       if (!roleName) {
         issues.push({ severity: 'error', code: 'PARTIES_ROLE_NAME_REQUIRED', message: 'O papel (roleName) do tipo de parte é obrigatório.', path: `${path}.roleName` });
-      } else if (roleNames.has(roleName.toLowerCase())) {
-        issues.push({ severity: 'error', code: 'PARTIES_ROLE_NAME_DUPLICATE', message: `Papel de tipo de parte duplicado: ${roleName}.`, path: `${path}.roleName` });
-      } else roleNames.add(roleName.toLowerCase());
+      }
       if (!label) {
         issues.push({ severity: 'error', code: 'PARTIES_LABEL_REQUIRED', message: 'O título do tipo de parte é obrigatório.', path: `${path}.label` });
       }
@@ -152,9 +155,16 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
       if (current && !current.active && type.active !== false) {
         materialized = (await this.partyRoleTypeRepository.reactivate(tenantId, materialized.id))!;
       }
+      // Inativação explícita: o item permanece presente no snapshot (active: false) em vez de ser
+      // removido do array — diferente do loop de "desativar por ausência" abaixo, que só cobre o
+      // caso de um tipo ter sumido do snapshot inteiro. Sem este bloco, clicar em "Inativar" na UI
+      // não tinha nenhum efeito no publish.
+      if (current && current.active && type.active === false) {
+        materialized = (await this.partyRoleTypeRepository.deactivate(tenantId, materialized.id))!;
+      }
       snapshotIds.add(materialized.id);
 
-      const existingCharacteristics = await this.characteristicRepository.list(tenantId, materialized.roleName);
+      const existingCharacteristics = await this.characteristicRepository.list(tenantId, materialized.id);
       const characteristicsByName = new Map(existingCharacteristics.map((c) => [c.name, c]));
       const snapshotCharacteristicNames = new Set<string>();
       for (const characteristic of type.characteristics ?? []) {
@@ -170,18 +180,27 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
             allowedValues: characteristic.allowedValues ?? null,
             referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
             sortOrder: characteristic.sortOrder ?? currentCharacteristic.sortOrder,
+            mandatory: characteristic.mandatory ?? currentCharacteristic.mandatory,
+            defaultValue: characteristic.defaultValue !== undefined ? characteristic.defaultValue : currentCharacteristic.defaultValue,
             active: true,
           });
         } else {
-          await this.characteristicRepository.create(tenantId, materialized.roleName, {
-            name,
-            group: characteristic.group ?? null,
-            description: characteristic.description ?? null,
-            valueType: characteristic.valueType,
-            allowedValues: characteristic.allowedValues ?? null,
-            referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
-            sortOrder: characteristic.sortOrder ?? 100,
-          });
+          await this.characteristicRepository.create(
+            tenantId,
+            materialized.id,
+            {
+              name,
+              group: characteristic.group ?? null,
+              description: characteristic.description ?? null,
+              valueType: characteristic.valueType,
+              allowedValues: characteristic.allowedValues ?? null,
+              referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
+              sortOrder: characteristic.sortOrder ?? 100,
+              mandatory: characteristic.mandatory ?? false,
+              defaultValue: characteristic.defaultValue ?? null,
+            },
+            materialized.roleName,
+          );
         }
       }
       for (const characteristic of existingCharacteristics) {

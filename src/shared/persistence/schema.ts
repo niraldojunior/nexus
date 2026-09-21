@@ -1770,7 +1770,8 @@ const MIGRATIONS_SQL_V6_PARTY_ROLE_TYPE_CHARACTERISTIC = `
   CREATE TABLE IF NOT EXISTS party_role_type_characteristic (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
-    role_name TEXT NOT NULL,
+    role_name TEXT,
+    role_type_id TEXT,
     name TEXT NOT NULL,
     characteristic_group TEXT,
     description TEXT,
@@ -1799,9 +1800,7 @@ const MIGRATIONS_SQL_V7_PARTY_ROLE_TYPE = `
     description TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(tenant_id, type_key),
-    UNIQUE(tenant_id, role_name)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_party_role_type_tenant_active
     ON party_role_type(tenant_id, active, label, type_key);
@@ -2023,6 +2022,37 @@ const MIGRATIONS_SQL_V20_USER_PROFILE = `
   ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT CHECK(theme IN ('light','dark'));
 `;
 
+// Mandatory and default_value for party role type characteristics (issue #275, G7).
+const MIGRATIONS_SQL_V21_PARTY_ROLE_TYPE_CHARACTERISTIC_MANDATORY = `
+  ALTER TABLE party_role_type_characteristic ADD COLUMN IF NOT EXISTS mandatory INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE party_role_type_characteristic ADD COLUMN IF NOT EXISTS default_value TEXT;
+`;
+
+// Link characteristics directly to party_role_type.id (permite múltiplos papéis do mesmo tipo).
+const MIGRATIONS_SQL_V22_PARTY_ROLE_TYPE_ID_CHARACTERISTICS = `
+  ALTER TABLE party_role_type_characteristic ADD COLUMN IF NOT EXISTS role_type_id TEXT;
+`;
+
+// V22 adicionou a coluna, mas os UNIQUE(tenant_id, type_key) / UNIQUE(tenant_id, role_name) de
+// party_role_type — herdados de quando só se permitia uma instância por roleName — continuam
+// fisicamente presentes em qualquer namespace Oracle criado antes desta migration (o
+// `CREATE TABLE IF NOT EXISTS` não retroage). Isso quebrava a publicação de um segundo papel com o mesmo
+// roleName (ex.: dois "manufacturer") com um 500 genérico (ORA-00001). Este batch é intencionalmente
+// vazio no SQL genérico: o nome da constraint é gerado pelo Oracle (SYS_C...) e só pode ser
+// descoberto em runtime — o adapter Oracle faz o drop + backfill de role_type_id via hook dedicado
+// (ver `dropLegacyPartyRoleTypeUniqueConstraints` / `backfillPartyRoleTypeCharacteristicRoleTypeId`
+// em oracle-database.ts).
+const MIGRATIONS_SQL_V23_PARTY_ROLE_TYPE_MULTI_INSTANCE = ``;
+
+// V24: `tmf_party_role` precisa de um vínculo explícito ao `party_role_type` (issue do gap
+// de roleName ambíguo — com 2+ PartyRoleType compartilhando o mesmo roleName, a UI resolvia
+// o label errado e carregava características do papel errado). A coluna é nullable TEXT, sem
+// FK declarada, sem NOT NULL — mesmo padrão adotado para `party_role_type_characteristic.role_type_id`
+// na V22. O backfill Oracle roda no hook dedicado (ver `backfillPartyRoleRoleTypeId` em oracle-database.ts).
+const MIGRATIONS_SQL_V24_PARTY_ROLE_TYPE_ID = `
+  ALTER TABLE tmf_party_role ADD COLUMN IF NOT EXISTS role_type_id TEXT;
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2099,6 +2129,26 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 20,
     name: 'user-profile-avatar-theme',
     sql: MIGRATIONS_SQL_V20_USER_PROFILE,
+  },
+  {
+    version: 21,
+    name: 'party-role-type-characteristic-mandatory',
+    sql: MIGRATIONS_SQL_V21_PARTY_ROLE_TYPE_CHARACTERISTIC_MANDATORY,
+  },
+  {
+    version: 22,
+    name: 'party-role-type-id-characteristics',
+    sql: MIGRATIONS_SQL_V22_PARTY_ROLE_TYPE_ID_CHARACTERISTICS,
+  },
+  {
+    version: 23,
+    name: 'party-role-type-multi-instance',
+    sql: MIGRATIONS_SQL_V23_PARTY_ROLE_TYPE_MULTI_INSTANCE,
+  },
+  {
+    version: 24,
+    name: 'party-role-type-id',
+    sql: MIGRATIONS_SQL_V24_PARTY_ROLE_TYPE_ID,
   },
 ];
 

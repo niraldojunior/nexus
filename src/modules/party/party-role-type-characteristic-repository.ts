@@ -21,6 +21,7 @@ export type PartyRoleTypeCharacteristic = {
   id: string;
   tenantId: string;
   roleName: string;
+  roleTypeId?: string | null;
   name: string;
   group: string | null;
   description: string | null;
@@ -29,6 +30,8 @@ export type PartyRoleTypeCharacteristic = {
   /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
   referenceDataSetKey: string | null;
   sortOrder: number;
+  mandatory: boolean;
+  defaultValue: string | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -42,6 +45,8 @@ export type CreatePartyRoleTypeCharacteristicInput = {
   allowedValues?: string[] | null;
   referenceDataSetKey?: string | null;
   sortOrder?: number;
+  mandatory?: boolean;
+  defaultValue?: string | null;
 };
 
 export type UpdatePartyRoleTypeCharacteristicInput = {
@@ -52,6 +57,8 @@ export type UpdatePartyRoleTypeCharacteristicInput = {
   allowedValues?: string[] | null;
   referenceDataSetKey?: string | null;
   sortOrder?: number;
+  mandatory?: boolean;
+  defaultValue?: string | null;
   active?: boolean;
 };
 
@@ -59,6 +66,7 @@ type CharacteristicRow = {
   id: string;
   tenantId: string;
   roleName: string;
+  roleTypeId: string | null;
   name: string;
   group: string | null;
   description: string | null;
@@ -66,22 +74,30 @@ type CharacteristicRow = {
   allowedValues: string | null;
   referenceDataSetKey: string | null;
   sortOrder: number;
+  mandatory: unknown;
+  defaultValue: string | null;
   active: unknown;
   createdAt: string;
   updatedAt: string;
 };
 
 const CHARACTERISTIC_SELECT = `
-  SELECT id, tenant_id AS tenantId, role_name AS roleName, name,
+  SELECT id, tenant_id AS tenantId, role_name AS roleName,
+         role_type_id AS roleTypeId, name,
          characteristic_group AS "group", description, value_type AS valueType,
          allowed_values AS allowedValues, reference_data_set_key AS referenceDataSetKey,
          sort_order AS sortOrder,
+         CASE WHEN mandatory = 1 THEN 1 ELSE 0 END AS mandatory,
+         default_value AS defaultValue,
          CASE WHEN active = 1 THEN 1 ELSE 0 END AS active,
          created_at AS createdAt, updated_at AS updatedAt
     FROM party_role_type_characteristic`;
 
 const toCharacteristic = (row: CharacteristicRow): PartyRoleTypeCharacteristic => ({
   ...row,
+  roleTypeId: row.roleTypeId ?? null,
+  mandatory: Number(row.mandatory) === 1,
+  defaultValue: row.defaultValue ?? null,
   active: Number(row.active) === 1,
   allowedValues: row.allowedValues ? (JSON.parse(row.allowedValues) as string[]) : null,
   referenceDataSetKey: row.referenceDataSetKey ?? null,
@@ -92,12 +108,21 @@ const toCharacteristic = (row: CharacteristicRow): PartyRoleTypeCharacteristic =
 export class PartyRoleTypeCharacteristicRepository {
   constructor(private db: DatabaseClient) {}
 
-  async list(tenantId: string, roleName: string): Promise<PartyRoleTypeCharacteristic[]> {
+  /** Lista characteristics por `roleTypeId` (UUID do party_role_type). */
+  async list(tenantId: string, roleTypeId: string): Promise<PartyRoleTypeCharacteristic[]> {
     const rows = await this.db.all<CharacteristicRow>(
-      `${CHARACTERISTIC_SELECT} WHERE tenant_id = ? AND role_name = ? ORDER BY sort_order, name`,
-      [tenantId, roleName],
+      `${CHARACTERISTIC_SELECT} WHERE tenant_id = ? AND role_type_id = ? ORDER BY sort_order, name`,
+      [tenantId, roleTypeId],
     );
-    return rows.map(toCharacteristic);
+    if (rows.length > 0) return rows.map(toCharacteristic);
+    // Fallback legado: ambientes com dados anteriores à migração V22 (role_type_id ainda NULL).
+    const fallbackRows = await this.db.all<CharacteristicRow>(
+      `${CHARACTERISTIC_SELECT} WHERE tenant_id = ? AND role_type_id IS NULL
+         AND role_name = (SELECT role_name FROM party_role_type WHERE id = ? AND tenant_id = ?)
+       ORDER BY sort_order, name`,
+      [tenantId, roleTypeId, tenantId],
+    );
+    return fallbackRows.map(toCharacteristic);
   }
 
   async get(tenantId: string, id: string): Promise<PartyRoleTypeCharacteristic | null> {
@@ -110,20 +135,48 @@ export class PartyRoleTypeCharacteristicRepository {
 
   async create(
     tenantId: string,
-    roleName: string,
+    roleTypeId: string,
     input: CreatePartyRoleTypeCharacteristicInput,
+    roleName?: string | null,
   ): Promise<PartyRoleTypeCharacteristic> {
     const id = createCanonicalId();
     const now = new Date().toISOString();
+    let resolvedRoleName = roleName ?? null;
+    let resolvedRoleTypeId: string | null = roleTypeId;
+
+    if (!resolvedRoleName) {
+      const typeRow = await this.db.get<{ id: string; roleName: string }>(
+        `SELECT id, role_name AS roleName FROM party_role_type WHERE id = ? AND tenant_id = ?`,
+        [roleTypeId, tenantId],
+      );
+      if (typeRow) {
+        resolvedRoleName = typeRow.roleName;
+        resolvedRoleTypeId = typeRow.id;
+      } else {
+        // Fallback: se roleTypeId for uma string de roleName (ex: 'manufacturer')
+        const byRoleName = await this.db.get<{ id: string; roleName: string }>(
+          `SELECT id, role_name AS roleName FROM party_role_type WHERE role_name = ? AND tenant_id = ?`,
+          [roleTypeId, tenantId],
+        );
+        if (byRoleName) {
+          resolvedRoleTypeId = byRoleName.id;
+          resolvedRoleName = byRoleName.roleName;
+        } else {
+          resolvedRoleName = roleTypeId;
+        }
+      }
+    }
+
     await this.db.run(
       `INSERT INTO party_role_type_characteristic
-          (id, tenant_id, role_name, name, characteristic_group, description, value_type,
-           allowed_values, reference_data_set_key, sort_order, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, tenant_id, role_name, role_type_id, name, characteristic_group, description, value_type,
+           allowed_values, reference_data_set_key, sort_order, mandatory, default_value, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         tenantId,
-        roleName,
+        resolvedRoleName,
+        resolvedRoleTypeId,
         input.name,
         input.group ?? null,
         input.description ?? null,
@@ -131,6 +184,8 @@ export class PartyRoleTypeCharacteristicRepository {
         input.allowedValues ? JSON.stringify(input.allowedValues) : null,
         input.referenceDataSetKey ?? null,
         input.sortOrder ?? 100,
+        input.mandatory ? 1 : 0,
+        input.defaultValue ?? null,
         1,
         now,
         now,
@@ -150,10 +205,13 @@ export class PartyRoleTypeCharacteristicRepository {
       patch.allowedValues !== undefined ? patch.allowedValues : current.allowedValues;
     const nextReferenceDataSetKey =
       patch.referenceDataSetKey !== undefined ? patch.referenceDataSetKey : current.referenceDataSetKey;
+    const nextMandatory = patch.mandatory !== undefined ? patch.mandatory : current.mandatory;
+    const nextDefaultValue =
+      patch.defaultValue !== undefined ? patch.defaultValue : current.defaultValue;
     await this.db.run(
       `UPDATE party_role_type_characteristic
           SET name = ?, characteristic_group = ?, description = ?, value_type = ?,
-              allowed_values = ?, reference_data_set_key = ?, sort_order = ?, active = ?, updated_at = ?
+              allowed_values = ?, reference_data_set_key = ?, sort_order = ?, mandatory = ?, default_value = ?, active = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`,
       [
         patch.name ?? current.name,
@@ -163,6 +221,8 @@ export class PartyRoleTypeCharacteristicRepository {
         nextAllowedValues ? JSON.stringify(nextAllowedValues) : null,
         nextReferenceDataSetKey ?? null,
         patch.sortOrder ?? current.sortOrder,
+        nextMandatory ? 1 : 0,
+        nextDefaultValue ?? null,
         (patch.active ?? current.active) ? 1 : 0,
         new Date().toISOString(),
         tenantId,
@@ -185,15 +245,24 @@ export class PartyRoleTypeCharacteristicRepository {
   async ensureManufacturerCnpjSeed(tenantId: string): Promise<void> {
     const existing = await this.db.get<{ id: string }>(
       `SELECT id FROM party_role_type_characteristic
-        WHERE tenant_id = ? AND role_name = ? AND name = ?`,
-      [tenantId, 'manufacturer', 'cnpj'],
+        WHERE tenant_id = ? AND (role_name = ? OR role_type_id IN (SELECT id FROM party_role_type WHERE role_name = ? AND tenant_id = ?)) AND name = ?`,
+      [tenantId, 'manufacturer', 'manufacturer', tenantId, 'cnpj'],
     );
     if (existing) return;
-    await this.create(tenantId, 'manufacturer', {
-      name: 'cnpj',
-      valueType: 'string',
-      description: 'CNPJ do fornecedor.',
-      sortOrder: 10,
-    });
+    const manufacturerType = await this.db.get<{ id: string }>(
+      `SELECT id FROM party_role_type WHERE tenant_id = ? AND role_name = ?`,
+      [tenantId, 'manufacturer'],
+    );
+    await this.create(
+      tenantId,
+      manufacturerType?.id ?? 'manufacturer',
+      {
+        name: 'cnpj',
+        valueType: 'string',
+        description: 'CNPJ do fornecedor.',
+        sortOrder: 10,
+      },
+      'manufacturer',
+    );
   }
 }

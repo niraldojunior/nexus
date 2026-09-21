@@ -107,6 +107,7 @@ const filterRole = (role: PartyRole, query?: PartyRoleQuery): boolean => {
   if (!query) return true;
   if (query.partyId && role.partyId !== query.partyId) return false;
   if (query.name && !role.name.toLowerCase().includes(query.name.toLowerCase())) return false;
+  if (query.roleTypeId && role.roleTypeId !== query.roleTypeId) return false;
   if (query.status && role.status !== query.status) return false;
   return true;
 };

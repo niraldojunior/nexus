@@ -6,6 +6,7 @@ import { formatAddressWithSource } from '../../utils/placeLabel';
 import { StatusBadge } from './StatusBadge';
 import { InlineEditRow } from './InlineEditRow';
 import { IconInfoRow } from './IconInfoRow';
+import { SiteInstanceCharacteristics } from './SiteInstanceCharacteristics';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 
 export type SiteOverviewTabProps = {
@@ -27,6 +28,7 @@ export type SiteOverviewTabProps = {
     status?: GeoSiteStatus;
     parentSiteId?: string | null;
     note?: string | null;
+    characteristic?: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
   }) => Promise<void>;
   onEditAddress: () => void;
 };
@@ -246,6 +248,17 @@ export function SiteOverviewTab({
         </div>
       ) : (
         <IconInfoRow icon={FileText} hint="Observação" value={site.note?.trim() || '—'} />
+      )}
+
+      {currentSpec?.specCharacteristic && (
+        <SiteInstanceCharacteristics
+          definitions={currentSpec.specCharacteristic.filter(
+            (c) => c.characteristicLevel === 'instance',
+          )}
+          characteristic={site.characteristic}
+          canEdit={canEdit}
+          onPatch={(patch) => onPatchSite({ characteristic: patch.characteristic })}
+        />
       )}
     </div>
   );

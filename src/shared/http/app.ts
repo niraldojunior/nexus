@@ -876,7 +876,8 @@ const routeRequest = async ({
 
   if (
     url.pathname === '/v1/party-role-types' ||
-    /^\/v1\/party-role-types\/[^/]+$/.test(url.pathname)
+    /^\/v1\/party-role-types\/[^/]+$/.test(url.pathname) ||
+    /^\/v1\/party-role-types\/[^/]+\/usage$/.test(url.pathname)
   ) {
     await routePartyRoleTypeRequest({ request, response, config, runtime, url });
     return;
@@ -1324,13 +1325,9 @@ const routePartyRoleTypeRequest = async ({
       requireRoles(context, CATALOG_ADMIN_ROLES);
       await runtime.studioService.assertActiveDraft('parties', context);
       const input = parsePartyRoleTypeInput(await readBody(request));
-      const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
-        context.tenantId,
-        input.key,
-        input.roleName,
-      );
+      const conflict = await runtime.partyRoleTypeRepository.findByKey(context.tenantId, input.key);
       if (conflict) {
-        throw new AppError('party role type key or roleName already exists', {
+        throw new AppError('party role type key already exists', {
           code: 'PARTY_ROLE_TYPE_CONFLICT',
           statusCode: 409,
         });
@@ -1341,6 +1338,33 @@ const routePartyRoleTypeRequest = async ({
         await runtime.partyRoleTypeRepository.create(context.tenantId, input),
       );
     }
+  }
+
+  if (url.pathname === '/v1/parties/by-role-types' && request.method === 'GET') {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    const idsParam = url.searchParams.get('ids') ?? '';
+    const ids = idsParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const organizations = await runtime.partyRoleTypeRepository.listOrganizationsByRoleTypeIds(
+      context.tenantId,
+      ids,
+    );
+    return sendJson(response, 200, organizations);
+  }
+
+  const usageMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)\/usage$/);
+  if (usageMatch?.[1] && request.method === 'GET') {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    const idOrRoleName = decodeURIComponent(usageMatch[1]);
+    // Tenta resolver como PartyRoleType.id primeiro (preciso); se não existir, trata como roleName
+    // (fallback para chamadas legadas e compatibilidade com o front antes da migration).
+    const roleType = await runtime.partyRoleTypeRepository.get(context.tenantId, idOrRoleName);
+    const usage = roleType
+      ? await runtime.partyRoleTypeRepository.getUsage(context.tenantId, roleType.roleName, roleType.id)
+      : await runtime.partyRoleTypeRepository.getUsage(context.tenantId, idOrRoleName);
+    return sendJson(response, 200, usage);
   }
 
   const itemMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)$/);
@@ -1356,6 +1380,16 @@ const routePartyRoleTypeRequest = async ({
       });
     }
     if (request.method === 'DELETE') {
+      const usage = await runtime.partyRoleTypeRepository.getUsage(context.tenantId, current.roleName, current.id);
+      if (usage.organizationCount > 0 || usage.resourceSpecificationCount > 0) {
+        throw new AppError(
+          `Não é possível inativar o papel "${current.label}" porque ele está em uso (${usage.organizationCount} organizações, ${usage.resourceSpecificationCount} especificações de recurso).`,
+          {
+            code: 'PARTY_ROLE_TYPE_IN_USE',
+            statusCode: 409,
+          },
+        );
+      }
       return sendJson(
         response,
         200,
@@ -1363,13 +1397,9 @@ const routePartyRoleTypeRequest = async ({
       );
     }
     const input = parsePartyRoleTypeInput(await readBody(request), current);
-    const conflict = await runtime.partyRoleTypeRepository.findByKeyOrRoleName(
-      context.tenantId,
-      input.key,
-      input.roleName,
-    );
+    const conflict = await runtime.partyRoleTypeRepository.findByKey(context.tenantId, input.key);
     if (conflict && conflict.id !== current.id) {
-      throw new AppError('party role type key or roleName already exists', {
+      throw new AppError('party role type key already exists', {
         code: 'PARTY_ROLE_TYPE_CONFLICT',
         statusCode: 409,
       });
@@ -1476,13 +1506,13 @@ const routePartyRoleTypeCharacteristicRequest = async ({
   const context = await buildRequestContext(request, config);
   const collectionMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)\/characteristics$/);
   if (collectionMatch?.[1]) {
-    const roleName = decodeURIComponent(collectionMatch[1]);
+    const roleTypeId = decodeURIComponent(collectionMatch[1]);
     if (request.method === 'GET') {
       requireRoles(context, INVENTORY_READ_ROLES);
       return sendJson(
         response,
         200,
-        await runtime.partyRoleTypeCharacteristicRepository.list(context.tenantId, roleName),
+        await runtime.partyRoleTypeCharacteristicRepository.list(context.tenantId, roleTypeId),
       );
     }
     if (request.method === 'POST') {
@@ -1501,14 +1531,22 @@ const routePartyRoleTypeCharacteristicRequest = async ({
       return sendJson(
         response,
         201,
-        await runtime.partyRoleTypeCharacteristicRepository.create(context.tenantId, roleName, {
+        await runtime.partyRoleTypeCharacteristicRepository.create(context.tenantId, roleTypeId, {
           name,
           valueType,
           group: body.group ? String(body.group) : null,
           description: body.description ? String(body.description) : null,
           allowedValues,
           referenceDataSetKey,
-          ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
+          sortOrder:
+            body.sortOrder !== undefined && body.sortOrder !== null
+              ? Number(body.sortOrder)
+              : 100,
+          mandatory: body.mandatory !== undefined ? Boolean(body.mandatory) : false,
+          defaultValue:
+            body.defaultValue !== undefined && body.defaultValue !== null
+              ? String(body.defaultValue)
+              : null,
         }),
       );
     }
@@ -1518,14 +1556,16 @@ const routePartyRoleTypeCharacteristicRequest = async ({
     /^\/v1\/party-role-types\/([^/]+)\/characteristics\/([^/]+)$/,
   );
   if (itemMatch?.[1] && itemMatch?.[2]) {
-    const roleName = decodeURIComponent(itemMatch[1]);
+    const roleTypeId = decodeURIComponent(itemMatch[1]);
     const id = decodeURIComponent(itemMatch[2]);
     if (request.method === 'PATCH' || request.method === 'DELETE') {
       requireRoles(context, CATALOG_ADMIN_ROLES);
       await runtime.studioService.assertActiveDraft('parties', context);
       const body = request.method === 'PATCH' ? await readBody(request) : {};
       const current = await runtime.partyRoleTypeCharacteristicRepository.get(context.tenantId, id);
-      if (!current || current.roleName !== roleName) {
+      // Aceita tanto o `roleTypeId` (UUID) quanto, para dados legados (role_type_id ainda NULL),
+      // o `roleName` cru no path — mesma compatibilidade dupla usada em list()/create().
+      if (!current || (current.roleTypeId !== roleTypeId && current.roleName !== roleTypeId)) {
         throw new AppError('party role type characteristic not found', {
           code: 'PARTY_ROLE_TYPE_CHARACTERISTIC_NOT_FOUND',
           statusCode: 404,
@@ -1555,6 +1595,10 @@ const routePartyRoleTypeCharacteristicRequest = async ({
               allowedValues: payload!.allowedValues,
               referenceDataSetKey: payload!.referenceDataSetKey,
               ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
+              ...(body.mandatory !== undefined ? { mandatory: Boolean(body.mandatory) } : {}),
+              ...(body.defaultValue !== undefined
+                ? { defaultValue: body.defaultValue !== null ? String(body.defaultValue) : null }
+                : {}),
               ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
             });
       if (!updated) {
@@ -5161,6 +5205,9 @@ const parsePartyRoleQuery = (params: URLSearchParams): PartyRoleQuery => {
 
   const name = params.get('name');
   if (name) query.name = name;
+
+  const roleTypeId = params.get('roleTypeId');
+  if (roleTypeId) query.roleTypeId = roleTypeId;
 
   const status = parsePartyRoleStatus(params.get('status'));
   if (status) query.status = status;

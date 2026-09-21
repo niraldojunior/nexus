@@ -6,12 +6,13 @@
 // `StudioService`) é quem sabe validar e materializar esse snapshot nas tabelas reais na
 // publicação. Ver plano `docs/5-delivery-plan/architecture-decisions.md` D-ARQ-005.
 
-/** Os 8 domínios governados pelo Studio. `governance` (visão agregada) não é um domínio em si. */
+/** Os 9 domínios governados pelo Studio. `governance` (visão agregada) não é um domínio em si. */
 export type StudioDomain =
   | 'resource-model'
   | 'location-model'
   | 'spatial'
   | 'studio-geo'
+  | 'organizations'
   | 'parties'
   | 'reference-data'
   | 'rules-workflows'
@@ -22,6 +23,7 @@ export const STUDIO_DOMAINS: StudioDomain[] = [
   'location-model',
   'spatial',
   'studio-geo',
+  'organizations',
   'parties',
   'reference-data',
   'rules-workflows',

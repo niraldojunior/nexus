@@ -20,6 +20,7 @@
     "db:environment": "npm run build && node dist/src/scripts/manage-database-environment.js",
     "migrate:netwin:infranode": "npm run build && node dist/src/scripts/migrate-netwin-infranode.js",
     "migrate:netwin:osp": "npm run build && node dist/src/scripts/migrate-netwin-osp.js",
+    "migrate:netwin:native": "npm run build && node dist/src/scripts/netwin-migration/index.js",
     "migrate:resource-catalog": "npm run build && node dist/src/scripts/migrate-resource-catalog.js",
     "addresses:enrich": "npm run build && node --use-system-ca dist/scripts/enrich-installation-addresses.js",
     "service-catalog:load": "npm run build && node --use-system-ca dist/scripts/load-service-catalog-netwin.js",

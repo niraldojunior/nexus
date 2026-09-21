@@ -354,26 +354,26 @@ mesmo tenant.
 
 ## 9. Mapeamento TMF ↔ tabelas
 
-| Entidade TMF            | Tabela                    | Módulo         |
-| ----------------------- | ------------------------- | -------------- |
-| `GeographicSite`        | `geographic_site`         | 1 — Geographic |
-| `GeographicAddress`     | `geographic_address`      | 1              |
-| `GeographicLocation`    | `geographic_location`     | 1              |
-| `PhysicalResource`      | `physical_resource`       | 2 — Resource   |
-| `LogicalResource`       | `logical_resource`        | 2              |
-| `ResourceSpecification` | `resource_specification`  | 2              |
-| `CustomerFacingService` | `customer_facing_service` | 3 — Service    |
-| `ResourceFacingService` | `resource_facing_service` | 3              |
-| `ServiceOrder`          | `service_order`           | 4 — Order      |
-| `ServiceQualification`  | `service_qualification`   | 4              |
-| `ResourceOrder`         | `resource_order`          | 4              |
-| `Party` / `PartyRole`   | `party`, `party_role`     | 6 — Party      |
-| `Event`                 | `event` + `outbox`        | Transversal    |
-| `StudioWorkspace`       | `studio_workspace`        | Studio (#191)  |
-| `StudioVersion`         | `studio_version`          | Studio (#191)  |
-| `StudioAuditEntry`      | `studio_audit_log`        | Studio (#191)  |
-| Reference Data set      | `reference_data_set`      | Studio (#196)  |
-| Reference Data value    | `reference_data_value`    | Studio (#196)  |
+| Entidade TMF            | Tabela                        | Módulo         |
+| ----------------------- | ----------------------------- | -------------- |
+| `GeographicSite`        | `geographic_site`             | 1 — Geographic |
+| `GeographicAddress`     | `geographic_address`          | 1              |
+| `GeographicLocation`    | `geographic_location`         | 1              |
+| `PhysicalResource`      | `physical_resource`           | 2 — Resource   |
+| `LogicalResource`       | `logical_resource`            | 2              |
+| `ResourceSpecification` | `resource_specification`      | 2              |
+| `CustomerFacingService` | `customer_facing_service`     | 3 — Service    |
+| `ResourceFacingService` | `resource_facing_service`     | 3              |
+| `ServiceOrder`          | `service_order`               | 4 — Order      |
+| `ServiceQualification`  | `service_qualification`       | 4              |
+| `ResourceOrder`         | `resource_order`              | 4              |
+| `Party` / `PartyRole`   | `tmf_party`, `tmf_party_role` | 6 — Party      |
+| `Event`                 | `event` + `outbox`            | Transversal    |
+| `StudioWorkspace`       | `studio_workspace`            | Studio (#191)  |
+| `StudioVersion`         | `studio_version`              | Studio (#191)  |
+| `StudioAuditEntry`      | `studio_audit_log`            | Studio (#191)  |
+| Reference Data set      | `reference_data_set`          | Studio (#196)  |
+| Reference Data value    | `reference_data_value`        | Studio (#196)  |
 
 Os tipos de linha crus estão tipados em `src/modules/*/rows.ts` — eles são o contrato entre o SQL e o
 domínio, e o compilador valida o mapeamento.

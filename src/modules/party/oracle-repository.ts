@@ -196,10 +196,11 @@ export class OraclePartyRepository implements IPartyRepository {
     const now = new Date().toISOString();
     await this.db.run(
       `INSERT INTO tmf_party_role
-       (id, name, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, role_type_id, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
+       role_type_id = excluded.role_type_id,
        party_id = excluded.party_id,
        status = excluded.status,
        valid_for_start = excluded.valid_for_start,
@@ -209,6 +210,7 @@ export class OraclePartyRepository implements IPartyRepository {
       [
         role.id,
         role.name,
+        role.roleTypeId ?? null,
         role.partyId,
         role.status,
         role.validFor?.startDateTime ?? null,
@@ -228,6 +230,7 @@ export class OraclePartyRepository implements IPartyRepository {
     const row = await this.db.get<{
       id: string;
       name: string;
+      role_type_id?: string | null;
       party_id: string;
       status: 'active' | 'inactive' | 'terminated';
       valid_for_start?: string | null;
@@ -237,7 +240,7 @@ export class OraclePartyRepository implements IPartyRepository {
       party_name: string;
       party_type: 'Organization' | 'Individual';
     }>(
-      `SELECT role.id, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,
+      `SELECT role.id, role.name, role.role_type_id, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,
               party.name AS party_name, party.party_type AS party_type
        FROM tmf_party_role role
        INNER JOIN tmf_party party ON party.id = role.party_id
@@ -260,6 +263,10 @@ export class OraclePartyRepository implements IPartyRepository {
       conditions.push('LOWER(role.name) LIKE LOWER(?)');
       params.push(`%${query.name}%`);
     }
+    if (query?.roleTypeId) {
+      conditions.push('role.role_type_id = ?');
+      params.push(query.roleTypeId);
+    }
     if (query?.status) {
       conditions.push('role.status = ?');
       params.push(query.status);
@@ -275,7 +282,7 @@ export class OraclePartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT role.id, role.name, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,',
+      'SELECT role.id, role.name, role.role_type_id, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,',
       '       party.name AS party_name, party.party_type AS party_type',
       'FROM tmf_party_role role',
       'INNER JOIN tmf_party party ON party.id = role.party_id',
@@ -293,6 +300,7 @@ export class OraclePartyRepository implements IPartyRepository {
     const rows = await this.db.all<{
       id: string;
       name: string;
+      role_type_id?: string | null;
       party_id: string;
       status: 'active' | 'inactive' | 'terminated';
       valid_for_start?: string | null;
@@ -405,6 +413,7 @@ export class OraclePartyRepository implements IPartyRepository {
   private mapRole(row: {
     id: string;
     name: string;
+    role_type_id?: string | null;
     party_id: string;
     status: 'active' | 'inactive' | 'terminated';
     valid_for_start?: string | null;
@@ -419,6 +428,7 @@ export class OraclePartyRepository implements IPartyRepository {
       id: row.id,
       href: buildHref('partyRole', row.id),
       name: row.name,
+      ...(row.role_type_id ? { roleTypeId: row.role_type_id } : {}),
       status: row.status,
       partyId: row.party_id,
       party: {

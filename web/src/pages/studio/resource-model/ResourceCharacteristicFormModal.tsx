@@ -6,6 +6,8 @@ import {
   imageReferenceError,
 } from '../../../utils/resourceCharacteristicsForm';
 import { listReferenceDataSets, type ReferenceDataSet } from '../../../services/studioReferenceDataApi';
+import { listPartyRoleTypes, type PartyRoleType } from '../../../services/partyRoleTypeApi';
+import { listOrganizationsByRoleTypeIds } from '../../../services/partyApi';
 import { Modal, Button } from '../../../components/ui';
 import { ImageCharacteristicInput } from './ImageCharacteristicInput';
 
@@ -17,6 +19,7 @@ const VALUE_TYPE_OPTIONS: { value: ResourceCharacteristicRow['valueType']; label
   { value: 'date', label: 'Data' },
   { value: 'image', label: 'Imagem' },
   { value: 'list', label: 'Lista de opções' },
+  { value: 'organization', label: 'Organização' },
   { value: 'json', label: 'JSON livre' },
 ];
 
@@ -47,6 +50,8 @@ export function ResourceCharacteristicFormModal({
   const isEditing = Boolean(editingRow);
   const [row, setRow] = useState<ResourceCharacteristicRow>(emptyResourceCharacteristicRow());
   const [referenceDataSets, setReferenceDataSets] = useState<ReferenceDataSet[]>([]);
+  const [availableRoleTypes, setAvailableRoleTypes] = useState<PartyRoleType[]>([]);
+  const [organizationOptions, setOrganizationOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -60,7 +65,20 @@ export function ResourceCharacteristicFormModal({
     void listReferenceDataSets()
       .then((sets) => setReferenceDataSets(sets.filter((set) => set.active)))
       .catch(() => setReferenceDataSets([]));
+    void listPartyRoleTypes()
+      .then((roleTypes) => setAvailableRoleTypes(roleTypes.filter((r) => r.active)))
+      .catch(() => setAvailableRoleTypes([]));
   }, []);
+
+  useEffect(() => {
+    if (row.valueType !== 'organization' || !row.allowedValues || row.allowedValues.length === 0) {
+      setOrganizationOptions([]);
+      return;
+    }
+    void listOrganizationsByRoleTypeIds(row.allowedValues)
+      .then((orgs) => setOrganizationOptions(orgs))
+      .catch(() => setOrganizationOptions([]));
+  }, [row.valueType, row.allowedValues]);
 
   if (!isOpen) return null;
 
@@ -94,6 +112,12 @@ export function ResourceCharacteristicFormModal({
       const imageError = imageReferenceError(row.valueText);
       if (imageError) {
         setError(imageError);
+        return;
+      }
+    }
+    if (row.valueType === 'organization') {
+      if (!row.allowedValues || row.allowedValues.length === 0) {
+        setError('Selecione ao menos um papel permitido para características do tipo Organização.');
         return;
       }
     }
@@ -268,6 +292,55 @@ export function ResourceCharacteristicFormModal({
             </select>
           </div>
 
+          {row.valueType === 'organization' && (
+            <div className="space-y-2">
+              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                Papéis permitidos (obrigatório selecionar ao menos um)
+              </label>
+              {availableRoleTypes.length === 0 ? (
+                <div className="rounded-[10px] border border-app-border bg-[var(--surface-muted)] p-3 text-[0.8rem] text-app-muted">
+                  Nenhum papel ativo encontrado no catálogo de Studio &gt; Papéis.
+                </div>
+              ) : (
+                <div className="space-y-1.5 rounded-[12px] border border-app-border bg-app-panel p-3 max-h-48 overflow-y-auto">
+                  {availableRoleTypes.map((roleType) => {
+                    const selected = (row.allowedValues ?? []).includes(roleType.id);
+                    return (
+                      <label
+                        key={roleType.id}
+                        className={`flex items-center gap-2.5 rounded-[8px] p-1.5 text-[0.82rem] transition-colors ${
+                          readOnly
+                            ? 'cursor-default'
+                            : 'cursor-pointer hover:bg-[var(--surface-muted)]'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={readOnly}
+                          onChange={(e) => {
+                            const current = row.allowedValues ?? [];
+                            const next = e.target.checked
+                              ? [...current, roleType.id]
+                              : current.filter((id) => id !== roleType.id);
+                            setRow((prev) => ({ ...prev, allowedValues: next }));
+                          }}
+                          className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
+                        />
+                        <div className="flex-1">
+                          <span className="font-semibold text-app-text">{roleType.label}</span>
+                          <span className="ml-2 font-mono text-[0.72rem] text-app-muted">
+                            ({roleType.roleName})
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {row.valueType === 'list' && (
             <div className="space-y-2">
               <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
@@ -347,6 +420,20 @@ export function ResourceCharacteristicFormModal({
                 {listOptions.map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
+                  </option>
+                ))}
+              </select>
+            ) : row.valueType === 'organization' ? (
+              <select
+                value={row.valueText}
+                disabled={readOnly}
+                onChange={(e) => setRow((prev) => ({ ...prev, valueText: e.target.value }))}
+                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
+              >
+                <option value="">Selecione uma organização padrão...</option>
+                {organizationOptions.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
                   </option>
                 ))}
               </select>

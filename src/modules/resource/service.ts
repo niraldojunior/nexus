@@ -2688,6 +2688,8 @@ const assertCanonicalCharacteristics = <
     valueType?: string;
     group?: string;
     characteristicLevel?: CharacteristicLevel;
+    allowedValues?: string[];
+    referenceDataSetKey?: string;
   },
 >(
   characteristics: T[],
@@ -2701,6 +2703,20 @@ const assertCanonicalCharacteristics = <
       code: 'RESOURCE_SPEC_CHARACTERISTIC_FORBIDDEN',
       statusCode: 400,
     });
+  }
+  const invalidOrganization = characteristics.find(
+    (characteristic) =>
+      characteristic.valueType === 'organization' &&
+      (!characteristic.allowedValues || characteristic.allowedValues.length === 0),
+  );
+  if (invalidOrganization) {
+    throw new AppError(
+      `organization characteristic "${invalidOrganization.name}" must define at least one allowed role`,
+      {
+        code: 'RESOURCE_SPEC_CHARACTERISTIC_ORGANIZATION_INVALID',
+        statusCode: 400,
+      },
+    );
   }
   // `model` é characteristic legítima (ao contrário de manufacturer/networkType acima), mas seu
   // valueType/group precisam ser consistentes em toda declaração — senão a leitura via

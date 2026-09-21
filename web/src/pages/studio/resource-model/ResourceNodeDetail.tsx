@@ -64,6 +64,7 @@ const VALUE_TYPE_LABELS: Record<ResourceCharacteristicRow['valueType'], string> 
   date: 'Data',
   image: 'Imagem',
   list: 'Lista de opções',
+  organization: 'Organização',
   json: 'JSON livre',
 };
 

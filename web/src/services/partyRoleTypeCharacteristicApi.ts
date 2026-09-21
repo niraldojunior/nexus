@@ -19,6 +19,7 @@ export type PartyRoleTypeCharacteristic = {
   id: string;
   tenantId: string;
   roleName: string;
+  roleTypeId?: string | null;
   name: string;
   group: string | null;
   description: string | null;
@@ -27,6 +28,8 @@ export type PartyRoleTypeCharacteristic = {
   /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; alternativa a `allowedValues`. */
   referenceDataSetKey: string | null;
   sortOrder: number;
+  mandatory: boolean;
+  defaultValue: string | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -40,34 +43,36 @@ export type CreatePartyRoleTypeCharacteristicInput = {
   allowedValues?: string[] | null;
   referenceDataSetKey?: string | null;
   sortOrder?: number;
+  mandatory?: boolean;
+  defaultValue?: string | null;
 };
 
 export type UpdatePartyRoleTypeCharacteristicInput = Partial<
   CreatePartyRoleTypeCharacteristicInput & { active: boolean }
 >;
 
-const baseUrl = (roleName: string) =>
-  `/v1/party-role-types/${encodeURIComponent(roleName)}/characteristics`;
+const baseUrl = (roleTypeIdOrRoleName: string) =>
+  `/v1/party-role-types/${encodeURIComponent(roleTypeIdOrRoleName)}/characteristics`;
 
 export const listPartyRoleTypeCharacteristics = (
-  roleName: string,
-): Promise<PartyRoleTypeCharacteristic[]> => getJson(baseUrl(roleName));
+  roleTypeIdOrRoleName: string,
+): Promise<PartyRoleTypeCharacteristic[]> => getJson(baseUrl(roleTypeIdOrRoleName));
 
 export const createPartyRoleTypeCharacteristic = (
-  roleName: string,
+  roleTypeIdOrRoleName: string,
   input: CreatePartyRoleTypeCharacteristicInput,
 ): Promise<PartyRoleTypeCharacteristic> =>
-  postJson<PartyRoleTypeCharacteristic>(baseUrl(roleName), input);
+  postJson<PartyRoleTypeCharacteristic>(baseUrl(roleTypeIdOrRoleName), input);
 
 export const updatePartyRoleTypeCharacteristic = (
-  roleName: string,
+  roleTypeIdOrRoleName: string,
   id: string,
   patch: UpdatePartyRoleTypeCharacteristicInput,
 ): Promise<PartyRoleTypeCharacteristic> =>
-  patchJson<PartyRoleTypeCharacteristic>(`${baseUrl(roleName)}/${encodeURIComponent(id)}`, patch);
+  patchJson<PartyRoleTypeCharacteristic>(`${baseUrl(roleTypeIdOrRoleName)}/${encodeURIComponent(id)}`, patch);
 
 export const deactivatePartyRoleTypeCharacteristic = (
-  roleName: string,
+  roleTypeIdOrRoleName: string,
   id: string,
 ): Promise<PartyRoleTypeCharacteristic> =>
-  deleteJson<PartyRoleTypeCharacteristic>(`${baseUrl(roleName)}/${encodeURIComponent(id)}`);
+  deleteJson<PartyRoleTypeCharacteristic>(`${baseUrl(roleTypeIdOrRoleName)}/${encodeURIComponent(id)}`);

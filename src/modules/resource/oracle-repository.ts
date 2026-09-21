@@ -471,6 +471,17 @@ export class OracleResourceRepository implements IResourceRepository {
 
     const now = new Date().toISOString();
     await this.db.transaction(async () => {
+      // 1. Linhas legadas: mesmo código de um tipo canônico, mas com ID diferente. Para evitar colisão
+      // com a constraint UNIQUE(tenant_id, code) ao inserir o ID canônico abaixo, renomeamos o código
+      // legado e inativamos a linha antes do INSERT.
+      for (const legacy of legacyDuplicates) {
+        await this.db.run(
+          `UPDATE tmf_resource_type SET code = ?, status = 'inactive' WHERE id = ?`,
+          [`${legacy.code}:legacy:${legacy.id}`, legacy.id],
+        );
+      }
+
+      // 2. Insere os tipos canônicos faltantes com seus IDs previsíveis ('rt-olt', 'rt-cto' etc.).
       for (const type of missing) {
         await this.db.run(
           `INSERT INTO tmf_resource_type
@@ -489,11 +500,7 @@ export class OracleResourceRepository implements IResourceRepository {
         );
       }
 
-      // Uma base anterior pode ter IDs aleatórios por tenant para o mesmo código. Repontamos as
-      // referências das linhas legadas para o id canônico e inativamos a linha legada — ela fica
-      // órfã (nada mais referencia legacy.id), mas continuaria em `tmf_resource_type` com o mesmo
-      // código/nome do canônico e apareceria como entrada ativa duplicada em `listResourceTypes()`
-      // (combo de relações) se não for inativada.
+      // 3. Reponta todas as referências das linhas legadas para o id canônico nas tabelas dependentes.
       for (const legacy of legacyDuplicates) {
         const canonicalId = canonicalIdByCode.get(legacy.code)!;
         for (const table of [
@@ -506,9 +513,14 @@ export class OracleResourceRepository implements IResourceRepository {
             [canonicalId, legacy.id],
           );
         }
-        await this.db.run(`UPDATE tmf_resource_type SET status = 'inactive' WHERE id = ?`, [
-          legacy.id,
-        ]);
+        await this.db.run(
+          `UPDATE tmf_resource_type_relationship_rule SET source_resource_type_id = ? WHERE source_resource_type_id = ?`,
+          [canonicalId, legacy.id],
+        );
+        await this.db.run(
+          `UPDATE tmf_resource_type_relationship_rule SET target_id = ? WHERE target_kind = 'RESOURCE_TYPE' AND target_id = ?`,
+          [canonicalId, legacy.id],
+        );
       }
     });
   }

@@ -1,3 +1,4 @@
+import type { CharacteristicLevel } from '../../shared/tmf/types.js';
 import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 export type GeoGeometryType = 'Point' | 'LineString' | 'Polygon';
@@ -33,6 +34,7 @@ export type CharacteristicValueType =
   | 'image'
   | 'list'
   | 'enum'
+  | 'organization'
   | 'json';
 
 export type Characteristic = {
@@ -44,6 +46,7 @@ export type Characteristic = {
   allowedValues?: string[];
   /** Chave estável de um conjunto publicado em Studio -> Dados de Referência; ver shared/tmf/types.ts. */
   referenceDataSetKey?: string;
+  characteristicLevel?: CharacteristicLevel;
 };
 
 export type GeoSiteStatus = 'Planned' | 'InConstruction' | 'Active' | 'InDeactivation' | 'Retired';
@@ -290,6 +293,7 @@ export type GeographicSiteSpecificationCharacteristic = {
   min?: number;
   max?: number;
   lookup?: string;
+  characteristicLevel?: CharacteristicLevel;
 };
 
 export type GeographicSiteSpecification = {

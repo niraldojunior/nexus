@@ -37,6 +37,7 @@ import { SpatialStudioAdapter } from '../../modules/studio/adapters/spatial-stud
 import { StudioGeoAdapter, CANONICAL_STUDIO_GEO_SNAPSHOT } from '../../modules/studio/adapters/studio-geo-adapter.js';
 import { RulesWorkflowsStudioAdapter } from '../../modules/studio/adapters/rules-workflows-studio-adapter.js';
 import { PartiesStudioAdapter } from '../../modules/studio/adapters/parties-studio-adapter.js';
+import { OrganizationsStudioAdapter } from '../../modules/studio/adapters/organizations-studio-adapter.js';
 import { ReferenceDataStudioAdapter } from '../../modules/studio/adapters/reference-data-studio-adapter.js';
 import { TemplatesStudioAdapter, CANONICAL_TEMPLATES_SNAPSHOT } from '../../modules/studio/adapters/templates-studio-adapter.js';
 import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/geo/project-workflow.js';
@@ -246,6 +247,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   studioService.registerAdapter(new ResourceModelStudioAdapter(resourceService));
   studioService.registerAdapter(new LocationModelStudioAdapter(geoService));
   studioService.registerAdapter(new SpatialStudioAdapter(geoService));
+  studioService.registerAdapter(new OrganizationsStudioAdapter(partyService));
   studioService.registerAdapter(
     new PartiesStudioAdapter(partyRoleTypeRepository, partyRoleTypeCharacteristicRepository),
   );

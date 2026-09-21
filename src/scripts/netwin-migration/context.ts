@@ -1,0 +1,125 @@
+import oracledb, { type Connection, type Pool } from 'oracledb';
+import {
+  configureOracleClient,
+  oracleConnectDescriptor,
+  quote,
+  makeTablePrefixer,
+  ensureControlTables,
+  type TablePrefixer,
+} from '../netwin-migration-kit.js';
+import type { CliOptions } from './types.js';
+
+oracledb.fetchAsString = [oracledb.CLOB];
+configureOracleClient();
+
+export type MigrationContext = {
+  options: CliOptions;
+  t: TablePrefixer;
+  sourcePool: Pool;
+  targetPool: Pool | null;
+  getSourceConnection: () => Promise<Connection>;
+  getTargetConnection: () => Promise<Connection | null>;
+  close: () => Promise<void>;
+};
+
+export async function createMigrationContext(options: CliOptions): Promise<MigrationContext> {
+  const netwinTnsAdmin = process.env.NETWIN_DR_TNS_ADMIN ?? process.env.TNS_ADMIN;
+  const sourceConnectString = process.env.NETWIN_DR_ORACLE_CONNECT_STRING;
+  const sourceUser = process.env.NETWIN_DR_ORACLE_USER;
+  const sourcePassword = process.env.NETWIN_DR_ORACLE_PASSWORD;
+
+  if (!sourceConnectString || !sourceUser || !sourcePassword) {
+    throw new Error('NETWIN_DR_ORACLE_CONNECT_STRING, NETWIN_DR_ORACLE_USER e NETWIN_DR_ORACLE_PASSWORD são obrigatórios.');
+  }
+
+  const sourcePool = await oracledb.createPool({
+    connectString: oracleConnectDescriptor(sourceConnectString),
+    user: sourceUser,
+    password: sourcePassword,
+    ...(netwinTnsAdmin ? { configDir: netwinTnsAdmin } : {}),
+    poolMin: 1,
+    poolMax: 2,
+  });
+
+  let targetPool: Pool | null = null;
+  if (options.apply) {
+    const targetConnectString = process.env.TARGET_ORACLE_CONNECT_STRING || process.env.ORACLE_CONNECTION_STRING;
+    const targetUser = process.env.TARGET_ORACLE_USER || process.env.ORACLE_USER;
+    const targetPassword = process.env.TARGET_ORACLE_PASSWORD || process.env.ORACLE_PASSWORD;
+
+    if (!targetConnectString || !targetUser || !targetPassword) {
+      throw new Error('ORACLE_CONNECTION_STRING, ORACLE_USER e ORACLE_PASSWORD são obrigatórios para gravar (--apply).');
+    }
+
+    targetPool = await oracledb.createPool({
+      connectString: targetConnectString,
+      user: targetUser,
+      password: targetPassword,
+      poolMin: 1,
+      poolMax: 4,
+    });
+  }
+
+  const t = makeTablePrefixer(options.targetPrefix);
+
+  return {
+    options,
+    t,
+    sourcePool,
+    targetPool,
+    getSourceConnection: async () => {
+      const conn = await sourcePool.getConnection();
+      await conn.execute('SET TRANSACTION READ ONLY');
+      return conn;
+    },
+    getTargetConnection: async () => {
+      if (!targetPool) return null;
+      return await targetPool.getConnection();
+    },
+    close: async () => {
+      await sourcePool.close(10);
+      if (targetPool) await targetPool.close(10);
+    },
+  };
+}
+
+export { quote, ensureControlTables, type TablePrefixer };
+
+/**
+ * Executes high-volume batch inserts into Oracle using executeMany with chunking.
+ */
+export async function bulkInsertRows(
+  conn: Connection,
+  t: TablePrefixer,
+  table: string,
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+  chunkSize = 1000,
+  ignoredErrors: number[] = [1],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  const sql = `INSERT INTO ${t(table)} (${columns.map(quote).join(',')}) VALUES (${columns.map((_, i) => `:${i + 1}`).join(',')})`;
+
+  let totalInserted = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const data = chunk.map((row) => columns.map((col) => row[col] ?? null));
+    const result = await conn.executeMany(sql, data, {
+      autoCommit: false,
+      batchErrors: true,
+    });
+
+    const errors = result.batchErrors ?? [];
+    for (const error of errors) {
+      // ORA-00001 = unique constraint, ORA-02291 = foreign key integrity
+      const num = error.errorNum ?? 0;
+      if (!ignoredErrors.includes(num)) {
+        throw new Error(`bulkInsertRows ${table}: ORA-${num} ${error.message}`);
+      }
+    }
+    totalInserted += chunk.length - errors.length;
+  }
+
+  return totalInserted;
+}

@@ -9,3 +9,6 @@ export { default as StatusPill } from './StatusPill';
 export { default as DataTable, DataTablePagination } from './DataTable';
 export type { DataTableColumn } from './DataTable';
 export { default as Modal } from './Modal';
+export { default as Drawer } from './Drawer';
+export { ScrollFadeTabBar } from './ScrollFadeTabBar';
+export type { ScrollFadeTabBarProps } from './ScrollFadeTabBar';

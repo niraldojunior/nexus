@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FolderTree, Layers, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import type { GeoSiteRole, GeoSpecCategory } from '../../../services/geoApi';
+import {
+  getGeoSiteSpecificationInstanceCount,
+  type GeoSiteRole,
+  type GeoSpecCategory,
+} from '../../../services/geoApi';
 import { Button } from '../../../components/ui';
 import {
   buildGeoCharacteristicPayload,
@@ -40,6 +44,8 @@ const VALUE_TYPE_LABELS: Record<string, string> = {
 
 type DetailTab = 'overview' | 'characteristics' | 'relations';
 
+const numberFormatter = new Intl.NumberFormat('pt-BR');
+
 export type LocationSpecDetailProps = {
   spec: LocationModelDraftSpec;
   allSpecs: LocationModelDraftSpec[];
@@ -69,6 +75,7 @@ export function LocationSpecDetail({
     useState<GeoCharacteristicRow | null>(null);
   const [characteristicDeletingKey, setCharacteristicDeletingKey] = useState<string | null>(null);
   const [visualIdentityPickerOpen, setVisualIdentityPickerOpen] = useState(false);
+  const [instanceCount, setInstanceCount] = useState<number | null>(null);
   const canMutate = canEdit && isEditing;
   const characteristicRows = useMemo(
     () => geoCharacteristicRowsFrom(spec.specCharacteristic),
@@ -84,6 +91,27 @@ export function LocationSpecDetail({
     setCharacteristicModalOpen(false);
     setVisualIdentityPickerOpen(false);
   }, [spec.localId]);
+
+  useEffect(() => {
+    if (isEditing || !spec.persistedId) {
+      setInstanceCount(null);
+      return;
+    }
+
+    let active = true;
+    setInstanceCount(null);
+    void getGeoSiteSpecificationInstanceCount(spec.persistedId)
+      .then((result) => {
+        if (active) setInstanceCount(result.instanceCount);
+      })
+      .catch(() => {
+        if (active) setInstanceCount(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isEditing, spec.persistedId]);
 
   const patchCharacteristics = (rows: GeoCharacteristicRow[]) =>
     onPatch({ specCharacteristic: buildGeoCharacteristicPayload(rows) });
@@ -320,7 +348,7 @@ export function LocationSpecDetail({
                   <p className="text-[0.92rem] leading-relaxed text-app-text">{spec.description}</p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div className="rounded-[10px] border border-app-border p-4">
                   <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
                     Categoria
@@ -337,6 +365,16 @@ export function LocationSpecDetail({
                     {ROLE_LABELS[spec.siteRole]}
                   </p>
                 </div>
+                {spec.persistedId && instanceCount !== null && (
+                  <div className="rounded-[10px] border border-app-border p-4">
+                    <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                      Volume de Locais Cadastrados
+                    </span>
+                    <p className="mt-1 text-[0.95rem] font-semibold text-app-text">
+                      {numberFormatter.format(instanceCount)}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           ))}

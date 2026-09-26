@@ -62,6 +62,59 @@ test.skipIf(!oracleConfigured)('Geo HTTP integration handles spec, location and 
   }
 });
 
+test.skipIf(!oracleConfigured)('Geo specification instance count returns only sites of the selected specification', async () => {
+  const server = createApp({
+    config: createTestConfig(0),
+    logger: createTestLogger(),
+  });
+  const port = await server.start();
+  try {
+    const countedSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+      name: 'Tipo contado',
+      category: 'Site',
+    });
+    const otherSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+      name: 'Outro tipo',
+      category: 'Site',
+    });
+    const countedSpecId = (countedSpec.body as { id: string }).id;
+    const otherSpecId = (otherSpec.body as { id: string }).id;
+
+    await requestJson(port, 'POST', '/v1/geo/sites', {
+      name: 'Local contado 1',
+      siteSpecificationId: countedSpecId,
+    });
+    await requestJson(port, 'POST', '/v1/geo/sites', {
+      name: 'Local contado 2',
+      siteSpecificationId: countedSpecId,
+    });
+    await requestJson(port, 'POST', '/v1/geo/sites', {
+      name: 'Local de outro tipo',
+      siteSpecificationId: otherSpecId,
+    });
+
+    const count = await requestJson(
+      port,
+      'GET',
+      `/v1/geo/site-specifications/${countedSpecId}/instance-count`,
+    );
+    assert.equal(count.statusCode, 200);
+    assert.deepEqual(count.body, { specificationId: countedSpecId, instanceCount: 2 });
+
+    const missing = await requestJson(
+      port,
+      'GET',
+      '/v1/geo/site-specifications/does-not-exist/instance-count',
+    );
+    assert.equal(missing.statusCode, 404);
+    assert.equal((missing.body as { error: string }).error, 'GEO_SPEC_NOT_FOUND');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
+});
+
 test.skipIf(!oracleConfigured)('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async () => {
   const server = createApp({
     config: createTestConfig(0),

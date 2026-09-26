@@ -2929,6 +2929,20 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, geoService.ensureBootstrapSpecifications(geoContext));
   }
 
+  const siteSpecificationInstanceCountMatch = url.pathname.match(
+    /^\/v1\/geo\/site-specifications\/([^/]+)\/instance-count$/,
+  );
+  if (siteSpecificationInstanceCountMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      geoService.getSiteSpecificationInstanceCount(
+        decodeURIComponent(siteSpecificationInstanceCountMatch[1] ?? ''),
+        geoContext,
+      ),
+    );
+  }
+
   if (request.method === 'POST' && url.pathname === '/v1/geo/relationship-types/bootstrap') {
     return sendJson(response, 200, geoService.ensureBootstrapRelationshipTypes(geoContext));
   }

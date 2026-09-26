@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { LocationSpecItemIcon } from './LocationModelStudio';
 import { LocationSpecDetail } from './LocationSpecDetail';
 import type { LocationModelDraftSpec } from './locationModelDraft';
+
+vi.mock('../../../services/geoApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../services/geoApi')>()),
+  getGeoSiteSpecificationInstanceCount: vi.fn().mockResolvedValue({
+    specificationId: 'central-office',
+    instanceCount: 12_345,
+  }),
+}));
 
 const customSpec: LocationModelDraftSpec = {
   localId: 'central-office',
@@ -31,6 +39,11 @@ const defaultProps = {
 };
 
 describe('Location Modeling visual identity previews', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
   it('renders a custom identity in the list as a transparent modeling glyph', () => {
     const { container } = render(<LocationSpecItemIcon spec={customSpec} />);
     const image = container.querySelector('img');
@@ -58,5 +71,34 @@ describe('Location Modeling visual identity previews', () => {
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(document.querySelector('svg')).toHaveClass('h-4', 'w-4');
+  });
+
+  it('shows the formatted instance count only in consultation mode for a persisted type', async () => {
+    render(<LocationSpecDetail spec={customSpec} {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Volume de Locais Cadastrados')).toBeInTheDocument();
+      expect(screen.getByText('12.345')).toBeInTheDocument();
+    });
+  });
+
+  it('does not request or show the instance count while editing or for a new type', async () => {
+    const { getGeoSiteSpecificationInstanceCount } = await import('../../../services/geoApi');
+    const { rerender } = render(
+      <LocationSpecDetail spec={customSpec} {...defaultProps} isEditing={true} />,
+    );
+
+    expect(screen.queryByText('Volume de Locais Cadastrados')).not.toBeInTheDocument();
+    expect(getGeoSiteSpecificationInstanceCount).not.toHaveBeenCalled();
+
+    rerender(
+      <LocationSpecDetail
+        spec={{ ...customSpec, localId: 'new-type', persistedId: undefined }}
+        {...defaultProps}
+      />,
+    );
+
+    expect(screen.queryByText('Volume de Locais Cadastrados')).not.toBeInTheDocument();
+    expect(getGeoSiteSpecificationInstanceCount).not.toHaveBeenCalled();
   });
 });

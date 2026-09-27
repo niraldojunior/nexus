@@ -7,23 +7,15 @@ import { siteSpecLabel } from './geoLabels';
 
 // Tipo semântico de local, derivado da categoria TMF + nome do tipo.
 // Substitui o antigo "layerForSpec" baseado só em string do nome.
-export type SiteKind = 'CO' | 'POP' | 'CTO' | 'PI' | 'REGION' | 'SUBSITE' | 'SITE';
+export type SiteKind = 'REGION' | 'SUBSITE' | 'SITE';
 
 export const siteKindLabel: Record<SiteKind, string> = {
-  CO: 'Estação (CO)',
-  POP: 'POP',
-  CTO: 'CTO / Armário',
-  PI: 'Ponto de instalação',
   REGION: 'Região',
   SUBSITE: 'Sub-local',
   SITE: 'Local',
 };
 
 export const siteKindDescription: Record<SiteKind, string> = {
-  CO: 'Central telefônica / estação com equipamentos ativos.',
-  POP: 'Ponto de presença que agrega e distribui a rede.',
-  CTO: 'Caixa/armário de terminação óptica na rua.',
-  PI: 'Endereço final onde o cliente é atendido.',
   REGION: 'Agrupamento geográfico (cidade, bairro, área).',
   SUBSITE: 'Espaço interno de um local (sala, andar, gaveta).',
   SITE: 'Local genérico da planta externa.',
@@ -43,28 +35,9 @@ export function siteKindFromSpec(spec?: {
   // Eixo funcional (C11) tem precedência quando presente — specs ad-hoc sem siteRole caem
   // no fallback por categoria/substring abaixo.
   if (spec.siteRole === 'grouping') return 'REGION';
-  if (spec.siteRole === 'service') return 'PI';
   if (spec.siteRole === 'property') return spec.category === 'SubSite' ? 'SUBSITE' : 'SITE';
   if (spec.category === 'Region') return 'REGION';
   if (spec.category === 'SubSite') return 'SUBSITE';
-  const name = spec.name.toLowerCase();
-  if (name.includes('central') || name === 'co' || name.includes('estac') || name.includes('estaç'))
-    return 'CO';
-  if (name.includes('pop') || name.includes('presenc') || name.includes('presenç')) return 'POP';
-  if (
-    name.includes('cto') ||
-    name.includes('armario') ||
-    name.includes('armário') ||
-    name.includes('caixa')
-  )
-    return 'CTO';
-  if (
-    name.includes('instalac') ||
-    name.includes('instalaç') ||
-    name === 'pi' ||
-    name.includes('cliente')
-  )
-    return 'PI';
   return 'SITE';
 }
 

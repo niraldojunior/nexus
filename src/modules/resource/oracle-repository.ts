@@ -555,11 +555,19 @@ export class OracleResourceRepository implements IResourceRepository {
       `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind, icon_code, icon_asset_id, characteristics
        FROM tmf_resource_type
        WHERE tenant_id = ? OR tenant_id = ?
-       ORDER BY name, code, id`,
-      [tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
+       ORDER BY (CASE WHEN tenant_id = ? THEN 0 ELSE 1 END), name, code, id`,
+      [tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID, tenantId],
     );
     const categoryCodeById = await this.loadCategoryCodeByResourceTypeId(tenantId);
-    return rows.map((row) => this.mapResourceType(row, categoryCodeById.get(row.id)));
+    const seenCodes = new Set<string>();
+    const uniqueRows: typeof rows = [];
+    for (const row of rows) {
+      if (!seenCodes.has(row.code)) {
+        seenCodes.add(row.code);
+        uniqueRows.push(row);
+      }
+    }
+    return uniqueRows.map((row) => this.mapResourceType(row, categoryCodeById.get(row.id)));
   }
 
   public async getResourceType(
@@ -583,8 +591,9 @@ export class OracleResourceRepository implements IResourceRepository {
     }>(
       `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind,
               icon_code, icon_asset_id, characteristics
-         FROM tmf_resource_type WHERE id = ? AND (tenant_id = ? OR tenant_id = ?)`,
-      [id, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
+         FROM tmf_resource_type WHERE id = ? AND (tenant_id = ? OR tenant_id = ?)
+        ORDER BY (CASE WHEN tenant_id = ? THEN 0 ELSE 1 END)`,
+      [id, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID, tenantId],
     );
     if (!row) return undefined;
     const categoryCodes = await this.loadCategoryCodeByResourceTypeId(tenantId);
@@ -612,8 +621,9 @@ export class OracleResourceRepository implements IResourceRepository {
     }>(
       `SELECT id, tenant_id, code, name, description, status, map_presence, nature, geometry_kind,
               icon_code, icon_asset_id, characteristics
-         FROM tmf_resource_type WHERE code = ? AND (tenant_id = ? OR tenant_id = ?)`,
-      [code, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID],
+         FROM tmf_resource_type WHERE code = ? AND (tenant_id = ? OR tenant_id = ?)
+        ORDER BY (CASE WHEN tenant_id = ? THEN 0 ELSE 1 END)`,
+      [code, tenantId, RESOURCE_TYPE_CANONICAL_TENANT_ID, tenantId],
     );
     if (!row) return undefined;
     const categoryCodes = await this.loadCategoryCodeByResourceTypeId(tenantId);

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resourceIconDataUrl, resourceIconFor } from './resourceIcon';
-import { selectionPinDataUrl, siteIconDataUrl, siteIconFor } from './siteIcon';
+import { selectionPinDataUrl } from './siteIcon';
 import {
   addressStreetViewMarker,
   resourceStreetViewMarker,
@@ -8,47 +7,26 @@ import {
 } from './streetViewMarker';
 
 describe('siteStreetViewMarker', () => {
-  it('reutiliza o ícone, status e nome do Site selecionado', () => {
+  it('usa fallback neutro quando a Specification não tem identidade', () => {
     const point: [number, number] = [-43.11, -22.91];
-
-    expect(
-      siteStreetViewMarker(
-        { name: 'POP Centro', status: 'active' },
-        { category: 'Site', name: 'POP' },
-        point,
-      ),
-    ).toEqual({
+    const marker = siteStreetViewMarker(
+      { name: 'Local de Cliente', status: 'active' },
+      { category: 'Site', name: 'Local de Cliente' },
       point,
-      title: 'POP Centro',
-      iconUrl: siteIconDataUrl(siteIconFor('POP', 'active'), { size: 40 }),
-    });
+    );
+
+    expect(marker).toMatchObject({ point, title: 'Local de Cliente' });
+    expect(decodeURIComponent(marker.iconUrl)).not.toContain('m3 9 9-7 9 7');
   });
 });
 
 describe('resourceStreetViewMarker', () => {
-  it('reutiliza o ícone e nome do Resource selecionado', () => {
+  it('usa fallback neutro, sem inferir o tipo do Resource', () => {
     const point: [number, number] = [-43.12, -22.92];
+    const marker = resourceStreetViewMarker({ label: 'CTO 101', resourceType: 'CTO' }, point);
 
-    expect(resourceStreetViewMarker({ label: 'CTO 101', resourceType: 'CTO' }, point)).toEqual({
-      point,
-      title: 'CTO 101',
-      iconUrl: resourceIconDataUrl(resourceIconFor('CTO'), { size: 40 }),
-    });
-  });
-
-  it('usa a mesma resolução por resourceType aplicada pelo mapa Geo', () => {
-    const point: [number, number] = [-43.12, -22.92];
-
-    expect(
-      resourceStreetViewMarker(
-        {
-          label: 'Resource legado',
-          resourceType: 'TIPO_DESCONHECIDO',
-          resourceSpecification: { name: 'CTO' },
-        },
-        point,
-      ).iconUrl,
-    ).toBe(resourceIconDataUrl(resourceIconFor('TIPO_DESCONHECIDO'), { size: 40 }));
+    expect(marker).toMatchObject({ point, title: 'CTO 101' });
+    expect(decodeURIComponent(marker.iconUrl)).not.toContain('m7.5 4.27 9 5.15');
   });
 });
 

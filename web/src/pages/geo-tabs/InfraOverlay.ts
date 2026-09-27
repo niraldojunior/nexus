@@ -15,16 +15,9 @@
 
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { buildFastProjection } from './CoverageOverlay';
-import {
-  resourceIconDataUrl,
-  resourceIconFor,
-  CABLE_STROKE_WEIGHT,
-  MARKER_ICON_SIZE,
-} from '../../utils/resourceIcon';
-import { siteIconDataUrl, siteIconFor, SITE_ICON_SIZE } from '../../utils/siteIcon';
-import { siteKindFromSpec } from '../../utils/placeLabel';
+import { resourceIconFor, CABLE_STROKE_WEIGHT, MARKER_ICON_SIZE } from '../../utils/resourceIcon';
+import { resolveOperationalIcon } from '../../utils/pointIconPreview';
 import { mapLayerVisualRank, nodeForMapFeature, type MapSiteRole } from '../../utils/mapLayers';
-import { nativeMapIconDataUrl, nativeMapIconForCode } from '../../utils/nativeMapIcons';
 import type {
   StudioGeoCatalog,
   StudioGeoVisualConfig,
@@ -97,7 +90,6 @@ export function resourcePointHitCenter(x: number, y: number, size: number): [num
 export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOverlayHandle {
   let data: MapTileFeature[] = [];
   let resourceMarkerSize: number = MARKER_ICON_SIZE;
-  let siteMarkerSize: number = SITE_ICON_SIZE;
   let excludeNodeId: string | null = null;
   let roleByCode: ReadonlyMap<string, MapSiteRole> | undefined;
   let catalog: StudioGeoCatalog | undefined;
@@ -437,27 +429,22 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const pointStyle = style?.geometryKind === 'POINT' ? style : undefined;
       if (pointStyle && !pointStyle.visible) return;
       const size = pointStyle?.sizePx ?? resourceMarkerSize;
-      const inferredIcon = resourceIconFor({
-        resourceType: feature.typeCode ?? '',
-        status: feature.status,
-        name: feature.label,
-      });
       const identity = identityFor(feature);
-      const iconCode = identity?.kind === 'system' ? identity.iconCode : undefined;
-      const assetId = identity?.kind === 'asset' ? identity.assetId : undefined;
-      const nativeIcon = nativeMapIconForCode(iconCode);
-      const img = assetId
-        ? loadStudioAsset(assetId)
-        : loadImage(
-            nativeIcon
-              ? nativeMapIconDataUrl(nativeIcon, {
-                  size,
-                  shape: 'circle',
-                  color: pointStyle?.color,
-                  opacity: pointStyle?.opacity,
-                })
-              : resourceIconDataUrl(inferredIcon, { size }),
-          );
+      const resolved = resolveOperationalIcon(
+        {
+          kind: 'resource',
+          resourceType: feature.typeCode,
+          name: feature.label,
+          status: feature.status,
+        },
+        identity,
+        { size, color: pointStyle?.color, opacity: pointStyle?.opacity },
+      );
+      const img = resolved.assetId
+        ? loadStudioAsset(resolved.assetId)
+        : resolved.url
+          ? loadImage(resolved.url)
+          : null;
       // Âncora no canto inferior-esquerdo — mesma regra de buildPointMarkerVisual em GeoPage
       // (a coordenada real fica acima e à direita do próprio ícone).
       if (img) context.drawImage(img, x, y - size, size, size);
@@ -474,33 +461,28 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const local = project(feature.lng, feature.lat);
       if (!local) return;
       const [x, y] = local;
-      const inferredKind = siteKindFromSpec({
-        category: feature.siteCategory,
-        name: feature.sublabel,
-        siteRole: feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined,
-      });
       const style = styleFor(feature);
       const pointStyle = style?.geometryKind === 'POINT' ? style : undefined;
       if (pointStyle && !pointStyle.visible) return;
-      const size =
-        pointStyle?.sizePx ?? (inferredKind === 'CO' ? siteMarkerSize : resourceMarkerSize);
-      const icon = siteIconFor(inferredKind, feature.status);
+      const size = pointStyle?.sizePx ?? resourceMarkerSize;
       const identity = identityFor(feature);
-      const iconCode = identity?.kind === 'system' ? identity.iconCode : undefined;
-      const assetId = identity?.kind === 'asset' ? identity.assetId : undefined;
-      const nativeIcon = nativeMapIconForCode(iconCode);
-      const img = assetId
-        ? loadStudioAsset(assetId)
-        : loadImage(
-            nativeIcon
-              ? nativeMapIconDataUrl(nativeIcon, {
-                  size,
-                  shape: 'squircle',
-                  color: pointStyle?.color,
-                  opacity: pointStyle?.opacity,
-                })
-              : siteIconDataUrl(icon, { size }),
-          );
+      const resolved = resolveOperationalIcon(
+        {
+          kind: 'site',
+          siteCategory: feature.siteCategory,
+          siteRole: feature.sublabel ? roleByCode?.get(feature.sublabel) : undefined,
+          name: feature.label,
+          sublabel: feature.sublabel,
+          status: feature.status,
+        },
+        identity,
+        { size, color: pointStyle?.color, opacity: pointStyle?.opacity },
+      );
+      const img = resolved.assetId
+        ? loadStudioAsset(resolved.assetId)
+        : resolved.url
+          ? loadImage(resolved.url)
+          : null;
       // Âncora central — mesma regra de buildPointMarkerVisual em GeoPage (squircle).
       if (img) context.drawImage(img, x - size / 2, y - size / 2, size, size);
       drawnPoints.push({ x, y, feature, visualRank });
@@ -513,7 +495,6 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   return {
     setData: (features, options) => {
       resourceMarkerSize = options.resourceMarkerSize;
-      siteMarkerSize = options.siteMarkerSize;
       excludeNodeId = options.excludeNodeId;
       roleByCode = options.roleByCode;
       if (catalog !== options.catalog) normalizedCache = new Map();
@@ -538,7 +519,9 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       }
       const candidateLines = new Set(queryGrid(lineGrid, qx, qy));
       for (const line of candidateLines) {
-        let distance = LINE_HIT_RADIUS_PX;
+        // Começa em infinito: iniciar no próprio limite faria `Math.min` nunca devolver
+        // um valor maior que ele, transformando toda linha candidata do grid em hit.
+        let distance = Number.POSITIVE_INFINITY;
         for (let i = 0; i < line.points.length - 1; i += 1) {
           distance = Math.min(
             distance,

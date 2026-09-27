@@ -39,11 +39,11 @@ const resourceNode: StudioGeoEntityNode = {
 };
 
 describe('canonicalPointIconPreviewUrl', () => {
-  it('reutiliza o SVG quadrado lilás de Central Office exibido no mapa', () => {
+  it('reutiliza o SVG quadrado do ícone Central Office selecionado no mapa', () => {
     const url = canonicalPointIconPreviewUrl(stationNode, 'CO', 32);
 
     expect(url).toMatch(/^data:image\/svg\+xml/);
-    expect(decodeURIComponent(url)).toContain('fill="#8b5cf6"');
+    expect(decodeURIComponent(url)).toContain('fill="#2563eb"');
     expect(decodeURIComponent(url)).toContain('<rect');
   });
 
@@ -74,7 +74,7 @@ describe('canonicalPointIconPreviewUrl', () => {
     }
   });
 
-  it('usa o ícone padrão do ResourceType quando não há identidade customizada', () => {
+  it('usa o fallback neutro de Resource quando não há identidade customizada', () => {
     const cdoiNode: StudioGeoEntityNode = {
       ...resourceNode,
       id: 'cdoi',
@@ -84,8 +84,8 @@ describe('canonicalPointIconPreviewUrl', () => {
 
     const url = canonicalPointIconPreviewUrl(cdoiNode, undefined, 32);
 
-    // CTO usa o glifo package (caixa/cubo) por padrão
-    expect(decodeURIComponent(url)).toContain('m7.5 4.27 9 5.15');
+    expect(decodeURIComponent(url)).toContain('fill="#334155"');
+    expect(decodeURIComponent(url)).not.toContain('m7.5 4.27 9 5.15');
   });
 });
 
@@ -133,13 +133,43 @@ describe('resolveOperationalIcon', () => {
 
     expect(result.assetId).toBe('asset-cdoi');
     expect(result.url).toMatch(/^data:image\/svg\+xml/);
-    expect(decodeURIComponent(result.url ?? '')).toContain('m7.5 4.27 9 5.15');
+    expect(decodeURIComponent(result.url ?? '')).toContain('fill="#334155"');
   });
 
-  it('preserva o fallback canônico de CTO para recursos não customizados', () => {
+  it('não infere identidade de CTO para Resource sem configuração', () => {
     const result = resolveOperationalIcon(cdoi, undefined, { size: 32 });
 
-    expect(result.label).toBe('CTO');
-    expect(decodeURIComponent(result.url ?? '')).toContain('m7.5 4.27 9 5.15');
+    expect(result.label).toBe('Recurso');
+    expect(decodeURIComponent(result.url ?? '')).toContain('fill="#334155"');
+    expect(decodeURIComponent(result.url ?? '')).not.toContain('m7.5 4.27 9 5.15');
+  });
+
+  it('não infere casa para Local de Cliente sem identidade configurada', () => {
+    const result = resolveOperationalIcon(
+      { kind: 'site', siteRole: 'service', sublabel: 'Local de Cliente' },
+      undefined,
+      { size: 32 },
+    );
+
+    expect(result.label).toBe('Local');
+    expect(decodeURIComponent(result.url ?? '')).toContain('fill="#334155"');
+    expect(decodeURIComponent(result.url ?? '')).not.toContain('m3 9 9-7 9 7');
+  });
+
+  it('aplica a aparência contextual ao fallback de Local sem identidade explícita', () => {
+    const result = resolveOperationalIcon(
+      {
+        kind: 'site',
+        siteCategory: 'Site',
+        sublabel: 'Manhole',
+      },
+      undefined,
+      { size: 32, color: '#0284c7', opacity: 0.65 },
+    );
+
+    expect(result.label).toBe('Local');
+    expect(result.shape).toBe('squircle');
+    expect(decodeURIComponent(result.url ?? '')).toContain('fill="#0284c7"');
+    expect(decodeURIComponent(result.url ?? '')).toContain('opacity="0.65"');
   });
 });

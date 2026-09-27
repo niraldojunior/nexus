@@ -68,16 +68,28 @@ const normalize = (value: Record<string, unknown> | undefined): StudioGeoSnapsho
   return { schemaVersion: 3, nodes: [] };
 };
 
+const compareNodeOrder = (left: StudioGeoNode, right: StudioGeoNode) =>
+  left.sortOrder - right.sortOrder || left.id.localeCompare(right.id);
+
 const compactOrder = (nodes: StudioGeoNode[]): StudioGeoNode[] => {
   const parentIds = new Set(nodes.map((node) => node.parentNodeId));
   const order = new Map<string, number>();
   for (const parentId of parentIds) {
     nodes
       .filter((node) => node.parentNodeId === parentId)
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id))
+      .sort(compareNodeOrder)
       .forEach((node, index) => order.set(node.id, (index + 1) * 10));
   }
   return nodes.map((node) => ({ ...node, sortOrder: order.get(node.id) ?? node.sortOrder }));
+};
+
+const dropPositionFor = (targetNode: MapLayerTreeNode, event: React.DragEvent): DropPosition => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const relativeY = (event.clientY - rect.top) / rect.height;
+  if (targetNode.kind !== 'GROUP') return relativeY < 0.5 ? 'before' : 'after';
+  if (relativeY < 0.25) return 'before';
+  if (relativeY > 0.75) return 'after';
+  return 'inside';
 };
 
 // Catálogos históricos podem omitir `visualConfig` inteiramente ou carregar um formato antigo
@@ -357,9 +369,11 @@ export function StudioGeoExperience({
         return current;
 
       const newParentNodeId = position === 'inside' ? target!.id : target?.parentNodeId ?? null;
-      const siblings = current.nodes.filter(
-        (node) => node.parentNodeId === newParentNodeId && node.id !== moving.id,
-      );
+      // A lista física do snapshot pode estar em qualquer ordem. O Studio sempre exibe irmãos por
+      // sortOrder/id (mapLayerTree), portanto o cálculo da posição precisa usar essa mesma ordem.
+      const siblings = current.nodes
+        .filter((node) => node.parentNodeId === newParentNodeId && node.id !== moving.id)
+        .sort(compareNodeOrder);
       const targetIndex = target ? siblings.findIndex((node) => node.id === target.id) : siblings.length;
       const insertAt =
         position === 'before'
@@ -595,21 +609,7 @@ export function StudioGeoExperience({
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relY = (e.clientY - rect.top) / rect.height;
-
-    let nextPosition: DropPosition;
-    if (targetNode.kind === 'GROUP') {
-      if (relY < 0.25) {
-        nextPosition = 'before';
-      } else if (relY > 0.75) {
-        nextPosition = 'after';
-      } else {
-        nextPosition = 'inside';
-      }
-    } else {
-      nextPosition = relY < 0.5 ? 'before' : 'after';
-    }
+    const nextPosition = dropPositionFor(targetNode, e);
 
     if (dropTargetId !== targetNode.id || dropPosition !== nextPosition) {
       setDropTargetId(targetNode.id);
@@ -644,7 +644,9 @@ export function StudioGeoExperience({
       return;
     }
 
-    const pos = dropPosition ?? (targetNode.kind === 'GROUP' ? 'inside' : 'after');
+    // O último dragover pode pertencer a outro elemento interno. Recalcula a intenção no próprio
+    // alvo que recebeu o drop para não aplicar uma posição defasada.
+    const pos = dropPositionFor(targetNode, e);
     moveNode(draggedNode.id, targetNode.id, pos);
     if (pos === 'inside') {
       setExpanded((prev) => new Set(prev).add(targetNode.id));

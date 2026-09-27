@@ -1,8 +1,9 @@
 // Estado React do controle de camadas do mapa. Preferências ficam por ID estável de ENTITY:
 // publicações novas preservam escolhas existentes e só aplicam defaultVisible a novos nós.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StudioGeoCatalog } from '../services/studioGeoApi';
+import { useSession } from './useSession';
 import {
   defaultMapLayerVisibility,
   groupVisibility,
@@ -25,23 +26,41 @@ export type UseMapLayers = {
 };
 
 export function useMapLayers(catalog: StudioGeoCatalog): UseMapLayers {
-  const [layers, setLayers] = useState<MapLayerVisibility>(() => readStoredLayers(catalog));
+  const { user } = useSession();
+  const userId = user?.id ?? null;
+  const [layers, setLayers] = useState<MapLayerVisibility>(() => readStoredLayers(catalog, userId));
   const catalogKey = catalog.publicationChecksum ?? (catalog.fallback ? 'fallback' : 'unpublished');
+  const initialMountRef = useRef(true);
+  const lastUserIdRef = useRef(userId);
+  const lastEnvironmentIdRef = useRef(catalog.environmentId);
 
   useEffect(() => {
+    // Quando o environmentId, o usuário ou o catálogo publicado mudam, reidrata do storage salvo para aquele escopo
+    const envChanged = lastEnvironmentIdRef.current !== catalog.environmentId;
+    const userChanged = lastUserIdRef.current !== userId;
+    lastEnvironmentIdRef.current = catalog.environmentId;
+    lastUserIdRef.current = userId;
+
     setLayers((current) => {
-      const reconciled = readStoredLayers(catalog);
+      const stored = readStoredLayers(catalog, userId);
+      if (initialMountRef.current || envChanged || userChanged) {
+        initialMountRef.current = false;
+        return stored;
+      }
+      const reconciled = { ...stored };
       const activeIds = new Set(mapLayerEntities(catalog).map((node) => node.id));
       for (const id of activeIds) {
         if (typeof current[id] === 'boolean') reconciled[id] = current[id];
       }
       return reconciled;
     });
-  }, [catalog, catalogKey]);
+  }, [catalog, catalogKey, userId]);
 
   useEffect(() => {
-    writeStoredLayers(layers, catalog.environmentId);
-  }, [layers, catalog.environmentId]);
+    // Evita sobrescrever storage enquanto o environmentId for provisório / pendente
+    if (catalog.environmentId === 'pending') return;
+    writeStoredLayers(layers, catalog.environmentId, userId);
+  }, [layers, catalog.environmentId, userId]);
 
   const toggleLayer = useCallback((id: MapLayerId) => {
     setLayers((current) => (id in current ? { ...current, [id]: !current[id] } : current));

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, MapPin } from 'lucide-react';
 import { usePlaceLabel } from '../hooks/usePlaceLabel';
 import { usePlaceSearch } from '../hooks/usePlaceSearch';
 
@@ -104,33 +104,7 @@ export function PlacePicker({
                     value?.id === option.id ? 'bg-app-accent-soft' : ''
                   }`}
                 >
-                  {option.kind && (
-                    <span
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] text-white text-[0.7rem] font-bold mt-0.5"
-                      style={{
-                        background:
-                          option.kind === 'CTO'
-                            ? '#1A9E7D'
-                            : option.kind === 'PI'
-                              ? '#8B7500'
-                              : option.kind === 'POP'
-                                ? '#004E89'
-                                : option.kind === 'CO'
-                                  ? '#9B59B6'
-                                  : '#5A5A5A',
-                      }}
-                    >
-                      {option.kind === 'PI'
-                        ? '📍'
-                        : option.kind === 'CTO'
-                          ? '🔧'
-                          : option.kind === 'POP'
-                            ? '🌐'
-                            : option.kind === 'CO'
-                              ? '🏢'
-                              : '📍'}
-                    </span>
-                  )}
+                  {option.kind && <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-app-muted" />}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[0.88rem] font-semibold text-app-text">
                       {option.label}

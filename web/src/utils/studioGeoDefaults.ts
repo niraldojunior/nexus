@@ -8,7 +8,6 @@ import type {
   StudioGeoScaleBandKey,
   StudioGeoVisualConfig,
 } from '../services/studioGeoApi';
-import { familyColor, CABLE_STROKE_WEIGHT } from './resourceIcon';
 
 export type ScaleBandOption = {
   key: StudioGeoScaleBandKey;
@@ -136,96 +135,18 @@ export function resolveScaleBandKey(scaleMeters: number | null | undefined): Stu
  */
 export function defaultPointVisualConfig(
   reference: StudioGeoEntityReference,
-  label?: string,
 ): StudioGeoPointVisualConfig {
-  const isStation =
-    reference.sourceId === 'legacy-stations' ||
-    reference.sourceId.toUpperCase() === 'CO' ||
-    (label?.toLowerCase().includes('estaç') ?? false);
-
-  const isPole =
-    reference.sourceId === 'legacy-pole' ||
-    reference.sourceId.toLowerCase().includes('pole') ||
-    (label?.toLowerCase().includes('poste') ?? false);
-
-  const isTower =
-    reference.sourceId === 'legacy-tower' ||
-    reference.sourceId.toLowerCase().includes('tower') ||
-    (label?.toLowerCase().includes('torre') ?? false);
-
-  const pointAppearance = {
-    color: defaultColorRule(
-      reference.category,
-      reference.category === 'LOCAL' ? '#8b5cf6' : '#10b981',
-    ),
-    opacity: 1,
-  };
-
-  if (isStation) {
-    // Estação: sempre visível em todas as escalas com tamanhos decrescentes
-    return {
-      geometryKind: 'POINT',
-      ...pointAppearance,
-      scaleBands: {
-        le5m: { visible: true, sizePx: 32 },
-        le10m: { visible: true, sizePx: 30 },
-        le20m: { visible: true, sizePx: 28 },
-        le50m: { visible: true, sizePx: 25 },
-        le100m: { visible: true, sizePx: 25 },
-        le500m: { visible: true, sizePx: 22 },
-        le1km: { visible: true, sizePx: 20 },
-        gt1km: { visible: true, sizePx: 16 },
-      },
-    };
-  }
-
-  if (isPole) {
-    // Postes: visíveis apenas até 20 m (detalhe)
-    return {
-      geometryKind: 'POINT',
-      ...pointAppearance,
-      scaleBands: {
-        le5m: { visible: true, sizePx: 22 },
-        le10m: { visible: true, sizePx: 20 },
-        le20m: { visible: true, sizePx: 18 },
-        le50m: { visible: false, sizePx: 16 },
-        le100m: { visible: false, sizePx: 14 },
-        le500m: { visible: false, sizePx: 12 },
-        le1km: { visible: false, sizePx: 10 },
-        gt1km: { visible: false, sizePx: 8 },
-      },
-    };
-  }
-
-  if (isTower) {
-    // Torres: visíveis até 500 m
-    return {
-      geometryKind: 'POINT',
-      ...pointAppearance,
-      scaleBands: {
-        le5m: { visible: true, sizePx: 30 },
-        le10m: { visible: true, sizePx: 28 },
-        le20m: { visible: true, sizePx: 25 },
-        le50m: { visible: true, sizePx: 22 },
-        le100m: { visible: true, sizePx: 20 },
-        le500m: { visible: true, sizePx: 16 },
-        le1km: { visible: false, sizePx: 14 },
-        gt1km: { visible: false, sizePx: 10 },
-      },
-    };
-  }
-
-  // Padrão de caixas e recursos ópticos pontuais (CDOE, CDOI, CEO, DIO): visíveis até 100m / 500m
   return {
     geometryKind: 'POINT',
-    ...pointAppearance,
+    color: defaultColorRule(reference.category, STUDIO_GEO_NEUTRAL_ICON_COLOR),
+    opacity: 1,
     scaleBands: {
-      le5m: { visible: true, sizePx: 32 },
-      le10m: { visible: true, sizePx: 30 },
-      le20m: { visible: true, sizePx: 25 },
-      le50m: { visible: true, sizePx: 20 },
-      le100m: { visible: true, sizePx: 15 },
-      le500m: { visible: true, sizePx: 10 },
+      le5m: { visible: true, sizePx: 28 },
+      le10m: { visible: true, sizePx: 26 },
+      le20m: { visible: true, sizePx: 22 },
+      le50m: { visible: true, sizePx: 18 },
+      le100m: { visible: true, sizePx: 14 },
+      le500m: { visible: false, sizePx: 12 },
       le1km: { visible: false, sizePx: 10 },
       gt1km: { visible: false, sizePx: 8 },
     },
@@ -248,46 +169,13 @@ const visibleAtAllScales = (strokeWidth: number) => ({
 
 export function defaultLineVisualConfig(
   reference: StudioGeoEntityReference,
-  label?: string,
 ): StudioGeoLineVisualConfig {
-  const isDuct =
-    reference.sourceId === 'legacy-duct' ||
-    reference.sourceId.toLowerCase().includes('duct') ||
-    (label?.toLowerCase().includes('duto') ?? false);
-
-  const isDrop =
-    reference.sourceId === 'legacy-drop-cable' ||
-    reference.sourceId.toLowerCase().includes('drop') ||
-    (label?.toLowerCase().includes('drop') ?? false);
-
-  if (isDuct) {
-    return {
-      geometryKind: 'LINE',
-      stroke: defaultColorRule(reference.category, '#64748b'),
-      strokeStyle: 'dashed',
-      opacity: 0.85,
-      scaleBands: visibleAtAllScales(2),
-    };
-  }
-
-  if (isDrop) {
-    const strokeWidth = CABLE_STROKE_WEIGHT.DropCable ?? 2;
-    return {
-      geometryKind: 'LINE',
-      stroke: defaultColorRule(reference.category, '#475569'),
-      strokeStyle: 'solid',
-      opacity: 0.9,
-      scaleBands: visibleAtAllScales(strokeWidth),
-    };
-  }
-
-  const strokeWidth = CABLE_STROKE_WEIGHT.DistributionCable ?? 3.5;
   return {
     geometryKind: 'LINE',
-    stroke: defaultColorRule(reference.category, familyColor.cableOsp ?? '#334155'),
+    stroke: defaultColorRule(reference.category, STUDIO_GEO_NEUTRAL_ICON_COLOR),
     strokeStyle: 'solid',
-    opacity: 0.95,
-    scaleBands: visibleAtAllScales(strokeWidth),
+    opacity: 1,
+    scaleBands: visibleAtAllScales(2),
   };
 }
 
@@ -327,9 +215,9 @@ export function defaultVisualConfigForEntity(
     reference.sourceId.includes('duct') ||
     (label && (label.toLowerCase().includes('cabo') || label.toLowerCase().includes('duto')))
   ) {
-    return defaultLineVisualConfig(reference, label);
+    return defaultLineVisualConfig(reference);
   }
-  return defaultPointVisualConfig(reference, label);
+  return defaultPointVisualConfig(reference);
 }
 
 /**
@@ -340,10 +228,10 @@ export function defaultVisualConfigForEntity(
 export function defaultVisualConfigForGeometry(
   geometryKind: StudioGeoVisualConfig['geometryKind'],
   reference: StudioGeoEntityReference,
-  label?: string,
+  _label?: string,
 ): StudioGeoVisualConfig {
-  if (geometryKind === 'POINT') return defaultPointVisualConfig(reference, label);
-  if (geometryKind === 'LINE') return defaultLineVisualConfig(reference, label);
+  if (geometryKind === 'POINT') return defaultPointVisualConfig(reference);
+  if (geometryKind === 'LINE') return defaultLineVisualConfig(reference);
   return defaultPolygonVisualConfig(reference.category);
 }
 

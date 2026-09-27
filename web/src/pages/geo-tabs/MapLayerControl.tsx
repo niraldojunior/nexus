@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Layers, X } from 'lucide-react';
 import type { StudioGeoCatalog, StudioGeoEntityNode } from '../../services/studioGeoApi';
+import { useSession } from '../../hooks/useSession';
 import {
   groupVisibility,
   MAP_LAYER_CATALOG_FALLBACK,
@@ -167,9 +168,13 @@ export function MapLayerControl({
   allVisible,
   scaleMeters,
 }: MapLayerControlProps) {
-  const [open, setOpen] = useState(() => readStoredLayerControlOpen(catalog.environmentId, false));
+  const { user } = useSession();
+  const userId = user?.id ?? null;
+  const [open, setOpen] = useState(() =>
+    readStoredLayerControlOpen(catalog.environmentId, false, userId),
+  );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() =>
-    readStoredExpandedGroups(catalog),
+    readStoredExpandedGroups(catalog, userId),
   );
 
   const panelId = useId();
@@ -177,7 +182,7 @@ export function MapLayerControl({
 
   const handleSetOpen = (nextOpen: boolean) => {
     setOpen(nextOpen);
-    writeStoredLayerControlOpen(nextOpen, catalog.environmentId);
+    writeStoredLayerControlOpen(nextOpen, catalog.environmentId, userId);
   };
 
   useEffect(() => {
@@ -199,7 +204,7 @@ export function MapLayerControl({
       } else {
         next.add(groupId);
       }
-      writeStoredExpandedGroups(next, catalog.environmentId);
+      writeStoredExpandedGroups(next, catalog.environmentId, userId);
       return next;
     });
   };

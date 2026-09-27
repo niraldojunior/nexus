@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom';
 import type { GeoStatus, GeoSpec, GeoSite } from '../services/geoApi';
 import { getJson, listGeoSites } from '../services/geoApi';
-import { siteKindFromSpec, siteKindLabel } from '../utils/placeLabel';
 import { siteStatusLabel } from '../utils/geoLabels';
 import {
   treeNodePoint,
@@ -54,7 +53,11 @@ import {
   type MapLayerVisibility,
   type MapSiteRole,
 } from '../utils/mapLayers';
-import type { StudioGeoEntityNode, StudioGeoPointVisualConfig } from '../services/studioGeoApi';
+import type {
+  StudioGeoCatalog,
+  StudioGeoEntityNode,
+  StudioGeoPointVisualConfig,
+} from '../services/studioGeoApi';
 import {
   operationalIconFactsForTreeNode,
   pointLayerForTreeNode,
@@ -86,18 +89,11 @@ import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../utils
 import { useGeoTree } from '../hooks/useGeoTree';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSession } from '../hooks/useSession';
-import {
-  resourceIconFor,
-  resourceIconDataUrl,
-  MARKER_ICON_SIZE,
-  CABLE_STROKE_WEIGHT,
-} from '../utils/resourceIcon';
+import { resourceIconFor, MARKER_ICON_SIZE, CABLE_STROKE_WEIGHT } from '../utils/resourceIcon';
 import { useResourceTypeVisualIdentities } from '../hooks/useResourceTypeVisualIdentities';
 import {
   selectionPinDataUrl,
   addressSourcePin,
-  siteIconDataUrl,
-  siteIconFor,
   SELECTION_PIN_ASPECT,
   SITE_ICON_SIZE,
 } from '../utils/siteIcon';
@@ -340,16 +336,11 @@ function buildPointMarkerVisual(
 ): { iconOptions: Record<string, unknown>; zIndex: number; title: string } {
   const facts = operationalIconFactsForTreeNode(node);
   if (!facts) throw new Error('Marcador operacional requer Resource ou Location.');
-  const siteKind =
-    node.kind === 'site'
-      ? siteKindFromSpec({ category: node.siteCategory, name: node.sublabel })
-      : undefined;
-  // Só a Central/Estação é referência permanente do mapa. Qualquer outro Site usa a régua
-  // de Resource; a forma e o glifo seguem sendo definidos pelo resolvedor comum.
-  const isStation = siteKind === 'CO';
-  const baseSize = node.kind === 'site' && isStation ? stationMarkerSize : resourceMarkerSize;
-  const selectedBoost = node.kind === 'site' && isStation ? 8 : 6;
-  const size = selected ? baseSize + selectedBoost : (pointStyle?.sizePx ?? baseSize);
+  // Elegibilidade e tamanho vêm da entidade publicada do Studio GEO. Quando não há
+  // configuração, ambos os domínios usam o fallback neutro de Resource, sem privilegiar
+  // códigos, nomes ou papéis de Local.
+  const baseSize = node.kind === 'site' ? stationMarkerSize : resourceMarkerSize;
+  const size = selected ? baseSize + 6 : (pointStyle?.sizePx ?? baseSize);
   const resolved = resolveOperationalIcon(facts, visualIdentityForTreeNode(node, catalog), {
     size,
     color: pointStyle?.color,
@@ -474,6 +465,7 @@ const DEFAULT_CENTER = BRAZIL_CENTER;
 const DEFAULT_ZOOM = BRAZIL_DEFAULT_ZOOM;
 // Aguarda a janela nativa de duplo clique antes de tratar clique simples no mapa.
 const MAP_SINGLE_CLICK_DELAY_MS = 500;
+const MAP_HOVER_DELAY_MS = 1_000;
 
 // Página da lista de locais no painel de Projeto (REQ-MOD01-017), quando ele já tem manchas
 // de concentração/dispersão geradas — o total real aparece via `project.siteCount`, não pelo
@@ -739,12 +731,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // reprocessar os N marcadores normais a cada clique (issue #72).
   const pinnedSelectedNode = useMemo(() => {
     if (!selectedNode?.geometry) return null;
-    const selectedIsStation =
-      selectedNode.kind === 'site' &&
-      siteKindFromSpec({ category: selectedNode.siteCategory, name: selectedNode.sublabel }) ===
-        'CO';
-    const selectedVisible =
-      selectedNode.kind === 'site' ? selectedIsStation || passiveInfraVisible : passiveInfraVisible;
+    const selectedVisible = selectedNode.kind === 'site' || passiveInfraVisible;
     if (!selectedVisible) return null;
     return mapNodes.some((node) => node.id === selectedNode.id) ? null : selectedNode;
   }, [selectedNode, passiveInfraVisible, mapNodes]);
@@ -1746,7 +1733,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     );
 
     if (node.kind === 'site') {
-      const kindOfSite = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
       // O pin do local é centrado na coordenada e cresce quando selecionado.
       const pinSize = SITE_ICON_SIZE + 8;
       const rows: Array<[string, string]> = [
@@ -1770,7 +1756,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         eyebrow:
           (node.siteSpecificationCode && siteSpecNameByCode.get(node.siteSpecificationCode)) ||
           node.sublabel ||
-          siteKindLabel[kindOfSite],
+          'Local',
         title: node.label,
         rows,
       };
@@ -2445,6 +2431,11 @@ export function GoogleMapPanel({
   const onSelectNodeRef = useRef(onSelectNode);
   const onHoverNodeRef = useRef(onHoverNode);
   const onViewportChangeRef = useRef(onViewportChange);
+  // O mapa só abre preview após uma permanência deliberada no mesmo alvo. O hover da árvore e
+  // dos painéis continua indo direto para `onHoverNode`, sem passar por este coordenador.
+  const mapHoverTargetIdRef = useRef<string | null>(null);
+  const mapHoverVisibleIdRef = useRef<string | null>(null);
+  const mapHoverTimerRef = useRef<number | null>(null);
   // O listener de `click` do mapa é atado uma única vez (ver o guard `mapRef.current` no
   // efeito de criação abaixo) — sem ref, ele ficaria preso para sempre à função (e ao
   // `pickingProjectSite` capturado nela) da primeira montagem, mesmo depois do usuário
@@ -2543,6 +2534,36 @@ export function GoogleMapPanel({
     }
   }, []);
 
+  // Agenda o preview só uma vez por alvo estável. Trocar/sair do alvo cancela a abertura
+  // pendente; se o cartão já estava aberto, fecha na hora para nunca ficar preso longe da linha.
+  const setMapHoverTarget = useCallback((node: GeoTreeNode | null) => {
+    const nextId = node?.id ?? null;
+    if (nextId === mapHoverTargetIdRef.current) return;
+    mapHoverTargetIdRef.current = nextId;
+    if (mapHoverTimerRef.current !== null) {
+      window.clearTimeout(mapHoverTimerRef.current);
+      mapHoverTimerRef.current = null;
+    }
+    if (mapHoverVisibleIdRef.current !== null) {
+      mapHoverVisibleIdRef.current = null;
+      onHoverNodeRef.current(null);
+    }
+    if (!node) return;
+    mapHoverTimerRef.current = window.setTimeout(() => {
+      mapHoverTimerRef.current = null;
+      if (mapHoverTargetIdRef.current !== nextId) return;
+      mapHoverVisibleIdRef.current = nextId;
+      onHoverNodeRef.current(node);
+    }, MAP_HOVER_DELAY_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (mapHoverTimerRef.current !== null) window.clearTimeout(mapHoverTimerRef.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (selectionActiveRef.current) clearPendingMapClick();
   }, [selectedNodeId, selectionActive, clearPendingMapClick]);
@@ -2554,6 +2575,7 @@ export function GoogleMapPanel({
   // selecionado, avisa o chamador uma vez (no mobile, encolhe a folha para peek).
   const handleManualNavigation = useCallback(() => {
     clearPendingMapClick();
+    setMapHoverTarget(null);
     closeBalloonRef.current();
     if (mapRef.current) cancelFlight(mapRef.current);
     flightActiveRef.current = false;
@@ -2561,7 +2583,7 @@ export function GoogleMapPanel({
       manualNavigationHandledRef.current = true;
       onManualNavigationRef.current?.();
     }
-  }, [clearPendingMapClick]);
+  }, [clearPendingMapClick, setMapHoverTarget]);
 
   useEffect(() => clearPendingMapClick, [clearPendingMapClick]);
 
@@ -2813,7 +2835,7 @@ export function GoogleMapPanel({
             const hitId = projectSiteHit?.id ?? null;
             if (hitId !== lastProjectSiteHoverId) {
               lastProjectSiteHoverId = hitId;
-              onHoverNodeRef.current(projectSiteHit);
+              setMapHoverTarget(projectSiteHit);
             }
           }
 
@@ -2840,8 +2862,16 @@ export function GoogleMapPanel({
             const hitId = hit ? mapTileFeatureNodeId(hit) : null;
             if (hitId !== lastInfraHoverId) {
               lastInfraHoverId = hitId;
-              onHoverNodeRef.current(hit ? mapTileFeatureToNode(hit) : null);
+              setMapHoverTarget(hit ? mapTileFeatureToNode(hit) : null);
             }
+          } else if (projectSiteHit) {
+            // A prioridade do Local também precisa limpar uma linha/recurso que estava em hover.
+            lastInfraHoverId = null;
+          } else {
+            // Overlay indisponível (ou acabou de ser desmontado): não deixa o último preview
+            // do canvas preso na tela.
+            lastInfraHoverId = null;
+            setMapHoverTarget(null);
           }
         };
         mapRef.current.addListener('mousemove', (event: GoogleMapMouseEvent) => {
@@ -3028,9 +3058,9 @@ export function GoogleMapPanel({
           onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
         );
         marker.addListener('mouseover', () =>
-          onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+          setMapHoverTarget(nodeByIdRef.current.get(node.id) ?? node),
         );
-        marker.addListener('mouseout', () => onHoverNodeRef.current(null));
+        marker.addListener('mouseout', () => setMapHoverTarget(null));
         markersRef.current.set(node.id, marker);
       }
       const markerForNode = markersRef.current.get(node.id);
@@ -3057,6 +3087,7 @@ export function GoogleMapPanel({
     mapVisualScaleMeters,
     mapLayerCatalog,
     assetDataUrls,
+    setMapHoverTarget,
   ]);
 
   // Troca de seleção: toca só os 1-2 marcadores cujo `selected` de fato mudou (o que estava
@@ -3165,9 +3196,9 @@ export function GoogleMapPanel({
         onSelectNodeRef.current(nodeByIdRef.current.get(pinnedNode.id) ?? pinnedNode),
       );
       marker.addListener('mouseover', () =>
-        onHoverNodeRef.current(nodeByIdRef.current.get(pinnedNode.id) ?? pinnedNode),
+        setMapHoverTarget(nodeByIdRef.current.get(pinnedNode.id) ?? pinnedNode),
       );
-      marker.addListener('mouseout', () => onHoverNodeRef.current(null));
+      marker.addListener('mouseout', () => setMapHoverTarget(null));
       pinnedMarkerRef.current = marker;
     } else {
       pinnedMarkerRef.current.setPosition({ lng, lat });
@@ -3182,6 +3213,7 @@ export function GoogleMapPanel({
     mapLayerCatalog,
     mapVisualScaleMeters,
     assetDataUrls,
+    setMapHoverTarget,
   ]);
 
   // Voo de câmera até o item/endereço em foco (hierarquia, busca, clique no mapa ou
@@ -3421,9 +3453,9 @@ export function GoogleMapPanel({
         onSelectNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
       );
       line.addListener('mouseover', () =>
-        onHoverNodeRef.current(nodeByIdRef.current.get(node.id) ?? node),
+        setMapHoverTarget(nodeByIdRef.current.get(node.id) ?? node),
       );
-      line.addListener('mouseout', () => onHoverNodeRef.current(null));
+      line.addListener('mouseout', () => setMapHoverTarget(null));
       cableRoutesRef.current.set(node.id, line);
       if (style?.strokeStyle === 'animated-dotted') animated.push({ line, style });
     }
@@ -3446,7 +3478,7 @@ export function GoogleMapPanel({
       }
     }, DROP_DASH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [mapsReady, nodes, mapLayerCatalog, mapVisualScaleMeters]);
+  }, [mapsReady, nodes, mapLayerCatalog, mapVisualScaleMeters, setMapHoverTarget]);
 
   // Simulação do drop: o traçado entre o endereço e a CDO escolhida na aba de
   // Viabilidade. Não é planta — é um estudo do que *seria* o cabo —, então tem desenho
@@ -3829,7 +3861,12 @@ export function GoogleMapPanel({
     return (
       <>
         <MapLoadingBar busy={busy} />
-        <FallbackMap nodes={nodes} draftAddress={draftAddress} onSelectNode={onSelectNode} />
+        <FallbackMap
+          nodes={nodes}
+          catalog={mapLayerCatalog}
+          draftAddress={draftAddress}
+          onSelectNode={onSelectNode}
+        />
       </>
     );
   }
@@ -3942,10 +3979,12 @@ function MapBalloonCard({ balloon }: { balloon: MapBalloon }) {
 // para a navegação continuar utilizável em ambiente sem a chave configurada.
 function FallbackMap({
   nodes,
+  catalog,
   draftAddress,
   onSelectNode,
 }: {
   nodes: GeoTreeNode[];
+  catalog: StudioGeoCatalog;
   draftAddress: DraftAddress | null;
   onSelectNode: (node: GeoTreeNode) => void;
 }) {
@@ -3956,21 +3995,11 @@ function FallbackMap({
         Google Maps.
       </div>
       {nodes.slice(0, 60).map((node, index) => {
-        const isSite = node.kind === 'site';
-        const icon = isSite
-          ? siteIconFor(
-              siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }),
-              node.status,
-            )
-          : resourceIconFor({
-              resourceType: node.resourceType ?? '',
-              status: node.status,
-              name: node.label,
-              sublabel: node.sublabel,
-            });
-        const url = isSite
-          ? siteIconDataUrl(icon as ReturnType<typeof siteIconFor>, { size: 40 })
-          : resourceIconDataUrl(icon as ReturnType<typeof resourceIconFor>, { size: 40 });
+        const facts = operationalIconFactsForTreeNode(node);
+        if (!facts) return null;
+        const icon = resolveOperationalIcon(facts, visualIdentityForTreeNode(node, catalog), {
+          size: 40,
+        });
         return (
           <button
             key={node.id}
@@ -3983,7 +4012,7 @@ function FallbackMap({
               top: `${30 + (index % 4) * 12}%`,
             }}
           >
-            <img src={url} alt={node.label} className="h-10 w-10" />
+            <img src={icon.url} alt={node.label} className="h-10 w-10" />
           </button>
         );
       })}

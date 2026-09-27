@@ -390,15 +390,37 @@ const STORAGE_KEY_EXPANDED_GROUPS_BASE = 'nexus.geo.mapLayerControl.expandedGrou
 // sem linha própria em nexus_environment (schema pré-v17 ou perfil nunca marcado).
 const LEGACY_MIGRATION_ENVIRONMENT_ID = 'legacy';
 
-const namespacedKey = (base: string, environmentId: string): string => `${base}::${environmentId}`;
+export const namespacedKey = (
+  base: string,
+  environmentId: string,
+  userId?: string | null,
+): string => (userId ? `${base}::${userId}::${environmentId}` : `${base}::${environmentId}`);
 
-const migrateLegacyKey = (base: string, environmentId: string): void => {
-  if (typeof window === 'undefined' || environmentId !== LEGACY_MIGRATION_ENVIRONMENT_ID) return;
+const migrateLegacyKey = (
+  base: string,
+  environmentId: string,
+  userId?: string | null,
+): void => {
+  if (typeof window === 'undefined') return;
   try {
-    const namespaced = namespacedKey(base, environmentId);
-    if (window.localStorage.getItem(namespaced) !== null) return;
-    const legacy = window.localStorage.getItem(base);
-    if (legacy !== null) window.localStorage.setItem(namespaced, legacy);
+    const userNamespaced = namespacedKey(base, environmentId, userId);
+    if (window.localStorage.getItem(userNamespaced) !== null) return;
+
+    // Se temos userId e já existia valor na chave sem userId (para o mesmo environment), copia para o escopo do usuário.
+    const envOnlyKey = namespacedKey(base, environmentId);
+    const envOnlyValue = window.localStorage.getItem(envOnlyKey);
+    if (userId && envOnlyValue !== null) {
+      window.localStorage.setItem(userNamespaced, envOnlyValue);
+      return;
+    }
+
+    // Migração de schema legado sem namespace
+    if (environmentId === LEGACY_MIGRATION_ENVIRONMENT_ID) {
+      const legacy = window.localStorage.getItem(base);
+      if (legacy !== null) {
+        window.localStorage.setItem(userNamespaced, legacy);
+      }
+    }
   } catch {
     // Storage indisponível: segue sem migrar, sem quebrar leitura/escrita.
   }
@@ -406,12 +428,17 @@ const migrateLegacyKey = (base: string, environmentId: string): void => {
 
 export function readStoredLayers(
   catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  userId?: string | null,
 ): MapLayerVisibility {
   const defaults = defaultMapLayerVisibility(catalog);
   if (typeof window === 'undefined') return defaults;
-  migrateLegacyKey(STORAGE_KEY_BASE, catalog.environmentId);
+  migrateLegacyKey(STORAGE_KEY_BASE, catalog.environmentId, userId);
   try {
-    const raw = window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE, catalog.environmentId));
+    const raw =
+      window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE, catalog.environmentId, userId)) ??
+      (userId
+        ? window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE, catalog.environmentId))
+        : null);
     if (!raw) return defaults;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return defaults;
@@ -427,11 +454,15 @@ export function readStoredLayers(
   }
 }
 
-export function writeStoredLayers(visibility: MapLayerVisibility, environmentId: string): void {
+export function writeStoredLayers(
+  visibility: MapLayerVisibility,
+  environmentId: string,
+  userId?: string | null,
+): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(
-      namespacedKey(STORAGE_KEY_BASE, environmentId),
+      namespacedKey(STORAGE_KEY_BASE, environmentId, userId),
       JSON.stringify(visibility),
     );
   } catch {
@@ -439,13 +470,21 @@ export function writeStoredLayers(visibility: MapLayerVisibility, environmentId:
   }
 }
 
-export function readStoredLayerControlOpen(environmentId: string, defaultOpen = false): boolean {
+export function readStoredLayerControlOpen(
+  environmentId: string,
+  defaultOpen = false,
+  userId?: string | null,
+): boolean {
   if (typeof window === 'undefined') return defaultOpen;
-  migrateLegacyKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId);
+  migrateLegacyKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId, userId);
   try {
-    const raw = window.localStorage.getItem(
-      namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId),
-    );
+    const raw =
+      window.localStorage.getItem(
+        namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId, userId),
+      ) ??
+      (userId
+        ? window.localStorage.getItem(namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId))
+        : null);
     if (raw === null) return defaultOpen;
     return raw === 'true';
   } catch {
@@ -453,11 +492,15 @@ export function readStoredLayerControlOpen(environmentId: string, defaultOpen = 
   }
 }
 
-export function writeStoredLayerControlOpen(open: boolean, environmentId: string): void {
+export function writeStoredLayerControlOpen(
+  open: boolean,
+  environmentId: string,
+  userId?: string | null,
+): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(
-      namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId),
+      namespacedKey(STORAGE_KEY_CONTROL_OPEN_BASE, environmentId, userId),
       open ? 'true' : 'false',
     );
   } catch {
@@ -467,15 +510,22 @@ export function writeStoredLayerControlOpen(open: boolean, environmentId: string
 
 export function readStoredExpandedGroups(
   catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  userId?: string | null,
 ): Set<string> {
   const allGroupIds = catalog.nodes.filter((n) => n.kind === 'GROUP').map((n) => n.id);
   const defaultSet = new Set(allGroupIds);
   if (typeof window === 'undefined') return defaultSet;
-  migrateLegacyKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId);
+  migrateLegacyKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId, userId);
   try {
-    const raw = window.localStorage.getItem(
-      namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId),
-    );
+    const raw =
+      window.localStorage.getItem(
+        namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId, userId),
+      ) ??
+      (userId
+        ? window.localStorage.getItem(
+            namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, catalog.environmentId),
+          )
+        : null);
     if (!raw) return defaultSet;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return defaultSet;
@@ -492,11 +542,12 @@ export function readStoredExpandedGroups(
 export function writeStoredExpandedGroups(
   expandedGroups: Set<string>,
   environmentId: string,
+  userId?: string | null,
 ): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(
-      namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, environmentId),
+      namespacedKey(STORAGE_KEY_EXPANDED_GROUPS_BASE, environmentId, userId),
       JSON.stringify(Array.from(expandedGroups)),
     );
   } catch {

@@ -1,13 +1,11 @@
 import { NATIVE_MAP_ICON_NODES } from './nativeMapIconNodes';
 import {
-  familyColor,
   renderIconSvg,
   resourceIconFor,
   toDataUrl,
   type IconNode,
   type IconShape,
 } from './resourceIcon';
-import { siteKindColor } from './siteIcon';
 
 export const NATIVE_MAP_ICON_INDUSTRIES = [
   'REAL_ESTATE',
@@ -45,7 +43,7 @@ type IconDefinition = Pick<NativeMapIcon, 'code' | 'name' | 'tags' | 'glyph' | '
 
 const industryColor: Record<NativeMapIconIndustry, string> = {
   REAL_ESTATE: '#8b5cf6',
-  TELECOM: familyColor.access,
+  TELECOM: '#2563eb',
   DATA_CENTER: '#64748b',
   ENERGY: '#f59e0b',
   OIL_GAS: '#0f766e',
@@ -226,49 +224,49 @@ const LEGACY_TELECOM_ICONS: IconDefinition[] = [
     name: 'Central Office',
     glyph: 'building-2',
     tags: ['estação', 'central', 'site'],
-    color: siteKindColor.CO,
+    color: '#2563eb',
   },
   {
     code: 'POP',
     name: 'Ponto de Presença',
     glyph: 'satellite-dish',
     tags: ['pop', 'site', 'presença'],
-    color: siteKindColor.POP,
+    color: '#2563eb',
   },
   {
     code: 'CTO',
     name: 'Caixa de Terminação Óptica',
     glyph: 'package',
     tags: ['cto', 'caixa', 'fibra'],
-    color: siteKindColor.CTO,
+    color: '#2563eb',
   },
   {
     code: 'PI',
     name: 'Ponto de Instalação',
     glyph: 'home',
     tags: ['pi', 'cliente', 'instalação'],
-    color: siteKindColor.PI,
+    color: '#2563eb',
   },
   {
     code: 'cdoe',
     name: 'CDOE externa',
     glyph: 'box',
     tags: ['cdoe', 'caixa', 'externa'],
-    color: familyColor.cpe,
+    color: '#2563eb',
   },
   {
     code: 'cdoi',
     name: 'CDOI interna',
     glyph: 'door-open',
     tags: ['cdoi', 'caixa', 'interna', 'edificação'],
-    color: familyColor.cpe,
+    color: '#2563eb',
   },
   {
     code: 'ceo',
     name: 'Caixa de Emenda Óptica',
     glyph: 'webhook',
     tags: ['ceo', 'emenda', 'fibra'],
-    color: familyColor.transport,
+    color: '#2563eb',
   },
 ];
 

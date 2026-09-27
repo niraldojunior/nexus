@@ -9,9 +9,7 @@ import type {
 } from '../services/studioGeoApi';
 import { mapLayerEntities } from './mapLayers';
 import { nativeMapIconDataUrl, nativeMapIconForCode } from './nativeMapIcons';
-import { siteKindFromSpec } from './placeLabel';
-import { resourceIconDataUrl, resourceIconFor, type IconShape } from './resourceIcon';
-import { siteIconDataUrl, siteIconFor } from './siteIcon';
+import { renderIconSvg, toDataUrl, type IconNode, type IconShape } from './resourceIcon';
 
 export type OperationalIconKind = 'resource' | 'site';
 export type OperationalIconContext = 'map' | 'glyph';
@@ -131,46 +129,38 @@ export function resolveOperationalIcon(
   return fallback;
 }
 
+const NEUTRAL_ICON_COLOR = '#334155';
+
+const GENERIC_SITE_NODE: IconNode = [
+  ['path', { d: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z' }],
+  ['path', { d: 'M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2' }],
+  ['path', { d: 'M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2' }],
+];
+
+const GENERIC_RESOURCE_NODE: IconNode = [
+  ['path', { d: 'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z' }],
+  ['path', { d: 'm3.3 7 8.7 5 8.7-5' }],
+  ['path', { d: 'M12 22V12' }],
+];
+
 function fallbackOperationalIcon(
   facts: OperationalIconFacts,
   options: OperationalIconOptions & { context: OperationalIconContext },
 ): ResolvedOperationalIcon {
-  if (facts.kind === 'site') {
-    const icon = siteIconFor(
-      siteKindFromSpec({
-        category: facts.siteCategory,
-        name: facts.sublabel ?? facts.name,
-        siteRole: facts.siteRole,
-      }),
-      facts.status,
-    );
-    return {
-      url: siteIconDataUrl(icon, {
+  const isSite = facts.kind === 'site';
+  const shape: IconShape = options.context === 'glyph' ? 'none' : isSite ? 'squircle' : 'circle';
+  const color = options.color ?? NEUTRAL_ICON_COLOR;
+
+  return {
+    url: toDataUrl(
+      renderIconSvg(isSite ? GENERIC_SITE_NODE : GENERIC_RESOURCE_NODE, color, {
         size: options.size,
-        badge: options.context === 'glyph' ? false : undefined,
-        color: options.color,
+        shape,
         opacity: options.opacity,
       }),
-      label: icon.label,
-      shape: options.context === 'glyph' ? 'none' : 'squircle',
-    };
-  }
-
-  const icon = resourceIconFor({
-    resourceType: facts.resourceType ?? '',
-    status: facts.status,
-    name: facts.name,
-    sublabel: facts.sublabel,
-  });
-  return {
-    url: resourceIconDataUrl(icon, {
-      size: options.size,
-      ring: options.context === 'glyph' ? false : undefined,
-      color: options.color,
-      opacity: options.opacity,
-    }),
-    label: icon.label,
-    shape: options.context === 'glyph' ? 'none' : 'circle',
+    ),
+    label: isSite ? 'Local' : 'Recurso',
+    shape,
   };
 }
 

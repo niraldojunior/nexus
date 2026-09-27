@@ -10,7 +10,7 @@ import {
   NEXUS_NETWIN_NAMESPACE,
 } from './identity.js';
 import { parseWktLineString, parseWktPoint } from '../../shared/utils/wkt.js';
-import { resolveLifecycleStatus } from '../netwin-migration-kit.js';
+import { resolveLifecycleStatus, merge } from '../netwin-migration-kit.js';
 import type { PhaseStats } from './types.js';
 
 export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseStats> {
@@ -33,6 +33,44 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
       lifecycleMap.set(s.ID_STATE, s.DESIGNATION ?? '');
     }
 
+    // 1b. Carrega especificações válidas do Nexus e garante fallback de integridade
+    const validSpecs = new Set<string>();
+    const defaultCableSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:DistributionCable');
+    const defaultRouteSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:Netwin Aerial Span');
+    const defaultEqSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:Netwin CDOE');
+
+    if (target) {
+      const specResult = await target.execute<{ ID: string }>(
+        `SELECT id FROM ${ctx.t('tmf_resource_specification')}`,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      for (const r of specResult.rows ?? []) {
+        validSpecs.add(r.ID);
+      }
+
+      if (!validSpecs.has(defaultCableSpecId)) {
+        const typeRes = await target.execute<{ ID: string }>(
+          `SELECT id FROM ${ctx.t('tmf_resource_type')} WHERE code = 'DistributionCable' FETCH FIRST 1 ROWS ONLY`,
+          [],
+          { outFormat: oracledb.OUT_FORMAT_OBJECT },
+        );
+        const distTypeId = typeRes.rows?.[0]?.ID ?? 'rt-distribution-cable';
+        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
+          id: defaultCableSpecId,
+          tenant_id: ctx.options.tenantId,
+          name: 'Cabo de Distribuição Padrão',
+          resource_type_id: distTypeId,
+          description: 'Especificação padrão de cabo óptico Netwin',
+          characteristics: JSON.stringify([
+            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
+          ]),
+        });
+        await target.execute('COMMIT');
+        validSpecs.add(defaultCableSpecId);
+      }
+    }
+
     const batchSize = ctx.options.batchSize;
     const maxRecords = ctx.options.maxRecords ?? Infinity;
 
@@ -45,7 +83,59 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     let cableScopeWhere = '';
     const scopeBinds: Record<string, string | number> = {};
 
+    const exchangeIds: number[] = [];
     if (ctx.options.scope.municipio) {
+      const muniUpper = ctx.options.scope.municipio.toUpperCase();
+      const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const exchRes = await source.execute<{ ID: number }>(
+        `SELECT l.ID
+         FROM NETWIN.LOCATION l
+         WHERE l.ID IN (
+           SELECT ID FROM NETWIN.LOCATION WHERE UPPER(NAME) = :muniClean OR UPPER(NAME) = :muniUpper
+           UNION
+           SELECT ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_PARENT IN (
+             SELECT ID FROM NETWIN.LOCATION WHERE UPPER(NAME) = :muniClean OR UPPER(NAME) = :muniUpper
+           )
+         )`,
+        { muniClean, muniUpper },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      for (const r of exchRes.rows ?? []) {
+        exchangeIds.push(r.ID);
+      }
+      console.log(`[Escopo] ${exchangeIds.length} localidades/estações encontradas para ${ctx.options.scope.municipio}: ${exchangeIds.join(', ')}`);
+    } else if (ctx.options.scope.uf) {
+      const ufUpper = ctx.options.scope.uf.toUpperCase();
+      const exchRes = await source.execute<{ ID: number }>(
+        `SELECT la2.ID_CHILD as ID
+         FROM NETWIN.LOCATION reg
+         JOIN NETWIN.LOCATION_ASSOC la1 ON la1.ID_PARENT = reg.ID
+         JOIN NETWIN.LOCATION_ASSOC la2 ON la2.ID_PARENT = la1.ID_CHILD
+         WHERE reg.NAME = :ufUpper`,
+        { ufUpper },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      for (const r of exchRes.rows ?? []) {
+        exchangeIds.push(r.ID);
+      }
+      console.log(`[Escopo] ${exchangeIds.length} localidades encontradas para a UF ${ufUpper}`);
+    }
+
+    if (exchangeIds.length > 0) {
+      const exchBinds = exchangeIds.map((id, idx) => {
+        scopeBinds[`ex${idx}`] = id;
+        return `:ex${idx}`;
+      }).join(',');
+
+      eqScopeJoin = '';
+      eqScopeWhere = `AND e.EXCHANGE_ID IN (${exchBinds})`;
+
+      routeScopeJoin = '';
+      routeScopeWhere = `AND r.EXCHANGE_ID IN (${exchBinds})`;
+
+      cableScopeJoin = '';
+      cableScopeWhere = `AND c.EXCHANGE_ID IN (${exchBinds})`;
+    } else if (ctx.options.scope.municipio) {
       const muniUpper = ctx.options.scope.municipio.toUpperCase();
       const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       scopeBinds.muniPattern1 = `%${muniUpper}%`;
@@ -171,12 +261,13 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         }
 
         const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${specName}`);
+        const finalSpecId = target && !validSpecs.has(specId) ? defaultEqSpecId : specId;
 
         resources.push({
           id: resId,
           tenant_id: ctx.options.tenantId,
           name,
-          resource_specification_id: specId,
+          resource_specification_id: finalSpecId,
           status,
           place_id: resId,
           place_type: 'GeographicLocation',
@@ -287,12 +378,13 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         const { status } = resolveLifecycleStatus(designation);
 
         const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:Netwin Aerial Span`);
+        const finalSpecId = target && !validSpecs.has(specId) ? defaultRouteSpecId : specId;
 
         resources.push({
           id: resId,
           tenant_id: ctx.options.tenantId,
           name,
-          resource_specification_id: specId,
+          resource_specification_id: finalSpecId,
           status,
           place_id: resId,
           place_type: 'GeographicLocation',
@@ -409,13 +501,14 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
         const specId = c.CAT_MODEL_ID
           ? deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:CABLE_MODEL:${c.CAT_MODEL_ID}`)
-          : deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:DistributionCable`);
+          : defaultCableSpecId;
+        const finalSpecId = target && !validSpecs.has(specId) ? defaultCableSpecId : specId;
 
         resources.push({
           id: cableId,
           tenant_id: ctx.options.tenantId,
           name,
-          resource_specification_id: specId,
+          resource_specification_id: finalSpecId,
           status,
           place_id: cableId,
           place_type: 'GeographicLocation',
@@ -449,14 +542,19 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
       }
 
       // Relacionamentos supportedBy de lances para o lote de cabos:
-      const binds = cableIds.map((_, idx) => `:${idx + 1}`).join(',');
-      const routeLinks = await source.execute<{ CABLE_ID: number; ROUTE_ID: number }>(
-        `SELECT CABLE_ID, ROUTE_ID FROM NETWIN.OSP_CABLE_X_ROUTE WHERE CABLE_ID IN (${binds})`,
-        cableIds,
-        { outFormat: oracledb.OUT_FORMAT_OBJECT },
-      );
+      const routeLinks: Array<{ CABLE_ID: number; ROUTE_ID: number }> = [];
+      for (let i = 0; i < cableIds.length; i += 900) {
+        const chunk = cableIds.slice(i, i + 900);
+        const binds = chunk.map((_, idx) => `:${idx + 1}`).join(',');
+        const linkResult = await source.execute<{ CABLE_ID: number; ROUTE_ID: number }>(
+          `SELECT CABLE_ID, ROUTE_ID FROM NETWIN.OSP_CABLE_X_ROUTE WHERE CABLE_ID IN (${binds})`,
+          chunk,
+          { outFormat: oracledb.OUT_FORMAT_OBJECT },
+        );
+        if (linkResult.rows) routeLinks.push(...linkResult.rows);
+      }
 
-      for (const link of routeLinks.rows ?? []) {
+      for (const link of routeLinks) {
         relationships.push({
           resource_from_id: netwinCableId(link.CABLE_ID),
           resource_to_id: netwinRouteId(link.ROUTE_ID),

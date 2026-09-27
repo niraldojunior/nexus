@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StudioGeoExperience } from './StudioGeoExperience';
 import * as studioApi from '../../services/studioApi';
@@ -207,7 +207,7 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     expect(pole?.kind).toBe('ENTITY');
     expect(pole?.kind === 'ENTITY' && pole.visualConfig).toMatchObject({
       geometryKind: 'POINT',
-      scaleBands: { le50m: { visible: false } },
+      scaleBands: { le50m: { visible: true } },
     });
     expect(station?.kind).toBe('ENTITY');
     expect(station?.kind === 'ENTITY' && station.visualConfig).toMatchObject({
@@ -284,7 +284,7 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     expect(JSON.stringify(captured)).not.toContain('visualIdentity');
   });
 
-  it('usa o ícone padrão do ResourceType quando não tem customização', async () => {
+  it('usa fallback neutro quando o ResourceType não tem identidade visual', async () => {
     const resourceNode: StudioGeoNode = {
       id: 'cdoi',
       kind: 'ENTITY',
@@ -332,9 +332,11 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
 
     render(<StudioGeoExperience canEdit isEditing />);
 
-    await waitFor(() =>
-      expect(document.querySelector('img[src*="m7.5%204.27%209%205.15"]')).not.toBeNull(),
-    );
+    await waitFor(() => {
+      const preview = document.querySelector('img[alt=""]');
+      expect(preview).not.toBeNull();
+      expect(decodeURIComponent(preview?.getAttribute('src') ?? '')).not.toContain('m7.5 4.27 9 5.15');
+    });
   });
 
   it('clicar num nó já selecionado desmarca e volta ao placeholder de seleção', async () => {
@@ -393,5 +395,78 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     // "Novo Grupo" deve estar no mesmo nível de topo que "Locais", não aninhado sob ele.
     expect(within(tree).getByText('Novo Grupo')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Novo Grupo' })).toBeInTheDocument();
+  });
+
+  it('reordena pelo sortOrder visual, não pela ordem física do snapshot', async () => {
+    const entity = (id: string, label: string, sortOrder: number): StudioGeoNode => ({
+      id,
+      kind: 'ENTITY',
+      parentNodeId: null,
+      label,
+      sortOrder,
+      active: true,
+      defaultVisible: true,
+      entity: {
+        category: 'RESOURCE',
+        sourceDomain: 'resource-model',
+        sourceType: 'RESOURCE_TYPE',
+        sourceId: id,
+      },
+    });
+    const nodes = [
+      entity('building', 'Prédio', 30),
+      entity('cable', 'Cabo', 20),
+      entity('station', 'Estação', 10),
+    ];
+    let captureSnapshot: (() => Promise<Record<string, unknown>>) | null = null;
+    vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(nodes));
+
+    render(
+      <StudioGeoExperience
+        canEdit
+        isEditing
+        onRegisterCaptureInitialSnapshot={(capture) => {
+          captureSnapshot = capture;
+        }}
+      />,
+    );
+
+    const dataTransfer = { effectAllowed: 'move', setData: vi.fn() } as unknown as DataTransfer;
+    const tree = await screen.findByRole('tree', { name: 'Hierarquia de Camadas' });
+    const building = within(tree).getByText('Prédio');
+    const station = within(tree).getByText('Estação');
+    const buildingRow = building.closest('[role="button"]');
+    const stationRow = station.closest('[role="button"]');
+    expect(buildingRow).not.toBeNull();
+    expect(stationRow).not.toBeNull();
+    vi.spyOn(stationRow!, 'getBoundingClientRect').mockReturnValue({
+      bottom: 100,
+      height: 100,
+      left: 0,
+      right: 200,
+      toJSON: () => ({}),
+      top: 0,
+      width: 200,
+      x: 0,
+      y: 0,
+    });
+
+    fireEvent.dragStart(buildingRow!, { dataTransfer });
+    fireEvent.dragOver(stationRow!, { dataTransfer, clientY: 80 });
+    fireEvent.drop(stationRow!, { dataTransfer, clientY: 80 });
+
+    await waitFor(() => {
+      const labels = Array.from(tree.querySelectorAll('[role="button"] span[title]'))
+        .map((element) => element.textContent)
+        .filter(Boolean);
+      expect(labels).toEqual(['Estação', 'Prédio', 'Cabo']);
+    });
+    await waitFor(() => expect(captureSnapshot).not.toBeNull());
+    const captured = (await captureSnapshot!()) as { nodes: StudioGeoNode[] };
+    expect(captured.nodes.map((node) => [node.id, node.sortOrder])).toEqual([
+      ['building', 20],
+      ['cable', 30],
+      ['station', 10],
+    ]);
   });
 });

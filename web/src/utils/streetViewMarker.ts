@@ -1,21 +1,22 @@
-import { resourceIconDataUrl, resourceIconFor, type IconResourceLike } from './resourceIcon';
-import { selectionPinDataUrl, siteIconDataUrl, siteIconFor } from './siteIcon';
-import { siteKindFromSpec } from './placeLabel';
+import type { IconResourceLike } from './resourceIcon';
+import type { VisualIdentity } from '../services/studioGeoApi';
+import { resolveOperationalIcon } from './pointIconPreview';
+import { selectionPinDataUrl } from './siteIcon';
 import type { StreetViewMarker } from './streetViewPanorama';
 
 const STREET_VIEW_MARKER_SIZE = 40;
 
 export function siteStreetViewMarker(
   site: { name: string; status?: string },
-  spec: { category?: string; name?: string } | undefined,
+  spec: { category?: string; name?: string; visualIdentity?: VisualIdentity } | undefined,
   point: [number, number],
 ): StreetViewMarker {
-  const icon = siteIconFor(siteKindFromSpec(spec), site.status);
-  return {
-    point,
-    title: site.name,
-    iconUrl: siteIconDataUrl(icon, { size: STREET_VIEW_MARKER_SIZE }),
-  };
+  const icon = resolveOperationalIcon(
+    { kind: 'site', siteCategory: spec?.category, name: site.name, sublabel: spec?.name, status: site.status },
+    spec?.visualIdentity,
+    { size: STREET_VIEW_MARKER_SIZE },
+  );
+  return { point, title: site.name, iconUrl: icon.url! };
 }
 
 // Endereço resolvido pela busca (ver AddressDetailPanel) — usa o mesmo alfinete que
@@ -35,16 +36,18 @@ export function addressStreetViewMarker(address: {
 export function resourceStreetViewMarker(
   resource: IconResourceLike & { label: string },
   point: [number, number],
+  visualIdentity?: VisualIdentity,
 ): StreetViewMarker {
-  const icon = resourceIconFor({
-    resourceType: resource.resourceType ?? '',
-    status: resource.status,
-    name: resource.label,
-    sublabel: resource.sublabel,
-  });
-  return {
-    point,
-    title: resource.label,
-    iconUrl: resourceIconDataUrl(icon, { size: STREET_VIEW_MARKER_SIZE }),
-  };
+  const icon = resolveOperationalIcon(
+    {
+      kind: 'resource',
+      resourceType: resource.resourceType,
+      status: resource.status,
+      name: resource.label,
+      sublabel: resource.sublabel,
+    },
+    visualIdentity,
+    { size: STREET_VIEW_MARKER_SIZE },
+  );
+  return { point, title: resource.label, iconUrl: icon.url! };
 }

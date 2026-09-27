@@ -62,6 +62,37 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
 
   const t = makeTablePrefixer(options.targetPrefix);
 
+  if (targetPool && options.tenantId === 'default') {
+    try {
+      const testConn = await targetPool.getConnection();
+      try {
+        const userRes = await testConn.execute<{ TENANT_ID: string }>(
+          `SELECT tenant_id FROM ${t('users')} WHERE tenant_id IS NOT NULL AND tenant_id <> 'default' FETCH FIRST 1 ROWS ONLY`,
+          [],
+          { outFormat: oracledb.OUT_FORMAT_OBJECT },
+        );
+        if (userRes.rows?.[0]?.TENANT_ID) {
+          options.tenantId = userRes.rows[0].TENANT_ID;
+          console.log(`[Auto-Detect] Tenant ID detectado da instância: ${options.tenantId}`);
+        } else {
+          const catRes = await testConn.execute<{ TENANT_ID: string }>(
+            `SELECT tenant_id FROM ${t('tmf_resource_catalog')} WHERE tenant_id IS NOT NULL AND tenant_id <> 'default' FETCH FIRST 1 ROWS ONLY`,
+            [],
+            { outFormat: oracledb.OUT_FORMAT_OBJECT },
+          );
+          if (catRes.rows?.[0]?.TENANT_ID) {
+            options.tenantId = catRes.rows[0].TENANT_ID;
+            console.log(`[Auto-Detect] Tenant ID detectado via catálogo: ${options.tenantId}`);
+          }
+        }
+      } finally {
+        await testConn.close();
+      }
+    } catch {
+      // Tabelas podem não existir se for um target novo
+    }
+  }
+
   return {
     options,
     t,

@@ -16,8 +16,7 @@
 
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { buildFastProjection } from './CoverageOverlay';
-import { siteIconDataUrl, siteIconFor } from '../../utils/siteIcon';
-import { siteKindFromSpec } from '../../utils/placeLabel';
+import { resolveOperationalIcon } from '../../utils/pointIconPreview';
 import type { ProjectSite } from '../../services/geoProjectApi';
 
 type Maps = GoogleMapsApi['maps'];
@@ -193,11 +192,20 @@ export function createProjectSiteOverlay(maps: Maps, map: GoogleMapInstance): Pr
       const local = project(lng, lat);
       if (!local) return;
       const [x, y] = local;
-      const kind = siteKindFromSpec({ category: site.siteCategory, name: site.sublabel });
-      const icon = siteIconFor(kind, site.status);
-      const size = kind === 'CO' ? siteMarkerSize : resourceMarkerSize;
+      const size = resourceMarkerSize ?? siteMarkerSize;
       if (size === null) return;
-      const img = loadImage(siteIconDataUrl(icon, { size }));
+      const icon = resolveOperationalIcon(
+        {
+          kind: 'site',
+          siteCategory: site.siteCategory,
+          name: site.label,
+          sublabel: site.sublabel,
+          status: site.status,
+        },
+        undefined,
+        { size },
+      );
+      const img = icon.url ? loadImage(icon.url) : null;
       // Âncora central — mesma regra de buildPointMarkerVisual/InfraOverlay.drawSitePoint.
       if (img) context.drawImage(img, x - size / 2, y - size / 2, size, size);
       drawnPoints.push({ x, y, site });

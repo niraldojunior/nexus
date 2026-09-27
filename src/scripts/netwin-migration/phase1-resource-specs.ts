@@ -8,37 +8,46 @@ export type ResourceTypeItem = {
   code: string;
   name: string;
   description?: string;
+  mapPresence?: boolean;
+  geometryKind?: 'POINT' | 'LINE' | 'POLYGON';
 };
 
 export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
   // Equipamentos Ópticos de Acesso / Planta Externa
-  { code: 'category:CDOE', name: 'CDOE', description: 'Caixa de Distribuição Óptica Externa' },
-  { code: 'category:CDOI', name: 'CDOI', description: 'Caixa de Distribuição Óptica Interna' },
-  { code: 'SpliceClosure', name: 'Caixa de Emenda Óptica', description: 'CEO / CEOS de fusão óptica' },
-  { code: 'OpticalNode', name: 'Nó Óptico', description: 'Nó óptico de transição ou terminação' },
-  { code: 'Splitter', name: 'Splitter Óptico', description: 'Divisor óptico passivo (1xN ou 2xN)' },
-  { code: 'DIO', name: 'Distribuidor Interno Óptico', description: 'Bastidor ou bandeja óptica (ODF)' },
-  { code: 'CTO', name: 'Caixa de Terminação Óptica', description: 'Terminação óptica de cliente / rede' },
+  { code: 'category:CDOE', name: 'CDOE', description: 'Caixa de Distribuição Óptica Externa', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'category:CDOI', name: 'CDOI', description: 'Caixa de Distribuição Óptica Interna', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'SpliceClosure', name: 'Caixa de Emenda Óptica', description: 'CEO / CEOS de fusão óptica', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'OpticalNode', name: 'Nó Óptico', description: 'Nó óptico de transição ou terminação', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'Splitter', name: 'Splitter Óptico', description: 'Divisor óptico passivo (1xN ou 2xN)', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'DIO', name: 'Distribuidor Interno Óptico', description: 'Bastidor ou bandeja óptica (ODF)', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'CTO', name: 'Caixa de Terminação Óptica', description: 'Terminação óptica de cliente / rede', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'OLT', name: 'OLT', description: 'Terminal de Linha Óptica' },
+  { code: 'ONT', name: 'ONT', description: 'Terminal de Rede Óptica' },
 
   // Cabos Ópticos
-  { code: 'BackboneCable', name: 'Cabo Backbone', description: 'Cabo tronco / transporte (>= 96 FO)' },
-  { code: 'DistributionCable', name: 'Cabo de Distribuição', description: 'Cabo de distribuição (12 a 72 FO)' },
-  { code: 'DropCable', name: 'Cabo Drop', description: 'Cabo drop de atendimento ao assinante (< 12 FO)' },
+  { code: 'BackboneCable', name: 'Cabo Backbone', description: 'Cabo tronco / transporte (>= 96 FO)', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'DistributionCable', name: 'Cabo de Distribuição', description: 'Cabo de distribuição (12 a 72 FO)', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'DropCable', name: 'Cabo Drop', description: 'Cabo drop de atendimento ao assinante (< 12 FO)', mapPresence: true, geometryKind: 'LINE' },
 
   // Infraestrutura Civil e Vias
-  { code: 'Pole', name: 'Poste', description: 'Poste da rede aérea' },
-  { code: 'Manhole', name: 'Caixa Subterrânea', description: 'Caixa de passagem ou câmara subterrânea' },
-  { code: 'Duct', name: 'Duto Subterrâneo', description: 'Duto ou duto canalizado para cabos' },
-  { code: 'AerialSpan', name: 'Lance Aéreo', description: 'Trecho aéreo de sustentação de cabos' },
-  { code: 'BuriedSpan', name: 'Lance Enterrado', description: 'Trecho diretamente enterrado de cabos' },
-  { code: 'InnerSpan', name: 'Lance Interno', description: 'Trecho interno em esteiramento ou tubulação' },
-  { code: 'OtherSpan', name: 'Lance (Outro)', description: 'Outro tipo de via de infraestrutura' },
-  { code: 'Tower', name: 'Torre', description: 'Torre de telecomunicações' },
-  { code: 'Pedestal', name: 'Pedestal', description: 'Armário baixo de calçada para distribuição' },
+  { code: 'Pole', name: 'Poste', description: 'Poste da rede aérea', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'Manhole', name: 'Caixa Subterrânea', description: 'Caixa de passagem ou câmara subterrânea', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'Duct', name: 'Duto Subterrâneo', description: 'Duto ou duto canalizado para cabos', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'AerialSpan', name: 'Lance Aéreo', description: 'Trecho aéreo de sustentação de cabos', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'BuriedSpan', name: 'Lance Enterrado', description: 'Trecho diretamente enterrado de cabos', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'InnerSpan', name: 'Lance Interno', description: 'Trecho interno em esteiramento ou tubulação', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'OtherSpan', name: 'Lance (Outro)', description: 'Outro tipo de via de infraestrutura', mapPresence: true, geometryKind: 'LINE' },
+  { code: 'Tower', name: 'Torre', description: 'Torre de telecomunicações', mapPresence: true, geometryKind: 'POINT' },
+  { code: 'Pedestal', name: 'Pedestal', description: 'Armário baixo de calçada para distribuição', mapPresence: true, geometryKind: 'POINT' },
   { code: 'RisingTube', name: 'Tubo de Subida', description: 'Tubo de subida lateral de poste ou parede' },
   { code: 'CableTunnel', name: 'Túnel de Cabos', description: 'Galeria ou túnel de cabos de central' },
   { code: 'IronPipe', name: 'Tubo de Ferro', description: 'Tubulação metálica de proteção' },
   { code: 'SupportBracket', name: 'Suporte / Braço', description: 'Braço ou suporte de fixação em poste' },
+
+  // Equipamentos de Transporte e Core
+  { code: 'Router', name: 'Router', description: 'Roteador de borda ou core' },
+  { code: 'Switch', name: 'Switch', description: 'Switch de agregação' },
+  { code: 'Rack', name: 'Rack', description: 'Bastidor ou rack de equipamentos' },
 ];
 
 export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<PhaseStats> {
@@ -51,12 +60,25 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
   try {
     const resourceTypeIdByCode = new Map<string, string>();
 
-    // 1. Cadastra todos os ResourceTypes canônicos
-    for (const rt of CANONICAL_RESOURCE_TYPES) {
-      const typeId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_TYPE:${ctx.options.tenantId}:${rt.code}`);
-      resourceTypeIdByCode.set(rt.code, typeId);
+    // 1. Carrega ResourceTypes pré-existentes do tenant para reutilizar IDs
+    if (target) {
+      const existingTypes = await target.execute<{ ID: string; CODE: string }>(
+        `SELECT id, code FROM ${ctx.t('tmf_resource_type')} WHERE tenant_id = :1`,
+        [ctx.options.tenantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      for (const row of existingTypes.rows ?? []) {
+        resourceTypeIdByCode.set(row.CODE, row.ID);
+      }
 
-      if (target) {
+      // Cadastra/atualiza todos os ResourceTypes canônicos
+      for (const rt of CANONICAL_RESOURCE_TYPES) {
+        let typeId = resourceTypeIdByCode.get(rt.code);
+        if (!typeId) {
+          typeId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_TYPE:${ctx.options.tenantId}:${rt.code}`);
+          resourceTypeIdByCode.set(rt.code, typeId);
+        }
+
         await merge(target, ctx.t, 'tmf_resource_type', ['tenant_id', 'code'], {
           id: typeId,
           tenant_id: ctx.options.tenantId,
@@ -64,9 +86,11 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           name: rt.name,
           status: 'active',
           description: rt.description ?? null,
+          map_presence: rt.mapPresence ? 1 : 0,
+          ...(rt.geometryKind ? { geometry_kind: rt.geometryKind } : {}),
         });
+        stats.loaded++;
       }
-      stats.loaded++;
     }
 
     // 2. Especificações de Splitters (razões de divisão)
@@ -76,7 +100,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       const splitterTypeId = resourceTypeIdByCode.get('Splitter')!;
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_resource_specification', ['tenant_id', 'name'], {
+        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
           id: specId,
           tenant_id: ctx.options.tenantId,
           name: specName,
@@ -120,7 +144,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${b.name}`);
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_resource_specification', ['tenant_id', 'name'], {
+        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
           id: specId,
           tenant_id: ctx.options.tenantId,
           name: b.name,
@@ -134,7 +158,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       stats.loaded++;
     }
 
-    // 4. Modelos Reais de Cabos de NETWIN.CABLE_MODEL / REC_CAT_CABOS
+    // 4. Modelos Reais de Cabos de NETWIN.REC_CAT_CABOS
     console.log('Consultando modelos de cabos em NETWIN...');
     const cableModels = await source.execute<{
       ID: number;
@@ -157,7 +181,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:CABLE_MODEL:${cm.ID}`);
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_resource_specification', ['tenant_id', 'name'], {
+        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
           id: specId,
           tenant_id: ctx.options.tenantId,
           name: nome,
@@ -173,7 +197,139 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       stats.loaded++;
     }
 
+    // 5. Carga de Catálogo e Árvore de Nós no Studio (tmf_resource_catalog & tmf_resource_catalog_node)
     if (target) {
+      console.log('Garantindo Catálogo de Recursos e Árvore do Studio...');
+
+      // Resolve o catálogo padrão do tenant
+      let catalogId: string | null = null;
+      const catRes = await target.execute<{ ID: string }>(
+        `SELECT id FROM ${ctx.t('tmf_resource_catalog')} WHERE tenant_id = :1 AND is_default = 1 FETCH FIRST 1 ROWS ONLY`,
+        [ctx.options.tenantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      catalogId = catRes.rows?.[0]?.ID ?? null;
+
+      if (!catalogId) {
+        const anyCat = await target.execute<{ ID: string }>(
+          `SELECT id FROM ${ctx.t('tmf_resource_catalog')} WHERE tenant_id = :1 FETCH FIRST 1 ROWS ONLY`,
+          [ctx.options.tenantId],
+          { outFormat: oracledb.OUT_FORMAT_OBJECT },
+        );
+        catalogId = anyCat.rows?.[0]?.ID ?? null;
+      }
+
+      if (!catalogId) {
+        catalogId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `CATALOG:${ctx.options.tenantId}`);
+        await merge(target, ctx.t, 'tmf_resource_catalog', ['id'], {
+          id: catalogId,
+          tenant_id: ctx.options.tenantId,
+          code: 'default-catalog',
+          name: 'Catálogo de Recursos',
+          description: 'Catálogo principal de recursos de rede',
+          status: 'active',
+          is_default: 1,
+          sort_order: 0,
+        });
+      }
+
+      // Mapeamento de nós ativos existentes para não violar a constraint única
+      const existingNodes = await target.execute<{ ID: string; CODE: string; RESOURCE_TYPE_ID: string | null }>(
+        `SELECT id, code, resource_type_id FROM ${ctx.t('tmf_resource_catalog_node')} WHERE tenant_id = :1 AND catalog_id = :2`,
+        [ctx.options.tenantId, catalogId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const existingNodeIdByCode = new Map<string, string>();
+      const existingNodeIdByTypeId = new Map<string, string>();
+      for (const row of existingNodes.rows ?? []) {
+        if (row.CODE) existingNodeIdByCode.set(row.CODE, row.ID);
+        if (row.RESOURCE_TYPE_ID) existingNodeIdByTypeId.set(row.RESOURCE_TYPE_ID, row.ID);
+      }
+
+      // Estrutura hierárquica de grupos do Studio
+      const catalogHierarchy: Array<{
+        groupCode: string;
+        groupName: string;
+        sortOrder: number;
+        types: string[];
+      }> = [
+        {
+          groupCode: 'grp-equipamentos-opticos',
+          groupName: 'Equipamentos Ópticos e Acesso',
+          sortOrder: 10,
+          types: ['category:CDOE', 'category:CDOI', 'SpliceClosure', 'OpticalNode', 'Splitter', 'DIO', 'CTO', 'OLT', 'ONT'],
+        },
+        {
+          groupCode: 'grp-cabos-opticos',
+          groupName: 'Cabos Ópticos',
+          sortOrder: 20,
+          types: ['BackboneCable', 'DistributionCable', 'DropCable'],
+        },
+        {
+          groupCode: 'grp-infraestrutura-civil',
+          groupName: 'Infraestrutura Civil e Vias',
+          sortOrder: 30,
+          types: [
+            'Pole', 'Manhole', 'Duct', 'AerialSpan', 'BuriedSpan', 'InnerSpan', 'OtherSpan',
+            'Tower', 'Pedestal', 'RisingTube', 'CableTunnel', 'IronPipe', 'SupportBracket',
+          ],
+        },
+        {
+          groupCode: 'grp-equipamentos-core',
+          groupName: 'Equipamentos de Transporte e Core',
+          sortOrder: 40,
+          types: ['Router', 'Switch', 'Rack'],
+        },
+      ];
+
+      for (const grp of catalogHierarchy) {
+        const grpNodeId =
+          existingNodeIdByCode.get(grp.groupCode) ??
+          deterministicUuid(NEXUS_NETWIN_NAMESPACE, `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${grp.groupCode}`);
+
+        await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+          id: grpNodeId,
+          tenant_id: ctx.options.tenantId,
+          catalog_id: catalogId,
+          parent_node_id: null,
+          code: grp.groupCode,
+          name: grp.groupName,
+          kind: 'GROUP',
+          resource_type_id: null,
+          status: 'active',
+          sort_order: grp.sortOrder,
+        });
+
+        let leafIndex = 0;
+        for (const typeCode of grp.types) {
+          const typeId = resourceTypeIdByCode.get(typeCode);
+          if (!typeId) continue;
+
+          const typeDef = CANONICAL_RESOURCE_TYPES.find((t) => t.code === typeCode);
+          const typeName = typeDef?.name ?? typeCode;
+
+          // Se já houver nó para este typeId, reaproveita seu ID para respeitar unicidade
+          const leafNodeId =
+            existingNodeIdByTypeId.get(typeId) ??
+            existingNodeIdByCode.get(typeCode) ??
+            deterministicUuid(NEXUS_NETWIN_NAMESPACE, `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${typeCode}`);
+
+          await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+            id: leafNodeId,
+            tenant_id: ctx.options.tenantId,
+            catalog_id: catalogId,
+            parent_node_id: grpNodeId,
+            code: typeCode,
+            name: typeName,
+            kind: 'RESOURCE_TYPE',
+            resource_type_id: typeId,
+            status: 'active',
+            sort_order: leafIndex * 10,
+          });
+          leafIndex++;
+        }
+      }
+
       await target.execute('COMMIT');
     }
 

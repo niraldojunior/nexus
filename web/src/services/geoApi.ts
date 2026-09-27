@@ -171,6 +171,11 @@ export type ContainmentImpactResult = {
   blocking: boolean;
 };
 
+export type GeoSiteSpecificationInstanceCount = {
+  specificationId: string;
+  instanceCount: number;
+};
+
 export async function createGeoSpec(input: CreateGeoSpecInput): Promise<GeoSpec> {
   return postJson<GeoSpec>('/v1/geo/site-specifications', input);
 }
@@ -341,6 +346,10 @@ export const terminateGeoLocation = (id: string) =>
 export const getGeoLocationReferences = (id: string) =>
   getJson<GeoLocationReferences>(`/v1/geo/locations/${encodeURIComponent(id)}/references`);
 export const listGeoSiteSpecifications = () => getJson<GeoSpec[]>('/v1/geo/site-specifications');
+export const getGeoSiteSpecificationInstanceCount = (id: string) =>
+  getJson<GeoSiteSpecificationInstanceCount>(
+    `/v1/geo/site-specifications/${encodeURIComponent(id)}/instance-count`,
+  );
 export const getGeoSite = (id: string) =>
   getJsonOrUndefined<GeoSite>(`/v1/geo/sites/${encodeURIComponent(id)}`);
 export const getGeoAddress = (id: string) =>

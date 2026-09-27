@@ -26,6 +26,15 @@ describe('distanceToSegment', () => {
   });
 });
 
+describe('line hit threshold', () => {
+  it('preserva a distância real acima do raio de captura', () => {
+    const distance = Math.min(Number.POSITIVE_INFINITY, distanceToSegment(5, 20, [0, 0], [10, 0]));
+
+    expect(distance).toBe(20);
+    expect(distance <= 7).toBe(false);
+  });
+});
+
 describe('resourcePointHitCenter', () => {
   it('alinha o alvo ao centro visual do ícone ancorado no canto inferior-esquerdo', () => {
     expect(resourcePointHitCenter(100, 200, 26)).toEqual([113, 187]);

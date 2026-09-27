@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight, Building2, FolderTree, Loader2, Map, Plus } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { GeoTreeRow } from '../../utils/geoHierarchy';
-import { ResourceIcon } from '../../components/ResourceIcon';
-import { resourceIconFor } from '../../utils/resourceIcon';
-import { siteIconDataUrl, siteIconFor } from '../../utils/siteIcon';
-import { siteKindFromSpec } from '../../utils/placeLabel';
+import {
+  operationalIconFactsForTreeNode,
+  resolveOperationalIcon,
+} from '../../utils/pointIconPreview';
 
 export type HierarchyTreeViewProps = {
   rows: GeoTreeRow[];
@@ -138,15 +138,7 @@ function TreeRow({
           onMouseLeave={() => onHover?.(null)}
           onFocus={() => onHover?.(node)}
           onBlur={() => onHover?.(null)}
-          title={`${node.label} · ${
-            node.kind === 'site'
-              ? (node.sublabel ?? 'Local')
-              : resourceIconFor({
-                  resourceType: node.resourceType ?? '',
-                  name: node.label,
-                  sublabel: node.sublabel,
-                }).label
-          }`}
+          title={`${node.label} · ${node.kind === 'site' ? (node.sublabel ?? 'Local') : (node.sublabel ?? 'Recurso')}`}
           className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left leading-tight"
         >
           <NodeIcon node={node} />
@@ -176,26 +168,10 @@ function TreeRow({
 }
 
 export function NodeIcon({ node }: { node: GeoTreeNode }) {
-  // Recurso leva o ícone do seu tipo — o mesmo desenho do pin no mapa, para o
-  // olho ligar árvore e mapa sem legenda.
-  if (node.kind === 'resource') {
-    return (
-      <ResourceIcon
-        resource={{
-          resourceType: node.resourceType ?? '',
-          status: node.status,
-          name: node.label,
-          sublabel: node.sublabel,
-        }}
-        variant="badge"
-        size={20}
-      />
-    );
-  }
-  if (node.kind === 'site') {
-    const kind = siteKindFromSpec({ category: node.siteCategory, name: node.sublabel });
-    const icon = siteIconFor(kind, node.status);
-    return <img src={siteIconDataUrl(icon, { size: 20 })} alt="" className="h-5 w-5 shrink-0" />;
+  const facts = operationalIconFactsForTreeNode(node);
+  if (facts) {
+    const icon = resolveOperationalIcon(facts, undefined, { size: 20, context: 'glyph' });
+    return <img src={icon.url} alt="" className="h-5 w-5 shrink-0" />;
   }
   const Icon = node.kind === 'uf' ? Map : node.kind === 'city' ? Building2 : FolderTree;
   return <Icon className="h-4 w-4 shrink-0 text-app-muted" />;

@@ -1,14 +1,19 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { merge } from '../netwin-migration-kit.js';
-import { netwinPartyId, netwinPartyRoleId } from './identity.js';
+import { netwinPartyId, netwinPartyRoleId, deterministicUuid, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import type { PhaseStats } from './types.js';
 
 const CANONICAL_PARTY_ROLES = [
-  { name: 'Manufacturer', description: 'Fabricante de equipamentos e cabos' },
-  { name: 'InfrastructureOwner', description: 'Proprietário da infraestrutura física' },
-  { name: 'Tenant', description: 'Operadora ou ISP cliente atacado' },
-  { name: 'Maintainer', description: 'Empresa mantenedora / empreiteira de campo' },
+  { key: 'manufacturer', roleName: 'manufacturer', label: 'Fabricante', description: 'Quem fabrica o recurso/equipamento' },
+  { key: 'supplier', roleName: 'supplier', label: 'Fornecedor', description: 'Quem fornece comercialmente recurso/material' },
+  { key: 'maintainer', roleName: 'maintainer', label: 'Mantenedor', description: 'Responsável pela manutenção' },
+  { key: 'infrastructure_owner', roleName: 'infrastructure_owner', label: 'Proprietário', description: 'Dono jurídico/econômico da infraestrutura' },
+  { key: 'operator', roleName: 'operator', label: 'Operador', description: 'Quem opera tecnicamente a infraestrutura' },
+  { key: 'system_integrator', roleName: 'system_integrator', label: 'Integrador', description: 'Empresa responsável por integração/implantação' },
+  { key: 'partner', roleName: 'partner', label: 'Parceiro', description: 'Relação ampla de parceria' },
+  { key: 'service_provider', roleName: 'service_provider', label: 'Prestador de Serviço', description: 'Organização que presta um serviço operacional' },
+  { key: 'tenant', roleName: 'tenant', label: 'Tenant / ISP', description: 'Operadora ou ISP cliente de atacado' },
 ];
 
 export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStats> {
@@ -19,24 +24,52 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
   const target = await ctx.getTargetConnection();
 
   try {
-    // 1. Carga de Papéis Canônicos em tmf_party_role_type (se a tabela existir)
+    const roleTypeIdMap = new Map<string, string>();
+
+    // 1. Carga de Papéis Canônicos em party_role_type
     if (target) {
       for (const role of CANONICAL_PARTY_ROLES) {
-        try {
-          await target.execute(
-            `MERGE INTO ${ctx.t('party_role_type')} target
-             USING (SELECT :1 code, :2 name, :3 description FROM DUAL) source
-             ON (target.code = source.code)
-             WHEN NOT MATCHED THEN
-               INSERT (id, code, name, description, status)
-               VALUES (SYS_GUID(), source.code, source.name, source.description, 'active')`,
-            [role.name, role.name, role.description],
-            { autoCommit: false },
-          );
-        } catch {
-          // party_role_type pode ser opcional dependendo do schema semente
-        }
+        const roleTypeId = deterministicUuid(
+          NEXUS_NETWIN_NAMESPACE,
+          `ROLE_TYPE:${ctx.options.tenantId}:${role.key}`,
+        );
+        await target.execute(
+          `MERGE INTO ${ctx.t('party_role_type')} target
+           USING (SELECT :1 AS tenant_id, :2 AS type_key FROM DUAL) src
+           ON (target.tenant_id = src.tenant_id AND target.type_key = src.type_key)
+           WHEN MATCHED THEN
+             UPDATE SET role_name = :3, label = :4, description = :5, active = 1, updated_at = CURRENT_TIMESTAMP
+           WHEN NOT MATCHED THEN
+             INSERT (id, tenant_id, type_key, role_name, label, description, active, created_at, updated_at)
+             VALUES (:6, :7, :8, :9, :10, :11, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            ctx.options.tenantId,
+            role.key,
+            role.roleName,
+            role.label,
+            role.description,
+            roleTypeId,
+            ctx.options.tenantId,
+            role.key,
+            role.roleName,
+            role.label,
+            role.description,
+          ],
+          { autoCommit: false },
+        );
       }
+
+      // Carrega mapeamento de IDs de PartyRoleType para vincular em tmf_party_role
+      const roleTypeRes = await target.execute<{ ID: string; TYPE_KEY: string; ROLE_NAME: string }>(
+        `SELECT id, type_key, role_name FROM ${ctx.t('party_role_type')} WHERE tenant_id = :1`,
+        [ctx.options.tenantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      for (const row of roleTypeRes.rows ?? []) {
+        roleTypeIdMap.set(row.TYPE_KEY.toLowerCase(), row.ID);
+        roleTypeIdMap.set(row.ROLE_NAME.toLowerCase(), row.ID);
+      }
+      console.log(`Papéis cadastrados/atualizados em party_role_type: ${CANONICAL_PARTY_ROLES.length}`);
 
       // Garante a organização dona da infraestrutura (V.tal)
       const ownerId = ctx.options.ownerPartyId;
@@ -52,10 +85,12 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
         ]),
       });
 
+      const ownerRoleId = roleTypeIdMap.get('infrastructure_owner');
       await merge(target, ctx.t, 'tmf_party_role', ['id'], {
         id: `role-${ownerId}-owner`,
         tenant_id: ctx.options.tenantId,
         party_id: ownerId,
+        role_type_id: ownerRoleId ?? null,
         name: 'InfrastructureOwner',
         status: 'active',
         characteristics: '[]',
@@ -77,6 +112,8 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
 
     const manufacturers = rows.rows ?? [];
     console.log(`Fabricantes encontrados em NETWIN.MANUFACTURER: ${manufacturers.length}`);
+
+    const mfgRoleId = roleTypeIdMap.get('manufacturer');
 
     for (const m of manufacturers) {
       if (!m.NAME || !m.NAME.trim()) {
@@ -104,11 +141,12 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
           ]),
         });
 
-        // Upsert PartyRole (Manufacturer)
+        // Upsert PartyRole (Manufacturer) com vínculo ao role_type_id
         await merge(target, ctx.t, 'tmf_party_role', ['id'], {
           id: roleId,
           tenant_id: ctx.options.tenantId,
           party_id: partyId,
+          role_type_id: mfgRoleId ?? null,
           name: 'Manufacturer',
           status: 'active',
           characteristics: '[]',

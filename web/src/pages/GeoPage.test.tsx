@@ -968,6 +968,68 @@ describe('GoogleMapPanel', () => {
     expect(googleMocks.mapSetOptions).toHaveBeenNthCalledWith(2, { draggableCursor: null });
   });
 
+  it('só abre o balão da linha após um segundo e o fecha ao sair do hit-test', async () => {
+    const onHoverNode = vi.fn();
+    const cable: MapTileFeature = {
+      entityId: 'cable-1',
+      kind: 'resource',
+      entityType: 'PhysicalResource',
+      shape: 'line',
+      typeCode: 'FIBER_CABLE',
+      label: 'Cabo Icaraí',
+      lng: -43.108,
+      lat: -22.907,
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [-43.108, -22.907],
+          [-43.107, -22.906],
+        ],
+      },
+    };
+    infraOverlayMocks.hitTest.mockReturnValueOnce(cable).mockReturnValueOnce(null);
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        infraFeatures={[cable]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={onHoverNode}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mapListener('mousemove')).toBeTypeOf('function'));
+    const mousemove = mapListener('mousemove')!;
+    const event = { latLng: { lat: () => -22.907, lng: () => -43.108 } };
+
+    vi.useFakeTimers();
+    mousemove(event);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16);
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(onHoverNode).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onHoverNode).toHaveBeenCalledWith(expect.objectContaining({ id: 'resource:cable-1' }));
+
+    mousemove(event);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16);
+    });
+    expect(onHoverNode).toHaveBeenLastCalledWith(null);
+  });
+
   it('avisa navegação manual só após movimento real de dois toques e limpa ponteiros fora do canvas', () => {
     const onManualNavigation = vi.fn();
     const { container } = render(

@@ -5,8 +5,6 @@ import { useResourceTypeVisualIdentities } from '../../hooks/useResourceTypeVisu
 import { treeNodeRoute, type GeoSchematicHop, type GeoTreeNode } from '../../services/geoTreeApi';
 import { pathLengthMeters, stitchSchematicPath } from '../../utils/dropSimulation';
 import { statusBadgeMeta } from '../../utils/geoLabels';
-import { siteKindFromSpec, siteKindLabel } from '../../utils/placeLabel';
-import { resourceIconFor } from '../../utils/resourceIcon';
 import { shortSubstatus } from '../../utils/substatus';
 import { NodeIcon } from './HierarchyTreeView';
 import type { DropSimulation } from './ViabilityTab';
@@ -24,19 +22,8 @@ function hopTypeLabel(
   hop: GeoSchematicHop,
   resourceTypeName: (resourceType: string | undefined) => string | undefined,
 ): string {
-  if (hop.role === 'site') {
-    const kind = siteKindFromSpec({ category: hop.node.siteCategory, name: hop.node.sublabel });
-    return hop.node.sublabel ?? siteKindLabel[kind];
-  }
-  return (
-    resourceTypeName(hop.node.resourceType) ??
-    resourceIconFor({
-      resourceType: hop.node.resourceType ?? '',
-      name: hop.node.label,
-      sublabel: hop.node.sublabel,
-      status: hop.node.status,
-    }).label
-  );
+  if (hop.role === 'site') return hop.node.sublabel ?? 'Local';
+  return resourceTypeName(hop.node.resourceType) ?? hop.node.sublabel ?? 'Recurso';
 }
 
 /** Caminho físico a montante do Resource selecionado até a Estação. */

@@ -2213,6 +2213,23 @@ export class GeoService {
     this.assertRole(ctx, READ_ROLE);
     return await this.repository.countSites({ tenantId: ctx.tenantId });
   }
+
+  /** Agregado de leitura para a Modelagem de Locais; evita carregar o inventário inteiro no Studio. */
+  public async getSiteSpecificationInstanceCount(
+    specificationId: string,
+    context?: RequestContext,
+  ): Promise<{ specificationId: string; instanceCount: number }> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, READ_ROLE);
+    await this.getSpecOrThrow(specificationId, ctx);
+    return {
+      specificationId,
+      instanceCount: await this.repository.countSitesBySpecificationId(specificationId, {
+        tenantId: ctx.tenantId,
+      }),
+    };
+  }
+
   public async listSpecs(
     query?: {
       name?: string;

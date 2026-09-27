@@ -51,11 +51,30 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
     }
 
     if (ctx.options.scope.municipio) {
-      whereClauses.push(`(UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2 OR UPPER(l.NAME) LIKE :muniPattern1)`);
       const muniUpper = ctx.options.scope.municipio.toUpperCase();
       const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       binds.muniPattern1 = `%${muniUpper}%`;
       binds.muniPattern2 = `%${muniClean}%`;
+
+      const exchRes = await source.execute<{ ID: number }>(
+        `SELECT l.ID
+         FROM NETWIN.LOCATION l
+         WHERE l.ID IN (
+           SELECT ID FROM NETWIN.LOCATION WHERE UPPER(NAME) = :muniClean OR UPPER(NAME) = :muniUpper
+           UNION
+           SELECT ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_PARENT IN (
+             SELECT ID FROM NETWIN.LOCATION WHERE UPPER(NAME) = :muniClean OR UPPER(NAME) = :muniUpper
+           )
+         )`,
+        { muniClean, muniUpper },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const exchIds = (exchRes.rows ?? []).map((r) => r.ID);
+      if (exchIds.length > 0) {
+        whereClauses.push(`(l.ID IN (${exchIds.join(',')}) OR UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2 OR UPPER(l.NAME) LIKE :muniPattern1)`);
+      } else {
+        whereClauses.push(`(UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2 OR UPPER(l.NAME) LIKE :muniPattern1)`);
+      }
     }
 
     let lastId = 0;
@@ -138,10 +157,11 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
 
         // 2. GeographicAddress
         const parsedAddr = parseAddressString(row.ADDRESS_TEXT);
-        if (parsedAddr) {
-          const addrId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:ADDR:${row.ID}`);
+        const addrId = parsedAddr ? deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:ADDR:${row.ID}`) : null;
+        if (parsedAddr && addrId) {
           addressesToInsert.push({
             id: addrId,
+            tenant_id: ctx.options.tenantId,
             street_name: parsedAddr.street.slice(0, 255),
             street_nr: parsedAddr.streetNr ? parsedAddr.streetNr.slice(0, 50) : null,
             locality: parsedAddr.locality ? parsedAddr.locality.slice(0, 100) : null,
@@ -160,7 +180,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
         let specCode = 'BUILDING';
         if (catName.includes('POLE') || catDesc.includes('POSTE')) specCode = 'POLE';
         else if (catName.includes('MANHOLE') || catDesc.includes('CAIXA')) specCode = 'MANHOLE';
-        else if (catName.includes('CENTRAL') || catName.includes('STATION') || catName.includes('CENTRO')) specCode = 'CENTRAL_OFFICE';
+        else if (catName.includes('CENTRAL') || catName.includes('STATION') || catName.includes('CENTRO') || catName.includes('LOCALITY') || catName.includes('CITYAREA')) specCode = 'CENTRAL_OFFICE';
         else if (catName.includes('ROOM') || catName.includes('SALA') || catDesc.includes('ROOM')) specCode = 'ROOM';
         else if (catName.includes('FLOOR') || catName.includes('ANDAR')) specCode = 'FLOOR';
         else if (catName.includes('CABINET') || catName.includes('ARMARIO')) specCode = 'CABINET';
@@ -176,6 +196,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
           site_specification_id: specId,
           status: 'Active',
           geographic_location_id: hasPoint ? locId : null,
+          geographic_address_id: addrId,
           parent_site_id: null, // Resolvido no segundo passo do lote
           related_party: JSON.stringify([{ id: ctx.options.ownerPartyId, '@referredType': 'Organization' }]),
           characteristics: JSON.stringify([
@@ -204,7 +225,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
             target,
             ctx.t,
             'tmf_geographic_address',
-            ['id', 'street_name', 'street_nr', 'locality', 'city', 'state_or_province', 'country', 'postcode', 'geographic_location_id', 'characteristics'],
+            ['id', 'tenant_id', 'street_name', 'street_nr', 'locality', 'city', 'state_or_province', 'country', 'postcode', 'geographic_location_id', 'characteristics'],
             addressesToInsert,
           );
         }
@@ -214,20 +235,24 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
             target,
             ctx.t,
             'tmf_geographic_site',
-            ['id', 'tenant_id', 'name', 'site_specification_id', 'status', 'geographic_location_id', 'parent_site_id', 'related_party', 'characteristics'],
+            ['id', 'tenant_id', 'name', 'site_specification_id', 'status', 'geographic_location_id', 'geographic_address_id', 'parent_site_id', 'related_party', 'characteristics'],
             sitesToInsert,
           );
         }
 
         // 4. Resolução da Hierarquia (LOCATION_ASSOC) para o lote atual
-        const parentBinds = batchIds.map((_, idx) => `:${idx + 1}`).join(',');
-        const assocResult = await source.execute<{ ID_PARENT: number; ID_CHILD: number }>(
-          `SELECT ID_PARENT, ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_CHILD IN (${parentBinds})`,
-          batchIds,
-          { outFormat: oracledb.OUT_FORMAT_OBJECT },
-        );
+        const assocs: Array<{ ID_PARENT: number; ID_CHILD: number }> = [];
+        for (let i = 0; i < batchIds.length; i += 900) {
+          const chunk = batchIds.slice(i, i + 900);
+          const parentBinds = chunk.map((_, idx) => `:${idx + 1}`).join(',');
+          const assocResult = await source.execute<{ ID_PARENT: number; ID_CHILD: number }>(
+            `SELECT ID_PARENT, ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_CHILD IN (${parentBinds})`,
+            chunk,
+            { outFormat: oracledb.OUT_FORMAT_OBJECT },
+          );
+          if (assocResult.rows) assocs.push(...assocResult.rows);
+        }
 
-        const assocs = assocResult.rows ?? [];
         if (assocs.length > 0) {
           const updateSql = `
             UPDATE ${ctx.t('tmf_geographic_site')} s

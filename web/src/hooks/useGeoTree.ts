@@ -26,7 +26,6 @@ import {
   type GeoTreeRow,
   type GeoTreeState,
 } from '../utils/geoHierarchy';
-import { siteKindFromSpec } from '../utils/placeLabel';
 
 export type { GeoTreeRow };
 
@@ -149,19 +148,11 @@ export function useGeoTree(): GeoTree {
     [state, expandedRows, loadingNodes],
   );
 
-  // Só CO/Estação é visível no mapa em qualquer escala — é o único tipo de Site com essa
-  // regra; qualquer outro tipo (POP, CDO, Ponto de Instalação…) segue a régua de escala de
-  // um Recurso e só entra pelo viewport do mapa (ver GeoPage.viewportInfra e
-  // GeoTreeService.sitesInViewport). Todo CO já vem na resposta de raízes, independente do
-  // que está aberto na árvore.
+  // A seleção de quais Sites compõem a navegação-resumo é responsabilidade da publicação
+  // Studio GEO no servidor. Os Sites retornados por `roots` já são essa seleção explícita;
+  // o cliente só preserva os que possuem geometria, sem deduzir código, nome ou papel.
   const mapNodes = useMemo(
-    () =>
-      Object.values(state.nodesById).filter(
-        (node) =>
-          node.kind === 'site' &&
-          node.geometry &&
-          siteKindFromSpec({ category: node.siteCategory, name: node.sublabel }) === 'CO',
-      ),
+    () => Object.values(state.nodesById).filter((node) => node.kind === 'site' && node.geometry),
     [state.nodesById],
   );
 

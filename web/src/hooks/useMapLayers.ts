@@ -30,6 +30,12 @@ export function useMapLayers(catalog: StudioGeoCatalog): UseMapLayers {
   const userId = user?.id ?? null;
   const [layers, setLayers] = useState<MapLayerVisibility>(() => readStoredLayers(catalog, userId));
   const catalogKey = catalog.publicationChecksum ?? (catalog.fallback ? 'fallback' : 'unpublished');
+  const scopeKey = `${userId ?? 'anonymous'}::${catalog.environmentId}`;
+  // Diz a qual usuário+ambiente o objeto `layers` que está na tela pertence. Enquanto o
+  // catálogo troca de `pending` para o ambiente publicado, a persistência fica bloqueada até
+  // a preferência daquele escopo ter sido lida — nunca gravamos o default provisório por cima
+  // da escolha já salva.
+  const [hydratedScopeKey, setHydratedScopeKey] = useState(scopeKey);
   const initialMountRef = useRef(true);
   const lastUserIdRef = useRef(userId);
   const lastEnvironmentIdRef = useRef(catalog.environmentId);
@@ -57,10 +63,16 @@ export function useMapLayers(catalog: StudioGeoCatalog): UseMapLayers {
   }, [catalog, catalogKey, userId]);
 
   useEffect(() => {
-    // Evita sobrescrever storage enquanto o environmentId for provisório / pendente
-    if (catalog.environmentId === 'pending') return;
+    // Marca a hidratação depois que o novo valor de `layers` foi comprometido. Este efeito vem
+    // depois da hidratação acima, portanto a escrita abaixo só libera no render subsequente.
+    if (catalog.environmentId !== 'pending') setHydratedScopeKey(scopeKey);
+  }, [catalog, scopeKey]);
+
+  useEffect(() => {
+    // Não persiste o estado de um escopo anterior (ou do catálogo sentinela) no ambiente atual.
+    if (catalog.environmentId === 'pending' || hydratedScopeKey !== scopeKey) return;
     writeStoredLayers(layers, catalog.environmentId, userId);
-  }, [layers, catalog.environmentId, userId]);
+  }, [layers, catalog.environmentId, hydratedScopeKey, scopeKey, userId]);
 
   const toggleLayer = useCallback((id: MapLayerId) => {
     setLayers((current) => (id in current ? { ...current, [id]: !current[id] } : current));

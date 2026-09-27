@@ -48,6 +48,8 @@ import {
   viewportInclude,
   ALL_MAP_LAYERS_VISIBLE,
   MAP_LAYER_CATALOG_FALLBACK,
+  readStoredBaseMap,
+  writeStoredBaseMap,
   type MapLayerGroupId,
   type MapLayerId,
   type MapLayerVisibility,
@@ -2468,10 +2470,28 @@ export function GoogleMapPanel({
   const [assetDataUrls, setAssetDataUrls] = useState<ReadonlyMap<string, string>>(new Map());
   const { user } = useSession();
   const theme = user?.theme;
+  const userId = user?.id ?? null;
   const baseMapLayers = useMemo(() => getBaseMapLayers(theme), [theme]);
-  const [baseLayerId, setBaseLayerId] = useState(baseMapLayers[0]?.id ?? 'roadmap');
+  const [baseLayerId, setBaseLayerId] = useState(() =>
+    readStoredBaseMap(baseMapLayers, mapLayerCatalog.environmentId, userId),
+  );
   const selectedBaseLayer =
-    baseMapLayers.find((layer) => layer.id === baseLayerId) ?? baseMapLayers[0];
+    baseMapLayers.find((layer) => layer.id === baseLayerId && !layer.disabled) ??
+    baseMapLayers.find((layer) => !layer.disabled) ??
+    baseMapLayers[0]!;
+
+  const handleBaseLayerChange = useCallback(
+    (nextBaseLayerId: string) => {
+      if (!baseMapLayers.some((layer) => layer.id === nextBaseLayerId && !layer.disabled)) return;
+      setBaseLayerId(nextBaseLayerId);
+      writeStoredBaseMap(nextBaseLayerId, mapLayerCatalog.environmentId, userId);
+    },
+    [baseMapLayers, mapLayerCatalog.environmentId, userId],
+  );
+
+  useEffect(() => {
+    setBaseLayerId(readStoredBaseMap(baseMapLayers, mapLayerCatalog.environmentId, userId));
+  }, [baseMapLayers, mapLayerCatalog.environmentId, userId]);
 
   useEffect(() => {
     if (mapRef.current && mapsReady) {
@@ -3900,7 +3920,7 @@ export function GoogleMapPanel({
       <MapBaseLayerSelector
         options={baseMapLayers}
         value={baseLayerId}
-        onChange={setBaseLayerId}
+        onChange={handleBaseLayerChange}
       />
       <MapLocateButton onLocate={handleDeviceLocate} />
       <MapLayerControl

@@ -10,11 +10,13 @@ import {
   mapLayerVisualRank,
   isMapFeatureVisible,
   nodeForMapFeature,
+  readStoredBaseMap,
   readStoredExpandedGroups,
   readStoredLayerControlOpen,
   readStoredLayers,
   setGroupVisibility,
   viewportInclude,
+  writeStoredBaseMap,
   writeStoredExpandedGroups,
   writeStoredLayerControlOpen,
   writeStoredLayers,
@@ -714,6 +716,46 @@ describe('readStoredLayers / writeStoredLayers', () => {
     expect(
       readStoredLayers({ ...MAP_LAYER_CATALOG_FALLBACK, environmentId: 'env-y' }).stations,
     ).toBe(true);
+  });
+});
+
+describe('readStoredBaseMap / writeStoredBaseMap', () => {
+  const ENV = 'env-a';
+  const OPTIONS = [
+    { id: 'roadmap' },
+    { id: 'satellite' },
+    { id: 'geonet', disabled: true },
+  ];
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('devolve a primeira opção selecionável quando não há preferência salva', () => {
+    expect(readStoredBaseMap(OPTIONS, ENV)).toBe('roadmap');
+  });
+
+  it('grava e lê o MUB por ambiente e usuário', () => {
+    writeStoredBaseMap('satellite', ENV, 'user-a');
+    writeStoredBaseMap('roadmap', ENV, 'user-b');
+
+    expect(readStoredBaseMap(OPTIONS, ENV, 'user-a')).toBe('satellite');
+    expect(readStoredBaseMap(OPTIONS, ENV, 'user-b')).toBe('roadmap');
+    expect(readStoredBaseMap(OPTIONS, 'env-b', 'user-a')).toBe('roadmap');
+  });
+
+  it('ignora MUB inexistente ou desabilitado', () => {
+    window.localStorage.setItem('nexus.geo.baseMap::env-a', 'retired');
+    expect(readStoredBaseMap(OPTIONS, ENV)).toBe('roadmap');
+
+    window.localStorage.setItem('nexus.geo.baseMap::env-a', 'geonet');
+    expect(readStoredBaseMap(OPTIONS, ENV)).toBe('roadmap');
+  });
+
+  it('migra a preferência legada sem namespace no ambiente legacy', () => {
+    window.localStorage.setItem('nexus.geo.baseMap', 'satellite');
+    expect(readStoredBaseMap(OPTIONS, 'legacy')).toBe('satellite');
+    expect(window.localStorage.getItem('nexus.geo.baseMap::legacy')).toBe('satellite');
   });
 });
 

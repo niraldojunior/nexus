@@ -199,6 +199,7 @@ afterEach(() => {
 
 describe('GoogleMapPanel', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.clearAllMocks();
     googleMocks.loadGoogleMaps.mockResolvedValue();
     googleMocks.reverseGeocode.mockResolvedValue(null);
@@ -1289,6 +1290,33 @@ describe('GoogleMapPanel', () => {
     expect(googleMocks.flyTo).toHaveBeenCalledTimes(1);
   });
 
+  it('restaura o MUB salvo antes de criar o mapa', async () => {
+    window.localStorage.setItem('nexus.geo.baseMap::legacy', 'satellite');
+
+    render(
+      <GoogleMapPanel
+        nodes={[]}
+        selectedNode={null}
+        draftAddress={null}
+        focusRequest={null}
+        balloon={null}
+        onSelectNode={vi.fn()}
+        onHoverNode={vi.fn()}
+        onCloseBalloon={vi.fn()}
+        onDraftAddress={vi.fn()}
+        onViewportChange={vi.fn()}
+        coverage={null}
+        siteMarkerSize={25}
+        resourceMarkerSize={30}
+        onCoverageHover={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(googleMocks.mapCtor).toHaveBeenCalledOnce());
+    const options = googleMocks.mapCtor.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(options.mapTypeId).toBe('hybrid');
+  });
+
   it('troca o MUB do mapa chamando setMapTypeId com o tipo esperado', async () => {
     const user = userEvent.setup();
 
@@ -1316,6 +1344,7 @@ describe('GoogleMapPanel', () => {
     await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
     await user.click(screen.getByRole('option', { name: 'Satélite' }));
     await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('hybrid'));
+    expect(window.localStorage.getItem('nexus.geo.baseMap::legacy')).toBe('satellite');
 
     await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
     await user.click(screen.getByRole('option', { name: 'Branco' }));

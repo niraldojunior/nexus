@@ -10,6 +10,11 @@ import type {
 import type { GeoSiteRole } from '../services/geoApi';
 import { resolveScaleBandKey } from './studioGeoDefaults';
 
+export type MapBaseLayerPreference = {
+  id: string;
+  disabled?: boolean;
+};
+
 export type MapSiteRole = GeoSiteRole;
 export type MapLayerId = string;
 export type MapLayerGroupId = string;
@@ -382,6 +387,7 @@ export const hasVisibleGponAggregate = (
   );
 
 const STORAGE_KEY_BASE = 'nexus.geo.mapLayers';
+const STORAGE_KEY_BASE_MAP_BASE = 'nexus.geo.baseMap';
 const STORAGE_KEY_CONTROL_OPEN_BASE = 'nexus.geo.mapLayerControl.open';
 const STORAGE_KEY_EXPANDED_GROUPS_BASE = 'nexus.geo.mapLayerControl.expandedGroups';
 // Preferências antigas (sem namespace) migram uma única vez para o primeiro ambiente legacy que
@@ -464,6 +470,44 @@ export function writeStoredLayers(
     window.localStorage.setItem(
       namespacedKey(STORAGE_KEY_BASE, environmentId, userId),
       JSON.stringify(visibility),
+    );
+  } catch {
+    // Storage indisponível: a preferência só não persiste.
+  }
+}
+
+export function readStoredBaseMap(
+  options: readonly MapBaseLayerPreference[],
+  environmentId: string,
+  userId?: string | null,
+): string {
+  const fallback = options.find((option) => !option.disabled)?.id ?? '';
+  if (typeof window === 'undefined') return fallback;
+  migrateLegacyKey(STORAGE_KEY_BASE_MAP_BASE, environmentId, userId);
+  try {
+    const stored =
+      window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE_MAP_BASE, environmentId, userId)) ??
+      (userId
+        ? window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE_MAP_BASE, environmentId))
+        : null);
+    return stored !== null && options.some((option) => option.id === stored && !option.disabled)
+      ? stored
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeStoredBaseMap(
+  baseMapId: string,
+  environmentId: string,
+  userId?: string | null,
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      namespacedKey(STORAGE_KEY_BASE_MAP_BASE, environmentId, userId),
+      baseMapId,
     );
   } catch {
     // Storage indisponível: a preferência só não persiste.

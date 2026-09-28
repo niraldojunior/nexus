@@ -39,11 +39,9 @@ vi.mock('./ResourceHistoryTab', () => ({
   ),
 }));
 vi.mock('./ResourceComponentsTab', () => ({
-  ResourceComponentsTab: ({
-    components,
-  }: {
-    components: Array<{ id: string }>;
-  }) => <div>Componentes ({components.length})</div>,
+  ResourceComponentsTab: ({ components }: { components: Array<{ id: string }> }) => (
+    <div>Componentes ({components.length})</div>
+  ),
 }));
 vi.mock('./ResourceConnectionsView', () => ({
   ResourceConnectionsView: ({
@@ -179,6 +177,12 @@ describe('ResourcePanel', () => {
     renderPanel();
 
     expect(mocks.useResourceDetail).toHaveBeenCalledWith('cto-1');
+    expect(mocks.useResourceComponents).toHaveBeenCalledWith('cto-1', {
+      enabled: false,
+    });
+    expect(mocks.useResourceConnections).toHaveBeenCalledWith('cto-1', {
+      enabled: false,
+    });
     expect(screen.getByRole('button', { name: 'Geral' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2Componentes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Conexões' })).toBeInTheDocument();
@@ -197,9 +201,15 @@ describe('ResourcePanel', () => {
     renderPanel();
 
     fireEvent.click(screen.getByRole('button', { name: '2Componentes' }));
+    expect(mocks.useResourceComponents).toHaveBeenLastCalledWith('cto-1', {
+      enabled: true,
+    });
     expect(screen.getByText('Componentes (2)')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Conexões' }));
+    expect(mocks.useResourceConnections).toHaveBeenLastCalledWith('cto-1', {
+      enabled: true,
+    });
     expect(screen.getByText('Conexões (0)')).toBeInTheDocument();
   });
 

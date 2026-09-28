@@ -27,10 +27,7 @@ import type {
   ResourceRelationshipType,
   ResourceTypeRelationshipRule,
 } from './domain.js';
-import type {
-  IResourceRepository,
-  ResourceTenantScope,
-} from './resource-repository-interface.js';
+import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import {
   RESOURCE_CATALOG_BOOTSTRAP,
   RESOURCE_TENANTS,
@@ -91,7 +88,10 @@ const characteristicStringFromJson = (raw: string | null, name: string): string 
   try {
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
-      ? characteristicStringFromCharacteristics(parsed as Array<{ name: string; value: unknown }>, name)
+      ? characteristicStringFromCharacteristics(
+          parsed as Array<{ name: string; value: unknown }>,
+          name,
+        )
       : undefined;
   } catch {
     return undefined;
@@ -103,7 +103,10 @@ const characteristicNumberFromJson = (raw: string | null, name: string): number 
   try {
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
-      ? characteristicNumberFromCharacteristics(parsed as Array<{ name: string; value: unknown }>, name)
+      ? characteristicNumberFromCharacteristics(
+          parsed as Array<{ name: string; value: unknown }>,
+          name,
+        )
       : undefined;
   } catch {
     return undefined;
@@ -289,12 +292,18 @@ export class OracleResourceRepository implements IResourceRepository {
    * container, insert-if-missing, nunca `DO UPDATE` (C9). A árvore de nodes fica para o backfill
    * auditado (plano §7 Fase A passo 6, tarefa #10); seus nós podem referenciar o vocabulário
    * canônico compartilhado, mas continuam pertencendo ao tenant do `ResourceCatalog`.
+   *
+   * Uma carga legada pode já ter criado o default do tenant com outro código (por exemplo, a Fase
+   * 1.D do Netwin usa `default-catalog`). Esse catálogo também satisfaz o bootstrap: promover ou
+   * inserir outro default violaria a unicidade e sobrescreveria uma decisão governada.
    */
   private async seedResourceCatalogContainers(): Promise<void> {
     const now = new Date().toISOString();
     for (const tenantId of RESOURCE_TENANTS) {
       const existing = await this.db.get<{ id: string }>(
-        `SELECT id FROM tmf_resource_catalog WHERE tenant_id = ? AND code = ?`,
+        `SELECT id FROM tmf_resource_catalog
+         WHERE tenant_id = ? AND (code = ? OR is_default = 1)
+         FETCH FIRST 1 ROWS ONLY`,
         [tenantId, RESOURCE_CATALOG_BOOTSTRAP.code],
       );
       if (existing) continue;
@@ -508,10 +517,10 @@ export class OracleResourceRepository implements IResourceRepository {
           'tmf_resource_catalog_node',
           'tmf_resource_status_catalog',
         ]) {
-          await this.db.run(
-            `UPDATE ${table} SET resource_type_id = ? WHERE resource_type_id = ?`,
-            [canonicalId, legacy.id],
-          );
+          await this.db.run(`UPDATE ${table} SET resource_type_id = ? WHERE resource_type_id = ?`, [
+            canonicalId,
+            legacy.id,
+          ]);
         }
         await this.db.run(
           `UPDATE tmf_resource_type_relationship_rule SET source_resource_type_id = ? WHERE source_resource_type_id = ?`,
@@ -658,14 +667,19 @@ export class OracleResourceRepository implements IResourceRepository {
         resourceType.mapPresence ? 1 : 0,
         resourceType.nature,
         resourceType.geometryKind ?? null,
-        resourceType.visualIdentity?.kind === 'system' ? resourceType.visualIdentity.iconCode : null,
+        resourceType.visualIdentity?.kind === 'system'
+          ? resourceType.visualIdentity.iconCode
+          : null,
         resourceType.visualIdentity?.kind === 'asset' ? resourceType.visualIdentity.assetId : null,
         JSON.stringify(resourceType.resourceTypeCharacteristic ?? []),
         now,
         now,
       ],
     );
-    return (await this.getResourceType(resourceType.id, { tenantId: resourceType.tenantId })) ?? resourceType;
+    return (
+      (await this.getResourceType(resourceType.id, { tenantId: resourceType.tenantId })) ??
+      resourceType
+    );
   }
 
   // `tmf_resource_type.category_code` foi removida na Fase B: categoryCode agora vem do node
@@ -845,7 +859,9 @@ export class OracleResourceRepository implements IResourceRepository {
         now,
       ],
     );
-    return (await this.getResourceTypeRelationshipRule(rule.id, { tenantId: rule.tenantId })) ?? rule;
+    return (
+      (await this.getResourceTypeRelationshipRule(rule.id, { tenantId: rule.tenantId })) ?? rule
+    );
   }
 
   private async loadCategoryCodeByResourceTypeId(tenantId: string): Promise<Map<string, string>> {
@@ -1588,7 +1604,12 @@ export class OracleResourceRepository implements IResourceRepository {
     const tenantId = scope?.tenantId ?? 'default';
     const cto = await this.getPhysicalResource(ctoId, { tenantId });
     if (!cto || cto.resourceType !== 'CTO') return undefined;
-    const splitterRows = await this.db.all<{ id: string; name: string; resource_type: string; characteristics: string | null }>(
+    const splitterRows = await this.db.all<{
+      id: string;
+      name: string;
+      resource_type: string;
+      characteristics: string | null;
+    }>(
       `SELECT s.id, s.name, srt.code AS resource_type, s.characteristics
          FROM tmf_resource_relationship c
          JOIN tmf_physical_resource s ON s.id = c.resource_to_id
@@ -1762,36 +1783,30 @@ export class OracleResourceRepository implements IResourceRepository {
     );
 
     const visited = new Set<string>([resourceId]);
-    const components: ResourceComponentNode[] = [];
+    const componentRows: typeof rows = [];
     let truncated = false;
-
     for (const row of rows) {
-      if (components.length >= 2000) {
+      if (componentRows.length >= 2000) {
         truncated = true;
         break;
       }
       if (visited.has(row.id)) continue;
       visited.add(row.id);
+      componentRows.push(row);
+    }
 
-      let portInfo: ResourceComponentNode['portInfo'] | undefined;
-      if (row.entity_type === 'PhysicalResource' && row.resource_type === 'Port') {
-        const role = characteristicStringFromJson(row.characteristics, 'role');
-        const index = characteristicNumberFromJson(row.characteristics, 'index');
-        const portDetail = await this.getResourcePortDetail(row.id, { tenantId });
-        const activeOnt = portDetail?.drops.find((d) => d.active)?.ont;
-        portInfo = {
-          ...(role ? { role } : {}),
-          ...(index !== undefined ? { index } : {}),
-          ...(row.administrative_state ? { administrativeState: row.administrative_state } : {}),
-          ...(row.operational_state ? { operationalState: row.operational_state } : {}),
-          ...(row.usage_state ? { usageState: row.usage_state } : {}),
-          hasActiveService: false,
-          ...(activeOnt ? { activeDropOnt: activeOnt } : {}),
-          dropCount: portDetail?.drops.length ?? 0,
-        };
-      }
-
-      components.push({
+    // A visão resumida só precisa de dropCount e da ONT do drop ativo. Buscar o detalhe completo
+    // por Porta aqui transformava uma CDOE em N+1 consultas (Porta → Drop → ONT → auditoria).
+    // O mapa abaixo preserva o contrato do painel com um número constante de consultas por lote.
+    const portInfoById = await this.loadComponentPortInfo(
+      componentRows.filter(
+        (row) => row.entity_type === 'PhysicalResource' && row.resource_type === 'Port',
+      ),
+      tenantId,
+    );
+    const components = componentRows.map((row): ResourceComponentNode => {
+      const portInfo = portInfoById.get(row.id);
+      return {
         '@type': 'ResourceComponentNode',
         id: row.id,
         name: row.name,
@@ -1803,10 +1818,180 @@ export class OracleResourceRepository implements IResourceRepository {
         ...(row.model ? { model: row.model } : {}),
         ...(row.serial_number ? { serialNumber: row.serial_number } : {}),
         ...(portInfo ? { portInfo } : {}),
-      });
-    }
+      };
+    });
 
     return { components, truncated };
+  }
+
+  private async loadComponentPortInfo(
+    ports: Array<{
+      id: string;
+      characteristics: string | null;
+      administrative_state: string | null;
+      operational_state: string | null;
+      usage_state: string | null;
+    }>,
+    tenantId: string,
+  ): Promise<Map<string, ResourceComponentNode['portInfo']>> {
+    const result = new Map<string, ResourceComponentNode['portInfo']>();
+    if (ports.length === 0) return result;
+
+    const portIds = ports.map((port) => port.id);
+    const currentDropsByPortId = new Map<
+      string,
+      Array<{ id: string; valid_for_end: string | null }>
+    >();
+    const batchSize = 900;
+    for (let offset = 0; offset < portIds.length; offset += batchSize) {
+      const ids = portIds.slice(offset, offset + batchSize);
+      const placeholders = ids.map(() => '?').join(', ');
+      const rows = await this.db.all<{
+        port_id: string;
+        drop_id: string;
+        valid_for_end: string | null;
+      }>(
+        `SELECT rr.resource_from_id AS port_id, d.id AS drop_id, rr.valid_for_end
+           FROM tmf_resource_relationship rr
+           JOIN tmf_physical_resource d ON d.id = rr.resource_to_id AND d.tenant_id = ?
+           JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
+           JOIN tmf_resource_type drt ON drt.id = ds.resource_type_id AND drt.code = 'DropCable'
+          WHERE rr.relationship_type = 'connectedTo' AND rr.resource_from_id IN (${placeholders})
+         UNION ALL
+         SELECT rr.resource_to_id AS port_id, d.id AS drop_id, rr.valid_for_end
+           FROM tmf_resource_relationship rr
+           JOIN tmf_physical_resource d ON d.id = rr.resource_from_id AND d.tenant_id = ?
+           JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
+           JOIN tmf_resource_type drt ON drt.id = ds.resource_type_id AND drt.code = 'DropCable'
+          WHERE rr.relationship_type = 'connectedTo' AND rr.resource_to_id IN (${placeholders})`,
+        [tenantId, ...ids, tenantId, ...ids],
+      );
+      for (const row of rows) {
+        const drops = currentDropsByPortId.get(row.port_id) ?? [];
+        if (!drops.some((drop) => drop.id === row.drop_id))
+          drops.push({ id: row.drop_id, valid_for_end: row.valid_for_end });
+        currentDropsByPortId.set(row.port_id, drops);
+      }
+    }
+
+    // O detalhe de Porta também expõe drops removidos via auditoria. A árvore resumida mantém o
+    // mesmo dropCount, mas interpreta todos os eventos do conjunto de Portas em lote.
+    const historicalDropIdsByPortId = new Map<string, Set<string>>();
+    for (let offset = 0; offset < portIds.length; offset += batchSize) {
+      const ids = portIds.slice(offset, offset + batchSize);
+      const placeholders = ids.map(() => '?').join(', ');
+      const auditRows = await this.db.all<{
+        entity_id: string;
+        action: string;
+        after_state: string | null;
+      }>(
+        `SELECT entity_id, action, after_state
+           FROM tmf_audit_log
+          WHERE entity_type = 'PhysicalResource'
+            AND tenant_id = ?
+            AND entity_id IN (${placeholders})
+          ORDER BY event_time DESC, id DESC`,
+        [tenantId, ...ids],
+      );
+      for (const audit of auditRows) {
+        if (audit.action !== 'update') continue;
+        const payload = parseAuditState(audit.after_state);
+        const relatedResourceId = payload?.relatedResourceId;
+        if (
+          typeof relatedResourceId !== 'string' ||
+          payload?.relationshipType !== 'connectedTo' ||
+          currentDropsByPortId.get(audit.entity_id)?.some((drop) => drop.id === relatedResourceId)
+        ) {
+          continue;
+        }
+        const historical = historicalDropIdsByPortId.get(audit.entity_id) ?? new Set<string>();
+        historical.add(relatedResourceId);
+        historicalDropIdsByPortId.set(audit.entity_id, historical);
+      }
+    }
+
+    const historicalDropIds = [...historicalDropIdsByPortId.values()].flatMap((ids) => [...ids]);
+    const existingHistoricalDropIds = new Set<string>();
+    for (let offset = 0; offset < historicalDropIds.length; offset += batchSize) {
+      const ids = historicalDropIds.slice(offset, offset + batchSize);
+      const placeholders = ids.map(() => '?').join(', ');
+      const rows = await this.db.all<{ id: string }>(
+        `SELECT d.id
+           FROM tmf_physical_resource d
+           JOIN tmf_resource_specification ds ON ds.id = d.resource_specification_id AND ds.tenant_id = d.tenant_id
+           JOIN tmf_resource_type drt ON drt.id = ds.resource_type_id AND drt.code = 'DropCable'
+          WHERE d.tenant_id = ? AND d.id IN (${placeholders})`,
+        [tenantId, ...ids],
+      );
+      for (const row of rows) existingHistoricalDropIds.add(row.id);
+    }
+
+    const activeDropIds = [...currentDropsByPortId.values()]
+      .flat()
+      .filter((drop) => !drop.valid_for_end || new Date(drop.valid_for_end).getTime() > Date.now())
+      .map((drop) => drop.id);
+    const ontByDropId = new Map<string, ResourceDetailReference>();
+    for (let offset = 0; offset < activeDropIds.length; offset += batchSize) {
+      const ids = activeDropIds.slice(offset, offset + batchSize);
+      const placeholders = ids.map(() => '?').join(', ');
+      const rows = await this.db.all<{
+        drop_id: string;
+        id: string;
+        name: string;
+        resource_type: string;
+      }>(
+        `SELECT rr.resource_from_id AS drop_id, o.id, o.name, ort.code AS resource_type
+           FROM tmf_resource_relationship rr
+           JOIN tmf_physical_resource o ON o.id = rr.resource_to_id AND o.tenant_id = ?
+           JOIN tmf_resource_specification os ON os.id = o.resource_specification_id AND os.tenant_id = o.tenant_id
+           JOIN tmf_resource_type ort ON ort.id = os.resource_type_id AND ort.code = 'ONT'
+          WHERE rr.relationship_type = 'connectedTo' AND rr.resource_from_id IN (${placeholders})
+         UNION ALL
+         SELECT rr.resource_to_id AS drop_id, o.id, o.name, ort.code AS resource_type
+           FROM tmf_resource_relationship rr
+           JOIN tmf_physical_resource o ON o.id = rr.resource_from_id AND o.tenant_id = ?
+           JOIN tmf_resource_specification os ON os.id = o.resource_specification_id AND os.tenant_id = o.tenant_id
+           JOIN tmf_resource_type ort ON ort.id = os.resource_type_id AND ort.code = 'ONT'
+          WHERE rr.relationship_type = 'connectedTo' AND rr.resource_to_id IN (${placeholders})`,
+        [tenantId, ...ids, tenantId, ...ids],
+      );
+      for (const row of rows) {
+        if (!ontByDropId.has(row.drop_id)) {
+          ontByDropId.set(row.drop_id, {
+            id: row.id,
+            name: row.name,
+            '@referredType': 'PhysicalResource',
+            resourceType: row.resource_type,
+          });
+        }
+      }
+    }
+
+    for (const port of ports) {
+      const drops = currentDropsByPortId.get(port.id) ?? [];
+      const activeOnt = drops
+        .filter(
+          (drop) => !drop.valid_for_end || new Date(drop.valid_for_end).getTime() > Date.now(),
+        )
+        .map((drop) => ontByDropId.get(drop.id))
+        .find((ont): ont is ResourceDetailReference => Boolean(ont));
+      const role = characteristicStringFromJson(port.characteristics, 'role');
+      const index = characteristicNumberFromJson(port.characteristics, 'index');
+      const historicalDropCount = [...(historicalDropIdsByPortId.get(port.id) ?? [])].filter((id) =>
+        existingHistoricalDropIds.has(id),
+      ).length;
+      result.set(port.id, {
+        ...(role ? { role } : {}),
+        ...(index !== undefined ? { index } : {}),
+        ...(port.administrative_state ? { administrativeState: port.administrative_state } : {}),
+        ...(port.operational_state ? { operationalState: port.operational_state } : {}),
+        ...(port.usage_state ? { usageState: port.usage_state } : {}),
+        hasActiveService: false,
+        ...(activeOnt ? { activeDropOnt: activeOnt } : {}),
+        dropCount: drops.length + historicalDropCount,
+      });
+    }
+    return result;
   }
 
   public async getResourcePortDetail(
@@ -1816,7 +2001,14 @@ export class OracleResourceRepository implements IResourceRepository {
     const tenantId = scope?.tenantId ?? 'default';
     const port = await this.getPhysicalResource(portId, { tenantId });
     if (!port || port.resourceType !== 'Port') return undefined;
-    const parent = await this.db.get<{ id: string; name: string; resource_type: string; characteristics: string | null; cto_id: string | null; cto_name: string | null }>(
+    const parent = await this.db.get<{
+      id: string;
+      name: string;
+      resource_type: string;
+      characteristics: string | null;
+      cto_id: string | null;
+      cto_name: string | null;
+    }>(
       `SELECT s.id, s.name, srt.code AS resource_type, s.characteristics, cto.id AS cto_id, cto.name AS cto_name
          FROM tmf_resource_relationship p
          JOIN tmf_physical_resource s ON s.id = p.resource_from_id
@@ -1856,20 +2048,46 @@ export class OracleResourceRepository implements IResourceRepository {
     const splitter = await this.getPhysicalResource(splitterId, { tenantId });
     if (!splitter) return [];
     const details = await Promise.all(
-      ports.map(async (port) => await this.buildPortDetail(this.mapPhysicalResource(port, await this.listResourceRelationships(port.id)), {
-        id: splitter.id, name: splitter.name, resource_type: splitter.resourceType,
-        characteristics: JSON.stringify(splitter.characteristic), cto_id: cto.id, cto_name: cto.name,
-      }, tenantId)),
+      ports.map(
+        async (port) =>
+          await this.buildPortDetail(
+            this.mapPhysicalResource(port, await this.listResourceRelationships(port.id)),
+            {
+              id: splitter.id,
+              name: splitter.name,
+              resource_type: splitter.resourceType,
+              characteristics: JSON.stringify(splitter.characteristic),
+              cto_id: cto.id,
+              cto_name: cto.name,
+            },
+            tenantId,
+          ),
+      ),
     );
     return details.sort(comparePortDetails);
   }
 
   private async buildPortDetail(
     port: PhysicalResource,
-    parent: { id: string; name: string; resource_type: string; characteristics: string | null; cto_id: string | null; cto_name: string | null } | undefined,
+    parent:
+      | {
+          id: string;
+          name: string;
+          resource_type: string;
+          characteristics: string | null;
+          cto_id: string | null;
+          cto_name: string | null;
+        }
+      | undefined,
     tenantId: string,
   ): Promise<ResourcePortDetail> {
-    const connectionRows = await this.db.all<{ id: string; name: string; resource_type: string; valid_for_start: string | null; valid_for_end: string | null }>(
+    const connectionRows = await this.db.all<{
+      id: string;
+      name: string;
+      resource_type: string;
+      valid_for_start: string | null;
+      valid_for_end: string | null;
+    }>(
       `SELECT d.id, d.name, drt.code AS resource_type, rr.valid_for_start, rr.valid_for_end
          FROM tmf_resource_relationship rr
          JOIN tmf_physical_resource d ON d.id = CASE WHEN rr.resource_from_id = ? THEN rr.resource_to_id ELSE rr.resource_from_id END
@@ -1882,36 +2100,69 @@ export class OracleResourceRepository implements IResourceRepository {
         ORDER BY d.name, d.id`,
       [port.id, port.id, port.id, tenantId],
     );
-    const currentDrops = await Promise.all(connectionRows.map(async (drop) => {
-      const validFor = drop.valid_for_start || drop.valid_for_end
-        ? { ...(drop.valid_for_start ? { startDateTime: drop.valid_for_start } : {}), ...(drop.valid_for_end ? { endDateTime: drop.valid_for_end } : {}) }
-        : undefined;
-      const active = !drop.valid_for_end || new Date(drop.valid_for_end).getTime() > Date.now();
-      const ont = active ? await this.resolveDropOnt(drop.id, tenantId) : undefined;
-      return {
-        resource: {
-          id: drop.id,
-          name: drop.name,
-          '@referredType': 'PhysicalResource' as const,
-          resourceType: drop.resource_type,
-        },
-        active,
-        ...(validFor ? { validFor } : {}),
-        ...(ont ? { ont } : {}),
-      };
-    }));
-    const historicalDrops = await this.listHistoricalPortDrops(port.id, tenantId, new Set(currentDrops.map((drop) => drop.resource.id)));
+    const currentDrops = await Promise.all(
+      connectionRows.map(async (drop) => {
+        const validFor =
+          drop.valid_for_start || drop.valid_for_end
+            ? {
+                ...(drop.valid_for_start ? { startDateTime: drop.valid_for_start } : {}),
+                ...(drop.valid_for_end ? { endDateTime: drop.valid_for_end } : {}),
+              }
+            : undefined;
+        const active = !drop.valid_for_end || new Date(drop.valid_for_end).getTime() > Date.now();
+        const ont = active ? await this.resolveDropOnt(drop.id, tenantId) : undefined;
+        return {
+          resource: {
+            id: drop.id,
+            name: drop.name,
+            '@referredType': 'PhysicalResource' as const,
+            resourceType: drop.resource_type,
+          },
+          active,
+          ...(validFor ? { validFor } : {}),
+          ...(ont ? { ont } : {}),
+        };
+      }),
+    );
+    const historicalDrops = await this.listHistoricalPortDrops(
+      port.id,
+      tenantId,
+      new Set(currentDrops.map((drop) => drop.resource.id)),
+    );
     const drops = [...currentDrops, ...historicalDrops];
     const role = characteristicStringFromCharacteristics(port.characteristic, 'role');
     const index = characteristicNumberFromCharacteristics(port.characteristic, 'index');
-    const derivedUsageState = drops.some((drop) => drop.active) ? 'active' as const : 'idle' as const;
-    const splitRatio = parent ? characteristicStringFromJson(parent.characteristics, 'razao') : undefined;
+    const derivedUsageState = drops.some((drop) => drop.active)
+      ? ('active' as const)
+      : ('idle' as const);
+    const splitRatio = parent
+      ? characteristicStringFromJson(parent.characteristics, 'razao')
+      : undefined;
     return {
       '@type': 'ResourcePortDetail',
       resource: { ...port, usageState: role === 'FO.O' ? derivedUsageState : port.usageState },
-      ...(role ? { role } : {}), ...(index !== undefined ? { index } : {}),
-      ...(parent ? { splitter: { id: parent.id, name: parent.name, '@referredType': 'PhysicalResource', resourceType: parent.resource_type } } : {}),
-      ...(parent?.cto_id && parent.cto_name ? { cto: { id: parent.cto_id, name: parent.cto_name, '@referredType': 'PhysicalResource', resourceType: 'CTO' } } : {}),
+      ...(role ? { role } : {}),
+      ...(index !== undefined ? { index } : {}),
+      ...(parent
+        ? {
+            splitter: {
+              id: parent.id,
+              name: parent.name,
+              '@referredType': 'PhysicalResource',
+              resourceType: parent.resource_type,
+            },
+          }
+        : {}),
+      ...(parent?.cto_id && parent.cto_name
+        ? {
+            cto: {
+              id: parent.cto_id,
+              name: parent.cto_name,
+              '@referredType': 'PhysicalResource',
+              resourceType: 'CTO',
+            },
+          }
+        : {}),
       ...(splitRatio ? { splitRatio } : {}),
       derivedUsageState,
       hasActiveService: false,
@@ -1941,7 +2192,12 @@ export class OracleResourceRepository implements IResourceRepository {
       [dropId, dropId, dropId, tenantId],
     );
     if (!ont) return undefined;
-    return { id: ont.id, name: ont.name, '@referredType': 'PhysicalResource', resourceType: ont.resource_type };
+    return {
+      id: ont.id,
+      name: ont.name,
+      '@referredType': 'PhysicalResource',
+      resourceType: ont.resource_type,
+    };
   }
 
   private async listHistoricalPortDrops(
@@ -2006,7 +2262,11 @@ export class OracleResourceRepository implements IResourceRepository {
       };
     }
     if (referredType === 'GeographicSite') {
-      const site = await this.db.get<{ id: string; name: string; geographic_address_id: string | null }>(
+      const site = await this.db.get<{
+        id: string;
+        name: string;
+        geographic_address_id: string | null;
+      }>(
         `SELECT id, name, geographic_address_id FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
         [id, tenantId],
       );
@@ -2324,7 +2584,9 @@ export class OracleResourceRepository implements IResourceRepository {
     return rows.map((row) => relationshipFromRow(row));
   }
 
-  public async listIncidentResourceRelationships(resourceId: string): Promise<ResourceRelationship[]> {
+  public async listIncidentResourceRelationships(
+    resourceId: string,
+  ): Promise<ResourceRelationship[]> {
     const rows = await this.db.all<{
       related_resource_id: string;
       relationship_type: string;
@@ -2338,7 +2600,9 @@ export class OracleResourceRepository implements IResourceRepository {
         ORDER BY relationship_type, related_resource_id`,
       [resourceId, resourceId, resourceId],
     );
-    return rows.map((row) => relationshipFromRow({ ...row, resource_to_id: row.related_resource_id }));
+    return rows.map((row) =>
+      relationshipFromRow({ ...row, resource_to_id: row.related_resource_id }),
+    );
   }
 
   private async loadResourceRelationshipsByResourceIds(
@@ -2466,7 +2730,8 @@ export class OracleResourceRepository implements IResourceRepository {
       href: buildHref('resourceType', row.id),
       code: row.code,
       name: row.name,
-      categoryCode: categoryCode ?? getResourceTypeByCode(row.code)?.categoryCode ?? 'Uncategorized',
+      categoryCode:
+        categoryCode ?? getResourceTypeByCode(row.code)?.categoryCode ?? 'Uncategorized',
       ...(row.description ? { description: row.description } : {}),
       status: row.status,
       nature: row.nature ?? 'PhysicalResource',

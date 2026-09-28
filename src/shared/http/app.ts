@@ -1362,7 +1362,11 @@ const routePartyRoleTypeRequest = async ({
     // (fallback para chamadas legadas e compatibilidade com o front antes da migration).
     const roleType = await runtime.partyRoleTypeRepository.get(context.tenantId, idOrRoleName);
     const usage = roleType
-      ? await runtime.partyRoleTypeRepository.getUsage(context.tenantId, roleType.roleName, roleType.id)
+      ? await runtime.partyRoleTypeRepository.getUsage(
+          context.tenantId,
+          roleType.roleName,
+          roleType.id,
+        )
       : await runtime.partyRoleTypeRepository.getUsage(context.tenantId, idOrRoleName);
     return sendJson(response, 200, usage);
   }
@@ -1380,7 +1384,11 @@ const routePartyRoleTypeRequest = async ({
       });
     }
     if (request.method === 'DELETE') {
-      const usage = await runtime.partyRoleTypeRepository.getUsage(context.tenantId, current.roleName, current.id);
+      const usage = await runtime.partyRoleTypeRepository.getUsage(
+        context.tenantId,
+        current.roleName,
+        current.id,
+      );
       if (usage.organizationCount > 0 || usage.resourceSpecificationCount > 0) {
         throw new AppError(
           `Não é possível inativar o papel "${current.label}" porque ele está em uso (${usage.organizationCount} organizações, ${usage.resourceSpecificationCount} especificações de recurso).`,
@@ -1539,9 +1547,7 @@ const routePartyRoleTypeCharacteristicRequest = async ({
           allowedValues,
           referenceDataSetKey,
           sortOrder:
-            body.sortOrder !== undefined && body.sortOrder !== null
-              ? Number(body.sortOrder)
-              : 100,
+            body.sortOrder !== undefined && body.sortOrder !== null ? Number(body.sortOrder) : 100,
           mandatory: body.mandatory !== undefined ? Boolean(body.mandatory) : false,
           defaultValue:
             body.defaultValue !== undefined && body.defaultValue !== null
@@ -3744,16 +3750,34 @@ const routeResourceRequest = async ({
     requireRoles(context, INVENTORY_READ_ROLES);
     const maxDepthParam = url.searchParams.get('maxDepth');
     const maxDepth = maxDepthParam ? parseInt(maxDepthParam, 10) : undefined;
+    const startedAt = Date.now();
     const view = await resourceService.getResourceComponentsView(
       decodeURIComponent(resourceComponentsMatch[1]),
       { ...(maxDepth && !Number.isNaN(maxDepth) ? { maxDepth } : {}) },
       context,
     );
+    const componentsMs = Date.now() - startedAt;
     const portIds = view.components.filter((c) => c.resourceType === 'Port').map((c) => c.id);
+    const servicesStartedAt = Date.now();
     const activeServicePortIds =
       portIds.length > 0
         ? await serviceService.listActiveSupportingResourceIds(portIds, context)
         : new Set<string>();
+    const activeServicesMs = Date.now() - servicesStartedAt;
+    // Não registra resourceId, tenant ou payload: esta métrica serve para comparar cardinalidade
+    // e estágios de leitura sem expor dados de inventário nos logs operacionais.
+    console.info(
+      JSON.stringify({
+        event: 'resource_components_view_loaded',
+        componentCount: view.components.length,
+        portCount: portIds.length,
+        maxDepth: maxDepth && !Number.isNaN(maxDepth) ? maxDepth : 8,
+        truncated: view.truncated,
+        componentsMs,
+        activeServicesMs,
+        durationMs: Date.now() - startedAt,
+      }),
+    );
 
     return sendJson(response, 200, {
       ...view,

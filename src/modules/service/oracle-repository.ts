@@ -14,10 +14,7 @@ import type {
   ServiceSpecificationQuery,
   ServiceState,
 } from './domain.js';
-import type {
-  IServiceRepository,
-  ServiceTenantScope,
-} from './service-repository-interface.js';
+import type { IServiceRepository, ServiceTenantScope } from './service-repository-interface.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import type {
   CustomerFacingServiceRow,
@@ -522,29 +519,38 @@ export class OracleServiceRepository implements IServiceRepository {
     // `supporting_resources` preserva o array TMF completo. A coluna legada indexada cobre o
     // primeiro recurso (normalmente a ONT); o LIKE reduz o conjunto antes da confirmação JSON,
     // inclusive quando a porta aparece depois dela — como no seed de Icaraí.
-    const ids = [...requestedIds];
-    const conditions = [
-      "state = 'active'",
-      `(supporting_resource_id IN (${ids.map(() => '?').join(', ')}) OR ${ids.map(() => 'supporting_resources LIKE ?').join(' OR ')})`,
-    ];
-    const params: string[] = [
-      ...ids,
-      ...ids.map((id) => `%"id":"${id}"%`),
-    ];
-    if (scope?.tenantId) {
-      conditions.push('tenant_id = ?');
-      params.push(scope.tenantId);
-    }
-    const rows = await this.db.all<{ supporting_resources: string | null; supporting_resource_id: string | null }>(
-      `SELECT supporting_resources, supporting_resource_id
-         FROM tmf_resource_facing_service
-        WHERE ${conditions.join(' AND ')}`,
-      params,
-    );
     const activeResourceIds = new Set<string>();
-    for (const row of rows) {
-      for (const reference of parseServiceRefs(row.supporting_resources, row.supporting_resource_id)) {
-        if (requestedIds.has(reference.id)) activeResourceIds.add(reference.id);
+    // Oracle limita uma lista IN a 1.000 expressões. O payload Components aceita até 2.000
+    // nós, então particionamos antes de montar os binds e preservamos a mesma confirmação TMF.
+    const batchSize = 450;
+    const ids = [...requestedIds];
+    for (let offset = 0; offset < ids.length; offset += batchSize) {
+      const batch = ids.slice(offset, offset + batchSize);
+      const conditions = [
+        "state = 'active'",
+        `(supporting_resource_id IN (${batch.map(() => '?').join(', ')}) OR ${batch.map(() => 'supporting_resources LIKE ?').join(' OR ')})`,
+      ];
+      const params: string[] = [...batch, ...batch.map((id) => `%"id":"${id}"%`)];
+      if (scope?.tenantId) {
+        conditions.push('tenant_id = ?');
+        params.push(scope.tenantId);
+      }
+      const rows = await this.db.all<{
+        supporting_resources: string | null;
+        supporting_resource_id: string | null;
+      }>(
+        `SELECT supporting_resources, supporting_resource_id
+           FROM tmf_resource_facing_service
+          WHERE ${conditions.join(' AND ')}`,
+        params,
+      );
+      for (const row of rows) {
+        for (const reference of parseServiceRefs(
+          row.supporting_resources,
+          row.supporting_resource_id,
+        )) {
+          if (requestedIds.has(reference.id)) activeResourceIds.add(reference.id);
+        }
       }
     }
     return activeResourceIds;

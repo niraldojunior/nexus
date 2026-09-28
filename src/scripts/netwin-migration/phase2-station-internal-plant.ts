@@ -149,20 +149,37 @@ export async function discoverStationInternalPlant(
   }
 }
 
+export type StationPlantDiscoveryRunResult = {
+  report: StationPlantDiscoveryReport;
+  stats: PhaseStats;
+  blocked: boolean;
+};
+
+export function isStationPlantDiscoveryBlocked(report: StationPlantDiscoveryReport): boolean {
+  return report.unresolvedContracts.length > 0;
+}
+
 export async function runPhase2StationInternalPlantDiscovery(
   ctx: MigrationContext,
-): Promise<PhaseStats> {
+): Promise<StationPlantDiscoveryRunResult> {
   console.log('\n=== Fase 2.D: Descoberta de planta interna de estações (somente leitura) ===');
   const report = await discoverStationInternalPlant(ctx);
+  const blocked = isStationPlantDiscoveryBlocked(report);
   console.log(JSON.stringify({ phase: '2d', report }, null, 2));
-  console.log(
-    'Fase 2.D não materializou recursos: a carga permanece bloqueada até todos os contratos listados serem comprovados.',
-  );
+  if (blocked) {
+    console.log(
+      'Fase 2.D não materializou recursos: a carga permanece bloqueada até todos os contratos listados serem comprovados.',
+    );
+  }
   return {
-    loaded: 0,
-    updated: 0,
-    skipped: 0,
-    rejected: report.equipmentWithoutOspBridge,
-    errors: 0,
+    report,
+    blocked,
+    stats: {
+      loaded: 0,
+      updated: 0,
+      skipped: 0,
+      rejected: report.equipmentWithoutOspBridge,
+      errors: 0,
+    },
   };
 }

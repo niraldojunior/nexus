@@ -1,14 +1,17 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
-import { bulkInsertRows } from './context.js';
 import { deterministicUuid, netwinLocationId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
+import { bulkMergeRows } from '../netwin-migration-kit.js';
+import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import {
-  infranodeScopeBinds,
-  municipalityInfranodePredicate,
-  neighborhoodInfranodePredicate,
-  ufInfranodePredicate,
-} from './scope.js';
+  chunksOf,
+  namedInBinds,
+  scopedInfranodeIdQuery,
+  selectFullTableIds,
+  selectScopedInfranodeIds,
+  structuredInfranodePredicates,
+} from './source-batches.js';
 import type { PhaseStats } from './types.js';
 
 // Parser de endereço brasileiro do Netwin
@@ -17,29 +20,23 @@ export function parseAddressString(raw: string | null | undefined) {
   if (!raw || !raw.trim()) return null;
   const parts = raw
     .split(',')
-    .map((p) => p.trim())
+    .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length === 0) return null;
-
-  const street = parts[0] ?? '';
-  const streetNr = parts.length > 1 ? parts[1] : null;
-
   const tail = parts[parts.length - 1] ?? '';
   const postcodeMatch = tail.match(/(\d{8})\s*$/);
-  const postcode = postcodeMatch ? postcodeMatch[1] : null;
-
-  const cityUf = tail.replace(/\d{8}\s*$/, '').trim();
-  const [cityRaw, ufRaw] = cityUf.split(/\s*-\s*/);
-
-  const locality = parts.length > 3 ? parts[parts.length - 2] : null;
-
+  const [cityRaw, ufRaw] = tail
+    .replace(/\d{8}\s*$/, '')
+    .trim()
+    .split(/\s*-\s*/);
   return {
-    street,
-    streetNr: streetNr === 'SN' || streetNr === 'S/N' ? 'S/N' : streetNr,
-    locality: locality ?? null,
-    city: cityRaw ? cityRaw.trim() : null,
-    stateOrProvince: ufRaw ? ufRaw.trim().toUpperCase() : null,
-    postcode,
+    street: parts[0] ?? '',
+    streetNr:
+      parts.length > 1 ? (parts[1] === 'SN' || parts[1] === 'S/N' ? 'S/N' : parts[1]) : null,
+    locality: parts.length > 3 ? (parts[parts.length - 2] ?? null) : null,
+    city: cityRaw?.trim() || null,
+    stateOrProvince: ufRaw?.trim().toUpperCase() || null,
+    postcode: postcodeMatch?.[1] ?? null,
   };
 }
 
@@ -55,103 +52,119 @@ type NetwinLocationRow = {
   ADDRESS_TEXT: string | null;
 };
 
-type Phase2LocationBatchTiming = {
+type BatchTiming = {
   scopeSelectionMs: number;
-  hydrationMs: number;
-  locationsInsertMs: number;
-  addressesInsertMs: number;
-  sitesInsertMs: number;
-  associationsReadMs: number;
+  locationHydrationMs: number;
+  addressHydrationMs: number;
+  associationHydrationMs: number;
+  transformMs: number;
+  locationMergeMs: number;
+  addressMergeMs: number;
+  siteMergeMs: number;
   hierarchyUpdateMs: number;
   commitMs: number;
 };
 
-const elapsedMs = (startedAt: number): number => Date.now() - startedAt;
-
-const formatBatchTiming = (timing: Phase2LocationBatchTiming): string =>
+const elapsed = (startedAt: number) => Date.now() - startedAt;
+const formatTiming = (timing: BatchTiming) =>
   Object.entries(timing)
     .map(([stage, milliseconds]) => `${stage}=${milliseconds}ms`)
     .join('; ');
 
-/**
- * O recorte por bairro usa DL_INFRANODE somente como índice geográfico. A paginação precisa ser
- * feita sobre PI_ID, não sobre LOCATION.ID após um JOIN: os IDs de um bairro não são contíguos na
- * tabela core e isso fazia a última página varrer quase toda a origem para encontrar poucos locais.
- */
-export const neighborhoodLocationIdQuery = (predicates: string[]): string => `
-  SELECT PI_ID
-  FROM (
-    SELECT DISTINCT infranode.PI_ID
-    FROM NETWINOI.DL_INFRANODE infranode
-    WHERE infranode.PI_ID > :lastId
-      AND ${predicates.join(' AND ')}
-    ORDER BY infranode.PI_ID
-  )
-  WHERE ROWNUM <= :batchSize
-`;
+/** @deprecated Use scopedInfranodeIdQuery from source-batches.ts for all structured scopes. */
+export const neighborhoodLocationIdQuery = (predicates: string[]): string =>
+  scopedInfranodeIdQuery(predicates);
 
-export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseStats> {
-  const stats: PhaseStats = { loaded: 0, updated: 0, skipped: 0, rejected: 0, errors: 0 };
+async function hydrateLocations(
+  source: Awaited<ReturnType<MigrationContext['getSourceConnection']>>,
+  ids: number[],
+): Promise<NetwinLocationRow[]> {
+  const locations = new Map<number, NetwinLocationRow>();
+  for (const chunk of chunksOf(ids)) {
+    const { clause, binds } = namedInBinds(chunk, 'location');
+    const result = await source.execute<Omit<NetwinLocationRow, 'ADDRESS_TEXT'>>(
+      `SELECT l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE,
+              ce.NAME AS CAT_NAME, ce.DESCRIPTION AS CAT_DESC
+         FROM NETWIN.LOCATION l
+         LEFT JOIN NETWIN.CAT_ENTITY ce ON ce.ID = l.ID_CAT_ENTITY
+        WHERE l.ID IN (${clause})`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: chunk.length },
+    );
+    for (const row of result.rows ?? []) locations.set(row.ID, { ...row, ADDRESS_TEXT: null });
+  }
+  return ids.flatMap((id) => (locations.has(id) ? [locations.get(id)!] : []));
+}
+
+async function hydrateAddresses(
+  source: Awaited<ReturnType<MigrationContext['getSourceConnection']>>,
+  ids: number[],
+): Promise<Map<number, string>> {
+  const addresses = new Map<number, string>();
+  for (const chunk of chunksOf(ids)) {
+    const { clause, binds } = namedInBinds(chunk, 'location');
+    const result = await source.execute<{ ID_LOCATION: number; ADDRESS_TEXT: string | null }>(
+      `SELECT laa.ID_LOCATION, MAX(a.NAME) AS ADDRESS_TEXT
+         FROM NETWIN.LOCATION_ADDRESS_ASSOC laa
+         JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
+        WHERE laa.ID_LOCATION IN (${clause})
+        GROUP BY laa.ID_LOCATION`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: chunk.length },
+    );
+    for (const row of result.rows ?? []) {
+      if (row.ADDRESS_TEXT) addresses.set(row.ID_LOCATION, row.ADDRESS_TEXT);
+    }
+  }
+  return addresses;
+}
+
+async function hydrateAssociations(
+  source: Awaited<ReturnType<MigrationContext['getSourceConnection']>>,
+  ids: number[],
+): Promise<Array<{ ID_PARENT: number; ID_CHILD: number }>> {
+  const associations: Array<{ ID_PARENT: number; ID_CHILD: number }> = [];
+  for (const chunk of chunksOf(ids)) {
+    const { clause, binds } = namedInBinds(chunk, 'child');
+    const result = await source.execute<{ ID_PARENT: number; ID_CHILD: number }>(
+      `SELECT ID_PARENT, ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_CHILD IN (${clause})`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    associations.push(...(result.rows ?? []));
+  }
+  return associations;
+}
+
+export type PhaseRunStats = PhaseStats & { paused: boolean };
+
+export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRunStats> {
+  const stats: PhaseRunStats = {
+    loaded: 0,
+    updated: 0,
+    skipped: 0,
+    rejected: 0,
+    errors: 0,
+    paused: false,
+  };
   console.log('\n=== Fase 2.A: Locais, Endereços e Hierarquia (GeographicSite) ===');
-
   const source = await ctx.getSourceConnection();
   const target = await ctx.getTargetConnection();
-
   try {
-    // Monta WHERE com base no escopo (UF, Município ou Full)
-    const whereClauses: string[] = ['l.ID > :lastId'];
-    const binds: Record<string, string | number> = {
-      lastId: 0,
-      batchSize: ctx.options.batchSize,
-      ...(ctx.options.scope.bairro ? infranodeScopeBinds(ctx.options.scope) : {}),
-    };
-
-    if (!ctx.options.scope.bairro && ctx.options.scope.uf) {
-      whereClauses.push(`(UPPER(a.NAME) LIKE :ufPattern OR UPPER(l.NAME) LIKE :ufPattern)`);
-      binds.ufPattern = `%- ${ctx.options.scope.uf.toUpperCase()}%`;
+    const structuredScope = Boolean(
+      ctx.options.scope.bairro || ctx.options.scope.municipio || ctx.options.scope.uf,
+    );
+    const predicates = structuredInfranodePredicates(ctx.options.scope);
+    console.log(
+      `[Escopo] Fase 2.A: ${structuredScope ? `DL_INFRANODE estruturado (${predicates.length} predicado(s))` : 'LOCATION nacional por ID'}.`,
+    );
+    const checkpoint = await loadNativeCheckpoint(target, ctx, '2A');
+    let lastId = checkpoint.lastSourceId;
+    let totalProcessed = checkpoint.processedCount;
+    let processedThisRun = 0;
+    if (ctx.options.resume) {
+      console.log(`[Resume] Fase 2.A: cursor ${lastId}; processados=${totalProcessed}.`);
     }
-
-    if (!ctx.options.scope.bairro && ctx.options.scope.municipio) {
-      const muniUpper = ctx.options.scope.municipio.toUpperCase();
-      const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      binds.muniPattern1 = `%${muniUpper}%`;
-      binds.muniPattern2 = `%${muniClean}%`;
-
-      const exchRes = await source.execute<{ ID: number }>(
-        `SELECT l.ID
-         FROM NETWIN.LOCATION l
-         WHERE l.ID IN (
-           SELECT ID FROM NETWIN.LOCATION WHERE UPPER(NAME) = :muniClean OR UPPER(NAME) = :muniUpper
-           UNION
-           SELECT ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_PARENT IN (
-             SELECT ID FROM NETWIN.LOCATION WHERE UPPER(NAME) = :muniClean OR UPPER(NAME) = :muniUpper
-           )
-         )`,
-        { muniClean, muniUpper },
-        { outFormat: oracledb.OUT_FORMAT_OBJECT },
-      );
-      const exchIds = (exchRes.rows ?? []).map((r) => r.ID);
-      if (exchIds.length > 0) {
-        whereClauses.push(
-          `(l.ID IN (${exchIds.join(',')}) OR UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2 OR UPPER(l.NAME) LIKE :muniPattern1)`,
-        );
-      } else {
-        whereClauses.push(
-          `(UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2 OR UPPER(l.NAME) LIKE :muniPattern1)`,
-        );
-      }
-    }
-
-    const neighborhoodPredicates: string[] = [];
-    if (ctx.options.scope.bairro) {
-      neighborhoodPredicates.push(neighborhoodInfranodePredicate('infranode'));
-      if (ctx.options.scope.municipio)
-        neighborhoodPredicates.push(municipalityInfranodePredicate('infranode'));
-      if (ctx.options.scope.uf) neighborhoodPredicates.push(ufInfranodePredicate('infranode'));
-    }
-
-    let lastId = 0;
-    let totalProcessed = 0;
     const maxRecords = ctx.options.maxRecords ?? Infinity;
     const progress = new MigrationProgress({
       label: 'Fase 2.A — Locais',
@@ -161,110 +174,54 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
     progress.start();
 
     for (;;) {
-      if (totalProcessed >= maxRecords) break;
-      binds.lastId = lastId;
-
-      const currentLimit = Math.min(ctx.options.batchSize, maxRecords - totalProcessed);
-      binds.batchSize = currentLimit;
-
-      const timing: Phase2LocationBatchTiming = {
+      const remaining = maxRecords - processedThisRun;
+      if (remaining <= 0) break;
+      const limit = Math.min(ctx.options.batchSize, remaining);
+      const timing: BatchTiming = {
         scopeSelectionMs: 0,
-        hydrationMs: 0,
-        locationsInsertMs: 0,
-        addressesInsertMs: 0,
-        sitesInsertMs: 0,
-        associationsReadMs: 0,
+        locationHydrationMs: 0,
+        addressHydrationMs: 0,
+        associationHydrationMs: 0,
+        transformMs: 0,
+        locationMergeMs: 0,
+        addressMergeMs: 0,
+        siteMergeMs: 0,
         hierarchyUpdateMs: 0,
         commitMs: 0,
       };
-      let rows: NetwinLocationRow[];
+      let startedAt = Date.now();
+      const ids = structuredScope
+        ? await selectScopedInfranodeIds(source, ctx.options.scope, lastId, limit)
+        : await selectFullTableIds(source, 'NETWIN.LOCATION', lastId, limit);
+      timing.scopeSelectionMs = elapsed(startedAt);
+      if (ids.length === 0) break;
+      lastId = ids[ids.length - 1] ?? lastId;
 
-      if (ctx.options.scope.bairro) {
-        const selectionStartedAt = Date.now();
-        const selected = await source.execute<{ PI_ID: number }>(
-          neighborhoodLocationIdQuery(neighborhoodPredicates),
-          binds,
-          { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
-        );
-        timing.scopeSelectionMs = elapsedMs(selectionStartedAt);
-        const locationIds = (selected.rows ?? []).map((row) => row.PI_ID);
-        if (locationIds.length === 0) break;
-        lastId = locationIds[locationIds.length - 1] ?? lastId;
+      startedAt = Date.now();
+      const rows = await hydrateLocations(source, ids);
+      timing.locationHydrationMs = elapsed(startedAt);
+      startedAt = Date.now();
+      const addressByLocation = await hydrateAddresses(source, ids);
+      timing.addressHydrationMs = elapsed(startedAt);
+      startedAt = Date.now();
+      const associations = await hydrateAssociations(source, ids);
+      timing.associationHydrationMs = elapsed(startedAt);
 
-        const hydrationStartedAt = Date.now();
-        rows = [];
-        for (let offset = 0; offset < locationIds.length; offset += 900) {
-          const ids = locationIds.slice(offset, offset + 900);
-          const idBinds = ids.map((_, index) => `:${index + 1}`).join(',');
-          const result = await source.execute<NetwinLocationRow>(
-            `SELECT l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE,
-                    ce.NAME AS CAT_NAME, ce.DESCRIPTION AS CAT_DESC, MAX(a.NAME) AS ADDRESS_TEXT
-               FROM NETWIN.LOCATION l
-               LEFT JOIN NETWIN.CAT_ENTITY ce ON ce.ID = l.ID_CAT_ENTITY
-               LEFT JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = l.ID
-               LEFT JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-              WHERE l.ID IN (${idBinds})
-              GROUP BY l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE,
-                       ce.NAME, ce.DESCRIPTION
-              ORDER BY l.ID`,
-            ids,
-            { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: ids.length },
-          );
-          rows.push(...(result.rows ?? []));
-        }
-        timing.hydrationMs = elapsedMs(hydrationStartedAt);
-      } else {
-        const hydrationStartedAt = Date.now();
-        const result = await source.execute<NetwinLocationRow>(
-          `SELECT *
-           FROM (
-             SELECT l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE,
-                    ce.NAME AS CAT_NAME, ce.DESCRIPTION AS CAT_DESC, MAX(a.NAME) AS ADDRESS_TEXT
-               FROM NETWIN.LOCATION l
-               LEFT JOIN NETWIN.CAT_ENTITY ce ON ce.ID = l.ID_CAT_ENTITY
-               LEFT JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = l.ID
-               LEFT JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-              WHERE ${whereClauses.join(' AND ')}
-              GROUP BY l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE,
-                       ce.NAME, ce.DESCRIPTION
-              ORDER BY l.ID
-           )
-           WHERE ROWNUM <= :batchSize`,
-          binds,
-          { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
-        );
-        rows = result.rows ?? [];
-        timing.hydrationMs = elapsedMs(hydrationStartedAt);
-        if (rows.length === 0) break;
-      }
-
-      if (rows.length === 0) break;
-
-      const locationsToInsert: Array<Record<string, unknown>> = [];
-      const addressesToInsert: Array<Record<string, unknown>> = [];
-      const sitesToInsert: Array<Record<string, unknown>> = [];
-      const batchIds: number[] = [];
-      const seenIds = new Set<number>();
-
+      startedAt = Date.now();
+      const locations: Array<Record<string, unknown>> = [];
+      const addresses: Array<Record<string, unknown>> = [];
+      const sites: Array<Record<string, unknown>> = [];
       for (const row of rows) {
-        lastId = Math.max(lastId, row.ID);
-        if (seenIds.has(row.ID)) continue;
-        seenIds.add(row.ID);
-        batchIds.push(row.ID);
-
-        const lat = row.LATITUDE ? Number(row.LATITUDE) : null;
-        const lng = row.LONGITUDE ? Number(row.LONGITUDE) : null;
+        const lat = row.LATITUDE === null ? null : Number(row.LATITUDE);
+        const lng = row.LONGITUDE === null ? null : Number(row.LONGITUDE);
         const hasPoint =
           lat !== null && lng !== null && lng >= -75 && lng <= -32 && lat >= -35 && lat <= 6;
-
         const siteId = netwinLocationId(row.ID);
-        const locId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:GEO:${row.ID}`);
+        const locationId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:GEO:${row.ID}`);
         const siteName = (row.NAME ?? `Local ${row.ID}`).trim();
-
-        // 1. GeographicLocation (Point WGS84)
-        if (hasPoint) {
-          locationsToInsert.push({
-            id: locId,
+        if (hasPoint)
+          locations.push({
+            id: locationId,
             tenant_id: ctx.options.tenantId,
             geometry_type: 'Point',
             geometry: JSON.stringify({ type: 'Point', coordinates: [lng, lat] }),
@@ -272,32 +229,24 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
             reference_point: siteName.slice(0, 255),
             characteristics: '[]',
           });
-        }
-
-        // 2. GeographicAddress
-        const parsedAddr = parseAddressString(row.ADDRESS_TEXT);
-        const addrId = parsedAddr
+        const parsed = parseAddressString(addressByLocation.get(row.ID));
+        const addressId = parsed
           ? deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:ADDR:${row.ID}`)
           : null;
-        if (parsedAddr && addrId) {
-          addressesToInsert.push({
-            id: addrId,
+        if (parsed && addressId)
+          addresses.push({
+            id: addressId,
             tenant_id: ctx.options.tenantId,
-            street_name: parsedAddr.street.slice(0, 255),
-            street_nr: parsedAddr.streetNr ? parsedAddr.streetNr.slice(0, 50) : null,
-            locality: parsedAddr.locality ? parsedAddr.locality.slice(0, 100) : null,
-            city: parsedAddr.city ? parsedAddr.city.slice(0, 100) : null,
-            state_or_province: parsedAddr.stateOrProvince
-              ? parsedAddr.stateOrProvince.slice(0, 50)
-              : null,
+            street_name: parsed.street.slice(0, 255),
+            street_nr: parsed.streetNr?.slice(0, 50) ?? null,
+            locality: parsed.locality?.slice(0, 100) ?? null,
+            city: parsed.city?.slice(0, 100) ?? null,
+            state_or_province: parsed.stateOrProvince?.slice(0, 50) ?? null,
             country: 'BR',
-            postcode: parsedAddr.postcode,
-            geographic_location_id: hasPoint ? locId : null,
+            postcode: parsed.postcode,
+            geographic_location_id: hasPoint ? locationId : null,
             characteristics: '[]',
           });
-        }
-
-        // 3. GeographicSite (classificação de spec a partir de CAT_NAME / CAT_DESC)
         const catName = (row.CAT_NAME ?? '').toUpperCase();
         const catDesc = (row.CAT_DESC ?? '').toUpperCase();
         let specCode = 'BUILDING';
@@ -319,18 +268,15 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
           specCode = 'CUSTOMER_SITE';
         else if (catName.includes('REMOTE_UNIT.UR') || catDesc.includes('UNIDADE REMOTA'))
           specCode = 'REMOTE_UNIT';
-
-        const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${specCode}`);
-
-        sitesToInsert.push({
+        sites.push({
           id: siteId,
           tenant_id: ctx.options.tenantId,
           name: siteName.slice(0, 255),
-          site_specification_id: specId,
+          site_specification_id: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${specCode}`),
           status: 'Active',
-          geographic_location_id: hasPoint ? locId : null,
-          geographic_address_id: addrId,
-          parent_site_id: null, // Resolvido no segundo passo do lote
+          geographic_location_id: hasPoint ? locationId : null,
+          geographic_address_id: addressId,
+          parent_site_id: null,
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
@@ -344,15 +290,17 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
           ]),
         });
       }
+      timing.transformMs = elapsed(startedAt);
 
-      // Gravação em lote no Nexus Oracle
+      const nextTotalProcessed = totalProcessed + ids.length;
       if (target) {
-        if (locationsToInsert.length > 0) {
-          const locationsInsertStartedAt = Date.now();
-          await bulkInsertRows(
+        try {
+          startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
             'tmf_geographic_location',
+            ['id'],
             [
               'id',
               'tenant_id',
@@ -362,17 +310,16 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
               'reference_point',
               'characteristics',
             ],
-            locationsToInsert,
+            locations,
+            ctx.options.batchSize,
           );
-          timing.locationsInsertMs = elapsedMs(locationsInsertStartedAt);
-        }
-
-        if (addressesToInsert.length > 0) {
-          const addressesInsertStartedAt = Date.now();
-          await bulkInsertRows(
+          timing.locationMergeMs = elapsed(startedAt);
+          startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
             'tmf_geographic_address',
+            ['id'],
             [
               'id',
               'tenant_id',
@@ -386,17 +333,16 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
               'geographic_location_id',
               'characteristics',
             ],
-            addressesToInsert,
+            addresses,
+            ctx.options.batchSize,
           );
-          timing.addressesInsertMs = elapsedMs(addressesInsertStartedAt);
-        }
-
-        if (sitesToInsert.length > 0) {
-          const sitesInsertStartedAt = Date.now();
-          await bulkInsertRows(
+          timing.addressMergeMs = elapsed(startedAt);
+          startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
             'tmf_geographic_site',
+            ['id'],
             [
               'id',
               'tenant_id',
@@ -405,61 +351,51 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseSt
               'status',
               'geographic_location_id',
               'geographic_address_id',
-              'parent_site_id',
               'related_party',
               'characteristics',
             ],
-            sitesToInsert,
+            sites,
+            ctx.options.batchSize,
           );
-          timing.sitesInsertMs = elapsedMs(sitesInsertStartedAt);
+          timing.siteMergeMs = elapsed(startedAt);
+          startedAt = Date.now();
+          if (associations.length > 0)
+            await target.executeMany(
+              `UPDATE ${ctx.t('tmf_geographic_site')} child SET child.parent_site_id=:1 WHERE child.id=:2 AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} parent WHERE parent.id=:1)`,
+              associations.map((association) => [
+                netwinLocationId(association.ID_PARENT),
+                netwinLocationId(association.ID_CHILD),
+              ]),
+              { autoCommit: false },
+            );
+          timing.hierarchyUpdateMs = elapsed(startedAt);
+          await saveNativeCheckpoint(target, ctx, '2A', {
+            lastSourceId: lastId,
+            processedCount: nextTotalProcessed,
+          });
+          startedAt = Date.now();
+          await target.execute('COMMIT');
+          timing.commitMs = elapsed(startedAt);
+        } catch (error) {
+          await target.execute('ROLLBACK');
+          throw error;
         }
-
-        // 4. Resolução da Hierarquia (LOCATION_ASSOC) para o lote atual
-        const associationsReadStartedAt = Date.now();
-        const assocs: Array<{ ID_PARENT: number; ID_CHILD: number }> = [];
-        for (let i = 0; i < batchIds.length; i += 900) {
-          const chunk = batchIds.slice(i, i + 900);
-          const parentBinds = chunk.map((_, idx) => `:${idx + 1}`).join(',');
-          const assocResult = await source.execute<{ ID_PARENT: number; ID_CHILD: number }>(
-            `SELECT ID_PARENT, ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_CHILD IN (${parentBinds})`,
-            chunk,
-            { outFormat: oracledb.OUT_FORMAT_OBJECT },
-          );
-          if (assocResult.rows) assocs.push(...assocResult.rows);
-        }
-        timing.associationsReadMs = elapsedMs(associationsReadStartedAt);
-
-        if (assocs.length > 0) {
-          const hierarchyUpdateStartedAt = Date.now();
-          const updateSql = `
-            UPDATE ${ctx.t('tmf_geographic_site')} s
-            SET s.parent_site_id = :1
-            WHERE s.id = :2
-              AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} p WHERE p.id = :1)
-          `;
-          const updateData = assocs.map((a) => [
-            netwinLocationId(a.ID_PARENT),
-            netwinLocationId(a.ID_CHILD),
-          ]);
-          await target.executeMany(updateSql, updateData, { autoCommit: false });
-          timing.hierarchyUpdateMs = elapsedMs(hierarchyUpdateStartedAt);
-        }
-
-        const commitStartedAt = Date.now();
-        await target.execute('COMMIT');
-        timing.commitMs = elapsedMs(commitStartedAt);
       }
-
-      totalProcessed += batchIds.length;
-      stats.loaded += sitesToInsert.length;
-      progress.advance(batchIds.length);
+      totalProcessed = nextTotalProcessed;
+      processedThisRun += ids.length;
+      stats.loaded += sites.length;
+      progress.advance(ids.length);
       console.log(
-        `[Progresso] Fase 2.A — Locais: último ID ${lastId}; ${formatBatchTiming(timing)}.`,
+        `[Progresso] Fase 2.A — cursor ${lastId}; selecionados=${ids.length}; hidratados=${rows.length}; ${formatTiming(timing)}.`,
       );
     }
+    stats.paused = Boolean(ctx.options.maxRecords && processedThisRun >= ctx.options.maxRecords);
     progress.finish();
-
-    console.log(`Fase 2.A concluída: ${stats.loaded} locais e hierarquias carregados.`);
+    console.log(
+      stats.paused
+        ? `Fase 2.A pausada após ${processedThisRun} locais neste comando.`
+        : `Fase 2.A concluída: ${stats.loaded} locais reconciliados.`,
+    );
     return stats;
   } finally {
     await source.close();

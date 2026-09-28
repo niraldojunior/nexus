@@ -1,6 +1,5 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
-import { bulkInsertRows } from './context.js';
 import {
   deterministicUuid,
   netwinCableId,
@@ -10,18 +9,32 @@ import {
   NEXUS_NETWIN_NAMESPACE,
 } from './identity.js';
 import { parseWktLineString, parseWktPoint } from '../../shared/utils/wkt.js';
-import { resolveLifecycleStatus, merge } from '../netwin-migration-kit.js';
+import { bulkMergeRows, resolveLifecycleStatus, merge } from '../netwin-migration-kit.js';
+import {
+  enqueueNativeRelationships,
+  loadNativeCheckpoint,
+  saveNativeCheckpoint,
+  type NativeRelationship,
+} from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import {
-  infranodeScopeBinds,
-  municipalityInfranodePredicate,
-  neighborhoodInfranodePredicate,
-  ufInfranodePredicate,
-} from './scope.js';
+  hydrateByIds,
+  selectResourceIdsByInfranodes,
+  selectResourceIdsByStructuredInfranode,
+} from './source-batches.js';
 import type { PhaseStats } from './types.js';
 
-export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseStats> {
-  const stats: PhaseStats = { loaded: 0, updated: 0, skipped: 0, rejected: 0, errors: 0 };
+export type ResourcePhaseRunStats = PhaseStats & { paused: boolean };
+
+export async function runPhase2Resources(ctx: MigrationContext): Promise<ResourcePhaseRunStats> {
+  const stats: ResourcePhaseRunStats = {
+    loaded: 0,
+    updated: 0,
+    skipped: 0,
+    rejected: 0,
+    errors: 0,
+    paused: false,
+  };
   console.log('\n=== Fase 2.B: Recursos e Topologia (Equipamentos, Cabos, Lances e Grafo) ===');
 
   const source = await ctx.getSourceConnection();
@@ -102,42 +115,6 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
       reportEvery: batchSize,
     });
 
-    // Filtros de escopo (Município / UF)
-    let eqScopeJoin = '';
-    let eqScopeWhere = '';
-    let routeScopeJoin = '';
-    let routeScopeWhere = '';
-    let cableScopeJoin = '';
-    let cableScopeWhere = '';
-    const scopeBinds: Record<string, string | number> = {
-      ...(ctx.options.scope.bairro ? infranodeScopeBinds(ctx.options.scope) : {}),
-    };
-    const queryBinds = (lastId: number, batchSize: number, includeScope = true) => ({
-      ...(includeScope ? scopeBinds : {}),
-      lastId,
-      batchSize,
-    });
-
-    if (ctx.options.scope.bairro) {
-      const equipmentPredicates = [neighborhoodInfranodePredicate('infranode')];
-      if (ctx.options.scope.municipio) {
-        equipmentPredicates.push(municipalityInfranodePredicate('infranode'));
-      }
-      if (ctx.options.scope.uf) {
-        equipmentPredicates.push(ufInfranodePredicate('infranode'));
-      }
-
-      eqScopeJoin = `
-        JOIN NETWINOI.DL_INFRANODE infranode ON infranode.PI_ID = e.INFRANODE_ID
-      `;
-      eqScopeWhere = `AND ${equipmentPredicates.join(' AND ')}`;
-
-      // Rota e cabo não possuem vínculo direto e comprovado ao DL_INFRANODE de bairro.
-      // Para não ampliar silenciosamente o recorte, estes conjuntos ficam fora da carga por bairro.
-      routeScopeWhere = 'AND 1 = 0';
-      cableScopeWhere = 'AND 1 = 0';
-    }
-
     const exchangeIds: number[] = [];
     if (!ctx.options.scope.bairro && ctx.options.scope.municipio) {
       const muniUpper = ctx.options.scope.municipio.toUpperCase();
@@ -178,80 +155,111 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
       console.log(`[Escopo] ${exchangeIds.length} localidades encontradas para a UF ${ufUpper}`);
     }
 
-    if (exchangeIds.length > 0) {
-      const exchBinds = exchangeIds
-        .map((id, idx) => {
-          scopeBinds[`ex${idx}`] = id;
-          return `:ex${idx}`;
-        })
-        .join(',');
-
-      eqScopeJoin = '';
-      eqScopeWhere = `AND e.EXCHANGE_ID IN (${exchBinds})`;
-
-      routeScopeJoin = '';
-      routeScopeWhere = `AND r.EXCHANGE_ID IN (${exchBinds})`;
-
-      cableScopeJoin = '';
-      cableScopeWhere = `AND c.EXCHANGE_ID IN (${exchBinds})`;
-    } else if (!ctx.options.scope.bairro && ctx.options.scope.municipio) {
-      const muniUpper = ctx.options.scope.municipio.toUpperCase();
-      const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      scopeBinds.muniPattern1 = `%${muniUpper}%`;
-      scopeBinds.muniPattern2 = `%${muniClean}%`;
-
-      eqScopeJoin = `
-        JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = COALESCE(e.INFRANODE_ID, e.EXCHANGE_ID)
-        JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-      `;
-      eqScopeWhere = `AND (UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2)`;
-
-      routeScopeJoin = `
-        JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = COALESCE(r.EXCHANGE_ID, r.INFRANODE_ID_A)
-        JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-      `;
-      routeScopeWhere = `AND (UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2)`;
-
-      cableScopeJoin = `
-        JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = c.EXCHANGE_ID
-        JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-      `;
-      cableScopeWhere = `AND (UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2)`;
-    } else if (!ctx.options.scope.bairro && ctx.options.scope.uf) {
-      scopeBinds.ufPattern = `%- ${ctx.options.scope.uf.toUpperCase()}%`;
-
-      eqScopeJoin = `
-        JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = COALESCE(e.INFRANODE_ID, e.EXCHANGE_ID)
-        JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-      `;
-      eqScopeWhere = `AND UPPER(a.NAME) LIKE :ufPattern`;
-
-      routeScopeJoin = `
-        JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = COALESCE(r.EXCHANGE_ID, r.INFRANODE_ID_A)
-        JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-      `;
-      routeScopeWhere = `AND UPPER(a.NAME) LIKE :ufPattern`;
-
-      cableScopeJoin = `
-        JOIN NETWIN.LOCATION_ADDRESS_ASSOC laa ON laa.ID_LOCATION = c.EXCHANGE_ID
-        JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
-      `;
-      cableScopeWhere = `AND UPPER(a.NAME) LIKE :ufPattern`;
+    const hasStructuredExchangeScope = Boolean(
+      !ctx.options.scope.bairro && (ctx.options.scope.municipio || ctx.options.scope.uf),
+    );
+    if (hasStructuredExchangeScope && exchangeIds.length === 0) {
+      // Sem \u00e2ncora estruturada, n\u00e3o retomamos o fallback por texto de ADDRESS. Ele era caro,
+      // n\u00e3o index\u00e1vel e podia ampliar silenciosamente o recorte. O est\u00e1gio fica vazio at\u00e9 que
+      // a hierarquia LOCATION/EXCHANGE seja corrigida ou o escopo seja refinado.
+      console.warn(
+        `[Escopo] Nenhuma \u00e2ncora EXCHANGE estruturada foi encontrada para ${ctx.options.scope.municipio ?? ctx.options.scope.uf}; equipamentos, lances e cabos n\u00e3o ser\u00e3o ampliados por endere\u00e7o textual.`,
+      );
     }
+
+    const emptyStructuredScope = hasStructuredExchangeScope && exchangeIds.length === 0;
+    const skipRoutesAndCablesForNeighborhood = Boolean(ctx.options.scope.bairro);
+    if (skipRoutesAndCablesForNeighborhood) {
+      console.log(
+        '[Escopo] Lances e cabos n\u00e3o possuem v\u00ednculo direto comprovado ao DL_INFRANODE; n\u00e3o ser\u00e3o carregados por bairro.',
+      );
+    }
+
+    const selectFullResourceIds = async (table: string, lastId: number, limit: number) => {
+      const result = await source.execute<{ ID: number }>(
+        `SELECT ID
+         FROM (
+           SELECT ID
+           FROM ${table}
+           WHERE ID > :lastId
+           ORDER BY ID
+         )
+         WHERE ROWNUM <= :batchSize`,
+        { lastId, batchSize: limit },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: limit, prefetchRows: limit },
+      );
+      return (result.rows ?? []).map((row) => row.ID);
+    };
+
+    const selectEquipmentIds = async (lastId: number, limit: number) => {
+      if (ctx.options.scope.bairro) {
+        return selectResourceIdsByStructuredInfranode(
+          source,
+          'NETWIN.OSP_EQUIPMENT',
+          'INFRANODE_ID',
+          ctx.options.scope,
+          lastId,
+          limit,
+        );
+      }
+      if (exchangeIds.length > 0) {
+        return selectResourceIdsByInfranodes(
+          source,
+          'NETWIN.OSP_EQUIPMENT',
+          'EXCHANGE_ID',
+          exchangeIds,
+          lastId,
+          limit,
+        );
+      }
+      return emptyStructuredScope
+        ? []
+        : selectFullResourceIds('NETWIN.OSP_EQUIPMENT', lastId, limit);
+    };
+
+    const selectExchangeScopedResourceIds = async (
+      table: string,
+      lastId: number,
+      limit: number,
+    ) => {
+      if (skipRoutesAndCablesForNeighborhood || emptyStructuredScope) return [];
+      if (exchangeIds.length > 0) {
+        return selectResourceIdsByInfranodes(
+          source,
+          table,
+          'EXCHANGE_ID',
+          exchangeIds,
+          lastId,
+          limit,
+        );
+      }
+      return selectFullResourceIds(table, lastId, limit);
+    };
 
     // =========================================================================
     // 2. MIGRAÇÃO DE EQUIPAMENTOS (NETWIN.OSP_EQUIPMENT)
     // =========================================================================
     console.log('\n--- Migrando Equipamentos Ópticos (OSP_EQUIPMENT) ---');
-    let lastEqId = 0;
-    let eqCount = 0;
+    const equipmentCheckpoint = await loadNativeCheckpoint(target, ctx, '2B-equipment');
+    let lastEqId = equipmentCheckpoint.lastSourceId;
+    let eqCount = equipmentCheckpoint.processedCount;
+    let equipmentProcessedThisRun = 0;
+    if (ctx.options.resume) {
+      console.log(`[Resume] Fase 2.B/equipamentos: cursor ${lastEqId}; processados=${eqCount}.`);
+    }
     equipmentProgress.start();
 
     for (;;) {
-      if (eqCount >= maxRecords) break;
-      const currentLimit = Math.min(batchSize, maxRecords - eqCount);
+      if (equipmentProcessedThisRun >= maxRecords) break;
+      const currentLimit = Math.min(batchSize, maxRecords - equipmentProcessedThisRun);
 
-      const eqResult = await source.execute<{
+      const selectionStartedAt = Date.now();
+      const equipmentIds = await selectEquipmentIds(lastEqId, currentLimit);
+      const scopeSelectionMs = Date.now() - selectionStartedAt;
+      if (equipmentIds.length === 0) break;
+
+      const hydrationStartedAt = Date.now();
+      const rows = await hydrateByIds<{
         ID: number;
         NAME: string | null;
         CAT_SUBTYPE_ID: number | null;
@@ -261,22 +269,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         EXTERNAL_CODE: string | null;
         WKT: string | null;
       }>(
-        `SELECT e.ID, e.NAME, e.CAT_SUBTYPE_ID, e.INFRANODE_ID, e.EXCHANGE_ID,
-                e.CAT_LIFE_CYCLE_STATE_ID, e.EXTERNAL_CODE,
-                SDO_UTIL.TO_WKTGEOMETRY(e.GEOM) AS WKT
-         FROM (
-           SELECT e.* FROM NETWIN.OSP_EQUIPMENT e
-           ${eqScopeJoin}
-           WHERE e.ID > :lastId
-             ${eqScopeWhere}
-           ORDER BY e.ID
-         ) e
-         WHERE ROWNUM <= :batchSize`,
-        queryBinds(lastEqId, currentLimit),
-        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
+        source,
+        equipmentIds,
+        (inClause) => `SELECT e.ID, e.NAME, e.CAT_SUBTYPE_ID, e.INFRANODE_ID, e.EXCHANGE_ID,
+                              e.CAT_LIFE_CYCLE_STATE_ID, e.EXTERNAL_CODE,
+                              SDO_UTIL.TO_WKTGEOMETRY(e.GEOM) AS WKT
+                         FROM NETWIN.OSP_EQUIPMENT e
+                        WHERE e.ID IN (${inClause})`,
       );
-
-      const rows = eqResult.rows ?? [];
+      const hydrationMs = Date.now() - hydrationStartedAt;
       if (rows.length === 0) break;
 
       const locations: Array<Record<string, unknown>> = [];
@@ -350,12 +351,18 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         });
       }
 
+      const nextEqCount = eqCount + equipmentIds.length;
+      let locationMergeMs = 0;
+      let resourceMergeMs = 0;
+      let commitMs = 0;
       if (target) {
-        if (locations.length > 0) {
-          await bulkInsertRows(
+        try {
+          let startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
             'tmf_geographic_location',
+            ['id'],
             [
               'id',
               'tenant_id',
@@ -366,36 +373,54 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
               'characteristics',
             ],
             locations,
+            batchSize,
           );
+          locationMergeMs = Date.now() - startedAt;
+          startedAt = Date.now();
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'tmf_physical_resource',
+            ['id'],
+            [
+              'id',
+              'tenant_id',
+              'name',
+              'resource_specification_id',
+              'status',
+              'place_id',
+              'place_type',
+              'serving_site_id',
+              'administrative_state',
+              'operational_state',
+              'usage_state',
+              'related_party',
+              'characteristics',
+            ],
+            resources,
+            batchSize,
+          );
+          resourceMergeMs = Date.now() - startedAt;
+          await saveNativeCheckpoint(target, ctx, '2B-equipment', {
+            lastSourceId: lastEqId,
+            processedCount: nextEqCount,
+          });
+          startedAt = Date.now();
+          await target.execute('COMMIT');
+          commitMs = Date.now() - startedAt;
+        } catch (error) {
+          await target.execute('ROLLBACK');
+          throw error;
         }
-        await bulkInsertRows(
-          target,
-          ctx.t,
-          'tmf_physical_resource',
-          [
-            'id',
-            'tenant_id',
-            'name',
-            'resource_specification_id',
-            'status',
-            'place_id',
-            'place_type',
-            'serving_site_id',
-            'administrative_state',
-            'operational_state',
-            'usage_state',
-            'related_party',
-            'characteristics',
-          ],
-          resources,
-        );
-        await target.execute('COMMIT');
       }
 
-      eqCount += rows.length;
+      eqCount = nextEqCount;
+      equipmentProcessedThisRun += equipmentIds.length;
       stats.loaded += resources.length;
-      equipmentProgress.advance(rows.length);
-      console.log(`[Progresso] Fase 2.B — Equipamentos: último ID ${lastEqId}.`);
+      equipmentProgress.advance(equipmentIds.length);
+      console.log(
+        `[Progresso] Fase 2.B — Equipamentos: cursor ${lastEqId}; selecionados=${equipmentIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; commit=${commitMs}ms.`,
+      );
     }
     equipmentProgress.finish();
 
@@ -403,15 +428,30 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     // 3. MIGRAÇÃO DE ROTAS / LANCES (NETWIN.OSP_ROUTE)
     // =========================================================================
     console.log('\n--- Migrando Rotas e Lances (OSP_ROUTE) ---');
-    let lastRouteId = 0;
-    let routeCount = 0;
+    const routeCheckpoint = await loadNativeCheckpoint(target, ctx, '2B-route');
+    let lastRouteId = routeCheckpoint.lastSourceId;
+    let routeCount = routeCheckpoint.processedCount;
+    let routesProcessedThisRun = 0;
+    if (ctx.options.resume) {
+      console.log(`[Resume] Fase 2.B/lances: cursor ${lastRouteId}; processados=${routeCount}.`);
+    }
     routeProgress.start();
 
     for (;;) {
-      if (routeCount >= maxRecords) break;
-      const currentLimit = Math.min(batchSize, maxRecords - routeCount);
+      if (routesProcessedThisRun >= maxRecords) break;
+      const currentLimit = Math.min(batchSize, maxRecords - routesProcessedThisRun);
 
-      const routeResult = await source.execute<{
+      const selectionStartedAt = Date.now();
+      const routeIds = await selectExchangeScopedResourceIds(
+        'NETWIN.OSP_ROUTE',
+        lastRouteId,
+        currentLimit,
+      );
+      const scopeSelectionMs = Date.now() - selectionStartedAt;
+      if (routeIds.length === 0) break;
+
+      const hydrationStartedAt = Date.now();
+      const rows = await hydrateByIds<{
         ID: number;
         NAME: string | null;
         CAT_SUBTYPE_ID: number | null;
@@ -419,21 +459,14 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         CAT_LIFE_CYCLE_STATE_ID: number | null;
         WKT: string | null;
       }>(
-        `SELECT r.ID, r.NAME, r.CAT_SUBTYPE_ID, r.EXCHANGE_ID, r.CAT_LIFE_CYCLE_STATE_ID,
-                SDO_UTIL.TO_WKTGEOMETRY(r.GEOM) AS WKT
-         FROM (
-           SELECT r.* FROM NETWIN.OSP_ROUTE r
-           ${routeScopeJoin}
-           WHERE r.ID > :lastId
-             ${routeScopeWhere}
-           ORDER BY r.ID
-         ) r
-         WHERE ROWNUM <= :batchSize`,
-        queryBinds(lastRouteId, currentLimit, !ctx.options.scope.bairro),
-        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
+        source,
+        routeIds,
+        (inClause) => `SELECT r.ID, r.NAME, r.CAT_SUBTYPE_ID, r.EXCHANGE_ID,
+                              r.CAT_LIFE_CYCLE_STATE_ID, SDO_UTIL.TO_WKTGEOMETRY(r.GEOM) AS WKT
+                         FROM NETWIN.OSP_ROUTE r
+                        WHERE r.ID IN (${inClause})`,
       );
-
-      const rows = routeResult.rows ?? [];
+      const hydrationMs = Date.now() - hydrationStartedAt;
       if (rows.length === 0) break;
 
       const locations: Array<Record<string, unknown>> = [];
@@ -499,12 +532,18 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         });
       }
 
+      const nextRouteCount = routeCount + routeIds.length;
+      let locationMergeMs = 0;
+      let resourceMergeMs = 0;
+      let commitMs = 0;
       if (target) {
-        if (locations.length > 0) {
-          await bulkInsertRows(
+        try {
+          let startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
             'tmf_geographic_location',
+            ['id'],
             [
               'id',
               'tenant_id',
@@ -515,36 +554,54 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
               'characteristics',
             ],
             locations,
+            batchSize,
           );
+          locationMergeMs = Date.now() - startedAt;
+          startedAt = Date.now();
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'tmf_physical_resource',
+            ['id'],
+            [
+              'id',
+              'tenant_id',
+              'name',
+              'resource_specification_id',
+              'status',
+              'place_id',
+              'place_type',
+              'serving_site_id',
+              'administrative_state',
+              'operational_state',
+              'usage_state',
+              'related_party',
+              'characteristics',
+            ],
+            resources,
+            batchSize,
+          );
+          resourceMergeMs = Date.now() - startedAt;
+          await saveNativeCheckpoint(target, ctx, '2B-route', {
+            lastSourceId: lastRouteId,
+            processedCount: nextRouteCount,
+          });
+          startedAt = Date.now();
+          await target.execute('COMMIT');
+          commitMs = Date.now() - startedAt;
+        } catch (error) {
+          await target.execute('ROLLBACK');
+          throw error;
         }
-        await bulkInsertRows(
-          target,
-          ctx.t,
-          'tmf_physical_resource',
-          [
-            'id',
-            'tenant_id',
-            'name',
-            'resource_specification_id',
-            'status',
-            'place_id',
-            'place_type',
-            'serving_site_id',
-            'administrative_state',
-            'operational_state',
-            'usage_state',
-            'related_party',
-            'characteristics',
-          ],
-          resources,
-        );
-        await target.execute('COMMIT');
       }
 
-      routeCount += rows.length;
+      routeCount = nextRouteCount;
+      routesProcessedThisRun += routeIds.length;
       stats.loaded += resources.length;
-      routeProgress.advance(rows.length);
-      console.log(`[Progresso] Fase 2.B — Lances: último ID ${lastRouteId}.`);
+      routeProgress.advance(routeIds.length);
+      console.log(
+        `[Progresso] Fase 2.B — Lances: cursor ${lastRouteId}; selecionados=${routeIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; commit=${commitMs}ms.`,
+      );
     }
     routeProgress.finish();
 
@@ -552,15 +609,30 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     // 4. MIGRAÇÃO DE CABOS E TOPOLOGIA (NETWIN.OSP_CABLE + RELACIONAMENTOS)
     // =========================================================================
     console.log('\n--- Migrando Cabos e Topologia (OSP_CABLE + connectedTo + supportedBy) ---');
-    let lastCableId = 0;
-    let cableCount = 0;
+    const cableCheckpoint = await loadNativeCheckpoint(target, ctx, '2B-cable');
+    let lastCableId = cableCheckpoint.lastSourceId;
+    let cableCount = cableCheckpoint.processedCount;
+    let cablesProcessedThisRun = 0;
+    if (ctx.options.resume) {
+      console.log(`[Resume] Fase 2.B/cabos: cursor ${lastCableId}; processados=${cableCount}.`);
+    }
     cableProgress.start();
 
     for (;;) {
-      if (cableCount >= maxRecords) break;
-      const currentLimit = Math.min(batchSize, maxRecords - cableCount);
+      if (cablesProcessedThisRun >= maxRecords) break;
+      const currentLimit = Math.min(batchSize, maxRecords - cablesProcessedThisRun);
 
-      const cableResult = await source.execute<{
+      const selectionStartedAt = Date.now();
+      const cableIds = await selectExchangeScopedResourceIds(
+        'NETWIN.OSP_CABLE',
+        lastCableId,
+        currentLimit,
+      );
+      const scopeSelectionMs = Date.now() - selectionStartedAt;
+      if (cableIds.length === 0) break;
+
+      const hydrationStartedAt = Date.now();
+      const rows = await hydrateByIds<{
         ID: number;
         NAME: string | null;
         EQUIPMENT_ID_A: number | null;
@@ -570,34 +642,26 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         CAT_LIFE_CYCLE_STATE_ID: number | null;
         WKT: string | null;
       }>(
-        `SELECT c.ID, c.NAME, c.EQUIPMENT_ID_A, c.EQUIPMENT_ID_Z, c.CAT_MODEL_ID, c.EXCHANGE_ID,
-                c.CAT_LIFE_CYCLE_STATE_ID, SDO_UTIL.TO_WKTGEOMETRY(c.GEOM) AS WKT
-         FROM (
-           SELECT c.* FROM NETWIN.OSP_CABLE c
-           ${cableScopeJoin}
-           WHERE c.ID > :lastId
-             ${cableScopeWhere}
-           ORDER BY c.ID
-         ) c
-         WHERE ROWNUM <= :batchSize`,
-        queryBinds(lastCableId, currentLimit, !ctx.options.scope.bairro),
-        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
+        source,
+        cableIds,
+        (inClause) => `SELECT c.ID, c.NAME, c.EQUIPMENT_ID_A, c.EQUIPMENT_ID_Z, c.CAT_MODEL_ID,
+                              c.EXCHANGE_ID, c.CAT_LIFE_CYCLE_STATE_ID,
+                              SDO_UTIL.TO_WKTGEOMETRY(c.GEOM) AS WKT
+                         FROM NETWIN.OSP_CABLE c
+                        WHERE c.ID IN (${inClause})`,
       );
-
-      const rows = cableResult.rows ?? [];
+      const hydrationMs = Date.now() - hydrationStartedAt;
       if (rows.length === 0) break;
 
       const locations: Array<Record<string, unknown>> = [];
       const resources: Array<Record<string, unknown>> = [];
-      const relationships: Array<Record<string, unknown>> = [];
-      const cableIds: number[] = [];
+      const relationships: NativeRelationship[] = [];
       const seenCableIds = new Set<number>();
 
       for (const c of rows) {
         lastCableId = Math.max(lastCableId, c.ID);
         if (seenCableIds.has(c.ID)) continue;
         seenCableIds.add(c.ID);
-        cableIds.push(c.ID);
 
         const cableId = netwinCableId(c.ID);
         const name = (c.NAME ?? `Cabo ${c.ID}`).slice(0, 255);
@@ -690,12 +754,29 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         });
       }
 
+      const uniqueRelationships = [
+        ...new Map(
+          relationships.map((relationship) => [
+            `${relationship.resource_from_id}:${relationship.resource_to_id}:${relationship.relationship_type}`,
+            relationship,
+          ]),
+        ).values(),
+      ];
+      const relationshipsFound = relationships.length;
+      const nextCableCount = cableCount + cableIds.length;
+      let locationMergeMs = 0;
+      let resourceMergeMs = 0;
+      let relationshipQueueInsertMs = 0;
+      let relationshipsEnqueued = 0;
+      let commitMs = 0;
       if (target) {
-        if (locations.length > 0) {
-          await bulkInsertRows(
+        try {
+          let startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
             'tmf_geographic_location',
+            ['id'],
             [
               'id',
               'tenant_id',
@@ -706,54 +787,75 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
               'characteristics',
             ],
             locations,
+            batchSize,
           );
-        }
-        await bulkInsertRows(
-          target,
-          ctx.t,
-          'tmf_physical_resource',
-          [
-            'id',
-            'tenant_id',
-            'name',
-            'resource_specification_id',
-            'status',
-            'place_id',
-            'place_type',
-            'serving_site_id',
-            'administrative_state',
-            'operational_state',
-            'usage_state',
-            'related_party',
-            'characteristics',
-          ],
-          resources,
-        );
-        if (relationships.length > 0) {
-          await bulkInsertRows(
+          locationMergeMs = Date.now() - startedAt;
+          startedAt = Date.now();
+          await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_resource_relationship',
-            ['resource_from_id', 'resource_to_id', 'relationship_type'],
-            relationships,
-            1000,
-            [1, 2291],
+            'tmf_physical_resource',
+            ['id'],
+            [
+              'id',
+              'tenant_id',
+              'name',
+              'resource_specification_id',
+              'status',
+              'place_id',
+              'place_type',
+              'serving_site_id',
+              'administrative_state',
+              'operational_state',
+              'usage_state',
+              'related_party',
+              'characteristics',
+            ],
+            resources,
+            batchSize,
           );
+          resourceMergeMs = Date.now() - startedAt;
+          startedAt = Date.now();
+          relationshipsEnqueued = await enqueueNativeRelationships(
+            target,
+            ctx,
+            uniqueRelationships,
+            batchSize,
+          );
+          relationshipQueueInsertMs = Date.now() - startedAt;
+          await saveNativeCheckpoint(target, ctx, '2B-cable', {
+            lastSourceId: lastCableId,
+            processedCount: nextCableCount,
+          });
+          startedAt = Date.now();
+          await target.execute('COMMIT');
+          commitMs = Date.now() - startedAt;
+        } catch (error) {
+          await target.execute('ROLLBACK');
+          throw error;
         }
-        await target.execute('COMMIT');
       }
 
-      cableCount += rows.length;
+      cableCount = nextCableCount;
+      cablesProcessedThisRun += cableIds.length;
       stats.loaded += resources.length;
-      cableProgress.advance(rows.length);
+      cableProgress.advance(cableIds.length);
       console.log(
-        `[Progresso] Fase 2.B — Cabos: último ID ${lastCableId}; +${relationships.length} relacionamentos no lote.`,
+        `[Progresso] Fase 2.B — Cabos: cursor ${lastCableId}; selecionados=${cableIds.length}; hidratados=${rows.length}; vínculosEncontrados=${relationshipsFound}; relaçõesDeduplicadas=${uniqueRelationships.length}; relaçõesEnfileiradas=${relationshipsEnqueued}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; relationshipQueueInsertMs=${relationshipQueueInsertMs}ms; commit=${commitMs}ms.`,
       );
     }
     cableProgress.finish();
 
+    stats.paused = Boolean(
+      ctx.options.maxRecords &&
+      (equipmentProcessedThisRun >= ctx.options.maxRecords ||
+        routesProcessedThisRun >= ctx.options.maxRecords ||
+        cablesProcessedThisRun >= ctx.options.maxRecords),
+    );
     console.log(
-      `Fase 2.B concluída: ${stats.loaded} recursos e amarrações topológicas carregados.`,
+      stats.paused
+        ? `Fase 2.B pausada após o limite de ${ctx.options.maxRecords} registros por subcarga.`
+        : `Fase 2.B concluída: ${stats.loaded} recursos e amarrações topológicas carregados.`,
     );
     return stats;
   } finally {

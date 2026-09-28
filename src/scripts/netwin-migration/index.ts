@@ -23,6 +23,11 @@
 
 import { config as loadEnv } from 'dotenv';
 import { fileURLToPath } from 'node:url';
+import {
+  completeNativeMigrationJob,
+  openNativeMigrationJob,
+  pauseNativeMigrationJob,
+} from './checkpoint.js';
 import { createMigrationContext } from './context.js';
 import { runPhase1Parties } from './phase1-parties.js';
 import { runPhase1SiteSpecs } from './phase1-site-specs.js';
@@ -75,6 +80,21 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
   const batchSize = Number(get('--batch-size') ?? 2000);
   const maxRecords = get('--max-records') ? Number(get('--max-records')) : undefined;
+  const apply = has('--apply');
+  const resume = has('--resume');
+  const jobId = get('--job-id');
+  if (resume && !apply) {
+    throw new Error('--resume exige --apply, pois checkpoints só existem no destino gravável.');
+  }
+  if (resume && !jobId) {
+    throw new Error('--resume exige --job-id para identificar a execução a retomar.');
+  }
+  if (jobId && !apply) {
+    throw new Error('--job-id exige --apply; DRY-RUN não cria nem altera jobs persistidos.');
+  }
+  if (jobId && !resume) {
+    throw new Error('--job-id só pode ser usado com --resume.');
+  }
 
   return {
     phase,
@@ -89,9 +109,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
     ownerPartyId: get('--owner-party-id') ?? 'vtal',
     batchSize: Math.max(100, Math.min(batchSize, 10000)),
     ...(maxRecords ? { maxRecords } : {}),
-    apply: has('--apply'),
-    resume: has('--resume'),
-    ...(get('--job-id') ? { jobId: get('--job-id')! } : {}),
+    apply,
+    resume,
+    ...(jobId ? { jobId } : {}),
   };
 }
 
@@ -117,6 +137,14 @@ async function main() {
   const ctx = await createMigrationContext(options);
 
   try {
+    const nativePhase2Selected = ['2', 'all'].includes(options.phase);
+    if (nativePhase2Selected && options.apply) {
+      const jobId = await openNativeMigrationJob(ctx);
+      if (!jobId) throw new Error('Não foi possível abrir o job nativo da Fase 2.');
+      options.jobId = jobId;
+      console.log(`[Job] Fase 2 nativa: ${jobId}${options.resume ? ' (retomado)' : ''}.`);
+    }
+
     // FASE 1: STUDIO
     if (options.phase === '1' || options.phase === 'all') {
       console.log('\n>>> INICIANDO FASE 1: CARGA DO STUDIO <<<');
@@ -128,10 +156,23 @@ async function main() {
     // FASE 2: DADOS
     if (options.phase === '2' || options.phase === 'all') {
       console.log('\n>>> INICIANDO FASE 2: CARGA DE DADOS <<<');
-      await runPhase2Locations(ctx);
-      await runPhase2Resources(ctx);
-      await runPhase2InternalPlant(ctx);
-      await runPhase2StationInternalPlantDiscovery(ctx);
+      const locations = await runPhase2Locations(ctx);
+      const resources = locations.paused ? undefined : await runPhase2Resources(ctx);
+      if (locations.paused || resources?.paused) {
+        await pauseNativeMigrationJob(ctx);
+        console.log(`\n>>> Fase 2 pausada; retome com --resume --job-id ${options.jobId}. <<<`);
+      } else {
+        await runPhase2InternalPlant(ctx);
+        const stationPlantDiscovery = await runPhase2StationInternalPlantDiscovery(ctx);
+        if (stationPlantDiscovery.blocked) {
+          await pauseNativeMigrationJob(ctx);
+          console.log(
+            `\n>>> Fase 2 bloqueada pela descoberta da 2.D; a finalização topológica não foi executada. O job ${options.jobId} permanece pausado até os contratos pendentes serem comprovados. <<<`,
+          );
+        } else {
+          await completeNativeMigrationJob(ctx);
+        }
+      }
     } else if (options.phase === '2c') {
       console.log('\n>>> INICIANDO FASE 2.C: CDOs E PORTAS FÍSICAS <<<');
       await runPhase2InternalPlant(ctx);

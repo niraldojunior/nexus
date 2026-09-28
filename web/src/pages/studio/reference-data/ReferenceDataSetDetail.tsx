@@ -22,7 +22,12 @@ const toDraft = (set: ReferenceDataSet): ReferenceDataSetInput => ({
   description: set.description ?? '',
 });
 
-export function ReferenceDataSetDetail({ set, canMutate, onUpdated, onDeactivated }: ReferenceDataSetDetailProps) {
+export function ReferenceDataSetDetail({
+  set,
+  canMutate,
+  onUpdated,
+  onDeactivated,
+}: ReferenceDataSetDetailProps) {
   const [draft, setDraft] = useState<ReferenceDataSetInput>(() => toDraft(set));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,8 +119,16 @@ export function ReferenceDataSetDetail({ set, canMutate, onUpdated, onDeactivate
           {canMutate ? (
             <>
               <div className="flex items-center justify-between border-b border-app-border pb-2">
-                <span className="text-[0.78rem] text-app-muted">Altere os dados deste conjunto.</span>
-                <Button type="submit" variant="primary" size="sm" iconLeft={<Save className="h-4 w-4" />} disabled={saving}>
+                <span className="text-[0.78rem] text-app-muted">
+                  Altere os dados deste conjunto.
+                </span>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  iconLeft={<Save className="h-4 w-4" />}
+                  disabled={saving}
+                >
                   {saving ? 'Salvando…' : 'Salvar alterações'}
                 </Button>
               </div>
@@ -154,7 +167,9 @@ export function ReferenceDataSetDetail({ set, canMutate, onUpdated, onDeactivate
                 ['Chave', set.key],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-[10px] border border-app-border p-4">
-                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>{label}</span>
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    {label}
+                  </span>
                   <p className="mt-1 text-[0.95rem] font-medium text-app-text">{value}</p>
                 </div>
               ))}

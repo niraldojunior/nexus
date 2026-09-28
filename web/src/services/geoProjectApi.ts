@@ -352,7 +352,7 @@ export const fetchProjectWorkflow = (): Promise<GeoProjectWorkflowReadModel> => 
   if (!workflowRequest) {
     workflowRequest = getJson<GeoProjectWorkflowReadModel>('/v1/geo/project-workflow').finally(
       () => {
-      workflowRequest = null;
+        workflowRequest = null;
       },
     );
   }

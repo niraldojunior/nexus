@@ -52,7 +52,8 @@ function clampWrap(value: number, n: number): number {
 export function tileBounds(z: number, x: number, y: number): TileBoundsRect {
   const n = 2 ** z;
   const lngAt = (tx: number) => (tx / n) * 360 - 180;
-  const latAt = (ty: number) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / n))) * 180) / Math.PI;
+  const latAt = (ty: number) =>
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / n))) * 180) / Math.PI;
   return {
     minLng: lngAt(x),
     maxLng: lngAt(x + 1),
@@ -95,7 +96,12 @@ function clipSegment(a: LngLat, b: LngLat, bounds: TileBoundsRect): [LngLat, Lng
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const p = [-dx, dx, -dy, dy];
-  const q = [a[0] - bounds.minLng, bounds.maxLng - a[0], a[1] - bounds.minLat, bounds.maxLat - a[1]];
+  const q = [
+    a[0] - bounds.minLng,
+    bounds.maxLng - a[0],
+    a[1] - bounds.minLat,
+    bounds.maxLat - a[1],
+  ];
   let t0 = 0;
   let t1 = 1;
   for (let i = 0; i < 4; i += 1) {

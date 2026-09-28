@@ -43,7 +43,9 @@ export type ResolvedOperationalIcon = {
 
 export type PointIconPreviewOptions = Omit<OperationalIconOptions, 'size' | 'context'>;
 
-export function operationalIconFactsForTreeNode(node: GeoTreeNode): OperationalIconFacts | undefined {
+export function operationalIconFactsForTreeNode(
+  node: GeoTreeNode,
+): OperationalIconFacts | undefined {
   if (node.kind === 'resource') {
     return {
       kind: 'resource',
@@ -105,7 +107,8 @@ export function resolveOperationalIcon(
   options: OperationalIconOptions,
 ): ResolvedOperationalIcon {
   const context = options.context ?? 'map';
-  const shape: IconShape = context === 'glyph' ? 'none' : facts.kind === 'site' ? 'squircle' : 'circle';
+  const shape: IconShape =
+    context === 'glyph' ? 'none' : facts.kind === 'site' ? 'squircle' : 'circle';
   const fallback = fallbackOperationalIcon(facts, { ...options, context });
 
   if (identity?.kind === 'asset') {
@@ -138,7 +141,12 @@ const GENERIC_SITE_NODE: IconNode = [
 ];
 
 const GENERIC_RESOURCE_NODE: IconNode = [
-  ['path', { d: 'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z' }],
+  [
+    'path',
+    {
+      d: 'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z',
+    },
+  ],
   ['path', { d: 'm3.3 7 8.7 5 8.7-5' }],
   ['path', { d: 'M12 22V12' }],
 ];

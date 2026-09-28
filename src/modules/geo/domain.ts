@@ -60,7 +60,9 @@ export type GeographicSiteRole = 'grouping' | 'network' | 'property' | 'service'
 export const GEO_SITE_ROLES: GeographicSiteRole[] = ['grouping', 'network', 'property', 'service'];
 
 /** Default de `siteRole` para specs legadas (`site_role IS NULL`) ou ad-hoc sem papel explícito. */
-export function defaultSiteRoleFor(category: GeographicSiteSpecificationCategory): GeographicSiteRole {
+export function defaultSiteRoleFor(
+  category: GeographicSiteSpecificationCategory,
+): GeographicSiteRole {
   if (category === 'Region') return 'grouping';
   return 'network';
 }
@@ -194,13 +196,7 @@ export type GeographicSiteReferences = {
 // Local (REQ-MOD01-016): GEONET/Google Maps por escolha do usuário no modal de endereço, um
 // sistema legado migrado (Netwin/Geosite/NetworkCore/Geoplex), ou cadastro manual.
 export type GeoSourceSystem =
-  | 'GEONET'
-  | 'GOOGLE_MAPS'
-  | 'NETWIN'
-  | 'GEOSITE'
-  | 'NETWORKCORE'
-  | 'GEOPLEX'
-  | 'MANUAL';
+  'GEONET' | 'GOOGLE_MAPS' | 'NETWIN' | 'GEOSITE' | 'NETWORKCORE' | 'GEOPLEX' | 'MANUAL';
 
 // Nível de confiança normalizado do ponto, derivado do texto cru de `accuracy` (que
 // permanece na forma como a fonte devolveu, ex. "ROOFTOP", "ENDEREÇO COMPLETO").

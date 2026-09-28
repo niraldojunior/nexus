@@ -9,7 +9,10 @@ import type { GeoTreeNode } from './geoTreeApi';
 afterEach(() => vi.restoreAllMocks());
 
 const jsonResponse = (body: unknown) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 
 describe('fetchProjectSites', () => {
   it('carimba projectId e repassa total/hasMore nos locais devolvidos sem bounds (lista do painel)', async () => {

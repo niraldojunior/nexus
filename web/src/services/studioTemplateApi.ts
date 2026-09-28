@@ -83,7 +83,10 @@ const authHeaders = (ifMatch?: string): HeadersInit => ({
   ...(ifMatch ? { 'If-Match': ifMatch } : {}),
 });
 
-async function requestJson<T>(url: string, options: { method?: string; body?: unknown; ifMatch?: string } = {}): Promise<T> {
+async function requestJson<T>(
+  url: string,
+  options: { method?: string; body?: unknown; ifMatch?: string } = {},
+): Promise<T> {
   const response = await fetch(url, {
     method: options.method ?? 'GET',
     headers: authHeaders(options.ifMatch),

@@ -9,26 +9,33 @@
  * Suporte a escopos:
  *   --uf <UF>             (ex: --uf RJ)
  *   --municipio <NOME>    (ex: --municipio "Niterói")
+ *   --bairro <NOME>       (ex: --municipio "Niterói" --bairro "Icaraí")
  *   --full                (varredura nacional)
- *   --phase 1|2|all       (default: all)
+ *   --phase 1|2|2c|2d|all (default: all)
  *   --target-prefix       (default: NX_DEV1_ ou variável de ambiente)
- *   --batch-size <N>      (default: 2000)
+ *   --tenant-id <ID>      (obrigatório em APPLY; NX_DEV1_ aceita apenas vtal)
+ *   --batch-size <N>      (default: 2000; regula lotes e cadência-base dos relatórios)
  *   --max-records <N>     (limite de registros para teste)
+ *
+ * A Fase 2.C mostra progresso separado de Splitters, Portas e Conexões.
  *   --apply               (executa gravação; sem esta flag roda em modo DRY-RUN)
  */
 
 import { config as loadEnv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
 import { createMigrationContext } from './context.js';
 import { runPhase1Parties } from './phase1-parties.js';
 import { runPhase1SiteSpecs } from './phase1-site-specs.js';
 import { runPhase1ResourceSpecs } from './phase1-resource-specs.js';
 import { runPhase2Locations } from './phase2-locations.js';
 import { runPhase2Resources } from './phase2-resources.js';
+import { runPhase2InternalPlant } from './phase2-internal-plant.js';
+import { runPhase2StationInternalPlantDiscovery } from './phase2-station-internal-plant.js';
 import type { CliOptions, MigrationPhase } from './types.js';
 
 loadEnv({ override: true });
 
-function parseCliArgs(argv: string[]): CliOptions {
+export function parseCliArgs(argv: string[]): CliOptions {
   const get = (flag: string) => {
     const idx = argv.indexOf(flag);
     return idx >= 0 && argv[idx + 1] ? argv[idx + 1] : undefined;
@@ -36,15 +43,27 @@ function parseCliArgs(argv: string[]): CliOptions {
   const has = (flag: string) => argv.includes(flag);
 
   const phaseRaw = get('--phase') ?? 'all';
-  const phase: MigrationPhase = phaseRaw === '1' || phaseRaw === '2' ? phaseRaw : 'all';
+  if (!['1', '2', '2c', '2d', 'all'].includes(phaseRaw)) {
+    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d ou all.`);
+  }
+  const phase = phaseRaw as MigrationPhase;
 
   const uf = get('--uf');
   const municipio = get('--municipio');
+  const bairro = get('--bairro');
   const full = has('--full');
 
+  if (full && (uf || municipio || bairro)) {
+    throw new Error('--full não pode ser combinado com --uf, --municipio ou --bairro.');
+  }
+  if (bairro && !uf && !municipio) {
+    throw new Error(
+      '--bairro exige --municipio <NOME> ou --uf <UF> para evitar escopo nacional ambíguo.',
+    );
+  }
   if (!full && !uf && !municipio && phase !== '1') {
     throw new Error(
-      'Para a Fase 2 ou All, informe um escopo: --uf <UF>, --municipio <NOME> ou --full.',
+      'Para as Fases 2, 2c, 2d ou All, informe um escopo: --uf <UF>, --municipio <NOME> ou --full.',
     );
   }
 
@@ -59,7 +78,12 @@ function parseCliArgs(argv: string[]): CliOptions {
 
   return {
     phase,
-    scope: { ...(uf ? { uf } : {}), ...(municipio ? { municipio } : {}), full },
+    scope: {
+      ...(uf ? { uf } : {}),
+      ...(municipio ? { municipio } : {}),
+      ...(bairro ? { bairro } : {}),
+      full,
+    },
     targetPrefix,
     tenantId: get('--tenant-id') ?? 'default',
     ownerPartyId: get('--owner-party-id') ?? 'vtal',
@@ -78,13 +102,16 @@ async function main() {
   console.log('╔══════════════════════════════════════════════════════════════════╗');
   console.log('║        V.TAL NEXUS — MIGRADOR NATIVO NETWIN (DR ORACLE)         ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
-  console.log(`Modo de Execução : ${options.apply ? 'APPLY (GRAVAÇÃO ATIVA)' : 'DRY-RUN (SIMULAÇÃO)'}`);
+  console.log(
+    `Modo de Execução : ${options.apply ? 'APPLY (GRAVAÇÃO ATIVA)' : 'DRY-RUN (SIMULAÇÃO)'}`,
+  );
   console.log(`Instância Destino: Prefixo "${options.targetPrefix}"`);
   console.log(`Fase Selecionada : ${options.phase}`);
   console.log(
-    `Escopo           : ${options.scope.full ? 'FULL (NACIONAL)' : options.scope.uf ? `UF: ${options.scope.uf}` : `Município: ${options.scope.municipio}`}`,
+    `Escopo           : ${options.scope.full ? 'FULL (NACIONAL)' : [options.scope.uf ? `UF: ${options.scope.uf}` : undefined, options.scope.municipio ? `Município: ${options.scope.municipio}` : undefined, options.scope.bairro ? `Bairro: ${options.scope.bairro}` : undefined].filter(Boolean).join(' | ')}`,
   );
   console.log(`Lote (batchSize) : ${options.batchSize}`);
+  console.log(`Tenant Destino  : ${options.tenantId}`);
   if (options.maxRecords) console.log(`Limite Registros : ${options.maxRecords}`);
 
   const ctx = await createMigrationContext(options);
@@ -103,6 +130,14 @@ async function main() {
       console.log('\n>>> INICIANDO FASE 2: CARGA DE DADOS <<<');
       await runPhase2Locations(ctx);
       await runPhase2Resources(ctx);
+      await runPhase2InternalPlant(ctx);
+      await runPhase2StationInternalPlantDiscovery(ctx);
+    } else if (options.phase === '2c') {
+      console.log('\n>>> INICIANDO FASE 2.C: CDOs E PORTAS FÍSICAS <<<');
+      await runPhase2InternalPlant(ctx);
+    } else if (options.phase === '2d') {
+      console.log('\n>>> INICIANDO FASE 2.D: DESCOBERTA DE PLANTA INTERNA DE ESTAÇÕES <<<');
+      await runPhase2StationInternalPlantDiscovery(ctx);
     }
 
     const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -115,4 +150,6 @@ async function main() {
   }
 }
 
-main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  void main();
+}

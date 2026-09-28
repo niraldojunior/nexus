@@ -10,9 +10,19 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { patchJson, postJson, type GeoSite, type GeoSiteStatus, type GeoSpec } from '../../services/geoApi';
+import {
+  patchJson,
+  postJson,
+  type GeoSite,
+  type GeoSiteStatus,
+  type GeoSpec,
+} from '../../services/geoApi';
 import type { GeoProject } from '../../services/geoProjectApi';
-import { fetchGeonetCandidates, fetchGeonetDetail, type GeonetAddressCandidate } from '../../services/geonetAddressApi';
+import {
+  fetchGeonetCandidates,
+  fetchGeonetDetail,
+  type GeonetAddressCandidate,
+} from '../../services/geonetAddressApi';
 import type { DraftAddress } from '../../utils/googleMaps';
 import { useSiteDetail } from '../../hooks/useSiteDetail';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
@@ -172,14 +182,16 @@ export function SitePanel({
     }
   };
 
-  const patchCurrentSite = async (patch: Partial<{
-    name: string;
-    siteSpecificationId: string;
-    status: GeoSiteStatus;
-    parentSiteId: string | null;
-    note: string | null;
-    characteristic: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
-  }>) => {
+  const patchCurrentSite = async (
+    patch: Partial<{
+      name: string;
+      siteSpecificationId: string;
+      status: GeoSiteStatus;
+      parentSiteId: string | null;
+      note: string | null;
+      characteristic: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
+    }>,
+  ) => {
     if (!currentSiteId) return;
     await patchJson(`/v1/geo/sites/${currentSiteId}`, patch);
     await detail.reload();
@@ -188,7 +200,8 @@ export function SitePanel({
 
   const isCreating = mode === 'create' || !currentSiteId;
 
-  const point = detail.location?.geometry.type === 'Point' ? detail.location.geometry.coordinates : null;
+  const point =
+    detail.location?.geometry.type === 'Point' ? detail.location.geometry.coordinates : null;
   const heroMarker =
     detail.site && point
       ? siteStreetViewMarker(
@@ -234,10 +247,30 @@ export function SitePanel({
   ) : detail.site ? (
     <div className="grid gap-4">
       <PanelTabBar activeTab={tab} className="border-b border-app-border pb-3">
-        <PanelBarButton icon={InfoIcon} label="Geral" active={tab === 'overview'} onClick={() => setTab('overview')} />
-        <PanelBarButton icon={Building2} label="Sub-locais" active={tab === 'subsites'} onClick={() => setTab('subsites')} />
-        <PanelBarButton icon={Boxes} label="Recursos" active={tab === 'resources'} onClick={() => setTab('resources')} />
-        <PanelBarButton icon={HistoryIcon} label="Histórico" active={tab === 'history'} onClick={() => setTab('history')} />
+        <PanelBarButton
+          icon={InfoIcon}
+          label="Geral"
+          active={tab === 'overview'}
+          onClick={() => setTab('overview')}
+        />
+        <PanelBarButton
+          icon={Building2}
+          label="Sub-locais"
+          active={tab === 'subsites'}
+          onClick={() => setTab('subsites')}
+        />
+        <PanelBarButton
+          icon={Boxes}
+          label="Recursos"
+          active={tab === 'resources'}
+          onClick={() => setTab('resources')}
+        />
+        <PanelBarButton
+          icon={HistoryIcon}
+          label="Histórico"
+          active={tab === 'history'}
+          onClick={() => setTab('history')}
+        />
       </PanelTabBar>
 
       {tab === 'overview' ? (
@@ -272,7 +305,11 @@ export function SitePanel({
       ) : null}
 
       {tab === 'resources' ? (
-        <SiteResourcesTab siteId={detail.site.id} canEdit={canEdit} onOpenResource={onOpenResource} />
+        <SiteResourcesTab
+          siteId={detail.site.id}
+          canEdit={canEdit}
+          onOpenResource={onOpenResource}
+        />
       ) : null}
 
       {tab === 'history' ? <SiteHistoryTab siteId={detail.site.id} /> : null}
@@ -512,7 +549,8 @@ function CreateBody({
   const [predictionsOpen, setPredictionsOpen] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [geonetAddressId, setGeonetAddressId] = useState<string | null>(null);
-  const [geonetDetail, setGeonetDetail] = useState<Awaited<ReturnType<typeof fetchGeonetDetail>>['address']>(null);
+  const [geonetDetail, setGeonetDetail] =
+    useState<Awaited<ReturnType<typeof fetchGeonetDetail>>['address']>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | undefined>(undefined);
@@ -522,14 +560,23 @@ function CreateBody({
     onDirtyChange(
       Boolean(
         nameDraft.trim() ||
-          noteDraft.trim() ||
-          addressQuery.trim() ||
-          geonetAddressId ||
-          pickedAddress ||
-          siteSpecificationId !== defaultSiteSpecId,
+        noteDraft.trim() ||
+        addressQuery.trim() ||
+        geonetAddressId ||
+        pickedAddress ||
+        siteSpecificationId !== defaultSiteSpecId,
       ),
     );
-  }, [addressQuery, defaultSiteSpecId, geonetAddressId, nameDraft, noteDraft, onDirtyChange, pickedAddress, siteSpecificationId]);
+  }, [
+    addressQuery,
+    defaultSiteSpecId,
+    geonetAddressId,
+    nameDraft,
+    noteDraft,
+    onDirtyChange,
+    pickedAddress,
+    siteSpecificationId,
+  ]);
 
   useEffect(() => {
     if (!pickedAddress) return;
@@ -577,7 +624,9 @@ function CreateBody({
   };
 
   const canSave =
-    nameDraft.trim().length > 0 && Boolean(siteSpecificationId) && Boolean(geonetAddressId) &&
+    nameDraft.trim().length > 0 &&
+    Boolean(siteSpecificationId) &&
+    Boolean(geonetAddressId) &&
     Boolean(geonetDetail?.coordinates);
 
   const handleCreate = async () => {
@@ -649,7 +698,9 @@ function CreateBody({
               placeholder="Buscar endereço no Geonet…"
               className="h-10 w-full bg-transparent text-[0.86rem] text-app-text outline-none placeholder:text-app-muted"
             />
-            {resolving ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-app-muted" /> : null}
+            {resolving ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-app-muted" />
+            ) : null}
           </div>
           {predictionsOpen && predictions.length > 0 ? (
             <>
@@ -684,7 +735,8 @@ function CreateBody({
         </button>
         {geonetDetail ? (
           <p className="text-[0.76rem] text-app-muted">
-            Selecionado: <span className="font-medium text-app-text">{geonetDetail.formattedAddress}</span>
+            Selecionado:{' '}
+            <span className="font-medium text-app-text">{geonetDetail.formattedAddress}</span>
           </p>
         ) : (
           <p className="text-[0.76rem] text-app-muted">

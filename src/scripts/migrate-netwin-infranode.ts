@@ -292,8 +292,15 @@ async function identity(
   entityType: string,
   item?: ReturnType<typeof prepare>,
 ): Promise<string> {
-  return identityShared(target, t, SOURCE_ENTITY, sourceId, role, entityType, item?.sourceHash, () =>
-    item ? findExistingNexusEntity(target, entityType, item) : Promise.resolve(null),
+  return identityShared(
+    target,
+    t,
+    SOURCE_ENTITY,
+    sourceId,
+    role,
+    entityType,
+    item?.sourceHash,
+    () => (item ? findExistingNexusEntity(target, entityType, item) : Promise.resolve(null)),
   );
 }
 
@@ -371,11 +378,7 @@ async function upsertResource(
   locationId: string | null,
   item: ReturnType<typeof prepare>,
 ) {
-  const specId = await resourceSpecId(
-    target,
-    item.mapping.spec!,
-    item.mapping.resourceType!,
-  );
+  const specId = await resourceSpecId(target, item.mapping.spec!, item.mapping.resourceType!);
   await merge(target, 'tmf_physical_resource', ['id'], {
     id,
     tenant_id: args.tenantId,

@@ -49,7 +49,13 @@ function sentenceCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export default function StatusPill({ status, label, pulse = false, style, ...rest }: StatusPillProps) {
+export default function StatusPill({
+  status,
+  label,
+  pulse = false,
+  style,
+  ...rest
+}: StatusPillProps) {
   const known = STATUS[status.toLowerCase()];
   const tone = TONE_COLORS[known?.tone ?? 'neutral'];
   const text = label ?? known?.label ?? sentenceCase(status);
@@ -72,7 +78,14 @@ export default function StatusPill({ status, label, pulse = false, style, ...res
   return (
     <span style={{ ...base, ...style }} {...rest}>
       <span style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
-        <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'currentColor' }} />
+        <span
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            background: 'currentColor',
+          }}
+        />
         {pulse && (
           <span
             style={{

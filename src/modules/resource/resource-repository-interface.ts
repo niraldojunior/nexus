@@ -88,7 +88,10 @@ export interface IResourceRepository {
 
   // Árvore dinâmica de catálogo (issue #188), sempre tenant-scoped.
   upsertResourceCatalog(catalog: ResourceCatalog): Awaitable<ResourceCatalog>;
-  getResourceCatalog(id: string, scope: ResourceTenantScope): Awaitable<ResourceCatalog | undefined>;
+  getResourceCatalog(
+    id: string,
+    scope: ResourceTenantScope,
+  ): Awaitable<ResourceCatalog | undefined>;
   getResourceCatalogByCode(
     code: string,
     scope: ResourceTenantScope,
@@ -119,10 +122,7 @@ export interface IResourceRepository {
     scope: ResourceTenantScope,
   ): Awaitable<ResourceCatalogNode[]>;
   /** Conta filhos diretos (qualquer status) — bloqueia soft-delete de GROUP não-vazio. */
-  countResourceCatalogNodeChildren(
-    nodeId: string,
-    scope: ResourceTenantScope,
-  ): Awaitable<number>;
+  countResourceCatalogNodeChildren(nodeId: string, scope: ResourceTenantScope): Awaitable<number>;
 
   // Catálogo de estados granulares (issue #171). Diferente de Category/Type, é por tenant:
   // o operador pode acrescentar estado próprio via API (C9).

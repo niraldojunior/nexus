@@ -79,7 +79,8 @@ export function useMapLayers(catalog: StudioGeoCatalog): UseMapLayers {
   }, []);
 
   const toggleGroup = useCallback(
-    (groupId: MapLayerGroupId) => setLayers((current) => setGroupVisibility(current, groupId, catalog)),
+    (groupId: MapLayerGroupId) =>
+      setLayers((current) => setGroupVisibility(current, groupId, catalog)),
     [catalog],
   );
 

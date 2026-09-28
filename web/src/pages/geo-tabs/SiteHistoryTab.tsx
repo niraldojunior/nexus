@@ -112,10 +112,7 @@ export function SiteHistoryTab({ siteId }: SiteHistoryTabProps) {
             <div className="min-w-0 flex-1">
               <div className="grid gap-0.5">
                 {diffOf(entry).map((line) => (
-                  <p
-                    key={line}
-                    className="break-words text-[0.84rem] leading-snug text-app-text"
-                  >
+                  <p key={line} className="break-words text-[0.84rem] leading-snug text-app-text">
                     {line}
                   </p>
                 ))}

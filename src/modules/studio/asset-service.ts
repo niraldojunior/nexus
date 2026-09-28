@@ -22,9 +22,11 @@ export type StudioAsset = {
   retiredBy?: string;
 };
 
-const FORBIDDEN_SVG_TAGS = /<\/?(?:script|foreignObject|iframe|object|embed|link|style|animate|set|audio|video)\b[^>]*>/i;
+const FORBIDDEN_SVG_TAGS =
+  /<\/?(?:script|foreignObject|iframe|object|embed|link|style|animate|set|audio|video)\b[^>]*>/i;
 const EVENT_HANDLER_ATTRIBUTE = /\son[a-z]+\s*=/i;
-const EXTERNAL_REFERENCE = /\b(?:href|xlink:href|src)\s*=\s*["']\s*(?:(?:https?:)?\/\/|data:|javascript:|vbscript:|file:)/i;
+const EXTERNAL_REFERENCE =
+  /\b(?:href|xlink:href|src)\s*=\s*["']\s*(?:(?:https?:)?\/\/|data:|javascript:|vbscript:|file:)/i;
 const CSS_REFERENCE = /(?:@import|url\s*\()/i;
 
 const tenantOf = (context: Pick<RequestContext, 'tenantId'>): string => context.tenantId;
@@ -36,7 +38,10 @@ const tenantOf = (context: Pick<RequestContext, 'tenantId'>): string => context.
  */
 export const sanitizeStudioSvg = (value: unknown): string => {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new AppError('SVG content is required', { code: 'STUDIO_ASSET_SVG_REQUIRED', statusCode: 400 });
+    throw new AppError('SVG content is required', {
+      code: 'STUDIO_ASSET_SVG_REQUIRED',
+      statusCode: 400,
+    });
   }
   const content = value.trim();
   if (Buffer.byteLength(content, 'utf8') > STUDIO_SVG_MAX_BYTES) {
@@ -74,7 +79,10 @@ export class StudioAssetService {
   ): Promise<StudioAsset> {
     const name = typeof input.name === 'string' ? input.name.trim() : '';
     if (!name) {
-      throw new AppError('asset name is required', { code: 'STUDIO_ASSET_NAME_REQUIRED', statusCode: 400 });
+      throw new AppError('asset name is required', {
+        code: 'STUDIO_ASSET_NAME_REQUIRED',
+        statusCode: 400,
+      });
     }
     if (input.mimeType !== STUDIO_ASSET_MIME_TYPE) {
       throw new AppError('only SVG assets are supported', {
@@ -99,18 +107,32 @@ export class StudioAssetService {
     return await this.repository.insert(asset);
   }
 
-  public async get(id: string, context: Pick<RequestContext, 'tenantId'>): Promise<StudioAsset | undefined> {
+  public async get(
+    id: string,
+    context: Pick<RequestContext, 'tenantId'>,
+  ): Promise<StudioAsset | undefined> {
     return await this.repository.get(tenantOf(context), id);
   }
 
-  public async list(context: Pick<RequestContext, 'tenantId'>, active = true): Promise<StudioAsset[]> {
+  public async list(
+    context: Pick<RequestContext, 'tenantId'>,
+    active = true,
+  ): Promise<StudioAsset[]> {
     return await this.repository.list(tenantOf(context), { active });
   }
 
   public async retire(id: string, context: RequestContext): Promise<StudioAsset> {
-    const asset = await this.repository.retire(tenantOf(context), id, new Date().toISOString(), context.actorSub);
+    const asset = await this.repository.retire(
+      tenantOf(context),
+      id,
+      new Date().toISOString(),
+      context.actorSub,
+    );
     if (!asset) {
-      throw new AppError('studio asset not found', { code: 'STUDIO_ASSET_NOT_FOUND', statusCode: 404 });
+      throw new AppError('studio asset not found', {
+        code: 'STUDIO_ASSET_NOT_FOUND',
+        statusCode: 404,
+      });
     }
     return asset;
   }

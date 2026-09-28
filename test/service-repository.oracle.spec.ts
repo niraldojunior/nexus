@@ -30,7 +30,11 @@ test.skipIf(!oracleConfigured)(
     const service = new ServiceService(repository, stubEventService, {
       lookupParty: () => undefined,
       lookupPlace: () => undefined,
-      lookupResource: (id) => ({ id, '@referredType': 'PhysicalResource', href: `/resource/${id}` }),
+      lookupResource: (id) => ({
+        id,
+        '@referredType': 'PhysicalResource',
+        href: `/resource/${id}`,
+      }),
       lookupService: () => undefined,
     });
 
@@ -68,7 +72,9 @@ test.skipIf(!oracleConfigured)(
       '@type': 'ResourceFacingService',
       name: 'RFS encerrado (Oracle)',
       serviceSpecificationId: rfsSpec.id,
-      supportingResource: [{ id: terminatedPort, '@referredType': 'PhysicalResource', role: 'access' }],
+      supportingResource: [
+        { id: terminatedPort, '@referredType': 'PhysicalResource', role: 'access' },
+      ],
     });
     await service.deleteService(rfsTerminated.id);
 

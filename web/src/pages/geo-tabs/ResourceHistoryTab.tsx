@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { History } from 'lucide-react';
+import { fetchPhysicalResourceAudit, type ResourceAuditEntry } from '../../services/resourceApi';
 import {
-  fetchPhysicalResourceAudit,
-  type ResourceAuditEntry,
-} from '../../services/resourceApi';
-import { ADMIN_STATE_LABELS, OP_STATE_LABELS, USAGE_STATE_LABELS } from '../../utils/resourceStateLabels';
+  ADMIN_STATE_LABELS,
+  OP_STATE_LABELS,
+  USAGE_STATE_LABELS,
+} from '../../utils/resourceStateLabels';
 
 export type ResourceHistoryTabProps = {
   resourceId: string;
@@ -26,7 +27,7 @@ const TRACKED_FIELDS: Array<{
   {
     key: 'status',
     label: 'Status SID',
-    read: (s) => (typeof s.status === 'string' ? SID_STATUS_LABELS[s.status] ?? s.status : null),
+    read: (s) => (typeof s.status === 'string' ? (SID_STATUS_LABELS[s.status] ?? s.status) : null),
   },
   {
     key: 'statusCode',
@@ -38,7 +39,7 @@ const TRACKED_FIELDS: Array<{
     label: 'Estado Administrativo',
     read: (s) =>
       typeof s.administrativeState === 'string'
-        ? ADMIN_STATE_LABELS[s.administrativeState] ?? s.administrativeState
+        ? (ADMIN_STATE_LABELS[s.administrativeState] ?? s.administrativeState)
         : null,
   },
   {
@@ -46,16 +47,14 @@ const TRACKED_FIELDS: Array<{
     label: 'Estado Operacional',
     read: (s) =>
       typeof s.operationalState === 'string'
-        ? OP_STATE_LABELS[s.operationalState] ?? s.operationalState
+        ? (OP_STATE_LABELS[s.operationalState] ?? s.operationalState)
         : null,
   },
   {
     key: 'usageState',
     label: 'Estado de Uso',
     read: (s) =>
-      typeof s.usageState === 'string'
-        ? USAGE_STATE_LABELS[s.usageState] ?? s.usageState
-        : null,
+      typeof s.usageState === 'string' ? (USAGE_STATE_LABELS[s.usageState] ?? s.usageState) : null,
   },
   { key: 'label', label: 'Etiqueta', read: (s) => (typeof s.label === 'string' ? s.label : null) },
   {
@@ -90,7 +89,12 @@ const TRACKED_FIELDS: Array<{
 
 const actionLabel = (action: string): string => {
   if (action === 'create') return 'Recurso criado';
-  if (action === 'activate' || action === 'suspend' || action === 'terminate' || action === 'transition') {
+  if (
+    action === 'activate' ||
+    action === 'suspend' ||
+    action === 'terminate' ||
+    action === 'transition'
+  ) {
     return 'Status alterado';
   }
   return 'Recurso atualizado';
@@ -156,10 +160,7 @@ export function ResourceHistoryTab({ resourceId }: ResourceHistoryTabProps) {
             <div className="min-w-0 flex-1">
               <div className="grid gap-0.5">
                 {diffOf(entry).map((line) => (
-                  <p
-                    key={line}
-                    className="break-words text-[0.84rem] leading-snug text-app-text"
-                  >
+                  <p key={line} className="break-words text-[0.84rem] leading-snug text-app-text">
                     {line}
                   </p>
                 ))}

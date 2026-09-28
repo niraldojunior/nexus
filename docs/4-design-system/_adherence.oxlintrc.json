@@ -1,8 +1,5 @@
 {
-  "plugins": [
-    "react",
-    "import"
-  ],
+  "plugins": ["react", "import"],
   "rules": {
     "react/forbid-elements": [
       "warn",
@@ -120,9 +117,7 @@
   },
   "overrides": [
     {
-      "files": [
-        "**/index.js"
-      ],
+      "files": ["**/index.js"],
       "rules": {
         "no-restricted-imports": "off"
       }
@@ -470,10 +465,6 @@
       "--transition-slow": "color",
       "--focus-shadow": "shadow"
     },
-    "fontFamilies": [
-      "Inter",
-      "JetBrains Mono",
-      "Montserrat"
-    ]
+    "fontFamilies": ["Inter", "JetBrains Mono", "Montserrat"]
   }
 }

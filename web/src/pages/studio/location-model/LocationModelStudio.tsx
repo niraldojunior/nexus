@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, MapPin, Plus, Search, Shield } from 'lucide-react';
 import { listGeoSiteSpecifications, type GeoSpecCategory } from '../../../services/geoApi';
-import {
-  LOCATION_CATEGORY_LABELS,
-  locationCategoryIcon,
-} from './locationCategoryPresentation';
+import { LOCATION_CATEGORY_LABELS, locationCategoryIcon } from './locationCategoryPresentation';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
 import { StudioCollectionHeader } from '../../../components/studio/StudioCollectionHeader';
@@ -79,11 +76,15 @@ export function LocationModelStudio({
       persistedSnapshotRef.current = JSON.stringify(buildLocationModelSnapshot(next));
       setSpecs(next);
       setSelectedSpecId((current) =>
-        current && next.some((spec) => spec.localId === current) ? current : next[0]?.localId ?? null,
+        current && next.some((spec) => spec.localId === current)
+          ? current
+          : (next[0]?.localId ?? null),
       );
       setError(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Falha ao carregar especificações de locais.');
+      setError(
+        reason instanceof Error ? reason.message : 'Falha ao carregar especificações de locais.',
+      );
     } finally {
       setLoading(false);
     }
@@ -107,17 +108,17 @@ export function LocationModelStudio({
 
   const visibleSpecs = useMemo(() => {
     const term = filterText.trim().toLowerCase();
-    return specs
-      .filter((spec) => {
-        const visibleByLifecycle =
-          spec.lifecycleStatus === 'Active' || (isEditing && (baselineActiveSpecIds?.has(spec.localId) ?? false));
-        const visibleByCategory = categoryFilter === 'ALL' || spec.category === categoryFilter;
-        const visibleBySearch =
-          !term ||
-          spec.name.toLowerCase().includes(term) ||
-          (spec.description ?? '').toLowerCase().includes(term);
-        return visibleByLifecycle && visibleByCategory && visibleBySearch;
-      });
+    return specs.filter((spec) => {
+      const visibleByLifecycle =
+        spec.lifecycleStatus === 'Active' ||
+        (isEditing && (baselineActiveSpecIds?.has(spec.localId) ?? false));
+      const visibleByCategory = categoryFilter === 'ALL' || spec.category === categoryFilter;
+      const visibleBySearch =
+        !term ||
+        spec.name.toLowerCase().includes(term) ||
+        (spec.description ?? '').toLowerCase().includes(term);
+      return visibleByLifecycle && visibleByCategory && visibleBySearch;
+    });
   }, [baselineActiveSpecIds, categoryFilter, filterText, isEditing, specs]);
 
   useEffect(() => {
@@ -134,14 +135,19 @@ export function LocationModelStudio({
     const serializedSnapshot = JSON.stringify(snapshot);
     if (persistedSnapshotRef.current === serializedSnapshot) return;
 
-    const checksum = checksumRef.current ?? (await getStudioStatus('location-model')).draftVersion?.checksum;
+    const checksum =
+      checksumRef.current ?? (await getStudioStatus('location-model')).draftVersion?.checksum;
     const saved = await saveStudioDraft('location-model', snapshot, checksum);
     checksumRef.current = saved.checksum;
     persistedSnapshotRef.current = serializedSnapshot;
   }, [buildSnapshot]);
 
   const captureInitialSnapshot = useCallback(async () => {
-    setBaselineActiveSpecIds(new Set(specs.filter((spec) => spec.lifecycleStatus === 'Active').map((spec) => spec.localId)));
+    setBaselineActiveSpecIds(
+      new Set(
+        specs.filter((spec) => spec.lifecycleStatus === 'Active').map((spec) => spec.localId),
+      ),
+    );
     const snapshot = await buildSnapshot();
     persistedSnapshotRef.current = JSON.stringify(snapshot);
     return snapshot;
@@ -158,7 +164,9 @@ export function LocationModelStudio({
   }, [captureInitialSnapshot, onRegisterCaptureInitialSnapshot]);
 
   const patchSpec = (localId: string, patch: Partial<LocationModelDraftSpec>) =>
-    setSpecs((current) => current.map((spec) => (spec.localId === localId ? { ...spec, ...patch } : spec)));
+    setSpecs((current) =>
+      current.map((spec) => (spec.localId === localId ? { ...spec, ...patch } : spec)),
+    );
 
   const createSpec = () => {
     const spec = createLocationDraftSpec();
@@ -167,14 +175,16 @@ export function LocationModelStudio({
   };
 
   const removeNewSpec = (localId: string) => {
-    setSpecs((current) => current
-      .filter((spec) => spec.localId !== localId)
-      .map((spec) => ({
-        ...spec,
-        allowedParentLocalIds: spec.allowedParentLocalIds.filter((id) => id !== localId),
-        allowedChildLocalIds: spec.allowedChildLocalIds.filter((id) => id !== localId),
-      })));
-    setSelectedSpecId((current) => current === localId ? null : current);
+    setSpecs((current) =>
+      current
+        .filter((spec) => spec.localId !== localId)
+        .map((spec) => ({
+          ...spec,
+          allowedParentLocalIds: spec.allowedParentLocalIds.filter((id) => id !== localId),
+          allowedChildLocalIds: spec.allowedChildLocalIds.filter((id) => id !== localId),
+        })),
+    );
+    setSelectedSpecId((current) => (current === localId ? null : current));
   };
 
   const confirmInactivate = async () => {
@@ -194,7 +204,12 @@ export function LocationModelStudio({
 
   return (
     <div className="space-y-4">
-      {error && <div className="flex items-center gap-2 rounded-[10px] bg-status-red-soft p-3 text-[0.84rem] text-status-red"><AlertCircle className="h-4 w-4 shrink-0" /><span>{error}</span></div>}
+      {error && (
+        <div className="flex items-center gap-2 rounded-[10px] bg-status-red-soft p-3 text-[0.84rem] text-status-red">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
       <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <StudioCollectionHeader
@@ -203,13 +218,24 @@ export function LocationModelStudio({
             onToggleSearch={() => setShowSearch((current) => !current)}
             searchLabel="Buscar locais"
           >
-            {canMutate && <Button variant="primary" size="sm" onClick={createSpec} title="Incluir tipo de local" aria-label="Incluir tipo de local"><Plus className="h-4 w-4" /></Button>}
+            {canMutate && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={createSpec}
+                title="Incluir tipo de local"
+                aria-label="Incluir tipo de local"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
           </StudioCollectionHeader>
           <div className="mb-3 flex flex-wrap gap-1.5" aria-label="Filtrar tipos de locais">
-            {([
-              ['ALL', 'Todos'],
-              ...Object.entries(LOCATION_CATEGORY_LABELS),
-            ] as Array<[GeoSpecCategory | 'ALL', string]>).map(([category, label]) => (
+            {(
+              [['ALL', 'Todos'], ...Object.entries(LOCATION_CATEGORY_LABELS)] as Array<
+                [GeoSpecCategory | 'ALL', string]
+              >
+            ).map(([category, label]) => (
               <button
                 key={category}
                 type="button"
@@ -221,37 +247,87 @@ export function LocationModelStudio({
               </button>
             ))}
           </div>
-          {showSearch && <div className="relative mb-3"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" /><input autoFocus value={filterText} onChange={(event) => setFilterText(event.target.value)} placeholder="Buscar tipos de locais por nome..." aria-label="Buscar tipos de locais" className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent" /></div>}
+          {showSearch && (
+            <div className="relative mb-3">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
+              <input
+                autoFocus
+                value={filterText}
+                onChange={(event) => setFilterText(event.target.value)}
+                placeholder="Buscar tipos de locais por nome..."
+                aria-label="Buscar tipos de locais"
+                className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+              />
+            </div>
+          )}
           <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto p-1 pr-2">
-            {visibleSpecs.length === 0 ? <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum tipo de local encontrado.</div> : visibleSpecs.map((spec) => {
-              const selected = spec.localId === selectedSpecId;
-              return <button key={spec.localId} type="button" aria-pressed={selected} onClick={() => setSelectedSpecId(spec.localId)} className={`flex w-full items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-left text-[0.85rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border' : 'border-transparent text-app-text vt-hover-muted'}`}>
-                <span className="flex min-w-0 items-center gap-1.5"><LocationSpecItemIcon spec={spec} /><span className="truncate" title={spec.name}>{spec.name}</span></span>
-                {spec.bootstrapProtected && <span title="Protegido pelo bootstrap"><Shield className="h-3.5 w-3.5 shrink-0 text-amber-600" /></span>}
-              </button>;
-            })}
+            {visibleSpecs.length === 0 ? (
+              <div className="p-8 text-center text-[0.84rem] text-app-muted">
+                Nenhum tipo de local encontrado.
+              </div>
+            ) : (
+              visibleSpecs.map((spec) => {
+                const selected = spec.localId === selectedSpecId;
+                return (
+                  <button
+                    key={spec.localId}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setSelectedSpecId(spec.localId)}
+                    className={`flex w-full items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-left text-[0.85rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent ${selected ? 'border-app-accent-border bg-app-accent-soft text-app-text font-semibold ring-1 ring-app-accent-border' : 'border-transparent text-app-text vt-hover-muted'}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <LocationSpecItemIcon spec={spec} />
+                      <span className="truncate" title={spec.name}>
+                        {spec.name}
+                      </span>
+                    </span>
+                    {spec.bootstrapProtected && (
+                      <span title="Protegido pelo bootstrap">
+                        <Shield className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
         <div className="min-w-0">
-          {selectedSpec ? <LocationSpecDetail
-            spec={selectedSpec}
-            allSpecs={specs}
-            canEdit={canEdit}
-            isEditing={isEditing}
-            wasActiveAtBaseline={baselineActiveSpecIds?.has(selectedSpec.localId) ?? false}
-            onPatch={(patch) => patchSpec(selectedSpec.localId, patch)}
-            onRemoveNew={() => removeNewSpec(selectedSpec.localId)}
-            onInactivate={() => void openImpact(selectedSpec)}
-            onReactivate={() => patchSpec(selectedSpec.localId, { lifecycleStatus: 'Active' })}
-          /> : <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted"><MapPin className="mb-3 h-10 w-10 opacity-30" /><h3 className="text-[1.1rem]">Nenhum tipo de local selecionado</h3><p className="mt-1 max-w-sm text-[0.85rem]">Selecione um tipo de local à esquerda para visualizar ou editar seus dados.</p></div>}
+          {selectedSpec ? (
+            <LocationSpecDetail
+              spec={selectedSpec}
+              allSpecs={specs}
+              canEdit={canEdit}
+              isEditing={isEditing}
+              wasActiveAtBaseline={baselineActiveSpecIds?.has(selectedSpec.localId) ?? false}
+              onPatch={(patch) => patchSpec(selectedSpec.localId, patch)}
+              onRemoveNew={() => removeNewSpec(selectedSpec.localId)}
+              onInactivate={() => void openImpact(selectedSpec)}
+              onReactivate={() => patchSpec(selectedSpec.localId, { lifecycleStatus: 'Active' })}
+            />
+          ) : (
+            <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
+              <MapPin className="mb-3 h-10 w-10 opacity-30" />
+              <h3 className="text-[1.1rem]">Nenhum tipo de local selecionado</h3>
+              <p className="mt-1 max-w-sm text-[0.85rem]">
+                Selecione um tipo de local à esquerda para visualizar ou editar seus dados.
+              </p>
+            </div>
+          )}
         </div>
       </div>
-      {impactingSpec?.persistedId && <LocationSpecImpactModal
-        isOpen={impactModalOpen}
-        onClose={() => { setImpactModalOpen(false); setImpactingSpec(null); }}
-        onConfirmRetire={confirmInactivate}
-        spec={{ id: impactingSpec.persistedId, name: impactingSpec.name }}
-      />}
+      {impactingSpec?.persistedId && (
+        <LocationSpecImpactModal
+          isOpen={impactModalOpen}
+          onClose={() => {
+            setImpactModalOpen(false);
+            setImpactingSpec(null);
+          }}
+          onConfirmRetire={confirmInactivate}
+          spec={{ id: impactingSpec.persistedId, name: impactingSpec.name }}
+        />
+      )}
     </div>
   );
 }

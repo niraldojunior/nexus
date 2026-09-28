@@ -40,7 +40,11 @@ export const DARK_BASEMAP_STYLES: GoogleMapStyle[] = [
   { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#242529' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#121214' }] },
   { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#51525C' }] },
-  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#BCC1D6' }] },
+  {
+    featureType: 'administrative.locality',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#BCC1D6' }],
+  },
 ];
 
 // MUB "Branco": zera vias, água, POI e limites de lote — só sobra o rótulo de
@@ -126,7 +130,13 @@ type MapBaseLayerSelectorProps = {
   onChange: (layerId: string) => void;
 };
 
-function MapPreviewArtwork({ tone, dark = false }: { tone: MapBaseLayer['previewTone']; dark?: boolean }) {
+function MapPreviewArtwork({
+  tone,
+  dark = false,
+}: {
+  tone: MapBaseLayer['previewTone'];
+  dark?: boolean;
+}) {
   if (tone === 'mapa') {
     return (
       <>
@@ -206,8 +216,7 @@ function LayerPreview({
   showLabel?: boolean;
 }) {
   const Icon = PREVIEW_ICONS[layer.previewTone];
-  const dimensions =
-    size === 'compact' ? 'h-8 w-8 rounded-[7px]' : 'h-12 w-[76px] rounded-[7px]';
+  const dimensions = size === 'compact' ? 'h-8 w-8 rounded-[7px]' : 'h-12 w-[76px] rounded-[7px]';
 
   return (
     <div

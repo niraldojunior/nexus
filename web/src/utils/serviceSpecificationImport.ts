@@ -2,7 +2,11 @@
 // — converte linhas de CSV em ServiceSpecFormState, reusando as mesmas regras de validação e o
 // mesmo builder de payload (buildServiceSpecificationPayload) já usados pelo modal de criação
 // individual (ver ServiceCatalogTab.tsx). Espelha resourceSpecificationImport.ts.
-import type { ServiceCategory, ServiceSpecification, ServiceSpecificationType } from '../services/serviceApi';
+import type {
+  ServiceCategory,
+  ServiceSpecification,
+  ServiceSpecificationType,
+} from '../services/serviceApi';
 import {
   emptyServiceSpecFormState,
   serviceSpecSubmitValid,
@@ -173,9 +177,7 @@ export function parseServiceSpecificationImport(
     if (formState.category && formState.serviceType && formState.name) {
       const key = buildUniquenessKey(formState.category, formState.serviceType, formState.name);
       if (seenKeys.has(key)) {
-        errors.push(
-          'Categoria + Camada + Nome duplicados dentro do próprio arquivo.',
-        );
+        errors.push('Categoria + Camada + Nome duplicados dentro do próprio arquivo.');
       }
       seenKeys.add(key);
       if (existingKeys.has(key)) {

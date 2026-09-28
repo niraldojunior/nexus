@@ -306,13 +306,7 @@ function useEscapeToClose(active: boolean, onClose: () => void) {
   }, [active, onClose]);
 }
 
-function CreateUserModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: () => void;
-}) {
+function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -346,13 +340,7 @@ function CreateUserModal({
 
   return (
     <Modal
-      title={
-        <ModalTitle
-          eyebrow="Usuários"
-          title="Novo usuário"
-          onClose={onClose}
-        />
-      }
+      title={<ModalTitle eyebrow="Usuários" title="Novo usuário" onClose={onClose} />}
       onClose={onClose}
       width={560}
       footer={
@@ -389,7 +377,12 @@ function CreateUserModal({
             onChange={(event) => setEmail(event.target.value)}
           />
         </Field>
-        <PasswordStrengthField label="Senha" value={password} onChange={setPassword} showGenerator />
+        <PasswordStrengthField
+          label="Senha"
+          value={password}
+          onChange={setPassword}
+          showGenerator
+        />
         <Field label="Papéis">
           <div className="flex flex-wrap gap-1.5">
             {ASSIGNABLE_ROLES.map((role) => (

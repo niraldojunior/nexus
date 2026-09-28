@@ -16,14 +16,14 @@ ISP (Tenant), não o usuário final.
 
 ## Stack
 
-| Camada    | Tecnologia                                     |
-| --------- | ----------------------------------------------- |
-| Backend   | Node 22+ · TypeScript 5.9 (ESM) · HTTP nativo   |
+| Camada    | Tecnologia                                       |
+| --------- | ------------------------------------------------ |
+| Backend   | Node 22+ · TypeScript 5.9 (ESM) · HTTP nativo    |
 | Frontend  | React 18 · Vite (rolldown) · Tailwind 3 · Lucide |
-| Banco     | Oracle Thin (`node-oracledb`), único provider   |
-| Testes    | Vitest 4 · Playwright · Testing Library · MSW   |
-| Qualidade | ESLint 9 · Prettier 3 · TypeScript strict       |
-| Execução  | Somente local — sem Vercel, Docker ou CI/CD     |
+| Banco     | Oracle Thin (`node-oracledb`), único provider    |
+| Testes    | Vitest 4 · Playwright · Testing Library · MSW    |
+| Qualidade | ESLint 9 · Prettier 3 · TypeScript strict        |
+| Execução  | Somente local — sem Vercel, Docker ou CI/CD      |
 
 ---
 
@@ -68,17 +68,17 @@ npm run web:dev     # só o frontend Vite
 
 ### Aplicação
 
-| Variável                         | Obrigatória         | Padrão        | Descrição                                                         |
-| -------------------------------- | ------------------- | ------------- | ----------------------------------------------------------------- |
-| `NODE_ENV`                       | não                 | `development` | `development` · `test` · `production`                             |
-| `PORT`                           | não                 | `4001`        | Porta do backend                                                  |
-| `APP_NAME`                       | não                 | `v-tal-nexus` | Nome da aplicação nos logs                                        |
-| `LOG_LEVEL`                      | não                 | `info`        | `debug` · `info` · `warn` · `error`                               |
-| `AUTH_ENABLED`                   | não                 | `true`        | Liga o guard de bearer token                                      |
-| `AUTH_TOKEN`                     | **sim em produção** | `change-me`   | Token estático de máquina (scripts/MCP)                           |
-| `AUTH_JWT_SECRET`                | para login          | —             | Segredo HS256 do IdP local; sem ele `/v1/auth/login` responde 503 |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | para o 1º login     | —             | Admin semente criado no bootstrap (idempotente)                   |
-| `AUTH_ACCESS_TOKEN_TTL_HOURS`    | não                 | `12`          | Validade do JWT de sessão, em horas                               |
+| Variável                         | Obrigatória         | Padrão        | Descrição                                                             |
+| -------------------------------- | ------------------- | ------------- | --------------------------------------------------------------------- |
+| `NODE_ENV`                       | não                 | `development` | `development` · `test` · `production`                                 |
+| `PORT`                           | não                 | `4001`        | Porta do backend                                                      |
+| `APP_NAME`                       | não                 | `v-tal-nexus` | Nome da aplicação nos logs                                            |
+| `LOG_LEVEL`                      | não                 | `info`        | `debug` · `info` · `warn` · `error`                                   |
+| `AUTH_ENABLED`                   | não                 | `true`        | Liga o guard de bearer token                                          |
+| `AUTH_TOKEN`                     | **sim em produção** | `change-me`   | Token estático de máquina (scripts/MCP)                               |
+| `AUTH_JWT_SECRET`                | para login          | —             | Segredo HS256 do IdP local; sem ele `/v1/auth/login` responde 503     |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | para o 1º login     | —             | Admin semente criado no bootstrap (idempotente)                       |
+| `AUTH_ACCESS_TOKEN_TTL_HOURS`    | não                 | `12`          | Validade do JWT de sessão, em horas                                   |
 | `TMF_PUBLIC_BASE_URL`            | não                 | —             | Host público prefixado nos `href` TMF; vazio preserva paths relativos |
 
 > `TMF_PUBLIC_BASE_URL` deve conter a origem pública sem barra final (por exemplo, `https://api.exemplo.com`). Use-a quando o Nexus estiver atrás de um gateway como Apigee; sem ela, os `href` seguem relativos (`/tmf-api/...`), preservando o contrato histórico.
@@ -134,14 +134,14 @@ Raramente precisam ser ajustadas — `DATABASE_AUTO_SCHEMA` (padrão `false` em 
 
 ### Desenvolvimento
 
-| Comando               | O que faz                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `npm run dev`          | Stack completa (backend + Vite). Alias de `dev:local`                        |
-| `npm run dev:db`       | Backend em watch mode, contra o Oracle configurado no `.env`                 |
-| `npm run dev:backend`  | Alias de `dev:db`                                                            |
-| `npm run start:db`     | Backend, execução única (sem watch)                                          |
-| `npm run web:dev`      | Frontend Vite                                                                |
-| `npm start`            | Servidor estático simples na porta 5200, servindo `web/` com fallback SPA. **Não** é o Vite |
+| Comando               | O que faz                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `npm run dev`         | Stack completa (backend + Vite). Alias de `dev:local`                                       |
+| `npm run dev:db`      | Backend em watch mode, contra o Oracle configurado no `.env`                                |
+| `npm run dev:backend` | Alias de `dev:db`                                                                           |
+| `npm run start:db`    | Backend, execução única (sem watch)                                                         |
+| `npm run web:dev`     | Frontend Vite                                                                               |
+| `npm start`           | Servidor estático simples na porta 5200, servindo `web/` com fallback SPA. **Não** é o Vite |
 
 ### Build e qualidade
 
@@ -161,9 +161,9 @@ Raramente precisam ser ajustadas — `DATABASE_AUTO_SCHEMA` (padrão `false` em 
 | -------------------------- | ---------- | -------------------------------------------------- |
 | `npm test`                 | —          | Suíte completa: unit → Oracle → regression         |
 | `npm run test:unit`        | Vitest     | Testes sem banco                                   |
-| `npm run test:integration` | Vitest     | Alias para a suíte Oracle                           |
+| `npm run test:integration` | Vitest     | Alias para a suíte Oracle                          |
 | `npm run test:oracle`      | Vitest     | Path Oracle contra uma instância real (ver abaixo) |
-| `npm run test:regression`  | Playwright | E2E de browser contra Oracle                        |
+| `npm run test:regression`  | Playwright | E2E de browser contra Oracle                       |
 | `npm run test:watch`       | Vitest     | Modo watch                                         |
 | `npm run test:coverage`    | Vitest     | Cobertura v8                                       |
 

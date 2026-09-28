@@ -144,7 +144,9 @@ export class StudioService {
     return await this.repository.transaction(async () => {
       const workspace = await this.getOrCreateWorkspace(domain, context);
       const existingDraft = workspace.draftVersionId
-        ? await this.repository.getVersion(workspace.draftVersionId, { tenantId: workspace.tenantId })
+        ? await this.repository.getVersion(workspace.draftVersionId, {
+            tenantId: workspace.tenantId,
+          })
         : undefined;
       const adapter = this.adapterFor(domain);
       const preparedSnapshot = adapter.prepareSnapshot
@@ -174,7 +176,8 @@ export class StudioService {
         return updated;
       }
 
-      const versionNumber = (await this.repository.getMaxVersionNumber(workspace.tenantId, domain)) + 1;
+      const versionNumber =
+        (await this.repository.getMaxVersionNumber(workspace.tenantId, domain)) + 1;
       const id = createCanonicalId();
       const created = await this.repository.insertVersion({
         '@type': 'StudioVersion',
@@ -311,7 +314,9 @@ export class StudioService {
   }
 
   public async applyBatchDrafts(
-    domainSnapshots: Partial<Record<StudioDomain, { snapshot: Record<string, unknown>; ifMatch?: string }>>,
+    domainSnapshots: Partial<
+      Record<StudioDomain, { snapshot: Record<string, unknown>; ifMatch?: string }>
+    >,
     context: RequestContext,
   ): Promise<Record<StudioDomain, StudioVersion>> {
     return await this.repository.transaction(async () => {
@@ -337,7 +342,10 @@ export class StudioService {
     return adapter;
   }
 
-  private async requireDraft(domain: StudioDomain, context: RequestContext): Promise<StudioVersion> {
+  private async requireDraft(
+    domain: StudioDomain,
+    context: RequestContext,
+  ): Promise<StudioVersion> {
     const workspace = await this.getOrCreateWorkspace(domain, context);
     const draft = workspace.draftVersionId
       ? await this.repository.getVersion(workspace.draftVersionId, { tenantId: workspace.tenantId })
@@ -407,7 +415,11 @@ export class StudioService {
       eventData: {
         entityId: version.id,
         entityType: 'StudioVersion',
-        payload: { domain: version.domain, versionNumber: version.versionNumber, status: version.status },
+        payload: {
+          domain: version.domain,
+          versionNumber: version.versionNumber,
+          status: version.status,
+        },
       },
     });
 
@@ -428,7 +440,11 @@ export class StudioService {
         action: action === 'draft-created' ? 'create' : 'update',
         entityType: 'StudioVersion',
         entityId: version.id,
-        after: { domain: version.domain, versionNumber: version.versionNumber, status: version.status },
+        after: {
+          domain: version.domain,
+          versionNumber: version.versionNumber,
+          status: version.status,
+        },
         event,
         topic: 'tmf688.studio',
       });

@@ -111,7 +111,12 @@ test('ResourceService: blocks a group only while it has active descendants', asy
   );
   const leaf = await resourceService.createResourceCatalogNode(
     catalog.id,
-    { code: 'leaf-active', name: 'Folha Ativa', kind: 'RESOURCE_TYPE', parentNodeId: nestedGroup.id },
+    {
+      code: 'leaf-active',
+      name: 'Folha Ativa',
+      kind: 'RESOURCE_TYPE',
+      parentNodeId: nestedGroup.id,
+    },
     context,
   );
 
@@ -122,7 +127,11 @@ test('ResourceService: blocks a group only while it has active descendants', asy
 
   await resourceService.deleteResourceCatalogNode(catalog.id, leaf.id, context);
   await resourceService.deleteResourceCatalogNode(catalog.id, nestedGroup.id, context);
-  const retiredGroup = await resourceService.deleteResourceCatalogNode(catalog.id, group.id, context);
+  const retiredGroup = await resourceService.deleteResourceCatalogNode(
+    catalog.id,
+    group.id,
+    context,
+  );
 
   assert.equal(retiredGroup.status, 'inactive');
   const impact = await resourceService.getResourceCatalogNodeImpact(catalog.id, group.id, context);
@@ -140,7 +149,10 @@ test('ResourceModelStudioAdapter: validates snapshot for cycles, missing codes, 
   };
   const val1 = await adapter.validate(invalid1 as never);
   assert.equal(val1.valid, false);
-  assert.equal(val1.issues.some((i) => i.code === 'NODE_CODE_REQUIRED'), true);
+  assert.equal(
+    val1.issues.some((i) => i.code === 'NODE_CODE_REQUIRED'),
+    true,
+  );
 
   // Snapshot inválido: ciclo entre nós
   const invalid2: Partial<ResourceModelSnapshot> = {
@@ -152,7 +164,10 @@ test('ResourceModelStudioAdapter: validates snapshot for cycles, missing codes, 
   };
   const val2 = await adapter.validate(invalid2 as never);
   assert.equal(val2.valid, false);
-  assert.equal(val2.issues.some((i) => i.code === 'NODE_CYCLE_DETECTED'), true);
+  assert.equal(
+    val2.issues.some((i) => i.code === 'NODE_CYCLE_DETECTED'),
+    true,
+  );
 });
 
 test('ResourceModelStudioAdapter: publishes and materializes draft snapshot into canonical catalog tables', async () => {
@@ -252,8 +267,14 @@ test('ResourceService: snapshot source aggregates modeled types and rules in one
 
   assert.equal(source.catalog.id, catalog.id);
   assert.equal(source.nodes.length, 2);
-  assert.deepEqual(source.resourceTypes.map((type) => type.id), [leaf.resourceTypeId]);
-  assert.equal(source.resourceTypes.some((type) => type.code === 'CTO'), false);
+  assert.deepEqual(
+    source.resourceTypes.map((type) => type.id),
+    [leaf.resourceTypeId],
+  );
+  assert.equal(
+    source.resourceTypes.some((type) => type.code === 'CTO'),
+    false,
+  );
   assert.equal(listRules.mock.calls.length, 1);
   assert.deepEqual(listRules.mock.calls[0]?.[0], [leaf.resourceTypeId]);
 });
@@ -384,10 +405,7 @@ test('ResourceModelStudioAdapter: applies ResourceType details when materializin
 
   await adapter.materialize(snapshot, { tenantId: context.tenantId });
 
-  const catalog = await resourceService.getResourceCatalogByCode(
-    snapshot.catalog.code,
-    context,
-  );
+  const catalog = await resourceService.getResourceCatalogByCode(snapshot.catalog.code, context);
   assert.ok(catalog);
   const nodes = await resourceService.listResourceCatalogNodes(catalog.id, context, true);
   const leaf = nodes.find((node) => node.code === 'CDOE_NEW');
@@ -448,7 +466,10 @@ test('ResourceModelStudioAdapter: materializes a snapshot linking parents by par
   const published = await studioService.publish('resource-model', context, draft.checksum);
   assert.equal(published.status, 'published');
 
-  const catalog = await resourceService.getResourceCatalogByCode('catalog-studio-pub-by-id', context);
+  const catalog = await resourceService.getResourceCatalogByCode(
+    'catalog-studio-pub-by-id',
+    context,
+  );
   assert.ok(catalog);
 
   const tree = await resourceService.getResourceCatalogTree(catalog.id, context, true);
@@ -469,7 +490,14 @@ test('ResourceModelStudioAdapter: republishing without parent info preserves the
   const first: ResourceModelSnapshot = {
     catalog: { code: 'catalog-studio-preserve', name: 'Catálogo Preserva Hierarquia' },
     nodes: [
-      { id: 'r1', code: 'root-preserve', name: 'Raiz', kind: 'GROUP', parentNodeId: null, sortOrder: 0 },
+      {
+        id: 'r1',
+        code: 'root-preserve',
+        name: 'Raiz',
+        kind: 'GROUP',
+        parentNodeId: null,
+        sortOrder: 0,
+      },
       {
         id: 'c1',
         code: 'child-preserve',
@@ -483,7 +511,10 @@ test('ResourceModelStudioAdapter: republishing without parent info preserves the
   const draft1 = await studioService.saveDraft('resource-model', first as never, context);
   await studioService.publish('resource-model', context, draft1.checksum);
 
-  const catalog = await resourceService.getResourceCatalogByCode('catalog-studio-preserve', context);
+  const catalog = await resourceService.getResourceCatalogByCode(
+    'catalog-studio-preserve',
+    context,
+  );
   assert.ok(catalog);
   const treeAfterFirst = await resourceService.getResourceCatalogTree(catalog.id, context, true);
   assert.equal(treeAfterFirst[0]?.children[0]?.code, 'child-preserve');
@@ -533,12 +564,24 @@ test('StudioService.discardDraft: restores the domain to the baseline captured w
   );
   const movable = await resourceService.createResourceCatalogNode(
     catalog.id,
-    { code: 'node-movable', name: 'Nó Móvel', kind: 'GROUP', parentNodeId: groupA.id, sortOrder: 0 },
+    {
+      code: 'node-movable',
+      name: 'Nó Móvel',
+      kind: 'GROUP',
+      parentNodeId: groupA.id,
+      sortOrder: 0,
+    },
     context,
   );
   const toInactivate = await resourceService.createResourceCatalogNode(
     catalog.id,
-    { code: 'node-to-inactivate', name: 'Nó a Inativar', kind: 'GROUP', parentNodeId: groupB.id, sortOrder: 0 },
+    {
+      code: 'node-to-inactivate',
+      name: 'Nó a Inativar',
+      kind: 'GROUP',
+      parentNodeId: groupB.id,
+      sortOrder: 0,
+    },
     context,
   );
 
@@ -546,7 +589,12 @@ test('StudioService.discardDraft: restores the domain to the baseline captured w
   // faria).
   const allNodes = await resourceService.listResourceCatalogNodes(catalog.id, context, true);
   const baseline = {
-    catalog: { id: catalog.id, code: catalog.code, name: catalog.name, description: catalog.description },
+    catalog: {
+      id: catalog.id,
+      code: catalog.code,
+      name: catalog.name,
+      description: catalog.description,
+    },
     nodes: allNodes.map((n) => ({
       id: n.id,
       code: n.code,
@@ -566,7 +614,13 @@ test('StudioService.discardDraft: restores the domain to the baseline captured w
   // Diverge o catálogo enquanto o draft está aberto: cria, renomeia, move e inativa nós.
   const createdDuringEdit = await resourceService.createResourceCatalogNode(
     catalog.id,
-    { code: 'node-created-during-edit', name: 'Nó Novo', kind: 'GROUP', parentNodeId: root.id, sortOrder: 2 },
+    {
+      code: 'node-created-during-edit',
+      name: 'Nó Novo',
+      kind: 'GROUP',
+      parentNodeId: root.id,
+      sortOrder: 2,
+    },
     context,
   );
   await resourceService.updateResourceCatalogNode(
@@ -634,7 +688,12 @@ test('StudioService.discardDraft: reactivates an inactive ResourceType from the 
   };
   const draft = await studioService.saveDraft('resource-model', baseline as never, context);
 
-  await resourceService.updateResourceCatalogNode(catalog.id, leaf.id, { status: 'inactive' }, context);
+  await resourceService.updateResourceCatalogNode(
+    catalog.id,
+    leaf.id,
+    { status: 'inactive' },
+    context,
+  );
 
   await studioService.discardDraft('resource-model', context, draft.checksum);
 
@@ -664,7 +723,9 @@ test('ResourceService.updateResourceType: persists resourceTypeCharacteristic (i
   assert.equal(updated.resourceTypeCharacteristic?.[0]?.name, 'portCount');
 
   // Persistido de fato — releitura via listResourceTypes reflete o novo estado.
-  const reloaded = (await resourceService.listResourceTypes(context)).find((t) => t.id === ctoType.id);
+  const reloaded = (await resourceService.listResourceTypes(context)).find(
+    (t) => t.id === ctoType.id,
+  );
   assert.equal(reloaded?.resourceTypeCharacteristic?.length, 2);
 });
 
@@ -804,7 +865,11 @@ test('ResourceService.updateResourceType: geometryKind is required, preserved an
   assert.equal(visible.geometryKind, 'POLYGON');
 
   // Campo ausente no PATCH preserva a geometria atual.
-  const renamed = await resourceService.updateResourceType(typeId, { name: 'Poste renomeado' }, context);
+  const renamed = await resourceService.updateResourceType(
+    typeId,
+    { name: 'Poste renomeado' },
+    context,
+  );
   assert.equal(renamed.geometryKind, 'POLYGON');
 
   // Desligar apenas a presença preserva a geometria para reativação futura.

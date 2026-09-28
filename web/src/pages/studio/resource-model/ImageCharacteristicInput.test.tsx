@@ -8,7 +8,8 @@ describe('ImageCharacteristicInput', () => {
     cleanup();
   });
   it('exibe imagem no modo readOnly quando há valor', () => {
-    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const dataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     render(
       <ImageCharacteristicInput
         value={dataUrl}
@@ -25,12 +26,7 @@ describe('ImageCharacteristicInput', () => {
 
   it('exibe traço no modo readOnly quando não há valor', () => {
     render(
-      <ImageCharacteristicInput
-        value=""
-        onChange={vi.fn()}
-        readOnly={true}
-        name="foto_recurso"
-      />,
+      <ImageCharacteristicInput value="" onChange={vi.fn()} readOnly={true} name="foto_recurso" />,
     );
 
     expect(screen.getByText('—')).toBeInTheDocument();
@@ -98,7 +94,8 @@ describe('ImageCharacteristicInput', () => {
 
   it('permite limpar/remover a imagem carregada', async () => {
     const onChange = vi.fn();
-    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const dataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     render(
       <ImageCharacteristicInput
         value={dataUrl}

@@ -65,12 +65,60 @@ function walk([lng, lat], rumoGraus, metros) {
 // (Rua Lopes Trovão 462, Rua Presidente Backer 210, Rua Miguel de Frias 88 — ver RAMAIS em
 // seed-gpon-niteroi.mjs), com números distintos para não colidir.
 const CLIENTES = [
-  { seq: '10', port: 1, status: 'ativo', street: 'Rua Lopes Trovão', streetNr: '470', aoLongo: 35, recuo: 18 },
-  { seq: '11', port: 2, status: 'ativo', street: 'Rua Lopes Trovão', streetNr: '452', aoLongo: -30, recuo: 18 },
-  { seq: '12', port: 3, status: 'ativo', street: 'Rua Presidente Backer', streetNr: '225', aoLongo: 60, recuo: -15 },
-  { seq: '13', port: 4, status: 'ativo', street: 'Rua Miguel de Frias', streetNr: '102', aoLongo: -55, recuo: -15 },
-  { seq: '14', port: 5, status: 'churn', street: 'Rua Lopes Trovão', streetNr: '500', aoLongo: 90, recuo: 18 },
-  { seq: '15', port: 6, status: 'churn', street: 'Rua Miguel de Frias', streetNr: '60', aoLongo: -70, recuo: 20 },
+  {
+    seq: '10',
+    port: 1,
+    status: 'ativo',
+    street: 'Rua Lopes Trovão',
+    streetNr: '470',
+    aoLongo: 35,
+    recuo: 18,
+  },
+  {
+    seq: '11',
+    port: 2,
+    status: 'ativo',
+    street: 'Rua Lopes Trovão',
+    streetNr: '452',
+    aoLongo: -30,
+    recuo: 18,
+  },
+  {
+    seq: '12',
+    port: 3,
+    status: 'ativo',
+    street: 'Rua Presidente Backer',
+    streetNr: '225',
+    aoLongo: 60,
+    recuo: -15,
+  },
+  {
+    seq: '13',
+    port: 4,
+    status: 'ativo',
+    street: 'Rua Miguel de Frias',
+    streetNr: '102',
+    aoLongo: -55,
+    recuo: -15,
+  },
+  {
+    seq: '14',
+    port: 5,
+    status: 'churn',
+    street: 'Rua Lopes Trovão',
+    streetNr: '500',
+    aoLongo: 90,
+    recuo: 18,
+  },
+  {
+    seq: '15',
+    port: 6,
+    status: 'churn',
+    street: 'Rua Miguel de Frias',
+    streetNr: '60',
+    aoLongo: -70,
+    recuo: 20,
+  },
 ];
 
 // ------------------------------------------------------------------- infra --
@@ -226,7 +274,10 @@ async function ensureResource({
 }
 
 async function listRelationships(resourceId) {
-  return await api('GET', `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}/relationships`);
+  return await api(
+    'GET',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}/relationships`,
+  );
 }
 
 async function ensureLink(fromRef, toRef, relationshipType) {
@@ -234,14 +285,23 @@ async function ensureLink(fromRef, toRef, relationshipType) {
   if (!APPLY) return false;
   if (fromRef.id.startsWith('dry-run:') || toRef.id.startsWith('dry-run:')) return false;
   const existing = await listRelationships(fromRef.id);
-  if ((existing ?? []).some((relationship) => relationship.id === toRef.id && relationship.relationshipType === relationshipType)) {
+  if (
+    (existing ?? []).some(
+      (relationship) =>
+        relationship.id === toRef.id && relationship.relationshipType === relationshipType,
+    )
+  ) {
     return false;
   }
-  await api('POST', `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`, {
-    id: toRef.id,
-    relationshipType,
-    '@referredType': 'Resource',
-  });
+  await api(
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`,
+    {
+      id: toRef.id,
+      relationshipType,
+      '@referredType': 'Resource',
+    },
+  );
   report.linksCreated++;
   return true;
 }
@@ -250,7 +310,12 @@ async function removeLink(fromRef, toRef, relationshipType) {
   if (!fromRef || !toRef || !APPLY) return false;
   if (fromRef.id.startsWith('dry-run:') || toRef.id.startsWith('dry-run:')) return false;
   const existing = await listRelationships(fromRef.id);
-  if (!(existing ?? []).some((relationship) => relationship.id === toRef.id && relationship.relationshipType === relationshipType)) {
+  if (
+    !(existing ?? []).some(
+      (relationship) =>
+        relationship.id === toRef.id && relationship.relationshipType === relationshipType,
+    )
+  ) {
     return false;
   }
   await api(
@@ -266,7 +331,8 @@ async function repairDropConnection({ cdoeRef, portaRef, drop }) {
   await ensureLink(portaRef, drop, 'connectedTo');
   const portLinks = await listRelationships(portaRef.id);
   const connected = (portLinks ?? []).some(
-    (relationship) => relationship.id === drop.id && relationship.relationshipType === 'connectedTo',
+    (relationship) =>
+      relationship.id === drop.id && relationship.relationshipType === 'connectedTo',
   );
   if (!connected) {
     throw new Error(`Não foi possível confirmar Porta → CaboDrop para ${drop.id}.`);
@@ -298,7 +364,16 @@ async function ensureRfs({ name, specId, supportingResource, siteId, state, char
   return { id: rfs.id };
 }
 
-async function ensureCfs({ name, specId, subscriberId, rfsId, partyId, siteId, state, characteristics }) {
+async function ensureCfs({
+  name,
+  specId,
+  subscriberId,
+  rfsId,
+  partyId,
+  siteId,
+  state,
+  characteristics,
+}) {
   const found = await findServiceByExactName(name);
   if (found) {
     report.servicesReused++;
@@ -329,7 +404,10 @@ async function ensureParty(name) {
   const found = (parties ?? []).find((p) => p.name === name);
   if (found) return found.id;
   if (!APPLY) return `dry-run:${name}`;
-  const party = await api('POST', '/tmf-api/partyManagement/v4/party', { '@type': 'Organization', name });
+  const party = await api('POST', '/tmf-api/partyManagement/v4/party', {
+    '@type': 'Organization',
+    name,
+  });
   return party.id;
 }
 
@@ -342,12 +420,14 @@ async function main() {
   if (!cdoe) throw new Error(`${CDOE_NAME} não encontrada — rode seed-gpon-niteroi.mjs primeiro.`);
   const cdoeFull = await api('GET', `/tmf-api/resourceInventoryManagement/v4/resource/${cdoe.id}`);
   const cdoeRef = { id: cdoe.id, '@type': cdoe['@type'] ?? 'PhysicalResource' };
-  if (!cdoeFull.place?.id) throw new Error(`${CDOE_NAME} não tem place — não é possível geolocalizar os clientes.`);
+  if (!cdoeFull.place?.id)
+    throw new Error(`${CDOE_NAME} não tem place — não é possível geolocalizar os clientes.`);
   const cdoeLoc = await api('GET', `/v1/geo/locations/${cdoeFull.place.id}`);
   const cdoeCoord = cdoeLoc.geometry.coordinates;
 
   const splitter = await findResourceByExactName(SPLITTER_NAME);
-  if (!splitter) throw new Error(`${SPLITTER_NAME} não encontrado — rode load-cto-ports.mjs --apply primeiro.`);
+  if (!splitter)
+    throw new Error(`${SPLITTER_NAME} não encontrado — rode load-cto-ports.mjs --apply primeiro.`);
 
   const piSpec = await findSiteSpecByExactName('Ponto de instalação');
   if (!piSpec) throw new Error('Spec de site "Ponto de instalação" não encontrada no catálogo.');
@@ -356,13 +436,19 @@ async function main() {
     'GET',
     `/tmf-api/resourceCatalogManagement/v4/resourceSpecification?name=${encodeURIComponent('Cabo drop 1FO')}`,
   ).then((r) => (r ?? []).find((s) => s.name === 'Cabo drop 1FO'));
-  if (!dropSpec) throw new Error('Spec de recurso "Cabo drop 1FO" não encontrada — rode seed-gpon-niteroi.mjs primeiro.');
+  if (!dropSpec)
+    throw new Error(
+      'Spec de recurso "Cabo drop 1FO" não encontrada — rode seed-gpon-niteroi.mjs primeiro.',
+    );
 
   const ontSpec = await api(
     'GET',
     `/tmf-api/resourceCatalogManagement/v4/resourceSpecification?name=${encodeURIComponent('ONT GPON Icaraí')}`,
   ).then((r) => (r ?? []).find((s) => s.name === 'ONT GPON Icaraí'));
-  if (!ontSpec) throw new Error('Spec de recurso "ONT GPON Icaraí" não encontrada — rode seed-gpon-niteroi.mjs primeiro.');
+  if (!ontSpec)
+    throw new Error(
+      'Spec de recurso "ONT GPON Icaraí" não encontrada — rode seed-gpon-niteroi.mjs primeiro.',
+    );
 
   const rfsSpecRow = await api(
     'GET',
@@ -374,7 +460,8 @@ async function main() {
     'GET',
     `/tmf-api/serviceCatalogManagement/v4/serviceSpecification?name=${encodeURIComponent('Banda Larga Residencial 1G')}`,
   ).then((r) => (r ?? []).find((s) => s.name === 'Banda Larga Residencial 1G'));
-  if (!cfsSpecRow) throw new Error('ServiceSpecification "Banda Larga Residencial 1G" não encontrada.');
+  if (!cfsSpecRow)
+    throw new Error('ServiceSpecification "Banda Larga Residencial 1G" não encontrada.');
 
   const tenantId = await ensureParty('V.tal Varejo Icaraí');
 
@@ -389,7 +476,11 @@ async function main() {
     }
     const portaRef = { id: porta.id, '@type': porta['@type'] ?? 'PhysicalResource' };
 
-    const casaCoord = walk(walk(cdoeCoord, RUMO_RUA, cliente.aoLongo), RUMO_TRAVESSA, cliente.recuo);
+    const casaCoord = walk(
+      walk(cdoeCoord, RUMO_RUA, cliente.aoLongo),
+      RUMO_TRAVESSA,
+      cliente.recuo,
+    );
     const testada = walk(cdoeCoord, RUMO_RUA, cliente.aoLongo);
     const rotaDrop = [cdoeCoord, testada, casaCoord];
 
@@ -463,9 +554,15 @@ async function main() {
     console.log(`Serviços já existentes (reaproveitados): ${report.servicesReused}`);
     console.log('\nRode de novo com --apply para gravar.');
   } else {
-    console.log(`Recursos: ${report.resourcesCreated} criados, ${report.resourcesReused} reaproveitados`);
-    console.log(`Ligações: ${report.linksCreated} criadas; ${report.legacyLinksRemoved} legadas removidas`);
-    console.log(`Serviços: ${report.servicesCreated} criados, ${report.servicesReused} reaproveitados`);
+    console.log(
+      `Recursos: ${report.resourcesCreated} criados, ${report.resourcesReused} reaproveitados`,
+    );
+    console.log(
+      `Ligações: ${report.linksCreated} criadas; ${report.legacyLinksRemoved} legadas removidas`,
+    );
+    console.log(
+      `Serviços: ${report.servicesCreated} criados, ${report.servicesReused} reaproveitados`,
+    );
     console.log('\n4 clientes ativos (FO.O.1-4), 2 churns (FO.O.5-6), FO.O.7-8 livres.');
   }
 }

@@ -108,7 +108,8 @@ describe('imageReferenceError & buildCharacteristicPayload', () => {
   });
 
   it('aceita imagem codificada em base64', () => {
-    const base64Image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const base64Image =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     expect(imageReferenceError(base64Image)).toBeNull();
   });
 
@@ -231,7 +232,13 @@ describe('characteristicLevel — especificação x instância (issue #273)', ()
 
   it('buildCharacteristicPayload omite o campo para specification e emite para instance (round-trip estável)', () => {
     const payload = buildCharacteristicPayload([
-      { key: '1', name: 'a', valueType: 'string', valueText: 'x', characteristicLevel: 'specification' },
+      {
+        key: '1',
+        name: 'a',
+        valueType: 'string',
+        valueText: 'x',
+        characteristicLevel: 'specification',
+      },
       { key: '2', name: 'b', valueType: 'string', valueText: 'y', characteristicLevel: 'instance' },
     ]);
     expect(payload[0]).not.toHaveProperty('characteristicLevel');
@@ -270,9 +277,21 @@ describe('characteristicLevel — especificação x instância (issue #273)', ()
 
   it('partitionCharacteristicRowsByLevel separa nos dois agrupamentos preservando a ordem', () => {
     const rows: ResourceCharacteristicRow[] = [
-      { key: '1', name: 'a', valueType: 'string', valueText: '', characteristicLevel: 'specification' },
+      {
+        key: '1',
+        name: 'a',
+        valueType: 'string',
+        valueText: '',
+        characteristicLevel: 'specification',
+      },
       { key: '2', name: 'b', valueType: 'string', valueText: '', characteristicLevel: 'instance' },
-      { key: '3', name: 'c', valueType: 'string', valueText: '', characteristicLevel: 'specification' },
+      {
+        key: '3',
+        name: 'c',
+        valueType: 'string',
+        valueText: '',
+        characteristicLevel: 'specification',
+      },
       { key: '4', name: 'd', valueType: 'string', valueText: '', characteristicLevel: 'instance' },
     ];
 

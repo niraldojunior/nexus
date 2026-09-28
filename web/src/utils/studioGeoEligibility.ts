@@ -110,25 +110,23 @@ export function buildEligibleSites(siteSpecs: GeoSpec[]): EligibleOption[] {
  */
 export function buildEligibleResources(resourceTypes: ResourceType[]): EligibleOption[] {
   return uniqueBySourceId(
-    resourceTypes
-      .filter(isPhysicalResourceType)
-      .map((rt) => ({
-        id: rt.code || rt.id,
-        name: rt.name,
-        code: rt.code,
-        category: 'RESOURCE' as const,
-        sourceDomain: 'resource-model' as const,
-        sourceType: 'RESOURCE_TYPE' as const,
+    resourceTypes.filter(isPhysicalResourceType).map((rt) => ({
+      id: rt.code || rt.id,
+      name: rt.name,
+      code: rt.code,
+      category: 'RESOURCE' as const,
+      sourceDomain: 'resource-model' as const,
+      sourceType: 'RESOURCE_TYPE' as const,
+      sourceId: rt.code || rt.id,
+      description: rt.description || `Recurso físico (${rt.categoryCode})`,
+      geometryKind: rt.geometryKind!,
+      reference: {
+        category: 'RESOURCE',
+        sourceDomain: 'resource-model',
+        sourceType: 'RESOURCE_TYPE',
         sourceId: rt.code || rt.id,
-        description: rt.description || `Recurso físico (${rt.categoryCode})`,
-        geometryKind: rt.geometryKind!,
-        reference: {
-          category: 'RESOURCE',
-          sourceDomain: 'resource-model',
-          sourceType: 'RESOURCE_TYPE',
-          sourceId: rt.code || rt.id,
-        },
-      })),
+      },
+    })),
   );
 }
 

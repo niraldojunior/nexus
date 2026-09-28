@@ -20,8 +20,14 @@ test('lngLatToTile → tileBounds é consistente: o ponto sempre cai dentro do s
   for (const z of [10, 14, MAP_TILE_ZOOM, 19]) {
     const tile = lngLatToTile(ICARAI[0], ICARAI[1], z);
     const bounds = tileBounds(z, tile.x, tile.y);
-    assert.ok(ICARAI[0] >= bounds.minLng && ICARAI[0] <= bounds.maxLng, `lng fora do tile em z${z}`);
-    assert.ok(ICARAI[1] >= bounds.minLat && ICARAI[1] <= bounds.maxLat, `lat fora do tile em z${z}`);
+    assert.ok(
+      ICARAI[0] >= bounds.minLng && ICARAI[0] <= bounds.maxLng,
+      `lng fora do tile em z${z}`,
+    );
+    assert.ok(
+      ICARAI[1] >= bounds.minLat && ICARAI[1] <= bounds.maxLat,
+      `lat fora do tile em z${z}`,
+    );
     assert.ok(tile.x >= 0 && tile.x < 2 ** z);
     assert.ok(tile.y >= 0 && tile.y < 2 ** z);
   }
@@ -49,7 +55,10 @@ test('tileForPoint delega para lngLatToTile no zoom de armazenamento', () => {
 test('tilesForBounds cobre exatamente o retângulo de 2×2 tiles vizinhos', () => {
   const z = MAP_TILE_ZOOM;
   const origin = lngLatToTile(ICARAI[0], ICARAI[1], z);
-  const center = (b: TileBoundsRect): LngLat => [(b.minLng + b.maxLng) / 2, (b.minLat + b.maxLat) / 2];
+  const center = (b: TileBoundsRect): LngLat => [
+    (b.minLng + b.maxLng) / 2,
+    (b.minLat + b.maxLat) / 2,
+  ];
   // Envelope dos CENTROS do tile NW e do tile SE do bloco — nunca cai exatamente sobre uma
   // linha de grade (ao contrário de usar as bordas dos tiles), então não há ambiguidade de
   // ponto flutuante sobre "a borda pertence a qual tile".
@@ -152,7 +161,10 @@ test('tilesForLine: rota entre os centros de dois tiles vizinhos cruza exatament
   const origin = lngLatToTile(ICARAI[0], ICARAI[1], z);
   const boundsA = tileBounds(z, origin.x, origin.y);
   const boundsB = tileBounds(z, origin.x + 1, origin.y);
-  const centerOf = (b: typeof boundsA): LngLat => [(b.minLng + b.maxLng) / 2, (b.minLat + b.maxLat) / 2];
+  const centerOf = (b: typeof boundsA): LngLat => [
+    (b.minLng + b.maxLng) / 2,
+    (b.minLat + b.maxLat) / 2,
+  ];
   const route: LngLat[] = [centerOf(boundsA), centerOf(boundsB)];
 
   const tiles = tilesForLine(route, z);
@@ -169,7 +181,10 @@ test('tilesForLine: rota em anel pelos 4 tiles de um bloco 2×2 cruza exatamente
   // segmento cruza só uma fronteira (nunca o canto), sem ambiguidade nenhuma.
   const z = MAP_TILE_ZOOM;
   const origin = lngLatToTile(ICARAI[0], ICARAI[1], z);
-  const center = (b: TileBoundsRect): LngLat => [(b.minLng + b.maxLng) / 2, (b.minLat + b.maxLat) / 2];
+  const center = (b: TileBoundsRect): LngLat => [
+    (b.minLng + b.maxLng) / 2,
+    (b.minLat + b.maxLat) / 2,
+  ];
   const nw = center(tileBounds(z, origin.x, origin.y));
   const ne = center(tileBounds(z, origin.x + 1, origin.y));
   const se = center(tileBounds(z, origin.x + 1, origin.y + 1));
@@ -191,7 +206,10 @@ test('tileSegmentsForLine: um item por tile atravessado, cada um com a geometria
   const origin = lngLatToTile(ICARAI[0], ICARAI[1], z);
   const boundsA = tileBounds(z, origin.x, origin.y);
   const boundsB = tileBounds(z, origin.x + 1, origin.y);
-  const centerOf = (b: typeof boundsA): LngLat => [(b.minLng + b.maxLng) / 2, (b.minLat + b.maxLat) / 2];
+  const centerOf = (b: typeof boundsA): LngLat => [
+    (b.minLng + b.maxLng) / 2,
+    (b.minLat + b.maxLat) / 2,
+  ];
   const route: LngLat[] = [centerOf(boundsA), centerOf(boundsB)];
 
   const segments = tileSegmentsForLine({ type: 'LineString', coordinates: route }, z);

@@ -29,7 +29,10 @@ export function InlineEditRow({
       title={Icon ? label : undefined}
     >
       {Icon ? (
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
+        <span
+          className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+          aria-hidden="true"
+        >
           <Icon className="h-[18px] w-[18px]" />
         </span>
       ) : (

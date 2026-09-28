@@ -143,8 +143,9 @@ try {
       continue;
     }
 
-    const candidates = (await service.listResourceSpecifications({ name: repair.specName }, context))
-      .filter((spec) => spec.name === repair.specName);
+    const candidates = (
+      await service.listResourceSpecifications({ name: repair.specName }, context)
+    ).filter((spec) => spec.name === repair.specName);
 
     if (candidates.length === 0) {
       console.log(`· ${repair.specName}: nenhuma Specification com esse nome no tenant.`);
@@ -169,7 +170,10 @@ try {
         continue;
       }
       if (dominance < DOMINANCE_THRESHOLD) {
-        const sample = divergent.slice(0, 3).map((row) => row.name).join(', ');
+        const sample = divergent
+          .slice(0, 3)
+          .map((row) => row.name)
+          .join(', ');
         console.log(
           `✖ ${spec.name}: só ${(dominance * 100).toFixed(1)}% das ${instances.length} instâncias ` +
             `têm prefixo '${repair.namePrefix}' (ex.: ${sample}). Specification misturada, ` +
@@ -180,7 +184,10 @@ try {
       }
       if (divergent.length > 0) {
         // Outlier nominal: não impede o reponto, mas fica registrado para conferência posterior.
-        const sample = divergent.map((row) => row.name).slice(0, 10).join(', ');
+        const sample = divergent
+          .map((row) => row.name)
+          .slice(0, 10)
+          .join(', ');
         console.log(
           `  ⚠ ${spec.name}: ${divergent.length} instância(s) fora do prefixo — ${sample}` +
             `${divergent.length > 10 ? ' …' : ''}`,

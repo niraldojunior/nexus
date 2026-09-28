@@ -15,7 +15,6 @@ export type OracleConfig = {
   objectPrefix: string;
 };
 
-
 export type GeonetConfig = {
   apiBaseUrl: string;
   tokenUrl: string;
@@ -59,7 +58,6 @@ export type AppConfig = {
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
 };
-
 
 const validLogLevels = new Set(['debug', 'info', 'warn', 'error'] as const);
 const validEnvs = new Set(['development', 'test', 'production'] as const);

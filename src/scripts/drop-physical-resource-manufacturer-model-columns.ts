@@ -67,15 +67,25 @@ const run = async (): Promise<void> => {
   try {
     await client.initialize();
 
-    process.stdout.write('\n=== Auditoria / Remoção física: tmf_physical_resource (manufacturer, model) ===\n');
+    process.stdout.write(
+      '\n=== Auditoria / Remoção física: tmf_physical_resource (manufacturer, model) ===\n',
+    );
     process.stdout.write(`Ambiente: ${config.database.provider} (prefixo: "${objectPrefix}")\n\n`);
 
-    const hasManufacturerCol = await columnExists(objectPrefix, 'tmf_physical_resource', 'manufacturer');
+    const hasManufacturerCol = await columnExists(
+      objectPrefix,
+      'tmf_physical_resource',
+      'manufacturer',
+    );
     const hasModelCol = await columnExists(objectPrefix, 'tmf_physical_resource', 'model');
 
     process.stdout.write(`Status das colunas no Oracle:\n`);
-    process.stdout.write(`  - manufacturer: ${hasManufacturerCol ? 'PRESENTE' : 'AUSENTE (já removida)'}\n`);
-    process.stdout.write(`  - model:        ${hasModelCol ? 'PRESENTE' : 'AUSENTE (já removida)'}\n\n`);
+    process.stdout.write(
+      `  - manufacturer: ${hasManufacturerCol ? 'PRESENTE' : 'AUSENTE (já removida)'}\n`,
+    );
+    process.stdout.write(
+      `  - model:        ${hasModelCol ? 'PRESENTE' : 'AUSENTE (já removida)'}\n\n`,
+    );
 
     if (!hasManufacturerCol && !hasModelCol) {
       process.stdout.write('Ambas as colunas já foram removidas. Nenhuma ação necessária.\n');
@@ -119,11 +129,12 @@ const run = async (): Promise<void> => {
       if (hasModelCol) sampleCols.push('model');
 
       const samples = await client.queryMany<Record<string, unknown>>(
-        `SELECT ${sampleCols.join(', ')} FROM tmf_physical_resource WHERE ${
-          [hasManufacturerCol ? 'manufacturer IS NOT NULL' : '', hasModelCol ? 'model IS NOT NULL' : '']
-            .filter(Boolean)
-            .join(' OR ')
-        } FETCH FIRST 5 ROWS ONLY`,
+        `SELECT ${sampleCols.join(', ')} FROM tmf_physical_resource WHERE ${[
+          hasManufacturerCol ? 'manufacturer IS NOT NULL' : '',
+          hasModelCol ? 'model IS NOT NULL' : '',
+        ]
+          .filter(Boolean)
+          .join(' OR ')} FETCH FIRST 5 ROWS ONLY`,
       );
       for (const sample of samples) {
         process.stdout.write(
@@ -134,7 +145,9 @@ const run = async (): Promise<void> => {
     }
 
     if (!apply) {
-      process.stdout.write('Modo auditoria concluído. Nenhuma alteração foi realizada no schema.\n');
+      process.stdout.write(
+        'Modo auditoria concluído. Nenhuma alteração foi realizada no schema.\n',
+      );
       process.stdout.write('Para executar o DROP físico, execute:\n');
       process.stdout.write(
         `  ORACLE_OBJECT_PREFIX=${objectPrefix} npx tsx src/scripts/drop-physical-resource-manufacturer-model-columns.ts --apply --confirm-drop-physical-resource-manufacturer-model\n\n`,

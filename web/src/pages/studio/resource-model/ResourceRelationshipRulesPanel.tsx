@@ -41,11 +41,14 @@ const relationshipTypePresentation = [
   ['terminatesOn', 'Termina', 'Termina (ex. Fibra → porta/splitter)'],
 ] as const;
 
-const relationshipPresentationByCode = new Map<string, {
-  order: number;
-  shortLabel: string;
-  selectLabel: string;
-}>(
+const relationshipPresentationByCode = new Map<
+  string,
+  {
+    order: number;
+    shortLabel: string;
+    selectLabel: string;
+  }
+>(
   relationshipTypePresentation.map(([code, shortLabel, selectLabel], order) => [
     code,
     { order, shortLabel, selectLabel },
@@ -91,7 +94,8 @@ export function ResourceRelationshipRulesPanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [formRelationshipCode, setFormRelationshipCode] = useState('');
-  const [formTargetKind, setFormTargetKind] = useState<ResourceRelationshipTargetKind>('RESOURCE_TYPE');
+  const [formTargetKind, setFormTargetKind] =
+    useState<ResourceRelationshipTargetKind>('RESOURCE_TYPE');
   const [formTargetId, setFormTargetId] = useState('');
   const [formCardinalityMode, setFormCardinalityMode] = useState<'none' | 'max' | 'one'>('none');
   const [formCardinalityMax, setFormCardinalityMax] = useState('');
@@ -410,8 +414,9 @@ export function ResourceRelationshipRulesPanel({
               .map((r) => (
                 <li key={r.id} className="flex items-center gap-1.5">
                   <RotateCcw className="h-3 w-3" />
-                  {relationshipTypeByCode.get(r.relationshipTypeCode)?.name ?? r.relationshipTypeCode} ·{' '}
-                  {targetName(r)}
+                  {relationshipTypeByCode.get(r.relationshipTypeCode)?.name ??
+                    r.relationshipTypeCode}{' '}
+                  · {targetName(r)}
                 </li>
               ))}
           </ul>
@@ -424,7 +429,12 @@ export function ResourceRelationshipRulesPanel({
           onClose={() => setModalOpen(false)}
           footer={
             <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setModalOpen(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setModalOpen(false)}
+              >
                 Cancelar
               </Button>
               <Button
@@ -451,7 +461,10 @@ export function ResourceRelationshipRulesPanel({
             )}
 
             <div>
-              <label htmlFor="form-rule-relationship-type" className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+              <label
+                htmlFor="form-rule-relationship-type"
+                className="block text-[0.8rem] font-semibold text-app-text mb-1.5"
+              >
                 Tipo de relação
               </label>
               <select
@@ -502,7 +515,10 @@ export function ResourceRelationshipRulesPanel({
             )}
 
             <div>
-              <label htmlFor="form-rule-target-id" className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+              <label
+                htmlFor="form-rule-target-id"
+                className="block text-[0.8rem] font-semibold text-app-text mb-1.5"
+              >
                 {targetKindLabel[formTargetKind]}
               </label>
               <select
@@ -574,7 +590,8 @@ export function ResourceRelationshipRulesPanel({
                     className="geo-input font-mono w-32"
                   />
                   <p className="text-[0.76rem] text-app-muted mt-1">
-                    Número máximo de instâncias deste alvo que um recurso de origem pode conter ou ligar.
+                    Número máximo de instâncias deste alvo que um recurso de origem pode conter ou
+                    ligar.
                   </p>
                 </div>
               )}

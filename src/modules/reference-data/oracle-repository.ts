@@ -25,8 +25,14 @@ const SELECT_VALUE = `
          created_at AS createdAt, updated_at AS updatedAt
     FROM reference_data_value`;
 
-const setFromRow = (row: SetRow): ReferenceDataSet => ({ ...row, active: Number(row.active) === 1 });
-const valueFromRow = (row: ValueRow): ReferenceDataValue => ({ ...row, active: Number(row.active) === 1 });
+const setFromRow = (row: SetRow): ReferenceDataSet => ({
+  ...row,
+  active: Number(row.active) === 1,
+});
+const valueFromRow = (row: ValueRow): ReferenceDataValue => ({
+  ...row,
+  active: Number(row.active) === 1,
+});
 
 export class OracleReferenceDataRepository implements IReferenceDataRepository {
   public constructor(private readonly db: DatabaseClient) {}
@@ -40,16 +46,25 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
   }
 
   public async getSet(tenantId: string, id: string): Promise<ReferenceDataSet | null> {
-    const row = await this.db.get<SetRow>(`${SELECT_SET} WHERE tenant_id = ? AND id = ?`, [tenantId, id]);
+    const row = await this.db.get<SetRow>(`${SELECT_SET} WHERE tenant_id = ? AND id = ?`, [
+      tenantId,
+      id,
+    ]);
     return row ? setFromRow(row) : null;
   }
 
   public async getSetByKey(tenantId: string, key: string): Promise<ReferenceDataSet | null> {
-    const row = await this.db.get<SetRow>(`${SELECT_SET} WHERE tenant_id = ? AND set_key = ?`, [tenantId, key]);
+    const row = await this.db.get<SetRow>(`${SELECT_SET} WHERE tenant_id = ? AND set_key = ?`, [
+      tenantId,
+      key,
+    ]);
     return row ? setFromRow(row) : null;
   }
 
-  public async createSet(tenantId: string, input: CreateReferenceDataSetInput): Promise<ReferenceDataSet> {
+  public async createSet(
+    tenantId: string,
+    input: CreateReferenceDataSetInput,
+  ): Promise<ReferenceDataSet> {
     const id = createCanonicalId();
     const now = new Date().toISOString();
     await this.db.run(
@@ -113,7 +128,10 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
   }
 
   public async getValue(tenantId: string, id: string): Promise<ReferenceDataValue | null> {
-    const row = await this.db.get<ValueRow>(`${SELECT_VALUE} WHERE tenant_id = ? AND id = ?`, [tenantId, id]);
+    const row = await this.db.get<ValueRow>(`${SELECT_VALUE} WHERE tenant_id = ? AND id = ?`, [
+      tenantId,
+      id,
+    ]);
     return row ? valueFromRow(row) : null;
   }
 

@@ -62,7 +62,8 @@ export function RolesPage({
           }
         }),
       );
-      const charsByRole: Record<string, PartyRoleTypeCharacteristic[]> = Object.fromEntries(charsEntries);
+      const charsByRole: Record<string, PartyRoleTypeCharacteristic[]> =
+        Object.fromEntries(charsEntries);
 
       const status = await getStudioStatus('parties');
       const restored = status.draftVersion
@@ -77,10 +78,12 @@ export function RolesPage({
       // Deep linking via query param ?role=<id>
       const urlParams = parsePartyViewParams(window.location.search);
       const initialSelected = urlParams.roleId
-        ? next.find((item) => item.localId === urlParams.roleId || item.persistedId === urlParams.roleId)
+        ? next.find(
+            (item) => item.localId === urlParams.roleId || item.persistedId === urlParams.roleId,
+          )
         : null;
 
-      setSelectedId(initialSelected ? initialSelected.localId : next[0]?.localId ?? null);
+      setSelectedId(initialSelected ? initialSelected.localId : (next[0]?.localId ?? null));
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Falha ao carregar catálogo de papéis.');
@@ -89,8 +92,12 @@ export function RolesPage({
     }
   }, []);
 
-  useEffect(() => { void loadData(); }, [loadData]);
-  useEffect(() => { if (!showSearch) setFilterText(''); }, [showSearch]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+  useEffect(() => {
+    if (!showSearch) setFilterText('');
+  }, [showSearch]);
 
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
@@ -105,7 +112,9 @@ export function RolesPage({
     if (!selectedId) return;
     const current = items.find((item) => item.localId === selectedId);
     const idToPersist = current?.persistedId ?? current?.localId;
-    if (idToPersist) { writePartyViewParams('party-roles', idToPersist); }
+    if (idToPersist) {
+      writePartyViewParams('party-roles', idToPersist);
+    }
   }, [selectedId, items]);
 
   // Registro de captura de snapshot para governança
@@ -117,8 +126,13 @@ export function RolesPage({
     const serializedSnapshot = JSON.stringify(snapshot);
     if (persistedSnapshotRef.current === serializedSnapshot) return;
 
-    const checksum = checksumRef.current ?? (await getStudioStatus('parties')).draftVersion?.checksum;
-    const saved = await saveStudioDraft('parties', snapshot as unknown as Record<string, unknown>, checksum);
+    const checksum =
+      checksumRef.current ?? (await getStudioStatus('parties')).draftVersion?.checksum;
+    const saved = await saveStudioDraft(
+      'parties',
+      snapshot as unknown as Record<string, unknown>,
+      checksum,
+    );
     checksumRef.current = saved.checksum;
     persistedSnapshotRef.current = serializedSnapshot;
   }, []);
@@ -174,11 +188,19 @@ export function RolesPage({
 
   const handlePatchItem = (patch: Partial<RoleDraftItem>) => {
     if (!selectedId) return;
-    setItems((curr) => curr.map((item) => (item.localId === selectedId ? { ...item, ...patch } : item)));
+    setItems((curr) =>
+      curr.map((item) => (item.localId === selectedId ? { ...item, ...patch } : item)),
+    );
   };
 
-  const handleInactivate = () => { if (!selectedId) return; handlePatchItem({ active: false }); };
-  const handleReactivate = () => { if (!selectedId) return; handlePatchItem({ active: true }); };
+  const handleInactivate = () => {
+    if (!selectedId) return;
+    handlePatchItem({ active: false });
+  };
+  const handleReactivate = () => {
+    if (!selectedId) return;
+    handlePatchItem({ active: true });
+  };
   const handleRemoveNew = () => {
     if (!selectedId) return;
     const remaining = items.filter((item) => item.localId !== selectedId);

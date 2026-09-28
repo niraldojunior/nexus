@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResourceConnectionsView } from './ResourceConnectionsView';
 
 vi.mock('./ResourceConnectionsTab', () => ({
-  ResourceConnectionsTab: ({ connections }: { connections: Array<{ resource: { id: string } }> }) => (
-    <div>Relações de {connections.map((c) => c.resource.id).join(',')}</div>
-  ),
+  ResourceConnectionsTab: ({
+    connections,
+  }: {
+    connections: Array<{ resource: { id: string } }>;
+  }) => <div>Relações de {connections.map((c) => c.resource.id).join(',')}</div>,
 }));
 
 vi.mock('./SchematicTab', () => ({

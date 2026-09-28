@@ -7,7 +7,9 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
   const adapter = new RulesWorkflowsStudioAdapter();
 
   it('validates canonical geo-project workflow snapshot successfully', async () => {
-    const result = await adapter.validate(CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT as unknown as Record<string, unknown>);
+    const result = await adapter.validate(
+      CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT as unknown as Record<string, unknown>,
+    );
     assert.equal(result.valid, true);
     assert.equal(result.issues.length, 0);
   });

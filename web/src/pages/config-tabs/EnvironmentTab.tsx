@@ -16,7 +16,12 @@ const environmentMetadata: EnvironmentMetadata[] = [
   { name: 'ORACLE_OBJECT_PREFIX', origin: 'Processo', scope: 'Backend', status: 'Configurada' },
   { name: 'TMF_PUBLIC_BASE_URL', origin: 'Processo', scope: 'API pública', status: 'Opcional' },
   { name: 'AUTH_ENABLED', origin: 'Processo', scope: 'Autenticação', status: 'Configurada' },
-  { name: 'AUTH_ACCESS_TOKEN_TTL_HOURS', origin: 'Processo', scope: 'Autenticação', status: 'Configurada' },
+  {
+    name: 'AUTH_ACCESS_TOKEN_TTL_HOURS',
+    origin: 'Processo',
+    scope: 'Autenticação',
+    status: 'Configurada',
+  },
   { name: 'LOG_LEVEL', origin: 'Processo', scope: 'Observabilidade', status: 'Configurada' },
 ];
 
@@ -27,7 +32,10 @@ export function EnvironmentTab() {
         key: 'name',
         header: 'Variável',
         render: (item) => (
-          <span className="font-mono text-[0.82rem] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <span
+            className="font-mono text-[0.82rem] font-semibold"
+            style={{ color: 'var(--text-primary)' }}
+          >
             {item.name}
           </span>
         ),
@@ -35,22 +43,21 @@ export function EnvironmentTab() {
       {
         key: 'origin',
         header: 'Origem',
-        render: (item) => (
-          <span style={{ color: 'var(--text-secondary)' }}>{item.origin}</span>
-        ),
+        render: (item) => <span style={{ color: 'var(--text-secondary)' }}>{item.origin}</span>,
       },
       {
         key: 'scope',
         header: 'Escopo',
-        render: (item) => (
-          <span style={{ color: 'var(--text-secondary)' }}>{item.scope}</span>
-        ),
+        render: (item) => <span style={{ color: 'var(--text-secondary)' }}>{item.scope}</span>,
       },
       {
         key: 'status',
         header: 'Estado',
         render: (item) => (
-          <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+          <span
+            className="inline-flex items-center gap-1.5"
+            style={{ color: 'var(--text-primary)' }}
+          >
             <CheckCircle2 className="h-4 w-4" strokeWidth={1.8} />
             {item.status}
           </span>
@@ -74,11 +81,7 @@ export function EnvironmentTab() {
         </p>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={environmentMetadata}
-        rowKey={(item) => item.name}
-      />
+      <DataTable columns={columns} rows={environmentMetadata} rowKey={(item) => item.name} />
     </div>
   );
 }

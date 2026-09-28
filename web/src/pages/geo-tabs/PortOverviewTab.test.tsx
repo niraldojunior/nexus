@@ -61,9 +61,13 @@ describe('PortOverviewTab', () => {
   });
 
   it('identifica no detalhe o drop instalado sem serviço ativo', () => {
-    render(<PortOverviewTab detail={{ ...detail, hasActiveService: false }} onOpenResource={vi.fn()} />);
+    render(
+      <PortOverviewTab detail={{ ...detail, hasActiveService: false }} onOpenResource={vi.fn()} />,
+    );
 
     expect(screen.getByText('Drop desativado')).toBeInTheDocument();
-    expect(screen.getByTitle('Estado de uso: Drop desativado').className).toContain('ring-status-green');
+    expect(screen.getByTitle('Estado de uso: Drop desativado').className).toContain(
+      'ring-status-green',
+    );
   });
 });

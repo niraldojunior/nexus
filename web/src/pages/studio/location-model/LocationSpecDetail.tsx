@@ -409,7 +409,10 @@ export function LocationSpecDetail({
                 const { specification, instance } =
                   partitionGeoCharacteristicRowsByLevel(characteristicRows);
                 const sections: Array<{ heading: string; rows: GeoCharacteristicRow[] }> = [
-                  { heading: `Nível de especificação (${specification.length})`, rows: specification },
+                  {
+                    heading: `Nível de especificação (${specification.length})`,
+                    rows: specification,
+                  },
                   { heading: `Nível de instância (${instance.length})`, rows: instance },
                 ].filter((section) => section.rows.length > 0);
 

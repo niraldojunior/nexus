@@ -1017,8 +1017,11 @@ export async function withRetry<T>(
   operation: () => Promise<T>,
   options: number | RetryOptions = 3,
 ): Promise<T> {
-  const { attempts = 3, baseDelayMs = 500, maxDelayMs = Infinity } =
-    typeof options === 'number' ? { attempts: options } : options;
+  const {
+    attempts = 3,
+    baseDelayMs = 500,
+    maxDelayMs = Infinity,
+  } = typeof options === 'number' ? { attempts: options } : options;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {

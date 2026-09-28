@@ -101,7 +101,10 @@ test.skipIf(!oracleConfigured)(
         category: 'Broadband',
         serviceType: 'RFS',
       });
-      const category = await service.createServiceCategory({ name: 'Access', description: 'Acesso' });
+      const category = await service.createServiceCategory({
+        name: 'Access',
+        description: 'Acesso',
+      });
       const childCategory = await service.createServiceCategory({
         name: 'FTTH',
         parentCategoryId: category.id,
@@ -159,7 +162,9 @@ test.skipIf(!oracleConfigured)(
         name: 'CFS GPON 1',
         serviceSpecificationId: cfsSpec.id,
         subscriberId: 'SUB-778899',
-        supportingService: [{ id: rfs.id, '@referredType': 'ResourceFacingService', role: 'access' }],
+        supportingService: [
+          { id: rfs.id, '@referredType': 'ResourceFacingService', role: 'access' },
+        ],
         relatedParty: [{ id: party.id, '@referredType': 'Organization', role: 'subscriber' }],
         place: [{ id: site.id, '@referredType': 'GeographicSite', role: 'installationAddress' }],
         serviceCharacteristic: [{ name: 'SubscriberID', value: 'SUB-778899', valueType: 'string' }],

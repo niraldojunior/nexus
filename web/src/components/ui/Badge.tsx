@@ -23,7 +23,13 @@ const TONES: Record<BadgeTone, { bg: string; fg: string }> = {
   ink: { bg: 'var(--surface-ink)', fg: 'var(--vt-yellow)' },
 };
 
-export default function Badge({ children, tone = 'neutral', dot = false, style, ...rest }: BadgeProps) {
+export default function Badge({
+  children,
+  tone = 'neutral',
+  dot = false,
+  style,
+  ...rest
+}: BadgeProps) {
   const t = TONES[tone];
   const base: CSSProperties = {
     display: 'inline-flex',
@@ -41,7 +47,9 @@ export default function Badge({ children, tone = 'neutral', dot = false, style, 
   };
   return (
     <span style={{ ...base, ...style }} {...rest}>
-      {dot && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />}
+      {dot && (
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+      )}
       {children}
     </span>
   );

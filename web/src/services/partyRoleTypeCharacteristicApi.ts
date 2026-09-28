@@ -7,13 +7,7 @@
 import { getJson, postJson, patchJson, deleteJson } from './geoApi';
 
 export type PartyRoleTypeCharacteristicValueType =
-  | 'string'
-  | 'integer'
-  | 'decimal'
-  | 'boolean'
-  | 'date'
-  | 'list'
-  | 'json';
+  'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json';
 
 export type PartyRoleTypeCharacteristic = {
   id: string;
@@ -69,10 +63,15 @@ export const updatePartyRoleTypeCharacteristic = (
   id: string,
   patch: UpdatePartyRoleTypeCharacteristicInput,
 ): Promise<PartyRoleTypeCharacteristic> =>
-  patchJson<PartyRoleTypeCharacteristic>(`${baseUrl(roleTypeIdOrRoleName)}/${encodeURIComponent(id)}`, patch);
+  patchJson<PartyRoleTypeCharacteristic>(
+    `${baseUrl(roleTypeIdOrRoleName)}/${encodeURIComponent(id)}`,
+    patch,
+  );
 
 export const deactivatePartyRoleTypeCharacteristic = (
   roleTypeIdOrRoleName: string,
   id: string,
 ): Promise<PartyRoleTypeCharacteristic> =>
-  deleteJson<PartyRoleTypeCharacteristic>(`${baseUrl(roleTypeIdOrRoleName)}/${encodeURIComponent(id)}`);
+  deleteJson<PartyRoleTypeCharacteristic>(
+    `${baseUrl(roleTypeIdOrRoleName)}/${encodeURIComponent(id)}`,
+  );

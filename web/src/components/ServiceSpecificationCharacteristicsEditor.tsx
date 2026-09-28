@@ -4,7 +4,10 @@ import {
   type ServiceSpecCharacteristicRow,
 } from '../utils/serviceSpecificationForm';
 
-const VALUE_TYPE_OPTIONS: { value: NonNullable<ServiceSpecCharacteristicRow['valueType']>; label: string }[] = [
+const VALUE_TYPE_OPTIONS: {
+  value: NonNullable<ServiceSpecCharacteristicRow['valueType']>;
+  label: string;
+}[] = [
   { value: 'string', label: 'Texto' },
   { value: 'integer', label: 'Inteiro' },
   { value: 'decimal', label: 'Decimal' },
@@ -122,7 +125,8 @@ function CharacteristicSection({
                       value={row.valueType ?? 'string'}
                       onChange={(event) =>
                         onUpdateRow(row.key, {
-                          valueType: event.target.value as ServiceSpecCharacteristicRow['valueType'],
+                          valueType: event.target
+                            .value as ServiceSpecCharacteristicRow['valueType'],
                         })
                       }
                       className="geo-input"
@@ -155,7 +159,9 @@ function CharacteristicSection({
                   <td className="px-3 py-2">
                     <input
                       value={row.valueDomain ?? ''}
-                      onChange={(event) => onUpdateRow(row.key, { valueDomain: event.target.value })}
+                      onChange={(event) =>
+                        onUpdateRow(row.key, { valueDomain: event.target.value })
+                      }
                       className="geo-input"
                       placeholder="Ex.: {a, b, c} ou 1-4094"
                     />

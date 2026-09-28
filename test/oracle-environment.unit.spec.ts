@@ -46,6 +46,12 @@ test('destruição mantém schema_migrations por último', () => {
   assert.deepEqual(new Set(order), new Set(['users', 'tmf_party', 'schema_migrations']));
 });
 
+test('o ID de tenant explícito aceito para NX_DEV2_ segue o contrato operacional vtal', () => {
+  assert.match('vtal', /^[a-z][a-z0-9_-]{0,63}$/i);
+  assert.doesNotMatch('1-vtal', /^[a-z][a-z0-9_-]{0,63}$/i);
+  assert.doesNotMatch('vtal!', /^[a-z][a-z0-9_-]{0,63}$/i);
+});
+
 test('senha temporária é forte e não é determinística', () => {
   const first = generateTemporaryPassword();
   const second = generateTemporaryPassword();

@@ -273,10 +273,25 @@ function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
 }
 
 const FEATURE_COLUMNS = [
-  'tenant_id', 'tile_z', 'tile_x', 'tile_y', 'entity_id', 'shape', 'feature_kind',
-  'entity_type', 'type_code', 'site_category', 'source_model_type', 'source_model_id',
-  'status', 'label', 'sublabel',
-  'lng', 'lat', 'geometry', 'rank',
+  'tenant_id',
+  'tile_z',
+  'tile_x',
+  'tile_y',
+  'entity_id',
+  'shape',
+  'feature_kind',
+  'entity_type',
+  'type_code',
+  'site_category',
+  'source_model_type',
+  'source_model_id',
+  'status',
+  'label',
+  'sublabel',
+  'lng',
+  'lat',
+  'geometry',
+  'rank',
 ];
 
 async function main() {
@@ -284,15 +299,15 @@ async function main() {
   try {
     const params = [TENANT];
     const scopeWhere = scopeFilter(params);
-    const scopeLabel = [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
+    const scopeLabel =
+      [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
     console.log(`Escopo   : ${scopeLabel} (tenant=${TENANT})`);
 
     // ResourcePanel expõe o agregado de detalhe exclusivamente para PhysicalResource. Manter
     // LogicalResource no índice permitiria que um clique no mapa chegasse a uma rota incompatível.
-    const resourceRows = (await client.query(
-      resourceSource('PhysicalResource', scopeWhere),
-      params,
-    )).rows;
+    const resourceRows = (
+      await client.query(resourceSource('PhysicalResource', scopeWhere), params)
+    ).rows;
     const siteRows = (await client.query(SITE_SOURCE(scopeWhere), params)).rows;
 
     console.log(`Recursos : ${resourceRows.length} candidatos (Point + LineString)`);

@@ -341,7 +341,12 @@ describe('ResourceNodeDetail', () => {
         resourceTypeCharacteristic: [
           { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16 },
           { name: 'power', valueType: 'decimal', characteristicLevel: 'specification', value: 2.5 },
-          { name: 'mac', valueType: 'string', characteristicLevel: 'instance', value: '00:11:22:33:44:55' },
+          {
+            name: 'mac',
+            valueType: 'string',
+            characteristicLevel: 'instance',
+            value: '00:11:22:33:44:55',
+          },
         ],
       },
       catalogPaths: [],
@@ -389,7 +394,12 @@ describe('ResourceNodeDetail', () => {
         nature: 'PhysicalResource',
         mapPresence: false,
         resourceTypeCharacteristic: [
-          { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: null },
+          {
+            name: 'ports',
+            valueType: 'integer',
+            characteristicLevel: 'specification',
+            value: null,
+          },
         ],
       },
       catalogPaths: [],

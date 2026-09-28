@@ -5,7 +5,10 @@ import {
   emptyResourceCharacteristicRow,
   imageReferenceError,
 } from '../../../utils/resourceCharacteristicsForm';
-import { listReferenceDataSets, type ReferenceDataSet } from '../../../services/studioReferenceDataApi';
+import {
+  listReferenceDataSets,
+  type ReferenceDataSet,
+} from '../../../services/studioReferenceDataApi';
 import { listPartyRoleTypes, type PartyRoleType } from '../../../services/partyRoleTypeApi';
 import { listOrganizationsByRoleTypeIds } from '../../../services/partyApi';
 import { Modal, Button } from '../../../components/ui';
@@ -51,7 +54,9 @@ export function ResourceCharacteristicFormModal({
   const [row, setRow] = useState<ResourceCharacteristicRow>(emptyResourceCharacteristicRow());
   const [referenceDataSets, setReferenceDataSets] = useState<ReferenceDataSet[]>([]);
   const [availableRoleTypes, setAvailableRoleTypes] = useState<PartyRoleType[]>([]);
-  const [organizationOptions, setOrganizationOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [organizationOptions, setOrganizationOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -84,12 +89,12 @@ export function ResourceCharacteristicFormModal({
 
   const listOptions =
     row.valueType === 'list'
-      ? (row.allowedValuesText
+      ? ((row.allowedValuesText
           ? row.allowedValuesText
               .split(',')
               .map((s) => s.trim())
               .filter(Boolean)
-          : row.allowedValues) ?? []
+          : row.allowedValues) ?? [])
       : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -167,7 +172,11 @@ export function ResourceCharacteristicFormModal({
               form="resource-characteristic-form"
               disabled={submitting}
             >
-              {submitting ? 'Salvando…' : isEditing ? 'Atualizar característica' : 'Criar característica'}
+              {submitting
+                ? 'Salvando…'
+                : isEditing
+                  ? 'Atualizar característica'
+                  : 'Criar característica'}
             </Button>
           </>
         )
@@ -200,7 +209,9 @@ export function ResourceCharacteristicFormModal({
               />
             </div>
             <div>
-              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">Grupo</label>
+              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+                Grupo
+              </label>
               <input
                 type="text"
                 value={row.group ?? ''}
@@ -213,7 +224,9 @@ export function ResourceCharacteristicFormModal({
           </div>
 
           <div>
-            <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">Descrição</label>
+            <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
+              Descrição
+            </label>
             <textarea
               rows={2}
               value={row.description ?? ''}
@@ -230,7 +243,9 @@ export function ResourceCharacteristicFormModal({
               <button
                 type="button"
                 disabled={readOnly}
-                onClick={() => setRow((prev) => ({ ...prev, characteristicLevel: 'specification' }))}
+                onClick={() =>
+                  setRow((prev) => ({ ...prev, characteristicLevel: 'specification' }))
+                }
                 className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition disabled:cursor-default ${
                   row.characteristicLevel === 'specification'
                     ? 'bg-app-panel text-app-text font-semibold shadow-sm'
@@ -369,7 +384,9 @@ export function ResourceCharacteristicFormModal({
               {!row.referenceDataSetKey && (
                 <input
                   value={row.allowedValuesText ?? ''}
-                  onChange={(e) => setRow((prev) => ({ ...prev, allowedValuesText: e.target.value }))}
+                  onChange={(e) =>
+                    setRow((prev) => ({ ...prev, allowedValuesText: e.target.value }))
+                  }
                   disabled={readOnly}
                   placeholder="Opção 1, Opção 2, Opção 3..."
                   className="geo-input font-mono disabled:bg-[var(--surface-muted)] disabled:text-app-text"
@@ -395,7 +412,9 @@ export function ResourceCharacteristicFormModal({
                 onChange={(nextValue) => setRow((prev) => ({ ...prev, valueText: nextValue }))}
               />
             ) : row.valueType === 'boolean' ? (
-              <label className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
+              <label
+                className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+              >
                 <input
                   type="checkbox"
                   checked={row.valueText === 'true'}
@@ -451,9 +470,7 @@ export function ResourceCharacteristicFormModal({
                 disabled={readOnly}
                 onChange={(e) => setRow((prev) => ({ ...prev, valueText: e.target.value }))}
                 placeholder={
-                  row.valueType === 'json'
-                    ? '{"chave":"valor"}'
-                    : 'Valor da característica'
+                  row.valueType === 'json' ? '{"chave":"valor"}' : 'Valor da característica'
                 }
                 className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
               />

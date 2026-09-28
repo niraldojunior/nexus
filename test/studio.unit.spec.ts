@@ -16,7 +16,11 @@ const createService = (repository: IStudioRepository = new StudioRepository()) =
   const eventService = {
     appendEvent: vi.fn(async () => ({ id: 'event-1', eventTime: '2026-09-04T10:00:00.000Z' })),
   };
-  return { repository, eventService, service: new StudioService(repository, eventService as never) };
+  return {
+    repository,
+    eventService,
+    service: new StudioService(repository, eventService as never),
+  };
 };
 
 test('StudioService creates, validates and publishes an adapter-backed draft', async () => {
@@ -51,7 +55,10 @@ test('StudioService creates, validates and publishes an adapter-backed draft', a
   assert.equal(status.draftVersion, undefined);
   assert.equal(status.publishedVersion?.id, draft.id);
   assert.equal(eventService.appendEvent.mock.calls.length, 3);
-  assert.equal((await service.listAudit('resource-model', context)).map((entry) => entry.action).join(','), 'published,draft-validated,draft-created');
+  assert.equal(
+    (await service.listAudit('resource-model', context)).map((entry) => entry.action).join(','),
+    'published,draft-validated,draft-created',
+  );
 });
 
 test('StudioService requires an unchanged If-Match to update or discard a draft', async () => {
@@ -92,9 +99,10 @@ test('StudioService treats unchanged draft saves as idempotent after validating 
   assert.equal(saved.id, draft.id);
   assert.equal(saved.checksum, draft.checksum);
   assert.equal(eventService.appendEvent.mock.calls.length, 1);
-  assert.deepEqual((await service.listAudit('parties', context)).map((entry) => entry.action), [
-    'draft-created',
-  ]);
+  assert.deepEqual(
+    (await service.listAudit('parties', context)).map((entry) => entry.action),
+    ['draft-created'],
+  );
   await assert.rejects(
     () => service.saveDraft('parties', snapshot, context, 'stale-checksum'),
     (error: { code?: string }) => error.code === 'STUDIO_PRECONDITION_FAILED',
@@ -111,7 +119,11 @@ test('StudioService skips baseline materialization only for snapshot-local adapt
     materialize: snapshotLocalMaterialize,
   });
 
-  const snapshotLocalDraft = await service.saveDraft('location-model', { specifications: [] }, context);
+  const snapshotLocalDraft = await service.saveDraft(
+    'location-model',
+    { specifications: [] },
+    context,
+  );
   await service.discardDraft('location-model', context, snapshotLocalDraft.checksum);
   assert.equal(snapshotLocalMaterialize.mock.calls.length, 0);
 

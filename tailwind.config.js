@@ -53,14 +53,15 @@ export default {
         'map-control-lg': '0 2px 10px -1px rgba(15, 23, 42, 0.35)',
       },
       fontFamily: {
-        sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
-        display: [
-          '"Montserrat"',
+        sans: [
           '"Inter"',
           '-apple-system',
           'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
           'sans-serif',
         ],
+        display: ['"Montserrat"', '"Inter"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
     },

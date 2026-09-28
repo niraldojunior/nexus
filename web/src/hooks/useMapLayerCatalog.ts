@@ -48,7 +48,9 @@ export function useMapLayerCatalog(): UseMapLayerCatalog {
       })
       .catch((reason: unknown) => {
         if (cancelled) return;
-        setError(reason instanceof Error ? reason.message : 'Falha ao carregar catálogo de camadas.');
+        setError(
+          reason instanceof Error ? reason.message : 'Falha ao carregar catálogo de camadas.',
+        );
         setCatalog((prev) => ({ ...prev, environmentId: FAILED_CATALOG_ENVIRONMENT_ID }));
       })
       .finally(() => {

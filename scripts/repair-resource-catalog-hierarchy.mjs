@@ -62,7 +62,10 @@ async function findReferenceSnapshot(db) {
         WHERE domain = $1 AND version_number = $2 AND status = 'published'`,
       [DOMAIN, EXPLICIT_VERSION],
     );
-    if (r.rows.length === 0) throw new Error(`Versão ${EXPLICIT_VERSION} publicada não encontrada para domain='${DOMAIN}'.`);
+    if (r.rows.length === 0)
+      throw new Error(
+        `Versão ${EXPLICIT_VERSION} publicada não encontrada para domain='${DOMAIN}'.`,
+      );
     return r.rows[0];
   }
 
@@ -87,7 +90,9 @@ async function findReferenceSnapshot(db) {
     const comPai = nodes.filter((n) => n.parentNodeId).length;
     if (comPai > 0) return row;
   }
-  throw new Error(`Nenhuma versão publicada de '${DOMAIN}' tem hierarquia (todas as árvores estão achatadas).`);
+  throw new Error(
+    `Nenhuma versão publicada de '${DOMAIN}' tem hierarquia (todas as árvores estão achatadas).`,
+  );
 }
 
 async function main() {
@@ -105,7 +110,9 @@ async function main() {
       `Referência: v${ref.version_number} publicada em ${ref.published_at} — ${snapshot.nodes.length} nós no snapshot, catálogo '${snapshot.catalog?.code}'`,
     );
 
-    const currentResult = await db.query('SELECT id, code, parent_node_id, sort_order FROM tmf_resource_catalog_node');
+    const currentResult = await db.query(
+      'SELECT id, code, parent_node_id, sort_order FROM tmf_resource_catalog_node',
+    );
     const currentById = new Map(currentResult.rows.map((r) => [r.id, r]));
     const currentByCode = new Map(currentResult.rows.map((r) => [r.code, r]));
 
@@ -123,16 +130,24 @@ async function main() {
 
       let targetParentId = null;
       if (n.parentNodeId) {
-        const parentDbNode = currentById.get(n.parentNodeId) ?? currentByCode.get(snapById.get(n.parentNodeId)?.code ?? '');
+        const parentDbNode =
+          currentById.get(n.parentNodeId) ??
+          currentByCode.get(snapById.get(n.parentNodeId)?.code ?? '');
         if (!parentDbNode) {
-          skipped.push({ code: n.code, reason: `pai '${n.parentNodeId}' do snapshot não existe mais no banco` });
+          skipped.push({
+            code: n.code,
+            reason: `pai '${n.parentNodeId}' do snapshot não existe mais no banco`,
+          });
           continue;
         }
         targetParentId = parentDbNode.id;
       }
 
       const targetSort = n.sortOrder ?? 0;
-      if (dbNode.parent_node_id === targetParentId && Number(dbNode.sort_order) === Number(targetSort)) {
+      if (
+        dbNode.parent_node_id === targetParentId &&
+        Number(dbNode.sort_order) === Number(targetSort)
+      ) {
         continue; // já está correto
       }
 
@@ -150,7 +165,9 @@ async function main() {
 
     console.log(`\n${plan.length} nó(s) a corrigir:`);
     for (const p of plan.slice(0, 20)) {
-      console.log(`  ${p.code}: pai ${p.fromParent ?? '(raiz)'} → ${p.toParent ?? '(raiz)'}, sort ${p.fromSort} → ${p.toSort}`);
+      console.log(
+        `  ${p.code}: pai ${p.fromParent ?? '(raiz)'} → ${p.toParent ?? '(raiz)'}, sort ${p.fromSort} → ${p.toSort}`,
+      );
     }
     if (plan.length > 20) console.log(`  ... e mais ${plan.length - 20}`);
 
@@ -169,11 +186,10 @@ async function main() {
 
     await db.query('BEGIN');
     for (const p of plan) {
-      await db.query('UPDATE tmf_resource_catalog_node SET parent_node_id = $1, sort_order = $2 WHERE id = $3', [
-        p.toParent,
-        p.toSort,
-        p.nodeId,
-      ]);
+      await db.query(
+        'UPDATE tmf_resource_catalog_node SET parent_node_id = $1, sort_order = $2 WHERE id = $3',
+        [p.toParent, p.toSort, p.nodeId],
+      );
     }
     await db.query('COMMIT');
     console.log(`\n${plan.length} nó(s) atualizado(s).`);

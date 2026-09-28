@@ -2,15 +2,60 @@ import { describe, expect, it } from 'vitest';
 import {
   deterministicUuid,
   netwinCableId,
+  netwinInternalCardId,
+  netwinInternalEquipmentId,
+  netwinInternalPhysicalPortId,
+  netwinInternalRackId,
+  netwinInternalSlotId,
+  netwinInternalSubrackId,
   netwinEquipmentId,
   netwinLocationId,
   netwinPartyId,
   netwinRouteId,
   NEXUS_NETWIN_NAMESPACE,
 } from '../src/scripts/netwin-migration/identity.js';
-import { parseAddressString } from '../src/scripts/netwin-migration/phase2-locations.js';
+import {
+  neighborhoodLocationIdQuery,
+  parseAddressString,
+} from '../src/scripts/netwin-migration/phase2-locations.js';
+import {
+  isCompatiblePortSpecification,
+  parseSplitterRatio,
+  resolveCanonicalCdoParents,
+} from '../src/scripts/netwin-migration/phase2-internal-plant.js';
 import { CANONICAL_SITE_SPECS } from '../src/scripts/netwin-migration/phase1-site-specs.js';
-import { CANONICAL_RESOURCE_TYPES } from '../src/scripts/netwin-migration/phase1-resource-specs.js';
+import {
+  CANONICAL_RESOURCE_TYPES,
+  formatResourceCatalogLoadSummary,
+} from '../src/scripts/netwin-migration/phase1-resource-specs.js';
+import { assertReadOnlySourceSql } from '../src/scripts/netwin-migration/context.js';
+import { bulkMergeRows, mergeSql } from '../src/scripts/netwin-migration-kit.js';
+import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
+import {
+  assertReconciliationInvocation,
+  parseReconciliationOptions,
+  selectIdentityColumns,
+} from '../src/scripts/reconcile-netwin-tenant.js';
+import {
+  assertPhase2cContainmentRepairInvocation,
+  classifyPhase2cContainment,
+  parsePhase2cContainmentRepairOptions,
+  parsePhase2cPortProvenance,
+} from '../src/scripts/reconcile-netwin-phase2c-containment.js';
+import type { ResourceTypeItem } from '../src/scripts/netwin-migration/phase1-resource-specs.js';
+
+function sharedTypeIdByCode(
+  rows: Array<{ id: string; code: string; tenantId: string }>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const row of rows) {
+    if (!result.has(row.code) || row.tenantId === 'default') result.set(row.code, row.id);
+  }
+  return result;
+}
+
+const canonicalType = (code: string): ResourceTypeItem | undefined =>
+  CANONICAL_RESOURCE_TYPES.find((resourceType) => resourceType.code === code);
 
 describe('netwin-migration: identity & deterministic UUIDs', () => {
   const UUID_V5_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -32,9 +77,93 @@ describe('netwin-migration: identity & deterministic UUIDs', () => {
     const cableId = netwinCableId(100);
     const routeId = netwinRouteId(100);
     const partyId = netwinPartyId(100);
+    const internalIds = [
+      netwinInternalRackId(100),
+      netwinInternalSubrackId(100),
+      netwinInternalEquipmentId(100),
+      netwinInternalCardId(100),
+      netwinInternalSlotId(100),
+      netwinInternalPhysicalPortId(100),
+    ];
 
-    const ids = new Set([locId, eqId, cableId, routeId, partyId]);
-    expect(ids.size).toBe(5);
+    const ids = new Set([locId, eqId, cableId, routeId, partyId, ...internalIds]);
+    expect(ids.size).toBe(11);
+  });
+});
+
+describe('netwin-migration: Fase 2.C CDO canônica', () => {
+  it('reutiliza a CDO OSP canônica como pai de portas ISP', () => {
+    const result = resolveCanonicalCdoParents([
+      {
+        ID_BD_EQUIPAMENTO: 15,
+        ID_BD_EQUIPAMENTO_OSP: 42,
+        ID_BD_LOCAL: 99,
+        ID_BD_TIPO_NE: 271,
+      },
+    ]);
+
+    expect(result.rejectedEquipmentIds).toEqual(new Set());
+    expect(result.parents.get(15)).toMatchObject({
+      ispEquipmentId: 15,
+      ospEquipmentId: 42,
+      resourceId: netwinEquipmentId(42),
+    });
+  });
+
+  it('rejeita ponte ISP→OSP ambígua em vez de criar uma CDO duplicada', () => {
+    const result = resolveCanonicalCdoParents([
+      { ID_BD_EQUIPAMENTO: 15, ID_BD_EQUIPAMENTO_OSP: 42, ID_BD_LOCAL: 99, ID_BD_TIPO_NE: 271 },
+      { ID_BD_EQUIPAMENTO: 15, ID_BD_EQUIPAMENTO_OSP: 43, ID_BD_LOCAL: 99, ID_BD_TIPO_NE: 271 },
+    ]);
+
+    expect(result.parents.has(15)).toBe(false);
+    expect(result.rejectedEquipmentIds).toEqual(new Set([15]));
+  });
+
+  it('faz o parse correto de razão de divisão de splitters ópticos', () => {
+    expect(
+      parseSplitterRatio(
+        'SPLITTER 1:8 NC - SC/APC (CONECTORIZADO)',
+        'SPLITTER 1:8 NC - SC/APC',
+        'SPLITTER 1:8',
+      ),
+    ).toBe(8);
+    expect(parseSplitterRatio('SPLITTER 1:2', 'SPLITTER 1:2', 'SPLITTER 1:2')).toBe(2);
+    expect(parseSplitterRatio('SPLITTER 1:16', 'SPL 1:16', '1:16')).toBe(16);
+    expect(parseSplitterRatio('SPLITTER 1:32', 'SPL 1:32', '1:32')).toBe(32);
+    expect(parseSplitterRatio('SPLITTER 1:64', 'SPL 1:64', '1:64')).toBe(64);
+    expect(parseSplitterRatio('SPLITTER 1:4', 'SPL 1:4', '1:4')).toBe(4);
+    expect(parseSplitterRatio('SPLITTER 1X8', 'SPL 1X8', '1X8')).toBe(8);
+    expect(parseSplitterRatio('DESCONHECIDO', null, null)).toBe(8); // fallback
+  });
+
+  it('aceita Netwin Port associado a ResourceType compartilhado ou tenant-local', () => {
+    expect(
+      isCompatiblePortSpecification({ tenantId: 'vtal', resourceTypeCode: 'Port' }, 'vtal'),
+    ).toBe(true);
+    expect(
+      isCompatiblePortSpecification({ tenantId: 'default', resourceTypeCode: 'Port' }, 'vtal'),
+    ).toBe(false);
+    expect(
+      isCompatiblePortSpecification({ tenantId: 'vtal', resourceTypeCode: 'Splitter' }, 'vtal'),
+    ).toBe(false);
+    expect(isCompatiblePortSpecification(undefined, 'vtal')).toBe(false);
+  });
+});
+
+describe('netwin-migration: Fase 2.A por bairro', () => {
+  it('pagina somente PI_ID da view geográfica antes de hidratar NETWIN.LOCATION', () => {
+    const query = neighborhoodLocationIdQuery([
+      'NETWIN.LIMPASTRING(infranode.BAIRRO) = :bairro',
+      'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
+    ]);
+
+    expect(query).toContain('SELECT DISTINCT infranode.PI_ID');
+    expect(query).toContain('FROM NETWINOI.DL_INFRANODE infranode');
+    expect(query).toContain('infranode.PI_ID > :lastId');
+    expect(query).toContain('ORDER BY infranode.PI_ID');
+    expect(query).toContain('WHERE ROWNUM <= :batchSize');
+    expect(query).not.toContain('NETWIN.LOCATION');
   });
 });
 
@@ -58,6 +187,254 @@ describe('netwin-migration: address parsing', () => {
   });
 });
 
+describe('netwin-migration: CLI', () => {
+  it('aceita a execução independente das Fases 2.C e 2.D', () => {
+    expect(parseCliArgs(['--phase', '2c', '--municipio', 'Niterói']).phase).toBe('2c');
+    expect(parseCliArgs(['--phase', '2d', '--municipio', 'Niterói']).phase).toBe('2d');
+  });
+
+  it('aceita bairro somente quando associado a município ou UF', () => {
+    expect(
+      parseCliArgs(['--phase', '2', '--municipio', 'Niterói', '--bairro', 'Icaraí']).scope,
+    ).toMatchObject({ municipio: 'Niterói', bairro: 'Icaraí', full: false });
+    expect(() => parseCliArgs(['--phase', '2', '--bairro', 'Icaraí'])).toThrow(/bairro exige/i);
+    expect(() => parseCliArgs(['--phase', '2', '--full', '--bairro', 'Icaraí'])).toThrow(
+      /não pode ser combinado/i,
+    );
+  });
+
+  it('rejeita fases desconhecidas', () => {
+    expect(() => parseCliArgs(['--phase', 'inside-plant', '--full'])).toThrow(/Fase inválida/);
+  });
+
+  it('mantém default até que o contexto exija tenant explícito em APPLY', () => {
+    expect(parseCliArgs(['--phase', '1']).tenantId).toBe('default');
+    expect(parseCliArgs(['--phase', '1', '--tenant-id', 'vtal', '--apply']).tenantId).toBe('vtal');
+  });
+});
+
+describe('netwin-migration: tenant safety', () => {
+  it('exige flags conjuntas para escrever a reconciliação target-only', () => {
+    expect(() =>
+      assertReconciliationInvocation(parseReconciliationOptions(['--apply']), 'NX_DEV1_'),
+    ).toThrow(/confirm-netwin-tenant-reconciliation/i);
+    expect(() =>
+      assertReconciliationInvocation(
+        parseReconciliationOptions(['--confirm-netwin-tenant-reconciliation']),
+        'NX_DEV1_',
+      ),
+    ).toThrow(/exige --apply/i);
+  });
+
+  it('aceita o reparo confirmado apenas no namespace NX_DEV1_', () => {
+    expect(() =>
+      assertReconciliationInvocation(
+        parseReconciliationOptions(['--apply', '--confirm-netwin-tenant-reconciliation']),
+        'NX_DEV1_',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertReconciliationInvocation(
+        parseReconciliationOptions(['--apply', '--confirm-netwin-tenant-reconciliation']),
+        'NEXUS_DEV_',
+      ),
+    ).toThrow(/só pode operar/i);
+  });
+
+  it('seleciona chave de colisão por id, PK ou UNIQUE sem tenant', () => {
+    expect(selectIdentityColumns(['id', 'tenant_id'], [])).toEqual(['id']);
+    expect(
+      selectIdentityColumns(
+        ['tenant_id', 'tile_z', 'tile_x'],
+        [
+          {
+            constraintName: 'PK_TILE',
+            constraintType: 'P',
+            columns: ['tenant_id', 'tile_z', 'tile_x'],
+          },
+        ],
+      ),
+    ).toEqual(['tile_z', 'tile_x']);
+    expect(selectIdentityColumns(['tenant_id'], [])).toEqual([]);
+  });
+});
+
+describe('netwin-migration: reparo target-only da Fase 2.C', () => {
+  const characteristics = JSON.stringify([
+    { group: '_origin', name: 'parentOspEquipmentId', value: '42', valueType: 'string' },
+    { group: '_origin', name: 'parentIspEquipmentId', value: '15', valueType: 'string' },
+  ]);
+
+  it('exige prefixo, tenant e confirmação explícita para escrita', () => {
+    expect(() =>
+      assertPhase2cContainmentRepairInvocation(
+        parsePhase2cContainmentRepairOptions(['--tenant-id', 'vtal', '--apply']),
+        'NX_DEV1_',
+      ),
+    ).toThrow(/confirm-netwin-phase2c-containment-repair/i);
+    expect(() =>
+      assertPhase2cContainmentRepairInvocation(
+        parsePhase2cContainmentRepairOptions([
+          '--tenant-id',
+          'default',
+          '--apply',
+          '--confirm-netwin-phase2c-containment-repair',
+        ]),
+        'NX_DEV1_',
+      ),
+    ).toThrow(/--tenant-id vtal/i);
+    expect(() =>
+      assertPhase2cContainmentRepairInvocation(
+        parsePhase2cContainmentRepairOptions([
+          '--tenant-id',
+          'vtal',
+          '--apply',
+          '--confirm-netwin-phase2c-containment-repair',
+        ]),
+        'NX_DEV2_',
+      ),
+    ).toThrow(/só pode operar/i);
+  });
+
+  it('reconhece somente a proveniência explícita da Fase 2.C', () => {
+    expect(parsePhase2cPortProvenance(characteristics)).toMatchObject({
+      kind: 'valid',
+      provenance: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
+    });
+    expect(
+      parsePhase2cPortProvenance(JSON.stringify([{ name: 'parentOspEquipmentId', value: 'x' }])),
+    ).toEqual({ kind: 'invalid' });
+    expect(
+      parsePhase2cPortProvenance(JSON.stringify([{ name: 'sourcePortType', value: 'Adapter' }])),
+    ).toEqual({
+      kind: 'absent',
+    });
+  });
+
+  it('repara apenas o par legada→canônica e preserva a contenção canônica', () => {
+    const canonicalParentId = netwinEquipmentId(42);
+    const legacyParentId = netwinInternalEquipmentId(15);
+    expect(
+      classifyPhase2cContainment({
+        portId: 'port-1',
+        characteristics,
+        parentIds: [legacyParentId, canonicalParentId],
+        canonicalParentIsTenantOwned: true,
+      }),
+    ).toMatchObject({ status: 'repairable', canonicalParentId, legacyParentId });
+    expect(
+      classifyPhase2cContainment({
+        portId: 'port-1',
+        characteristics,
+        parentIds: [canonicalParentId],
+        canonicalParentIsTenantOwned: true,
+      }),
+    ).toMatchObject({ status: 'already-canonical', canonicalParentId, legacyParentId });
+  });
+
+  it('reprova pais canônicos inválidos e pais inesperados', () => {
+    const canonicalParentId = netwinEquipmentId(42);
+    expect(
+      classifyPhase2cContainment({
+        portId: 'port-1',
+        characteristics,
+        parentIds: [canonicalParentId],
+        canonicalParentIsTenantOwned: false,
+      }).status,
+    ).toBe('canonical-parent-invalid');
+    expect(
+      classifyPhase2cContainment({
+        portId: 'port-1',
+        characteristics,
+        parentIds: [canonicalParentId, 'unrelated-parent'],
+        canonicalParentIsTenantOwned: true,
+      }).status,
+    ).toBe('unexpected-parent');
+  });
+});
+
+describe('netwin-migration: Oracle MERGE em lote', () => {
+  const t = (table: string) => `NX_TEST_${table.toUpperCase()}`;
+
+  it('gera MERGE sem UPDATE quando todas as colunas compõem a chave', () => {
+    const sql = mergeSql(
+      t,
+      'tmf_resource_relationship',
+      ['resource_from_id', 'resource_to_id', 'relationship_type'],
+      ['resource_from_id', 'resource_to_id', 'relationship_type'],
+    );
+
+    expect(sql).not.toContain('WHEN MATCHED THEN UPDATE');
+    expect(sql).toContain('WHEN NOT MATCHED THEN INSERT');
+  });
+
+  it('divide executeMany em lotes e preserva a ordem declarada dos binds', async () => {
+    const calls: Array<{ sql: string; binds: unknown[][] }> = [];
+    const connection = {
+      executeMany: async (sql: string, binds: unknown[][]) => {
+        calls.push({ sql, binds });
+        return { rowsAffected: binds.length };
+      },
+    };
+    const rows = [
+      { id: 'a', name: 'A' },
+      { id: 'b', name: 'B' },
+      { id: 'c', name: 'C' },
+    ];
+
+    await bulkMergeRows(
+      connection as never,
+      t,
+      'tmf_physical_resource',
+      ['id'],
+      ['id', 'name'],
+      rows,
+      2,
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.binds).toEqual([
+      ['a', 'A'],
+      ['b', 'B'],
+    ]);
+    expect(calls[1]?.binds).toEqual([['c', 'C']]);
+    expect(calls[0]?.sql).toContain('WHEN MATCHED THEN UPDATE');
+  });
+
+  it('não abre executeMany para lista vazia', async () => {
+    const connection = {
+      executeMany: async () => {
+        throw new Error('não deveria executar');
+      },
+    };
+    await expect(
+      bulkMergeRows(connection as never, t, 'tmf_physical_resource', ['id'], ['id'], []),
+    ).resolves.toBe(0);
+  });
+});
+
+describe('netwin-migration: source DR read-only guard', () => {
+  it('aceita SELECT e CTEs somente de leitura', () => {
+    expect(() => assertReadOnlySourceSql('SELECT 1 FROM dual')).not.toThrow();
+    expect(() =>
+      assertReadOnlySourceSql(
+        '/* descoberta */\nWITH source_rows AS (SELECT 1 FROM dual) SELECT * FROM source_rows',
+      ),
+    ).not.toThrow();
+  });
+
+  it('bloqueia DML, DDL e consultas com bloqueio', () => {
+    for (const sql of [
+      'INSERT INTO netwin.location (id) VALUES (1)',
+      "UPDATE netwin.location SET name = 'x'",
+      'SELECT * FROM netwin.location FOR UPDATE',
+      'ALTER TABLE netwin.location ADD sample_column NUMBER',
+    ]) {
+      expect(() => assertReadOnlySourceSql(sql)).toThrow(/bloqueada/i);
+    }
+  });
+});
+
 describe('netwin-migration: phase 1 canonical catalogs', () => {
   it('contém as especificações canônicas de site com categoria e papel funcional (C11)', () => {
     const co = CANONICAL_SITE_SPECS.find((s) => s.code === 'CENTRAL_OFFICE');
@@ -77,5 +454,43 @@ describe('netwin-migration: phase 1 canonical catalogs', () => {
     expect(codes.has('BackboneCable')).toBe(true);
     expect(codes.has('Pole')).toBe(true);
     expect(codes.has('Manhole')).toBe(true);
+    expect(codes.has('Port')).toBe(true);
+    expect(codes.has('Splitter')).toBe(true);
+  });
+
+  it('prioriza o ResourceType compartilhado para Port e Splitter', () => {
+    const resolved = sharedTypeIdByCode([
+      { id: 'vtal-port', code: 'Port', tenantId: 'vtal' },
+      { id: 'rt-port', code: 'Port', tenantId: 'default' },
+      { id: 'vtal-splitter', code: 'Splitter', tenantId: 'vtal' },
+      { id: 'rt-splitter', code: 'Splitter', tenantId: 'default' },
+    ]);
+    expect(resolved.get('Port')).toBe('rt-port');
+    expect(resolved.get('Splitter')).toBe('rt-splitter');
+    expect(canonicalType('Port')?.name).toBe('Port');
+    expect(canonicalType('Splitter')?.name).toBe('Splitter Óptico');
+  });
+
+  it('resume a árvore do tenant e orienta a sessão correta do Studio', () => {
+    expect(
+      formatResourceCatalogLoadSummary('vtal', {
+        catalogCode: 'default-catalog',
+        catalogName: 'Catálogo de Recursos',
+        groupCount: 4,
+        resourceTypeNodeCount: 35,
+        referencedResourceTypeCount: 35,
+        resourceSpecificationCount: 42,
+      }),
+    ).toContain('tenant=vtal');
+    expect(
+      formatResourceCatalogLoadSummary('vtal', {
+        catalogCode: 'default-catalog',
+        catalogName: 'Catálogo de Recursos',
+        groupCount: 4,
+        resourceTypeNodeCount: 35,
+        referencedResourceTypeCount: 35,
+        resourceSpecificationCount: 42,
+      }),
+    ).toContain('mesmo tenant');
   });
 });

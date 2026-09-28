@@ -402,11 +402,7 @@ export const namespacedKey = (
   userId?: string | null,
 ): string => (userId ? `${base}::${userId}::${environmentId}` : `${base}::${environmentId}`);
 
-const migrateLegacyKey = (
-  base: string,
-  environmentId: string,
-  userId?: string | null,
-): void => {
+const migrateLegacyKey = (base: string, environmentId: string, userId?: string | null): void => {
   if (typeof window === 'undefined') return;
   try {
     const userNamespaced = namespacedKey(base, environmentId, userId);
@@ -486,7 +482,9 @@ export function readStoredBaseMap(
   migrateLegacyKey(STORAGE_KEY_BASE_MAP_BASE, environmentId, userId);
   try {
     const stored =
-      window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE_MAP_BASE, environmentId, userId)) ??
+      window.localStorage.getItem(
+        namespacedKey(STORAGE_KEY_BASE_MAP_BASE, environmentId, userId),
+      ) ??
       (userId
         ? window.localStorage.getItem(namespacedKey(STORAGE_KEY_BASE_MAP_BASE, environmentId))
         : null);

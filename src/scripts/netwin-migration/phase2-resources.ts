@@ -11,6 +11,13 @@ import {
 } from './identity.js';
 import { parseWktLineString, parseWktPoint } from '../../shared/utils/wkt.js';
 import { resolveLifecycleStatus, merge } from '../netwin-migration-kit.js';
+import { MigrationProgress } from './progress.js';
+import {
+  infranodeScopeBinds,
+  municipalityInfranodePredicate,
+  neighborhoodInfranodePredicate,
+  ufInfranodePredicate,
+} from './scope.js';
 import type { PhaseStats } from './types.js';
 
 export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseStats> {
@@ -35,8 +42,14 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
     // 1b. Carrega especificações válidas do Nexus e garante fallback de integridade
     const validSpecs = new Set<string>();
-    const defaultCableSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:DistributionCable');
-    const defaultRouteSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:Netwin Aerial Span');
+    const defaultCableSpecId = deterministicUuid(
+      NEXUS_NETWIN_NAMESPACE,
+      'RESOURCE_SPEC:DistributionCable',
+    );
+    const defaultRouteSpecId = deterministicUuid(
+      NEXUS_NETWIN_NAMESPACE,
+      'RESOURCE_SPEC:Netwin Aerial Span',
+    );
     const defaultEqSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:Netwin CDOE');
 
     if (target) {
@@ -73,6 +86,21 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
     const batchSize = ctx.options.batchSize;
     const maxRecords = ctx.options.maxRecords ?? Infinity;
+    const equipmentProgress = new MigrationProgress({
+      label: 'Fase 2.B — Equipamentos',
+      unit: 'equipamentos',
+      reportEvery: batchSize,
+    });
+    const routeProgress = new MigrationProgress({
+      label: 'Fase 2.B — Lances',
+      unit: 'lances',
+      reportEvery: batchSize,
+    });
+    const cableProgress = new MigrationProgress({
+      label: 'Fase 2.B — Cabos',
+      unit: 'cabos',
+      reportEvery: batchSize,
+    });
 
     // Filtros de escopo (Município / UF)
     let eqScopeJoin = '';
@@ -81,10 +109,37 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     let routeScopeWhere = '';
     let cableScopeJoin = '';
     let cableScopeWhere = '';
-    const scopeBinds: Record<string, string | number> = {};
+    const scopeBinds: Record<string, string | number> = {
+      ...(ctx.options.scope.bairro ? infranodeScopeBinds(ctx.options.scope) : {}),
+    };
+    const queryBinds = (lastId: number, batchSize: number, includeScope = true) => ({
+      ...(includeScope ? scopeBinds : {}),
+      lastId,
+      batchSize,
+    });
+
+    if (ctx.options.scope.bairro) {
+      const equipmentPredicates = [neighborhoodInfranodePredicate('infranode')];
+      if (ctx.options.scope.municipio) {
+        equipmentPredicates.push(municipalityInfranodePredicate('infranode'));
+      }
+      if (ctx.options.scope.uf) {
+        equipmentPredicates.push(ufInfranodePredicate('infranode'));
+      }
+
+      eqScopeJoin = `
+        JOIN NETWINOI.DL_INFRANODE infranode ON infranode.PI_ID = e.INFRANODE_ID
+      `;
+      eqScopeWhere = `AND ${equipmentPredicates.join(' AND ')}`;
+
+      // Rota e cabo não possuem vínculo direto e comprovado ao DL_INFRANODE de bairro.
+      // Para não ampliar silenciosamente o recorte, estes conjuntos ficam fora da carga por bairro.
+      routeScopeWhere = 'AND 1 = 0';
+      cableScopeWhere = 'AND 1 = 0';
+    }
 
     const exchangeIds: number[] = [];
-    if (ctx.options.scope.municipio) {
+    if (!ctx.options.scope.bairro && ctx.options.scope.municipio) {
       const muniUpper = ctx.options.scope.municipio.toUpperCase();
       const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const exchRes = await source.execute<{ ID: number }>(
@@ -103,8 +158,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
       for (const r of exchRes.rows ?? []) {
         exchangeIds.push(r.ID);
       }
-      console.log(`[Escopo] ${exchangeIds.length} localidades/estações encontradas para ${ctx.options.scope.municipio}: ${exchangeIds.join(', ')}`);
-    } else if (ctx.options.scope.uf) {
+      console.log(
+        `[Escopo] ${exchangeIds.length} localidades/estações encontradas para ${ctx.options.scope.municipio}: ${exchangeIds.join(', ')}`,
+      );
+    } else if (!ctx.options.scope.bairro && ctx.options.scope.uf) {
       const ufUpper = ctx.options.scope.uf.toUpperCase();
       const exchRes = await source.execute<{ ID: number }>(
         `SELECT la2.ID_CHILD as ID
@@ -122,10 +179,12 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     }
 
     if (exchangeIds.length > 0) {
-      const exchBinds = exchangeIds.map((id, idx) => {
-        scopeBinds[`ex${idx}`] = id;
-        return `:ex${idx}`;
-      }).join(',');
+      const exchBinds = exchangeIds
+        .map((id, idx) => {
+          scopeBinds[`ex${idx}`] = id;
+          return `:ex${idx}`;
+        })
+        .join(',');
 
       eqScopeJoin = '';
       eqScopeWhere = `AND e.EXCHANGE_ID IN (${exchBinds})`;
@@ -135,7 +194,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
       cableScopeJoin = '';
       cableScopeWhere = `AND c.EXCHANGE_ID IN (${exchBinds})`;
-    } else if (ctx.options.scope.municipio) {
+    } else if (!ctx.options.scope.bairro && ctx.options.scope.municipio) {
       const muniUpper = ctx.options.scope.municipio.toUpperCase();
       const muniClean = muniUpper.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       scopeBinds.muniPattern1 = `%${muniUpper}%`;
@@ -158,7 +217,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
         JOIN NETWIN.ADDRESS a ON a.ID = laa.ID_ADDRESS
       `;
       cableScopeWhere = `AND (UPPER(a.NAME) LIKE :muniPattern1 OR UPPER(a.NAME) LIKE :muniPattern2)`;
-    } else if (ctx.options.scope.uf) {
+    } else if (!ctx.options.scope.bairro && ctx.options.scope.uf) {
       scopeBinds.ufPattern = `%- ${ctx.options.scope.uf.toUpperCase()}%`;
 
       eqScopeJoin = `
@@ -186,6 +245,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     console.log('\n--- Migrando Equipamentos Ópticos (OSP_EQUIPMENT) ---');
     let lastEqId = 0;
     let eqCount = 0;
+    equipmentProgress.start();
 
     for (;;) {
       if (eqCount >= maxRecords) break;
@@ -212,7 +272,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
            ORDER BY e.ID
          ) e
          WHERE ROWNUM <= :batchSize`,
-        { ...scopeBinds, lastId: lastEqId, batchSize: currentLimit },
+        queryBinds(lastEqId, currentLimit),
         { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
       );
 
@@ -248,7 +308,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           }
         }
 
-        const designation = eq.CAT_LIFE_CYCLE_STATE_ID !== null ? lifecycleMap.get(eq.CAT_LIFE_CYCLE_STATE_ID) : undefined;
+        const designation =
+          eq.CAT_LIFE_CYCLE_STATE_ID !== null
+            ? lifecycleMap.get(eq.CAT_LIFE_CYCLE_STATE_ID)
+            : undefined;
         const { status, substatus } = resolveLifecycleStatus(designation);
 
         let specName = 'Netwin CDOE';
@@ -275,7 +338,9 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
           operational_state: status === 'active' ? 'enabled' : 'disabled',
           usage_state: 'idle',
-          related_party: JSON.stringify([{ id: ctx.options.ownerPartyId, '@referredType': 'Organization' }]),
+          related_party: JSON.stringify([
+            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+          ]),
           characteristics: JSON.stringify([
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
             { group: '_origin', name: 'entity', value: 'OSP_EQUIPMENT', valueType: 'string' },
@@ -291,7 +356,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
             target,
             ctx.t,
             'tmf_geographic_location',
-            ['id', 'tenant_id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+            [
+              'id',
+              'tenant_id',
+              'geometry_type',
+              'geometry',
+              'spatial_ref',
+              'reference_point',
+              'characteristics',
+            ],
             locations,
           );
         }
@@ -299,7 +372,21 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           target,
           ctx.t,
           'tmf_physical_resource',
-          ['id', 'tenant_id', 'name', 'resource_specification_id', 'status', 'place_id', 'place_type', 'serving_site_id', 'administrative_state', 'operational_state', 'usage_state', 'related_party', 'characteristics'],
+          [
+            'id',
+            'tenant_id',
+            'name',
+            'resource_specification_id',
+            'status',
+            'place_id',
+            'place_type',
+            'serving_site_id',
+            'administrative_state',
+            'operational_state',
+            'usage_state',
+            'related_party',
+            'characteristics',
+          ],
           resources,
         );
         await target.execute('COMMIT');
@@ -307,8 +394,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
       eqCount += rows.length;
       stats.loaded += resources.length;
-      console.log(`Lote Equipamentos: +${rows.length} (Total: ${eqCount})`);
+      equipmentProgress.advance(rows.length);
+      console.log(`[Progresso] Fase 2.B — Equipamentos: último ID ${lastEqId}.`);
     }
+    equipmentProgress.finish();
 
     // =========================================================================
     // 3. MIGRAÇÃO DE ROTAS / LANCES (NETWIN.OSP_ROUTE)
@@ -316,6 +405,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     console.log('\n--- Migrando Rotas e Lances (OSP_ROUTE) ---');
     let lastRouteId = 0;
     let routeCount = 0;
+    routeProgress.start();
 
     for (;;) {
       if (routeCount >= maxRecords) break;
@@ -339,7 +429,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
            ORDER BY r.ID
          ) r
          WHERE ROWNUM <= :batchSize`,
-        { ...scopeBinds, lastId: lastRouteId, batchSize: currentLimit },
+        queryBinds(lastRouteId, currentLimit, !ctx.options.scope.bairro),
         { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
       );
 
@@ -374,10 +464,16 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           }
         }
 
-        const designation = r.CAT_LIFE_CYCLE_STATE_ID !== null ? lifecycleMap.get(r.CAT_LIFE_CYCLE_STATE_ID) : undefined;
+        const designation =
+          r.CAT_LIFE_CYCLE_STATE_ID !== null
+            ? lifecycleMap.get(r.CAT_LIFE_CYCLE_STATE_ID)
+            : undefined;
         const { status } = resolveLifecycleStatus(designation);
 
-        const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:Netwin Aerial Span`);
+        const specId = deterministicUuid(
+          NEXUS_NETWIN_NAMESPACE,
+          `RESOURCE_SPEC:Netwin Aerial Span`,
+        );
         const finalSpecId = target && !validSpecs.has(specId) ? defaultRouteSpecId : specId;
 
         resources.push({
@@ -392,7 +488,9 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
           operational_state: status === 'active' ? 'enabled' : 'disabled',
           usage_state: 'idle',
-          related_party: JSON.stringify([{ id: ctx.options.ownerPartyId, '@referredType': 'Organization' }]),
+          related_party: JSON.stringify([
+            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+          ]),
           characteristics: JSON.stringify([
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
             { group: '_origin', name: 'entity', value: 'OSP_ROUTE', valueType: 'string' },
@@ -407,7 +505,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
             target,
             ctx.t,
             'tmf_geographic_location',
-            ['id', 'tenant_id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+            [
+              'id',
+              'tenant_id',
+              'geometry_type',
+              'geometry',
+              'spatial_ref',
+              'reference_point',
+              'characteristics',
+            ],
             locations,
           );
         }
@@ -415,7 +521,21 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           target,
           ctx.t,
           'tmf_physical_resource',
-          ['id', 'tenant_id', 'name', 'resource_specification_id', 'status', 'place_id', 'place_type', 'serving_site_id', 'administrative_state', 'operational_state', 'usage_state', 'related_party', 'characteristics'],
+          [
+            'id',
+            'tenant_id',
+            'name',
+            'resource_specification_id',
+            'status',
+            'place_id',
+            'place_type',
+            'serving_site_id',
+            'administrative_state',
+            'operational_state',
+            'usage_state',
+            'related_party',
+            'characteristics',
+          ],
           resources,
         );
         await target.execute('COMMIT');
@@ -423,8 +543,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
       routeCount += rows.length;
       stats.loaded += resources.length;
-      console.log(`Lote Lances: +${rows.length} (Total: ${routeCount})`);
+      routeProgress.advance(rows.length);
+      console.log(`[Progresso] Fase 2.B — Lances: último ID ${lastRouteId}.`);
     }
+    routeProgress.finish();
 
     // =========================================================================
     // 4. MIGRAÇÃO DE CABOS E TOPOLOGIA (NETWIN.OSP_CABLE + RELACIONAMENTOS)
@@ -432,6 +554,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
     console.log('\n--- Migrando Cabos e Topologia (OSP_CABLE + connectedTo + supportedBy) ---');
     let lastCableId = 0;
     let cableCount = 0;
+    cableProgress.start();
 
     for (;;) {
       if (cableCount >= maxRecords) break;
@@ -457,7 +580,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
            ORDER BY c.ID
          ) c
          WHERE ROWNUM <= :batchSize`,
-        { ...scopeBinds, lastId: lastCableId, batchSize: currentLimit },
+        queryBinds(lastCableId, currentLimit, !ctx.options.scope.bairro),
         { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: currentLimit },
       );
 
@@ -496,7 +619,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           }
         }
 
-        const designation = c.CAT_LIFE_CYCLE_STATE_ID !== null ? lifecycleMap.get(c.CAT_LIFE_CYCLE_STATE_ID) : undefined;
+        const designation =
+          c.CAT_LIFE_CYCLE_STATE_ID !== null
+            ? lifecycleMap.get(c.CAT_LIFE_CYCLE_STATE_ID)
+            : undefined;
         const { status } = resolveLifecycleStatus(designation);
 
         const specId = c.CAT_MODEL_ID
@@ -516,7 +642,9 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
           operational_state: status === 'active' ? 'enabled' : 'disabled',
           usage_state: 'idle',
-          related_party: JSON.stringify([{ id: ctx.options.ownerPartyId, '@referredType': 'Organization' }]),
+          related_party: JSON.stringify([
+            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+          ]),
           characteristics: JSON.stringify([
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
             { group: '_origin', name: 'entity', value: 'OSP_CABLE', valueType: 'string' },
@@ -568,7 +696,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
             target,
             ctx.t,
             'tmf_geographic_location',
-            ['id', 'tenant_id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+            [
+              'id',
+              'tenant_id',
+              'geometry_type',
+              'geometry',
+              'spatial_ref',
+              'reference_point',
+              'characteristics',
+            ],
             locations,
           );
         }
@@ -576,7 +712,21 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
           target,
           ctx.t,
           'tmf_physical_resource',
-          ['id', 'tenant_id', 'name', 'resource_specification_id', 'status', 'place_id', 'place_type', 'serving_site_id', 'administrative_state', 'operational_state', 'usage_state', 'related_party', 'characteristics'],
+          [
+            'id',
+            'tenant_id',
+            'name',
+            'resource_specification_id',
+            'status',
+            'place_id',
+            'place_type',
+            'serving_site_id',
+            'administrative_state',
+            'operational_state',
+            'usage_state',
+            'related_party',
+            'characteristics',
+          ],
           resources,
         );
         if (relationships.length > 0) {
@@ -595,10 +745,16 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<PhaseSt
 
       cableCount += rows.length;
       stats.loaded += resources.length;
-      console.log(`Lote Cabos: +${rows.length} (Total: ${cableCount}, Relacionamentos: +${relationships.length})`);
+      cableProgress.advance(rows.length);
+      console.log(
+        `[Progresso] Fase 2.B — Cabos: último ID ${lastCableId}; +${relationships.length} relacionamentos no lote.`,
+      );
     }
+    cableProgress.finish();
 
-    console.log(`Fase 2.B concluída: ${stats.loaded} recursos e amarrações topológicas carregados.`);
+    console.log(
+      `Fase 2.B concluída: ${stats.loaded} recursos e amarrações topológicas carregados.`,
+    );
     return stats;
   } finally {
     await source.close();

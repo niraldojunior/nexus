@@ -1,17 +1,13 @@
 import { bearerToken } from './session';
 
 export type VisualIdentity =
-  | { kind: 'system'; iconCode: string }
-  | { kind: 'asset'; assetId: string };
+  { kind: 'system'; iconCode: string } | { kind: 'asset'; assetId: string };
 
 export type StudioGeoEntityCategory = 'LOCAL' | 'COVERAGE' | 'RESOURCE';
 export type StudioGeoNodeKind = 'GROUP' | 'ENTITY';
 export type StudioGeoSourceDomain = 'location-model' | 'spatial' | 'resource-model';
 export type StudioGeoSourceType =
-  | 'GEOGRAPHIC_SITE_SPECIFICATION'
-  | 'SPATIAL_COVERAGE'
-  | 'GPON_AGGREGATE'
-  | 'RESOURCE_TYPE';
+  'GEOGRAPHIC_SITE_SPECIFICATION' | 'SPATIAL_COVERAGE' | 'GPON_AGGREGATE' | 'RESOURCE_TYPE';
 
 export type StudioGeoEntityReference = {
   category: StudioGeoEntityCategory;
@@ -32,14 +28,7 @@ export type StudioGeoGroupNode = {
 };
 
 export type StudioGeoScaleBandKey =
-  | 'le5m'
-  | 'le10m'
-  | 'le20m'
-  | 'le50m'
-  | 'le100m'
-  | 'le500m'
-  | 'le1km'
-  | 'gt1km';
+  'le5m' | 'le10m' | 'le20m' | 'le50m' | 'le100m' | 'le500m' | 'le1km' | 'gt1km';
 
 export type StudioGeoScaleVisibility = {
   visible: boolean;
@@ -89,9 +78,7 @@ export type StudioGeoPolygonVisualConfig = {
 };
 
 export type StudioGeoVisualConfig =
-  | StudioGeoPointVisualConfig
-  | StudioGeoLineVisualConfig
-  | StudioGeoPolygonVisualConfig;
+  StudioGeoPointVisualConfig | StudioGeoLineVisualConfig | StudioGeoPolygonVisualConfig;
 
 export type StudioGeoEntityNode = {
   id: string;
@@ -131,7 +118,8 @@ export async function getPublishedMapLayerCatalog(): Promise<StudioGeoCatalog> {
       .then(async (response) => {
         const text = await response.text();
         const payload = text ? (JSON.parse(text) as StudioGeoCatalog) : undefined;
-        if (!response.ok || !payload) throw new Error(`Falha ao carregar camadas (${response.status})`);
+        if (!response.ok || !payload)
+          throw new Error(`Falha ao carregar camadas (${response.status})`);
         return payload;
       })
       .finally(() => {

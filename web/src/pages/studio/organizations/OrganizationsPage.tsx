@@ -75,7 +75,10 @@ export function OrganizationsPage({
 
       // Se existir snapshot de draft aberto
       let finalItems = canonicalDrafts;
-      if (status.draftVersion && (status.draftVersion.snapshot as OrganizationsSnapshot).organizations) {
+      if (
+        status.draftVersion &&
+        (status.draftVersion.snapshot as OrganizationsSnapshot).organizations
+      ) {
         const snapshotOrgs = (status.draftVersion.snapshot as OrganizationsSnapshot).organizations;
         const canonicalById = new Map(canonicalDrafts.map((d) => [d.localId, d]));
         finalItems = snapshotOrgs.map((snap) => {
@@ -108,13 +111,17 @@ export function OrganizationsPage({
       // Deep linking via query param ?org=<id>
       const urlParams = parsePartyViewParams(window.location.search);
       const initialSelected = urlParams.orgId
-        ? finalItems.find((item) => item.localId === urlParams.orgId || item.persistedId === urlParams.orgId)
+        ? finalItems.find(
+            (item) => item.localId === urlParams.orgId || item.persistedId === urlParams.orgId,
+          )
         : null;
 
-      setSelectedId(initialSelected ? initialSelected.localId : finalItems[0]?.localId ?? null);
+      setSelectedId(initialSelected ? initialSelected.localId : (finalItems[0]?.localId ?? null));
       setError(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Falha ao carregar lista de organizações.');
+      setError(
+        reason instanceof Error ? reason.message : 'Falha ao carregar lista de organizações.',
+      );
     } finally {
       setLoading(false);
     }
@@ -155,15 +162,22 @@ export function OrganizationsPage({
     const serializedSnapshot = JSON.stringify(snapshot);
     if (persistedSnapshotRef.current === serializedSnapshot) return;
 
-    const checksum = checksumRef.current ?? (await getStudioStatus('organizations')).draftVersion?.checksum;
-    const saved = await saveStudioDraft('organizations', snapshot as unknown as Record<string, unknown>, checksum);
+    const checksum =
+      checksumRef.current ?? (await getStudioStatus('organizations')).draftVersion?.checksum;
+    const saved = await saveStudioDraft(
+      'organizations',
+      snapshot as unknown as Record<string, unknown>,
+      checksum,
+    );
     checksumRef.current = saved.checksum;
     persistedSnapshotRef.current = serializedSnapshot;
   }, []);
 
   const captureInitialSnapshot = useCallback(async () => {
     setBaselineActiveIds(
-      new Set(itemsRef.current.filter((item) => item.status === 'active').map((item) => item.localId)),
+      new Set(
+        itemsRef.current.filter((item) => item.status === 'active').map((item) => item.localId),
+      ),
     );
     const snapshot = buildOrganizationsSnapshot(itemsRef.current);
     persistedSnapshotRef.current = JSON.stringify(snapshot);

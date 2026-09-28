@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { GeoSpecCharacteristic } from '../../services/geoApi';
 import { coerceValue, type CharacteristicValueType } from '../../utils/geoCharacteristicsForm';
-import { listReferenceDataSets, listReferenceDataValues } from '../../services/studioReferenceDataApi';
+import {
+  listReferenceDataSets,
+  listReferenceDataValues,
+} from '../../services/studioReferenceDataApi';
 import { getParty, listOrganizationsByRoleTypeIds } from '../../services/partyApi';
 import { Info } from './InfoRow';
 import { InlineEditRow } from './InlineEditRow';
@@ -30,7 +33,9 @@ export function SiteInstanceCharacteristics({
   const [editingName, setEditingName] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [referenceOptions, setReferenceOptions] = useState<Record<string, string[]>>({});
-  const [roleOrganizations, setRoleOrganizations] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [roleOrganizations, setRoleOrganizations] = useState<
+    Record<string, Array<{ id: string; name: string }>>
+  >({});
   const [resolvedOrgNames, setResolvedOrgNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -94,7 +99,10 @@ export function SiteInstanceCharacteristics({
     const isEmpty = textValue.trim() === '';
     const next = isEmpty
       ? rest
-      : [...rest, { name: def.name, value: coerceValue(textValue, valueType), valueType: def.valueType }];
+      : [
+          ...rest,
+          { name: def.name, value: coerceValue(textValue, valueType), valueType: def.valueType },
+        ];
     void onPatch({ characteristic: next });
   };
 
@@ -110,14 +118,14 @@ export function SiteInstanceCharacteristics({
         const editing = editingName === def.name;
         const listOptions =
           def.valueType === 'list'
-            ? (def.referenceDataSetKey
+            ? ((def.referenceDataSetKey
                 ? referenceOptions[def.referenceDataSetKey]
-                : def.allowedValues?.map(String)) ?? []
+                : def.allowedValues?.map(String)) ?? [])
             : [];
 
         const displayValue =
           def.valueType === 'organization' && currentText
-            ? resolvedOrgNames[currentText] ?? currentText
+            ? (resolvedOrgNames[currentText] ?? currentText)
             : currentText;
 
         if (!canEdit) {
@@ -150,7 +158,9 @@ export function SiteInstanceCharacteristics({
                   }}
                   className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
                 />
-                <span className="text-[0.82rem] text-app-text">{draft === 'true' ? 'Sim' : 'Não'}</span>
+                <span className="text-[0.82rem] text-app-text">
+                  {draft === 'true' ? 'Sim' : 'Não'}
+                </span>
               </label>
             ) : def.valueType === 'list' && listOptions.length > 0 ? (
               <select
@@ -194,7 +204,13 @@ export function SiteInstanceCharacteristics({
                       ? 'number'
                       : 'text'
                 }
-                step={def.valueType === 'integer' ? '1' : def.valueType === 'decimal' ? 'any' : undefined}
+                step={
+                  def.valueType === 'integer'
+                    ? '1'
+                    : def.valueType === 'decimal'
+                      ? 'any'
+                      : undefined
+                }
                 value={draft}
                 onChange={(event) => {
                   const val = event.target.value;

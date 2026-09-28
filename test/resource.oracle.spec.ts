@@ -24,6 +24,30 @@ afterAll(async () => {
 });
 
 test.skipIf(!oracleConfigured)(
+  'Resource repository preserves a preexisting Netwin default catalog during bootstrap',
+  async () => {
+    const client = await getOracleTestClient();
+    await client.run(
+      `INSERT INTO tmf_resource_catalog
+       (id, tenant_id, code, name, status, is_default, sort_order, created_at, updated_at)
+       VALUES (?, 'vtal', 'default-catalog', 'Catálogo de Recursos', 'active', 1, 0, ?, ?)`,
+      ['netwin-default-catalog', new Date().toISOString(), new Date().toISOString()],
+    );
+
+    const repository = new OracleResourceRepository(client);
+    await repository.initialize();
+
+    const catalogs = await client.all<{ id: string; code: string; is_default: number }>(
+      `SELECT id, code, is_default FROM tmf_resource_catalog
+       WHERE tenant_id = 'vtal' ORDER BY id`,
+    );
+    assert.deepEqual(catalogs, [
+      { id: 'netwin-default-catalog', code: 'default-catalog', is_default: 1 },
+    ]);
+  },
+);
+
+test.skipIf(!oracleConfigured)(
   'Resource repository persists validFor when a resource specification is terminated',
   async () => {
     const client = await getOracleTestClient();
@@ -194,14 +218,8 @@ test.skipIf(!oracleConfigured)(
 
     const service = new ResourceService(repository, { appendEvent } as never, {
       lookupParty: (id) =>
-        id === partyVendor1.id
-          ? partyVendor1
-          : id === partyVendor2.id
-            ? partyVendor2
-            : undefined,
-      lookupPartyRoles: async (_partyId) => [
-        { name: 'vendor', status: 'active' },
-      ],
+        id === partyVendor1.id ? partyVendor1 : id === partyVendor2.id ? partyVendor2 : undefined,
+      lookupPartyRoles: async (_partyId) => [{ name: 'vendor', status: 'active' }],
     });
 
     const spec = await service.createResourceSpecification({
@@ -255,7 +273,10 @@ test.skipIf(!oracleConfigured)(
     // 4. Party inexistente retorna vazio
     const none = await repository.listPhysicalResources({ relatedPartyId: 'party-nonexistent' });
     assert.equal(none.length, 0);
-    assert.equal(await repository.countPhysicalResources({ relatedPartyId: 'party-nonexistent' }), 0);
+    assert.equal(
+      await repository.countPhysicalResources({ relatedPartyId: 'party-nonexistent' }),
+      0,
+    );
   },
 );
 

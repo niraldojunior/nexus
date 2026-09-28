@@ -44,7 +44,11 @@ const client = createDatabaseClient(config.database);
 const COLUMN_NAME = 'geographic_location_id';
 const TABLE_NAME = 'tmf_physical_resource';
 
-const columnExists = async (objectPrefix: string, table: string, columnName: string): Promise<boolean> => {
+const columnExists = async (
+  objectPrefix: string,
+  table: string,
+  columnName: string,
+): Promise<boolean> => {
   const row = await client.queryOne<{ count: number | string }>(
     `SELECT COUNT(*) AS count FROM user_tab_cols WHERE table_name = UPPER(?) AND column_name = UPPER(?)`,
     [`${objectPrefix}${table}`, columnName],
@@ -113,7 +117,9 @@ const run = async (): Promise<void> => {
     }
 
     if (!apply) {
-      process.stdout.write('Modo auditoria concluído. Nenhuma alteração foi realizada no schema.\n');
+      process.stdout.write(
+        'Modo auditoria concluído. Nenhuma alteração foi realizada no schema.\n',
+      );
       process.stdout.write('Para executar o DROP físico, execute:\n');
       process.stdout.write(
         `  ORACLE_OBJECT_PREFIX=${objectPrefix} npx tsx src/scripts/drop-physical-resource-geographic-location-id-column.ts --apply --confirm-drop-physical-resource-geographic-location-id\n\n`,
@@ -131,7 +137,9 @@ const run = async (): Promise<void> => {
     }
 
     process.stdout.write('Executando DROP físico da coluna...\n');
-    await client.execute(`ALTER TABLE ${TABLE_NAME} DROP COLUMN ${COLUMN_NAME} CASCADE CONSTRAINTS`);
+    await client.execute(
+      `ALTER TABLE ${TABLE_NAME} DROP COLUMN ${COLUMN_NAME} CASCADE CONSTRAINTS`,
+    );
     process.stdout.write(`    DROP COLUMN ${TABLE_NAME}.${COLUMN_NAME}: removida com sucesso\n`);
 
     process.stdout.write('\nDROP concluído com sucesso. Schema atualizado.\n');

@@ -78,7 +78,8 @@ export function partyRoleCharacteristicRowsFrom(
       description: characteristic.description ?? undefined,
       valueType,
       valueText: valueToText(characteristic.defaultValue, valueType),
-      hasDefaultValue: characteristic.defaultValue !== null && characteristic.defaultValue !== undefined,
+      hasDefaultValue:
+        characteristic.defaultValue !== null && characteristic.defaultValue !== undefined,
       mandatory: Boolean(characteristic.mandatory),
       sortOrder: characteristic.sortOrder ?? 100,
       allowedValues,
@@ -147,9 +148,10 @@ export function buildPartyRoleCharacteristicPayload(
         roleName: '',
         name: row.name.trim(),
         valueType: row.valueType,
-        defaultValue: row.hasDefaultValue && row.valueText.trim().length > 0
-          ? coerceDefaultValue(row.valueText, row.valueType)
-          : null,
+        defaultValue:
+          row.hasDefaultValue && row.valueText.trim().length > 0
+            ? coerceDefaultValue(row.valueText, row.valueType)
+            : null,
         mandatory: row.mandatory,
         description: row.description?.trim() || null,
         group: row.group?.trim() || null,

@@ -157,7 +157,9 @@ async function main() {
     if (lngResult.status === 'reparado') row[lngPos] = String(lngResult.value);
 
     const rowStatus =
-      priority[latResult.status] <= priority[lngResult.status] ? latResult.status : lngResult.status;
+      priority[latResult.status] <= priority[lngResult.status]
+        ? latResult.status
+        : lngResult.status;
     counts[rowStatus] = (counts[rowStatus] ?? 0) + 1;
     if (rowStatus !== 'ok' && rowStatus !== 'vazio' && samples[rowStatus]?.length < 8) {
       samples[rowStatus].push({

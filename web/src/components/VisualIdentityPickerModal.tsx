@@ -191,7 +191,8 @@ export function VisualIdentityPickerModal({
               className="grid h-[216px] grid-cols-7 content-start gap-1 overflow-y-auto p-1"
             >
               {systemIcons.map((mapIcon) => {
-                const selected = selection?.kind === 'system' && selection.iconCode === mapIcon.code;
+                const selected =
+                  selection?.kind === 'system' && selection.iconCode === mapIcon.code;
                 const nextSelection: VisualIdentity = { kind: 'system', iconCode: mapIcon.code };
                 return (
                   <button

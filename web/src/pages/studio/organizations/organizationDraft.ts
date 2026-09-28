@@ -73,7 +73,16 @@ export function extractCharacteristics(party: Party) {
     }
   }
 
-  return { tradingName, legalName, description, logoUrl, identifications, contacts, addresses, origin };
+  return {
+    tradingName,
+    legalName,
+    description,
+    logoUrl,
+    identifications,
+    contacts,
+    addresses,
+    origin,
+  };
 }
 
 export function draftFromParty(party: Party, roles: PartyRole[] = []): OrganizationDraftItem {
@@ -100,13 +109,21 @@ export function buildPartyCharacteristicsPayload(draft: OrganizationDraftItem): 
   const list: Characteristic[] = [];
 
   if (draft.tradingName?.trim()) {
-    list.push({ name: '_profile.tradingName', value: draft.tradingName.trim(), valueType: 'string' });
+    list.push({
+      name: '_profile.tradingName',
+      value: draft.tradingName.trim(),
+      valueType: 'string',
+    });
   }
   if (draft.legalName?.trim()) {
     list.push({ name: '_profile.legalName', value: draft.legalName.trim(), valueType: 'string' });
   }
   if (draft.description?.trim()) {
-    list.push({ name: '_profile.description', value: draft.description.trim(), valueType: 'string' });
+    list.push({
+      name: '_profile.description',
+      value: draft.description.trim(),
+      valueType: 'string',
+    });
   }
   if (draft.logoUrl?.trim()) {
     list.push({ name: '_profile.logo', value: draft.logoUrl.trim(), valueType: 'image' });

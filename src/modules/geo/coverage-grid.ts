@@ -641,7 +641,10 @@ export function buildCoverage(
 
   const cells = stampCells(cdos, cellMeters, radiusMeters);
   const neighborhoods = neighborhoodStats(cdos, cells, cellMeters);
-  const components = tracePolygonsFromCells(cells, cellMeters, { smoothIterations, minComponentCells });
+  const components = tracePolygonsFromCells(cells, cellMeters, {
+    smoothIterations,
+    minComponentCells,
+  });
 
   return { components, neighborhoods, cellMeters, radiusMeters };
 }

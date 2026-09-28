@@ -413,7 +413,10 @@ export class ServiceService {
     return await this.repository.getServiceCandidate(id, scopeOf(context));
   }
 
-  public async createService(input: CreateServiceInput, context?: RequestContext): Promise<Service> {
+  public async createService(
+    input: CreateServiceInput,
+    context?: RequestContext,
+  ): Promise<Service> {
     return input['@type'] === 'ResourceFacingService' || 'supportingResource' in input
       ? await this.createResourceFacingService(input, context)
       : await this.createCustomerFacingService(input, context);
@@ -1043,7 +1046,9 @@ const normalizeSpecCharacteristics = (
 ): ServiceSpecCharacteristic[] => {
   if (!characteristics) return [];
   return characteristics
-    .filter((characteristic) => typeof characteristic.name === 'string' && characteristic.name.trim())
+    .filter(
+      (characteristic) => typeof characteristic.name === 'string' && characteristic.name.trim(),
+    )
     .map((characteristic) => {
       const legacyValue = (characteristic as unknown as { value?: unknown }).value;
       if (

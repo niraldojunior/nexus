@@ -18,9 +18,33 @@ vi.mock('../../services/resourceCatalogApi', () => ({
 }));
 
 const TYPES: ResourceType[] = [
-  { '@type': 'ResourceType', id: 'type-cto', href: '', code: 'CTO', name: 'CTO', categoryCode: 'Infrastructure.Passive', status: 'active' },
-  { '@type': 'ResourceType', id: 'type-splitter', href: '', code: 'Splitter', name: 'Splitter', categoryCode: 'Infrastructure.Passive', status: 'active' },
-  { '@type': 'ResourceType', id: 'type-empty', href: '', code: 'Vazio', name: 'Vazio', categoryCode: 'Infrastructure.Passive', status: 'active' },
+  {
+    '@type': 'ResourceType',
+    id: 'type-cto',
+    href: '',
+    code: 'CTO',
+    name: 'CTO',
+    categoryCode: 'Infrastructure.Passive',
+    status: 'active',
+  },
+  {
+    '@type': 'ResourceType',
+    id: 'type-splitter',
+    href: '',
+    code: 'Splitter',
+    name: 'Splitter',
+    categoryCode: 'Infrastructure.Passive',
+    status: 'active',
+  },
+  {
+    '@type': 'ResourceType',
+    id: 'type-empty',
+    href: '',
+    code: 'Vazio',
+    name: 'Vazio',
+    categoryCode: 'Infrastructure.Passive',
+    status: 'active',
+  },
 ];
 
 const SPECS: ResourceSpecification[] = [
@@ -31,7 +55,9 @@ const SPECS: ResourceSpecification[] = [
     resourceType: 'CTO',
     resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'Modelo A' }],
-    relatedParty: [{ id: 'party-1', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      { id: 'party-1', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' },
+    ],
   },
   {
     id: 'spec-b',
@@ -40,7 +66,9 @@ const SPECS: ResourceSpecification[] = [
     resourceType: 'CTO',
     resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'Modelo B' }],
-    relatedParty: [{ id: 'party-2', name: 'Nokia', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      { id: 'party-2', name: 'Nokia', '@referredType': 'Organization', role: 'manufacturer' },
+    ],
   },
   {
     id: 'spec-splitter',
@@ -49,7 +77,9 @@ const SPECS: ResourceSpecification[] = [
     resourceType: 'Splitter',
     resourceTypeId: 'type-splitter',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'SP1x8' }],
-    relatedParty: [{ id: 'party-1', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      { id: 'party-1', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' },
+    ],
   },
 ];
 
@@ -110,11 +140,13 @@ describe('ResourceDefinitionModal', () => {
     mocks.listResourceCatalogs.mockResolvedValue([CATALOG_SNAPSHOT.catalog]);
     mocks.getResourceCatalogTree.mockResolvedValue(CATALOG_SNAPSHOT.nodes);
     mocks.getResourceModelSnapshotSource.mockResolvedValue(CATALOG_SNAPSHOT);
-    mocks.listResourceSpecifications.mockImplementation(({ resourceTypeId }: { resourceTypeId?: string }) => {
-      if (resourceTypeId === 'type-splitter') return Promise.resolve([SPECS[2]]);
-      if (resourceTypeId === 'type-empty') return Promise.resolve([]);
-      return Promise.resolve([SPECS[0], SPECS[1]]);
-    });
+    mocks.listResourceSpecifications.mockImplementation(
+      ({ resourceTypeId }: { resourceTypeId?: string }) => {
+        if (resourceTypeId === 'type-splitter') return Promise.resolve([SPECS[2]]);
+        if (resourceTypeId === 'type-empty') return Promise.resolve([]);
+        return Promise.resolve([SPECS[0], SPECS[1]]);
+      },
+    );
   });
 
   afterEach(() => {

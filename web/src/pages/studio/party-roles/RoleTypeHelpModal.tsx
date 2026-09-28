@@ -27,7 +27,9 @@ export function RoleTypeHelpModal({ onClose }: RoleTypeHelpModalProps) {
                 <div className="min-w-0">
                   <span className="font-semibold text-app-text">{option.label}</span>
                   <p className="mt-0.5 text-[0.8rem] text-app-muted">{option.meaning}</p>
-                  <p className="mt-0.5 text-[0.76rem] italic text-app-muted">Ex.: {option.example}</p>
+                  <p className="mt-0.5 text-[0.76rem] italic text-app-muted">
+                    Ex.: {option.example}
+                  </p>
                 </div>
               </div>
             );

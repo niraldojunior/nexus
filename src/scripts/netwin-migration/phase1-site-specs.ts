@@ -118,7 +118,9 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
           lifecycle_status: 'Active',
           characteristics: JSON.stringify([
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            ...(spec.description ? [{ name: 'description', value: spec.description, valueType: 'string' }] : []),
+            ...(spec.description
+              ? [{ name: 'description', value: spec.description, valueType: 'string' }]
+              : []),
           ]),
           is_bootstrap: 1,
         });

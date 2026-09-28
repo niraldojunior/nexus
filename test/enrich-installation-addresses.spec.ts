@@ -1024,7 +1024,10 @@ test('withRetry usa o Retry-After do provedor em vez do backoff exponencial padr
 
   assert.equal(result, 'ok');
   assert.equal(attempts, 2);
-  assert.ok(elapsed < 1_000, `esperava usar o retryAfterMs (20ms) em vez do baseDelayMs, levou ${elapsed}ms`);
+  assert.ok(
+    elapsed < 1_000,
+    `esperava usar o retryAfterMs (20ms) em vez do baseDelayMs, levou ${elapsed}ms`,
+  );
 });
 
 test('withRetry limita o Retry-After ao maxDelayMs configurado', async () => {
@@ -1767,7 +1770,11 @@ test('viab grava as 3 melhores por caminhada, reordenando as candidatas', async 
 test('--viab-straight nunca chama a Routes API; grava tudo em linha reta', async () => {
   const record = viabRow('ID-1');
   const document = viabDocument([record]);
-  const candidates = [cdoCandidate('cdo-1', 50), cdoCandidate('cdo-2', 80), cdoCandidate('cdo-3', 120)];
+  const candidates = [
+    cdoCandidate('cdo-1', 50),
+    cdoCandidate('cdo-2', 80),
+    cdoCandidate('cdo-3', 120),
+  ];
   let routeCalls = 0;
   const services: AddressServices = {
     viaCep: async () => null,
@@ -2055,7 +2062,8 @@ test('viab-origin=melhor usa, por linha, a fonte indicada na coluna MELHOR', asy
       seenOrigins.push(origin);
       return [cdoCandidate('cdo-1', 50)];
     },
-    walkRouteMatrix: async (_origin, destinations) => destinations.map(() => ({ distanceMeters: 40 })),
+    walkRouteMatrix: async (_origin, destinations) =>
+      destinations.map(() => ({ distanceMeters: 40 })),
   };
 
   const summary = await enrichRecords(document, services, {

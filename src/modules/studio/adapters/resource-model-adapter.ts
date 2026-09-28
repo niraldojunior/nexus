@@ -1,7 +1,11 @@
 import { isDeepStrictEqual } from 'node:util';
 import { AppError } from '../../../shared/errors/app-error.js';
 import { createCanonicalId } from '../../../shared/utils/canonical-id.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
 import type { ResourceService } from '../../resource/service.js';
 import type {
   ResourceCatalogNodeKind,
@@ -63,7 +67,10 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     }
 
     const codeSet = new Set<string>();
-    const nodeIdentifierMap = new Map<string, { code: string; index: number; kind?: ResourceCatalogNodeKind }>();
+    const nodeIdentifierMap = new Map<
+      string,
+      { code: string; index: number; kind?: ResourceCatalogNodeKind }
+    >();
     const nodeByIdentifier = new Map<string, ResourceModelSnapshot['nodes'][number]>();
 
     // 1ª passada: valida campos individuais e unicidade de código
@@ -272,7 +279,10 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     };
   }
 
-  public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
+  public async materialize(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<void> {
     const typedSnapshot = snapshot as unknown as ResourceModelSnapshot;
     if (!typedSnapshot?.catalog?.code) return;
 
@@ -286,13 +296,18 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     };
 
     // 1. Obter ou criar catálogo
-    let catalog = await this.resourceService.getResourceCatalogByCode(typedSnapshot.catalog.code, reqContext);
+    let catalog = await this.resourceService.getResourceCatalogByCode(
+      typedSnapshot.catalog.code,
+      reqContext,
+    );
     if (!catalog) {
       catalog = await this.resourceService.createResourceCatalog(
         {
           code: typedSnapshot.catalog.code,
           name: typedSnapshot.catalog.name,
-          ...(typedSnapshot.catalog.description ? { description: typedSnapshot.catalog.description } : {}),
+          ...(typedSnapshot.catalog.description
+            ? { description: typedSnapshot.catalog.description }
+            : {}),
           isDefault: true,
           sortOrder: 0,
         },
@@ -317,7 +332,11 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     }
 
     // 2. Carregar nós existentes do catálogo
-    const existingNodes = await this.resourceService.listResourceCatalogNodes(catalog.id, reqContext, true);
+    const existingNodes = await this.resourceService.listResourceCatalogNodes(
+      catalog.id,
+      reqContext,
+      true,
+    );
     const existingByCode = new Map(existingNodes.map((n) => [n.code, n]));
     // Casamento id-first: no publish normal `snapshot.id` já é o id real do nó, então isto não
     // muda nada. Mas ao restaurar uma baseline (revert de "Cancelar"), um nó pode ter sido
@@ -350,7 +369,9 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
     for (let i = 0; i < snapshotNodes.length; i++) {
       const snapNode = snapshotNodes[i];
       if (!snapNode) continue;
-      const existing = (snapNode.id ? existingById.get(snapNode.id) : undefined) ?? existingByCode.get(snapNode.code);
+      const existing =
+        (snapNode.id ? existingById.get(snapNode.id) : undefined) ??
+        existingByCode.get(snapNode.code);
       if (existing) {
         const desiredStatus = (snapNode.status as ResourceCatalogStatus) ?? 'active';
         const nodeChanged =
@@ -617,12 +638,24 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         const key = ruleKey(rule);
         const current = currentActiveByKey.get(key);
         if (!current) {
+          // Resolve targetId caso venha como código ou tipo canônico/tenant mapeado
+          let resolvedTargetId = rule.targetId;
+          if (rule.targetKind === 'RESOURCE_TYPE') {
+            if (!typeById.has(resolvedTargetId)) {
+              // Tenta localizar por código se o ID não for reconhecido diretamente
+              const matchedByCode = typeByCode.get(resolvedTargetId);
+              if (matchedByCode) {
+                resolvedTargetId = matchedByCode.id;
+              }
+            }
+          }
+
           await this.resourceService.createResourceTypeRelationshipRule(
             typeId,
             {
               relationshipTypeCode: rule.relationshipTypeCode,
               targetKind: rule.targetKind,
-              targetId: rule.targetId,
+              targetId: resolvedTargetId,
               ...(rule.cardinality ? { cardinality: rule.cardinality } : {}),
               ...(rule.validFor ? { validFor: rule.validFor } : {}),
             },

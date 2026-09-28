@@ -89,7 +89,9 @@ describe('ProjectListView', () => {
   });
 
   it('excluir pede confirmação (com a contagem de locais) antes de chamar onDelete', async () => {
-    const onDelete = vi.fn().mockResolvedValue({ deleted: true, retired: 3, skipped: 0, blocked: 0 });
+    const onDelete = vi
+      .fn()
+      .mockResolvedValue({ deleted: true, retired: 3, skipped: 0, blocked: 0 });
     render(
       <ProjectListView
         projects={[project()]}
@@ -102,7 +104,9 @@ describe('ProjectListView', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /excluir projeto expansão icaraí/i }));
-    expect(screen.getByText(/3 locais criados neste projeto serão encerrados/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/3 locais criados neste projeto serão encerrados/i),
+    ).toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
@@ -132,7 +136,9 @@ describe('ProjectListView', () => {
   });
 
   it('local bloqueado mantém o projeto e avisa, em vez de sumir da lista (issue #58)', async () => {
-    const onDelete = vi.fn().mockResolvedValue({ deleted: false, retired: 2, skipped: 1, blocked: 1 });
+    const onDelete = vi
+      .fn()
+      .mockResolvedValue({ deleted: false, retired: 2, skipped: 1, blocked: 1 });
     render(
       <ProjectListView
         projects={[project()]}
@@ -147,9 +153,7 @@ describe('ProjectListView', () => {
     fireEvent.click(screen.getByRole('button', { name: /excluir projeto expansão icaraí/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
 
-    expect(
-      await screen.findByText(/1 local não pôde ser encerrado/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/1 local não pôde ser encerrado/i)).toBeInTheDocument();
     expect(screen.getAllByText('Expansão Icaraí').length).toBeGreaterThan(0);
   });
 
@@ -169,9 +173,7 @@ describe('ProjectListView', () => {
     fireEvent.click(screen.getByRole('button', { name: /excluir projeto expansão icaraí/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Excluir' }));
 
-    expect(
-      await screen.findByText(/não foi possível excluir o projeto/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/não foi possível excluir o projeto/i)).toBeInTheDocument();
   });
 
   it('sem canEdit, oculta "Novo Projeto" e a lixeira de cada projeto', () => {

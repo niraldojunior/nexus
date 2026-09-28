@@ -34,7 +34,11 @@ test('studioGeoGeometryIndex lê a geometria declarada no snapshot v2', () => {
       {
         id: 'node-local',
         kind: 'ENTITY',
-        entity: { category: 'LOCAL', sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId: 'Station' },
+        entity: {
+          category: 'LOCAL',
+          sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+          sourceId: 'Station',
+        },
         visualConfig: { geometryKind: 'POINT' },
       },
     ],
@@ -100,12 +104,18 @@ test('legacyGeometryForTypeCode normaliza o nodeCode de category:/type: gravado 
   // migrate-resource-catalog.ts gravou em ResourceType.code o nodeCode inteiro do catálogo em vez
   // do código nu do tipo, em bases reais (issue #240). O catálogo legado indexa pelo nome nu — a
   // busca precisa extrair o segmento após o último `:type:` sem exigir correção do dado persistido.
-  assert.equal(legacyGeometryForTypeCode('category:Infrastructure.Passive:type:CableTunnel'), 'POINT');
+  assert.equal(
+    legacyGeometryForTypeCode('category:Infrastructure.Passive:type:CableTunnel'),
+    'POINT',
+  );
   assert.equal(
     legacyGeometryForTypeCode('category:Infrastructure.Passive:layer:Ducts:type:IronPipe'),
     'POINT',
   );
-  assert.equal(legacyGeometryForTypeCode('category:Infrastructure.Passive:type:Splitter'), undefined);
+  assert.equal(
+    legacyGeometryForTypeCode('category:Infrastructure.Passive:type:Splitter'),
+    undefined,
+  );
 });
 
 test('geometryFromLocationTypes só infere com consenso total', () => {

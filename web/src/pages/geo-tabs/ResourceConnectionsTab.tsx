@@ -86,7 +86,10 @@ export function ResourceConnectionsTab({
   const uniqueConnections = dedupeResourceConnections(connections);
 
   // Agrupa conexões por (relationshipType + direction).
-  const grouped = new Map<string, { label: string; direction: 'outgoing' | 'incoming'; items: ResourceConnection[] }>();
+  const grouped = new Map<
+    string,
+    { label: string; direction: 'outgoing' | 'incoming'; items: ResourceConnection[] }
+  >();
 
   for (const conn of uniqueConnections) {
     const key = `${conn.relationshipType}::${conn.direction}`;

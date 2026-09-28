@@ -536,9 +536,7 @@ export function GeoSearchBar({
                 type="button"
                 onClick={() => setScopeMenuOpen((current) => !current)}
                 className={`${showMenuMark ? 'ml-0.5' : 'ml-1.5'} flex h-9 w-9 items-center justify-center rounded-full transition ${
-                  scopeRestricted
-                    ? 'bg-app-accent-soft hover:brightness-[0.98]'
-                    : 'vt-hover-muted'
+                  scopeRestricted ? 'bg-app-accent-soft hover:brightness-[0.98]' : 'vt-hover-muted'
                 }`}
                 aria-label={`Modo de busca: ${activeScope?.label ?? 'Pesquisa geral'}`}
                 title={activeScope?.label ?? 'Pesquisa geral'}
@@ -778,9 +776,7 @@ export function GeoSearchBar({
                         {node.sublabel || node.detail?.address ? (
                           <span className="block truncate text-[0.72rem] text-app-muted">
                             {[
-                              node.kind === 'site'
-                                ? node.sublabel
-                                : node.sublabel,
+                              node.kind === 'site' ? node.sublabel : node.sublabel,
                               node.detail?.address,
                             ]
                               .filter(Boolean)

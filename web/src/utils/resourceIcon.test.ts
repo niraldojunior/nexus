@@ -122,7 +122,11 @@ describe('resourceIconFor', () => {
 
   it('mantém o mesmo glifo e tipo de CTO para recursos sem customização explícita', () => {
     const cdoe = resourceIconFor({ resourceType: 'CTO', name: 'CDOE-042', status: 'active' });
-    const cdoi = resourceIconFor({ resourceType: 'CTO', name: 'CDOI-3917PS (ICI)', status: 'active' });
+    const cdoi = resourceIconFor({
+      resourceType: 'CTO',
+      name: 'CDOI-3917PS (ICI)',
+      status: 'active',
+    });
 
     expect(cdoi.code).toBe('CTO');
     expect(cdoi.family).toBe('passive');

@@ -174,8 +174,8 @@ export default function ServiceSpecificationBulkImportModal({
               1. Modelo
             </div>
             <p className="text-[0.88rem] text-app-muted">
-              Baixe o modelo de planilha com as colunas aceitas. Camada e Categoria são
-              obrigatórias e precisam bater com o catálogo ativo; Nome é obrigatório.
+              Baixe o modelo de planilha com as colunas aceitas. Camada e Categoria são obrigatórias
+              e precisam bater com o catálogo ativo; Nome é obrigatório.
             </p>
             <button
               type="button"
@@ -237,9 +237,7 @@ export default function ServiceSpecificationBulkImportModal({
                         {invalidRows.map((row) => (
                           <tr key={row.line} className="border-b border-app-border last:border-0">
                             <td className="px-3 py-2 text-app-muted">{row.line}</td>
-                            <td className="px-3 py-2 text-app-text">
-                              {row.formState.name || '-'}
-                            </td>
+                            <td className="px-3 py-2 text-app-text">{row.formState.name || '-'}</td>
                             <td className="px-3 py-2 text-status-red">{row.errors.join('; ')}</td>
                           </tr>
                         ))}

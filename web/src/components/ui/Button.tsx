@@ -24,10 +24,22 @@ const SIZES: Record<ButtonSize, CSSProperties & { gap: number }> = {
 };
 
 const VARIANTS: Record<ButtonVariant, CSSProperties> = {
-  primary: { background: 'var(--vt-yellow)', color: 'var(--vt-ink)', borderColor: 'var(--vt-yellow)' },
-  secondary: { background: 'var(--surface-card)', color: 'var(--text-primary)', borderColor: 'var(--border-strong)' },
+  primary: {
+    background: 'var(--vt-yellow)',
+    color: 'var(--vt-ink)',
+    borderColor: 'var(--vt-yellow)',
+  },
+  secondary: {
+    background: 'var(--surface-card)',
+    color: 'var(--text-primary)',
+    borderColor: 'var(--border-strong)',
+  },
   ghost: { background: 'transparent', color: 'var(--text-secondary)', borderColor: 'transparent' },
-  dark: { background: 'var(--surface-ink)', color: 'var(--text-on-dark)', borderColor: 'var(--surface-ink)' },
+  dark: {
+    background: 'var(--surface-ink)',
+    color: 'var(--text-on-dark)',
+    borderColor: 'var(--surface-ink)',
+  },
   danger: { background: 'var(--status-red)', color: '#fff', borderColor: 'var(--status-red)' },
 };
 
@@ -80,7 +92,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     whiteSpace: 'nowrap',
   };
 
-  const hoverStyle = !disabled && hover ? HOVERS[variant] ?? {} : {};
+  const hoverStyle = !disabled && hover ? (HOVERS[variant] ?? {}) : {};
 
   return (
     <button

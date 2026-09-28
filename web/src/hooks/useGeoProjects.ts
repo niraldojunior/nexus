@@ -25,7 +25,9 @@ export type UseGeoProjectsResult = {
   create: () => Promise<GeoProject>;
   update: (
     id: string,
-    patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
+    patch: Partial<
+      Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+    >,
   ) => Promise<{ siteCascade?: GeoProjectSiteCascade }>;
   transition: (
     id: string,
@@ -71,7 +73,9 @@ export function useGeoProjects(): UseGeoProjectsResult {
   const update = useCallback(
     async (
       id: string,
-      patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
+      patch: Partial<
+        Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+      >,
     ) => {
       const { siteCascade, ...updated } = await updateProject(id, patch);
       setProjects((current) => current.map((item) => (item.id === id ? updated : item)));

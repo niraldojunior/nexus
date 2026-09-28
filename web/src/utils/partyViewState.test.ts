@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  parsePartyViewParams,
-  writePartyViewParams,
-  clearPartyViewParams,
-} from './partyViewState';
+import { parsePartyViewParams, writePartyViewParams, clearPartyViewParams } from './partyViewState';
 
 describe('partyViewState', () => {
   it('parses empty query params', () => {

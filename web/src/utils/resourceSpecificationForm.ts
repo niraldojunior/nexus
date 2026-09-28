@@ -265,7 +265,9 @@ export function buildModelSpecificationOptions(
 ): ResourceSpecification[] {
   return specs
     .filter((spec) => spec.resourceTypeId === resourceTypeId)
-    .sort((left, right) => readSpecificationModel(left).localeCompare(readSpecificationModel(right)));
+    .sort((left, right) =>
+      readSpecificationModel(left).localeCompare(readSpecificationModel(right)),
+    );
 }
 
 export function readSpecCharacteristic(

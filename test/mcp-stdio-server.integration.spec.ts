@@ -60,7 +60,9 @@ const startStdioServer = () => {
   };
 
   child.stderr.on('data', (chunk) => stderr.push(String(chunk)));
-  child.once('error', (error) => failWaiters(new Error(`MCP stdio child failed to start: ${error.message}`)));
+  child.once('error', (error) =>
+    failWaiters(new Error(`MCP stdio child failed to start: ${error.message}`)),
+  );
   child.once('exit', (code, signal) => {
     if (code === 0 || signal === 'SIGTERM') return;
     const detail = stderr.join('').trim();

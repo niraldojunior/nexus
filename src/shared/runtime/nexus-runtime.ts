@@ -34,12 +34,18 @@ import { OracleStudioRepository } from '../../modules/studio/oracle-repository.j
 import { ResourceModelStudioAdapter } from '../../modules/studio/adapters/resource-model-adapter.js';
 import { LocationModelStudioAdapter } from '../../modules/studio/adapters/location-model-adapter.js';
 import { SpatialStudioAdapter } from '../../modules/studio/adapters/spatial-studio-adapter.js';
-import { StudioGeoAdapter, CANONICAL_STUDIO_GEO_SNAPSHOT } from '../../modules/studio/adapters/studio-geo-adapter.js';
+import {
+  StudioGeoAdapter,
+  CANONICAL_STUDIO_GEO_SNAPSHOT,
+} from '../../modules/studio/adapters/studio-geo-adapter.js';
 import { RulesWorkflowsStudioAdapter } from '../../modules/studio/adapters/rules-workflows-studio-adapter.js';
 import { PartiesStudioAdapter } from '../../modules/studio/adapters/parties-studio-adapter.js';
 import { OrganizationsStudioAdapter } from '../../modules/studio/adapters/organizations-studio-adapter.js';
 import { ReferenceDataStudioAdapter } from '../../modules/studio/adapters/reference-data-studio-adapter.js';
-import { TemplatesStudioAdapter, CANONICAL_TEMPLATES_SNAPSHOT } from '../../modules/studio/adapters/templates-studio-adapter.js';
+import {
+  TemplatesStudioAdapter,
+  CANONICAL_TEMPLATES_SNAPSHOT,
+} from '../../modules/studio/adapters/templates-studio-adapter.js';
 import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/geo/project-workflow.js';
 import { GeoProjectWorkflowService } from '../../modules/geo/project-workflow-service.js';
 import { OracleStudioAssetRepository } from '../../modules/studio/oracle-asset-repository.js';
@@ -272,18 +278,26 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
       roles: ['studio.admin', 'platform.admin'],
       traceId: createCanonicalId(),
     });
-    await studioService.ensurePublishedBootstrap('rules-workflows', CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT, {
-      actorSub: 'studio-bootstrap',
-      tenantId: DEFAULT_TENANT_ID,
-      roles: ['studio.admin', 'platform.admin'],
-      traceId: createCanonicalId(),
-    });
-    await studioService.ensurePublishedBootstrap('templates', CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>, {
-      actorSub: 'studio-bootstrap',
-      tenantId: DEFAULT_TENANT_ID,
-      roles: ['studio.admin', 'platform.admin'],
-      traceId: createCanonicalId(),
-    });
+    await studioService.ensurePublishedBootstrap(
+      'rules-workflows',
+      CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      {
+        actorSub: 'studio-bootstrap',
+        tenantId: DEFAULT_TENANT_ID,
+        roles: ['studio.admin', 'platform.admin'],
+        traceId: createCanonicalId(),
+      },
+    );
+    await studioService.ensurePublishedBootstrap(
+      'templates',
+      CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>,
+      {
+        actorSub: 'studio-bootstrap',
+        tenantId: DEFAULT_TENANT_ID,
+        roles: ['studio.admin', 'platform.admin'],
+        traceId: createCanonicalId(),
+      },
+    );
   }
   const geoProjectWorkflowService = new GeoProjectWorkflowService(
     db,

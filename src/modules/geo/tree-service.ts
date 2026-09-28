@@ -744,7 +744,11 @@ export class GeoTreeService {
     );
     if (rows.length === 0) return undefined;
     return {
-      types: [...new Set(rows.map((row) => row.resource_type).filter((type): type is string => Boolean(type)))],
+      types: [
+        ...new Set(
+          rows.map((row) => row.resource_type).filter((type): type is string => Boolean(type)),
+        ),
+      ],
       count: rows.length,
     };
   }

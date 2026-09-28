@@ -10,11 +10,7 @@
 
 import { getJson, type GeoGeometry } from './geoApi';
 import type { ViewportShape } from '../utils/mapLayers';
-import {
-  resourceTypesForScope,
-  scopeKinds,
-  type GeoSearchScopeId,
-} from '../utils/geoSearchScope';
+import { resourceTypesForScope, scopeKinds, type GeoSearchScopeId } from '../utils/geoSearchScope';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
 

@@ -129,7 +129,11 @@ describe('SiteAddressModal', () => {
     await waitFor(() =>
       expect(mocks.patchJson).toHaveBeenCalledWith(
         '/v1/geo/locations/loc-1',
-        expect.objectContaining({ sourceSystem: 'GEONET', sourceRef: 'geo-1', accuracyLevel: 'high' }),
+        expect.objectContaining({
+          sourceSystem: 'GEONET',
+          sourceRef: 'geo-1',
+          accuracyLevel: 'high',
+        }),
       ),
     );
     expect(mocks.patchJson).toHaveBeenCalledWith(

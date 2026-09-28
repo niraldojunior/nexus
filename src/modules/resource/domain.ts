@@ -475,7 +475,8 @@ export type ResourceFunctionSpecification = {
   description?: string | undefined;
   validFor?: TimePeriod | undefined;
   resourceFunctionSpecificationCharacteristic: Characteristic[];
-  resourceFunctionSpecificationRelationship?: ResourceFunctionSpecificationRelationship[] | undefined;
+  resourceFunctionSpecificationRelationship?:
+    ResourceFunctionSpecificationRelationship[] | undefined;
   tenantId?: string | undefined;
 };
 
@@ -689,7 +690,8 @@ export type CreateResourceFunctionSpecificationInput = {
   description?: string | undefined;
   validFor?: TimePeriod | undefined;
   resourceFunctionSpecificationCharacteristic?: Characteristic[] | undefined;
-  resourceFunctionSpecificationRelationship?: ResourceFunctionSpecificationRelationship[] | undefined;
+  resourceFunctionSpecificationRelationship?:
+    ResourceFunctionSpecificationRelationship[] | undefined;
 };
 
 export type UpdateResourceFunctionSpecificationInput =

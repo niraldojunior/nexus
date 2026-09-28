@@ -38,7 +38,7 @@ async function main() {
     const customerSiteId = customerSiteRows[0]?.id ?? customerSiteRows[0]?.ID;
     if (!customerSiteId) {
       throw new Error(
-        "Spec CUSTOMER_SITE não encontrada. Suba o backend uma vez (ensureBootstrapSpecifications) antes de rodar este script.",
+        'Spec CUSTOMER_SITE não encontrada. Suba o backend uma vez (ensureBootstrapSpecifications) antes de rodar este script.',
       );
     }
 

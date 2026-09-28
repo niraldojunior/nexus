@@ -54,7 +54,9 @@ describe('ResourceIcon', () => {
       },
     ]);
 
-    const { container } = render(<ResourceIcon resource={{ resourceType: 'Splitter' }} size={26} />);
+    const { container } = render(
+      <ResourceIcon resource={{ resourceType: 'Splitter' }} size={26} />,
+    );
 
     await waitFor(() => expect(resourceCatalogApi.listModeledResourceTypes).toHaveBeenCalled());
     expect(container.querySelector('img')).toBeNull();

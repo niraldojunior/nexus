@@ -16,8 +16,8 @@ describe('validateReferenceDataSetDraft', () => {
   });
 
   it('aceita campos válidos depois de remover espaços incidentais', () => {
-    expect(validateReferenceDataSetDraft({ name: '  Tipo de fibra  ', key: '  tipo-fibra  ' })).toEqual(
-      {},
-    );
+    expect(
+      validateReferenceDataSetDraft({ name: '  Tipo de fibra  ', key: '  tipo-fibra  ' }),
+    ).toEqual({});
   });
 });

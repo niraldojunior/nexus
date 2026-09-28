@@ -73,7 +73,17 @@ export class PartyRoleTypeRepository {
       `INSERT INTO party_role_type
         (id, tenant_id, type_key, role_name, label, description, active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, tenantId, input.key, input.roleName, input.label, input.description ?? null, 1, now, now],
+      [
+        id,
+        tenantId,
+        input.key,
+        input.roleName,
+        input.label,
+        input.description ?? null,
+        1,
+        now,
+        now,
+      ],
     );
     return (await this.get(tenantId, id))!;
   }
@@ -88,7 +98,8 @@ export class PartyRoleTypeRepository {
     const nextKey = patch.key ?? current.key;
     const nextRoleName = patch.roleName ?? current.roleName;
     const nextLabel = patch.label ?? current.label;
-    const nextDescription = patch.description !== undefined ? patch.description : current.description;
+    const nextDescription =
+      patch.description !== undefined ? patch.description : current.description;
     const now = new Date().toISOString();
 
     await this.db.transaction(async () => {

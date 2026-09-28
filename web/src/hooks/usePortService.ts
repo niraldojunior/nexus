@@ -16,14 +16,28 @@ const load = (portId: string): Promise<PortService | null> => {
   const existing = inFlight.get(portId);
   if (existing) return existing;
   const request = (async () => {
-    const rfs = (await listServices({
-      '@type': 'ResourceFacingService', state: 'active', supportingResourceId: portId, limit: 2,
-    })).filter((service): service is ResourceFacingService => service['@type'] === 'ResourceFacingService');
+    const rfs = (
+      await listServices({
+        '@type': 'ResourceFacingService',
+        state: 'active',
+        supportingResourceId: portId,
+        limit: 2,
+      })
+    ).filter(
+      (service): service is ResourceFacingService => service['@type'] === 'ResourceFacingService',
+    );
     if (rfs.length === 0) return null;
     if (rfs.length > 1) throw new Error('Há mais de um RFS ativo para esta porta.');
-    const cfs = (await listServices({
-      '@type': 'CustomerFacingService', state: 'active', supportingServiceId: rfs[0].id, limit: 2,
-    })).filter((service): service is CustomerFacingService => service['@type'] === 'CustomerFacingService');
+    const cfs = (
+      await listServices({
+        '@type': 'CustomerFacingService',
+        state: 'active',
+        supportingServiceId: rfs[0].id,
+        limit: 2,
+      })
+    ).filter(
+      (service): service is CustomerFacingService => service['@type'] === 'CustomerFacingService',
+    );
     if (cfs.length === 0) return null;
     if (cfs.length > 1) throw new Error('Há mais de um CFS ativo para o RFS desta porta.');
     return { rfs: rfs[0], cfs: cfs[0] };
@@ -32,7 +46,10 @@ const load = (portId: string): Promise<PortService | null> => {
   return request;
 };
 
-export function usePortService(portId: string, enabled = true): {
+export function usePortService(
+  portId: string,
+  enabled = true,
+): {
   service: PortService | null;
   hasActiveService: boolean;
   loading: boolean;
@@ -55,9 +72,17 @@ export function usePortService(portId: string, enabled = true): {
     setError(null);
     void load(portId)
       .then((result) => !cancelled && setService(result))
-      .catch((reason: unknown) => !cancelled && setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o serviço.'))
+      .catch(
+        (reason: unknown) =>
+          !cancelled &&
+          setError(
+            reason instanceof Error ? reason.message : 'Não foi possível carregar o serviço.',
+          ),
+      )
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, portId]);
 
   return { service, hasActiveService: Boolean(service), loading, error };

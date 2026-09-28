@@ -624,9 +624,7 @@ export function nativeMapIconDataUrl(
   const cached = dataUrlCache.get(key);
   if (cached) return cached;
   const svg = renderIconSvg(entry.node, color, options);
-  const value = toDataUrl(
-    opacity === 1 ? svg : svg.replace('<svg ', `<svg opacity="${opacity}" `),
-  );
+  const value = toDataUrl(opacity === 1 ? svg : svg.replace('<svg ', `<svg opacity="${opacity}" `));
   dataUrlCache.set(key, value);
   return value;
 }

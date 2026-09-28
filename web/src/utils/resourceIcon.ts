@@ -722,7 +722,12 @@ export function resourceTypeCode(resource: IconResourceLike | string | undefined
   const haystack = (
     typeof resource === 'string'
       ? resource
-      : [resource?.resourceType, resource?.resourceSpecification?.name, resource?.sublabel, resource?.name]
+      : [
+          resource?.resourceType,
+          resource?.resourceSpecification?.name,
+          resource?.sublabel,
+          resource?.name,
+        ]
           .filter(Boolean)
           .join(' ')
   )

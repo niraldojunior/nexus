@@ -14,35 +14,35 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* ---- Weights --------------------------------------------- */
-  --fw-regular: 400;   /* @kind font */
-  --fw-medium: 500;    /* @kind font */
-  --fw-semibold: 600;  /* @kind font */
-  --fw-bold: 700;      /* @kind font */
+  --fw-regular: 400; /* @kind font */
+  --fw-medium: 500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold: 700; /* @kind font */
   --fw-extrabold: 800; /* @kind font */
 
   /* ---- Type scale ------------------------------------------ */
-  --fs-display: 1.9rem;      /* 30px — brand hero, KPI numbers */
-  --fs-greeting: 1.875rem;   /* 30px — new-conversation greeting, Inter semibold */
-  --fs-h1: 1.5rem;           /* 24px — page title */
-  --fs-h2: 1.125rem;         /* 18px — section title */
-  --fs-h3: 1rem;             /* 16px — card title */
+  --fs-display: 1.9rem; /* 30px — brand hero, KPI numbers */
+  --fs-greeting: 1.875rem; /* 30px — new-conversation greeting, Inter semibold */
+  --fs-h1: 1.5rem; /* 24px — page title */
+  --fs-h2: 1.125rem; /* 18px — section title */
+  --fs-h3: 1rem; /* 16px — card title */
   --fs-body-relaxed: 0.9375rem; /* 15px — reading columns, chat turns */
-  --fs-body-lg: 0.875rem;    /* 14px — default UI body */
-  --fs-body: 0.8125rem;      /* 13px — dense body + tables */
-  --fs-sm: 0.75rem;          /* 12px — labels, chips, helper text */
-  --fs-xs: 0.6875rem;        /* 11px — table heads, eyebrows */
+  --fs-body-lg: 0.875rem; /* 14px — default UI body */
+  --fs-body: 0.8125rem; /* 13px — dense body + tables */
+  --fs-sm: 0.75rem; /* 12px — labels, chips, helper text */
+  --fs-xs: 0.6875rem; /* 11px — table heads, eyebrows */
 
   /* ---- Line heights ---------------------------------------- */
-  --lh-tight: 1.15;    /* @kind other */
-  --lh-snug: 1.3;      /* @kind other */
-  --lh-normal: 1.45;   /* @kind other */
+  --lh-tight: 1.15; /* @kind other */
+  --lh-snug: 1.3; /* @kind other */
+  --lh-normal: 1.45; /* @kind other */
   --lh-relaxed: 1.65; /* @kind other */
 
   /* ---- Tracking -------------------------------------------- */
-  --tracking-tight: -0.02em;   /* display */
-  --tracking-snug: -0.01em;    /* headings */
+  --tracking-tight: -0.02em; /* display */
+  --tracking-snug: -0.01em; /* headings */
   --tracking-normal: 0;
-  --tracking-wide: 0.05em;     /* eyebrows, badges (uppercase) */
+  --tracking-wide: 0.05em; /* eyebrows, badges (uppercase) */
 
   /* ---- Semantic roles -------------------------------------- */
   /* Display keeps Montserrat. Everything below it is Inter. */

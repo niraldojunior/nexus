@@ -45,7 +45,10 @@ export type ProjectSiteOverlayHandle = {
 
 type DrawnPoint = { x: number; y: number; site: ProjectSite };
 
-export function createProjectSiteOverlay(maps: Maps, map: GoogleMapInstance): ProjectSiteOverlayHandle {
+export function createProjectSiteOverlay(
+  maps: Maps,
+  map: GoogleMapInstance,
+): ProjectSiteOverlayHandle {
   let data: ProjectSite[] = [];
   let siteMarkerSize = 25;
   let resourceMarkerSize: number | null = 25;

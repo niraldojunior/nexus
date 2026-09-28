@@ -13,14 +13,30 @@ export interface IReferenceDataRepository {
   getSet(tenantId: string, id: string): Promise<ReferenceDataSet | null>;
   getSetByKey(tenantId: string, key: string): Promise<ReferenceDataSet | null>;
   createSet(tenantId: string, input: CreateReferenceDataSetInput): Promise<ReferenceDataSet>;
-  updateSet(tenantId: string, id: string, patch: UpdateReferenceDataSetInput): Promise<ReferenceDataSet | null>;
+  updateSet(
+    tenantId: string,
+    id: string,
+    patch: UpdateReferenceDataSetInput,
+  ): Promise<ReferenceDataSet | null>;
   deactivateSet(tenantId: string, id: string): Promise<ReferenceDataSet | null>;
   reactivateSet(tenantId: string, id: string): Promise<ReferenceDataSet | null>;
 
-  listValues(tenantId: string, setId: string, includeInactive?: boolean): Promise<ReferenceDataValue[]>;
+  listValues(
+    tenantId: string,
+    setId: string,
+    includeInactive?: boolean,
+  ): Promise<ReferenceDataValue[]>;
   getValue(tenantId: string, id: string): Promise<ReferenceDataValue | null>;
-  createValue(tenantId: string, setId: string, input: CreateReferenceDataValueInput): Promise<ReferenceDataValue>;
-  updateValue(tenantId: string, id: string, patch: UpdateReferenceDataValueInput): Promise<ReferenceDataValue | null>;
+  createValue(
+    tenantId: string,
+    setId: string,
+    input: CreateReferenceDataValueInput,
+  ): Promise<ReferenceDataValue>;
+  updateValue(
+    tenantId: string,
+    id: string,
+    patch: UpdateReferenceDataValueInput,
+  ): Promise<ReferenceDataValue | null>;
   deactivateValue(tenantId: string, id: string): Promise<ReferenceDataValue | null>;
   reactivateValue(tenantId: string, id: string): Promise<ReferenceDataValue | null>;
 }

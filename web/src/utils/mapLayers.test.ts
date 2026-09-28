@@ -721,11 +721,7 @@ describe('readStoredLayers / writeStoredLayers', () => {
 
 describe('readStoredBaseMap / writeStoredBaseMap', () => {
   const ENV = 'env-a';
-  const OPTIONS = [
-    { id: 'roadmap' },
-    { id: 'satellite' },
-    { id: 'geonet', disabled: true },
-  ];
+  const OPTIONS = [{ id: 'roadmap' }, { id: 'satellite' }, { id: 'geonet', disabled: true }];
 
   beforeEach(() => {
     window.localStorage.clear();

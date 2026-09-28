@@ -69,7 +69,13 @@ const hashString = (input: string): string => {
 
 export class StudioTemplateImportPlanner {
   public static computePlan(input: ComputePlanInput): StudioTemplateImportPlan {
-    const { template, targets, baseSnapshots, conflictResolutions = {}, renameOverrides = {} } = input;
+    const {
+      template,
+      targets,
+      baseSnapshots,
+      conflictResolutions = {},
+      renameOverrides = {},
+    } = input;
     const conflicts: TemplateImportConflict[] = [];
     const operations: TemplateImportOperation[] = [];
     const resultSnapshots: Partial<Record<StudioDomain, Record<string, unknown>>> = {};

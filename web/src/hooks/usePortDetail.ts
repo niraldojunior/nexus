@@ -11,7 +11,10 @@ const load = (portId: string) => {
   return request;
 };
 
-export function usePortDetail(portId: string, enabled = true): {
+export function usePortDetail(
+  portId: string,
+  enabled = true,
+): {
   detail: ResourcePortDetail | null;
   loading: boolean;
   error: string | null;
@@ -33,9 +36,15 @@ export function usePortDetail(portId: string, enabled = true): {
     setError(null);
     void load(portId)
       .then((result) => !cancelled && setDetail(result))
-      .catch((reason: unknown) => !cancelled && setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a porta.'))
+      .catch(
+        (reason: unknown) =>
+          !cancelled &&
+          setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a porta.'),
+      )
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, portId]);
 
   return { detail, loading, error };

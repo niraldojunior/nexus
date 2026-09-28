@@ -525,7 +525,9 @@ const relaxGlobalCodeUniqueness = async (
     );
   }
   await db.execute(`ALTER TABLE ${table} DROP CONSTRAINT ${globalConstraintName}`);
-  await db.execute(`ALTER TABLE ${table} ADD CONSTRAINT ${newConstraintName} UNIQUE(tenant_id, code)`);
+  await db.execute(
+    `ALTER TABLE ${table} ADD CONSTRAINT ${newConstraintName} UNIQUE(tenant_id, code)`,
+  );
   return 'relaxed';
 };
 
@@ -555,7 +557,9 @@ const migrateTenantChunked = async (
       fromTenant,
     ]);
     if (result.changes > 0) {
-      process.stdout.write(`    MIGRATE ${table}: +${result.changes} linha(s) (total ${result.changes})\n`);
+      process.stdout.write(
+        `    MIGRATE ${table}: +${result.changes} linha(s) (total ${result.changes})\n`,
+      );
     }
     return result.changes;
   }
@@ -918,12 +922,22 @@ const backfillResourceTypeIds = async (
     const specResult = await db.execute(
       `UPDATE tmf_resource_specification SET resource_type_id = ?
         WHERE tenant_id = ? AND resource_type = ? AND (resource_type_id IS NULL OR resource_type_id <> ?)`,
-      [materialized.destinationId, DESTINATION_TENANT, materialized.code, materialized.destinationId],
+      [
+        materialized.destinationId,
+        DESTINATION_TENANT,
+        materialized.code,
+        materialized.destinationId,
+      ],
     );
     const statusResult = await db.execute(
       `UPDATE tmf_resource_status_catalog SET resource_type_id = ?
         WHERE tenant_id = ? AND resource_type = ? AND (resource_type_id IS NULL OR resource_type_id <> ?)`,
-      [materialized.destinationId, DESTINATION_TENANT, materialized.code, materialized.destinationId],
+      [
+        materialized.destinationId,
+        DESTINATION_TENANT,
+        materialized.code,
+        materialized.destinationId,
+      ],
     );
     process.stdout.write(
       `    BACKFILL ${materialized.code}: specification=${specResult.changes}, statusCatalog=${statusResult.changes}\n`,
@@ -1045,9 +1059,7 @@ try {
   await client.initialize();
 
   if (isCutover) {
-    process.stdout.write(
-      `Fase B --cutover iniciada no Oracle\n`,
-    );
+    process.stdout.write(`Fase B --cutover iniciada no Oracle\n`);
 
     const preflight = await auditGateD(client);
     if (!preflight.approved) {
@@ -1056,13 +1068,13 @@ try {
         `Gate D (preflight de cutover) reprovado: ${preflight.findings.length} classe(s) de divergência. Nenhuma remoção física foi executada.`,
       );
     }
-    process.stdout.write('Gate D (preflight) aprovado. Iniciando remoção física (DDL destrutivo).\n');
+    process.stdout.write(
+      'Gate D (preflight) aprovado. Iniciando remoção física (DDL destrutivo).\n',
+    );
 
     await executePhaseBCutover(client);
 
-    process.stdout.write(
-      `Fase B --cutover concluída com sucesso no Oracle.\n`,
-    );
+    process.stdout.write(`Fase B --cutover concluída com sucesso no Oracle.\n`);
   } else if (!apply) {
     const report = await audit(client);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -1128,9 +1140,7 @@ try {
         `Gate B reprovado: ${gateB.findings.length} classe(s) de divergência. Estado parcial foi aplicado — revise o relatório acima antes de prosseguir; não há rollback automático.`,
       );
     }
-    process.stdout.write(
-      `Fase A --apply concluída com sucesso no Oracle. Gate B aprovado.\n`,
-    );
+    process.stdout.write(`Fase A --apply concluída com sucesso no Oracle. Gate B aprovado.\n`);
   }
 } finally {
   await client.close();

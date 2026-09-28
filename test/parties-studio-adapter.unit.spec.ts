@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PartiesStudioAdapter } from '../src/modules/studio/adapters/parties-studio-adapter.js';
-import type { PartyRoleType, PartyRoleTypeRepository } from '../src/modules/party/party-role-type-repository.js';
+import type {
+  PartyRoleType,
+  PartyRoleTypeRepository,
+} from '../src/modules/party/party-role-type-repository.js';
 import type { PartyRoleTypeCharacteristicRepository } from '../src/modules/party/party-role-type-characteristic-repository.js';
 
 function makePartyRoleType(overrides: Partial<PartyRoleType> = {}): PartyRoleType {

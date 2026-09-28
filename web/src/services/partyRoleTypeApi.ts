@@ -32,7 +32,9 @@ export const getPartyRoleTypeUsage = (roleName: string): Promise<PartyRoleTypeUs
   getJson(`${baseUrl}/${encodeURIComponent(roleName)}/usage`);
 export const createPartyRoleType = (input: PartyRoleTypeInput): Promise<PartyRoleType> =>
   postJson(baseUrl, input);
-export const updatePartyRoleType = (id: string, input: PartyRoleTypeInput): Promise<PartyRoleType> =>
-  patchJson(`${baseUrl}/${encodeURIComponent(id)}`, input);
+export const updatePartyRoleType = (
+  id: string,
+  input: PartyRoleTypeInput,
+): Promise<PartyRoleType> => patchJson(`${baseUrl}/${encodeURIComponent(id)}`, input);
 export const deactivatePartyRoleType = (id: string): Promise<PartyRoleType> =>
   deleteJson(`${baseUrl}/${encodeURIComponent(id)}`);

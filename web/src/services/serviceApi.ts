@@ -302,19 +302,24 @@ export type ServiceSpecificationBulkResult = {
 export async function bulkCreateServiceSpecifications(
   items: ServiceSpecificationBulkItem[],
 ): Promise<ServiceSpecificationBulkResult> {
-  return await requestJson<ServiceSpecificationBulkResult>('/v1/service/specifications/bulk-import', {
-    method: 'POST',
-    body: { items },
-  });
+  return await requestJson<ServiceSpecificationBulkResult>(
+    '/v1/service/specifications/bulk-import',
+    {
+      method: 'POST',
+      body: { items },
+    },
+  );
 }
 
-export async function listServices(query: {
-  '@type'?: ServiceKind;
-  state?: ServiceState;
-  supportingResourceId?: string;
-  supportingServiceId?: string;
-  limit?: number;
-} = {}): Promise<ServiceEntity[]> {
+export async function listServices(
+  query: {
+    '@type'?: ServiceKind;
+    state?: ServiceState;
+    supportingResourceId?: string;
+    supportingServiceId?: string;
+    limit?: number;
+  } = {},
+): Promise<ServiceEntity[]> {
   const params = new URLSearchParams();
   if (query['@type']) params.set('@type', query['@type']);
   if (query.state) params.set('state', query.state);

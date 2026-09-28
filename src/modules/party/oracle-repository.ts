@@ -45,17 +45,7 @@ export class OraclePartyRepository implements IPartyRepository {
            valid_for_end = excluded.valid_for_end,
            characteristics = excluded.characteristics,
            updated_at = excluded.updated_at`,
-          [
-            partyId,
-            name,
-            'Organization',
-            'active',
-            null,
-            null,
-            '[]',
-            now,
-            now,
-          ],
+          [partyId, name, 'Organization', 'active', null, null, '[]', now, now],
         );
         await this.db.run(
           `INSERT INTO tmf_party_role
@@ -69,17 +59,7 @@ export class OraclePartyRepository implements IPartyRepository {
            valid_for_end = excluded.valid_for_end,
            characteristics = excluded.characteristics,
            updated_at = excluded.updated_at`,
-          [
-            roleId,
-            'manufacturer',
-            partyId,
-            'active',
-            null,
-            null,
-            '[]',
-            now,
-            now,
-          ],
+          [roleId, 'manufacturer', partyId, 'active', null, null, '[]', now, now],
         );
       }
     });

@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, Layers, AlertCircle, Loader2 } from 'lucide-react';
 import type { RoleDraftItem } from './roleDraft';
-import {
-  getPartyRoleTypeUsage,
-  type PartyRoleTypeUsage,
-} from '../../../services/partyRoleTypeApi';
+import { getPartyRoleTypeUsage, type PartyRoleTypeUsage } from '../../../services/partyRoleTypeApi';
 
 export type RoleUsageTabProps = {
   item: RoleDraftItem;
@@ -26,7 +23,9 @@ export function RoleUsageTab({ item }: RoleUsageTabProps) {
     setError(null);
     getPartyRoleTypeUsage(item.roleName)
       .then((data) => setUsage(data))
-      .catch((err) => setError(err instanceof Error ? err.message : 'Falha ao carregar uso do papel.'))
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : 'Falha ao carregar uso do papel.'),
+      )
       .finally(() => setLoading(false));
   }, [item.roleName]);
 

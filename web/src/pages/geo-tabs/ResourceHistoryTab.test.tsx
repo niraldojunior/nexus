@@ -47,7 +47,11 @@ describe('ResourceHistoryTab', () => {
 
     render(<ResourceHistoryTab resourceId="cto-1" />);
 
-    await waitFor(() => expect(screen.getByText('Estado Granular: available → blocked_risk_area')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByText('Estado Granular: available → blocked_risk_area'),
+      ).toBeInTheDocument(),
+    );
     expect(screen.getByText('Estado Administrativo: Desbloqueado → Bloqueado')).toBeInTheDocument();
     expect(mocks.fetchPhysicalResourceAudit).toHaveBeenCalledWith('cto-1');
   });

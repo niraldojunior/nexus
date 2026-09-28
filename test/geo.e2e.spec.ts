@@ -23,30 +23,32 @@ test.skipIf(!oracleConfigured)(
 
     const port = await server.start();
     try {
-      const invalid = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
-        const req = http.request(
-          {
-            hostname: '127.0.0.1',
-            port,
-            path: '/v1/geo/locations',
-            method: 'POST',
-            headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
-          },
-          (res) => {
-            const chunks: Buffer[] = [];
-            res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-            res.on('end', () => {
-              resolve({
-                statusCode: res.statusCode ?? 0,
-                body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      const invalid = await new Promise<{ statusCode: number; body: unknown }>(
+        (resolve, reject) => {
+          const req = http.request(
+            {
+              hostname: '127.0.0.1',
+              port,
+              path: '/v1/geo/locations',
+              method: 'POST',
+              headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+            },
+            (res) => {
+              const chunks: Buffer[] = [];
+              res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+              res.on('end', () => {
+                resolve({
+                  statusCode: res.statusCode ?? 0,
+                  body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+                });
               });
-            });
-          },
-        );
-        req.on('error', reject);
-        req.write('{broken json');
-        req.end();
-      });
+            },
+          );
+          req.on('error', reject);
+          req.write('{broken json');
+          req.end();
+        },
+      );
 
       assert.equal(invalid.statusCode, 400);
       assert.equal((invalid.body as { error: string }).error, 'INVALID_JSON');

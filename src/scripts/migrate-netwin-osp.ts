@@ -116,7 +116,9 @@ async function run(): Promise<void> {
       await ensureControlTables(target, t);
       await ensureClearedTable(target, t);
       const restored = await restoreArea(target, t, args.restoreJobId, args.tenantId);
-      console.log(JSON.stringify({ restoreJobId: args.restoreJobId, mapFeaturesRestored: restored }));
+      console.log(
+        JSON.stringify({ restoreJobId: args.restoreJobId, mapFeaturesRestored: restored }),
+      );
     } else {
       const seedEquipmentId = await resolveSeed(source, args);
       console.log(JSON.stringify({ seedEquipmentId }));
@@ -143,7 +145,9 @@ async function run(): Promise<void> {
       const equipmentRows = await fetchEquipment(source, equipmentIds);
       const cableRows = await fetchCables(source, cableIds);
       const routeRows = await collectRoutes(source, cableIds);
-      const modelIds = [...new Set(cableRows.map((c) => c.catModelId).filter((id): id is number => id !== null))];
+      const modelIds = [
+        ...new Set(cableRows.map((c) => c.catModelId).filter((id): id is number => id !== null)),
+      ];
       const models = await fetchCableModels(source, modelIds);
       const lifecycleIds = [
         ...new Set(
@@ -244,16 +248,51 @@ async function run(): Promise<void> {
         }
 
         for (const cable of cableRows) {
-          const equipA = await identity(target, t, 'OSP_EQUIPMENT', String(cable.equipmentA), 'primary', 'PhysicalResource');
-          const equipZ = await identity(target, t, 'OSP_EQUIPMENT', String(cable.equipmentZ), 'primary', 'PhysicalResource');
-          const cableId = await identity(target, t, 'OSP_CABLE', String(cable.id), 'primary', 'PhysicalResource');
+          const equipA = await identity(
+            target,
+            t,
+            'OSP_EQUIPMENT',
+            String(cable.equipmentA),
+            'primary',
+            'PhysicalResource',
+          );
+          const equipZ = await identity(
+            target,
+            t,
+            'OSP_EQUIPMENT',
+            String(cable.equipmentZ),
+            'primary',
+            'PhysicalResource',
+          );
+          const cableId = await identity(
+            target,
+            t,
+            'OSP_CABLE',
+            String(cable.id),
+            'primary',
+            'PhysicalResource',
+          );
           await ensureRelationship(target, t, equipA, cableId, 'connectedTo');
           await ensureRelationship(target, t, cableId, equipZ, 'connectedTo');
         }
         for (const route of routeRows) {
-          const routeId = await identity(target, t, 'OSP_ROUTE', String(route.id), 'primary', 'PhysicalResource');
+          const routeId = await identity(
+            target,
+            t,
+            'OSP_ROUTE',
+            String(route.id),
+            'primary',
+            'PhysicalResource',
+          );
           for (const cableSourceId of route.cableIds) {
-            const cableId = await identity(target, t, 'OSP_CABLE', String(cableSourceId), 'primary', 'PhysicalResource');
+            const cableId = await identity(
+              target,
+              t,
+              'OSP_CABLE',
+              String(cableSourceId),
+              'primary',
+              'PhysicalResource',
+            );
             await ensureRelationship(target, t, cableId, routeId, 'supportedBy');
           }
         }
@@ -266,7 +305,9 @@ async function run(): Promise<void> {
           [equipmentRows.length + cableRows.length + routeRows.length, jobId],
         );
         await target.execute('COMMIT');
-        console.log(JSON.stringify({ jobId, state: 'loaded', touched: touched.length, mapFeatures }));
+        console.log(
+          JSON.stringify({ jobId, state: 'loaded', touched: touched.length, mapFeatures }),
+        );
       } catch (error) {
         await target.execute('ROLLBACK');
         throw error;
@@ -307,7 +348,8 @@ async function resolveSeed(source: Connection, input: Args): Promise<number> {
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     const found = rows.rows ?? [];
-    if (found.length === 0) throw new Error('Nenhum infranode encontrado para o endereço informado.');
+    if (found.length === 0)
+      throw new Error('Nenhum infranode encontrado para o endereço informado.');
     if (found.length > 1) {
       throw new Error(
         `${found.length} infranodes encontrados para o endereço — refine com --complemento-arg. IDs: ${found.map((r) => r.PI_ID).join(', ')}`,
@@ -435,7 +477,8 @@ async function traceUpstream(
     // sequestrar o caminho quando existe um cabo em serviço no mesmo nó.
     const ranked = [...candidates].sort((left, right) => {
       const leftActive = resolveLifecycleStatus(left.DESIGNATION ?? undefined).status === 'active';
-      const rightActive = resolveLifecycleStatus(right.DESIGNATION ?? undefined).status === 'active';
+      const rightActive =
+        resolveLifecycleStatus(right.DESIGNATION ?? undefined).status === 'active';
       if (leftActive !== rightActive) return leftActive ? -1 : 1;
       return left.ID - right.ID;
     });
@@ -504,7 +547,10 @@ async function fetchCables(source: Connection, cableIds: number[]): Promise<Cabl
 
 type CableModel = { nome: string | null; capacidade: number | null };
 
-async function fetchCableModels(source: Connection, modelIds: number[]): Promise<Map<number, CableModel>> {
+async function fetchCableModels(
+  source: Connection,
+  modelIds: number[],
+): Promise<Map<number, CableModel>> {
   const map = new Map<number, CableModel>();
   if (modelIds.length === 0) return map;
   const binds = modelIds.map((_, i) => `:${i + 1}`).join(',');
@@ -578,7 +624,10 @@ async function collectRoutes(source: Connection, cableIds: number[]): Promise<Ro
 
 // ------------------------------------------------------------ ciclo de vida -----
 
-async function fetchLifecycleStates(source: Connection, ids: number[]): Promise<Map<number, string>> {
+async function fetchLifecycleStates(
+  source: Connection,
+  ids: number[],
+): Promise<Map<number, string>> {
   const map = new Map<number, string>();
   if (ids.length === 0) return map;
   const binds = ids.map((_, i) => `:${i + 1}`).join(',');
@@ -840,7 +889,14 @@ async function persistEquipment(
     .update(JSON.stringify({ mappingVersion: MAPPING_VERSION, node }))
     .digest('hex');
   const previous = await identityState(target, t, 'OSP_EQUIPMENT', sourceId, 'primary');
-  const nexusId = await identity(target, t, 'OSP_EQUIPMENT', sourceId, 'primary', 'PhysicalResource');
+  const nexusId = await identity(
+    target,
+    t,
+    'OSP_EQUIPMENT',
+    sourceId,
+    'primary',
+    'PhysicalResource',
+  );
   if (previous?.sourceHash === sourceHash) return false;
 
   const classified = classifyEquipment(node.catSubtypeId);
@@ -851,10 +907,18 @@ async function persistEquipment(
     classified.resourceType,
     input.tenantId,
   );
-  const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
+  const designation =
+    node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
   const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
-  await upsertPointLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Equipamento ${node.id}`);
+  await upsertPointLocation(
+    target,
+    t,
+    nexusId,
+    node.wkt,
+    input.tenantId,
+    node.name || `Equipamento ${node.id}`,
+  );
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
     tenant_id: input.tenantId,
@@ -914,10 +978,18 @@ async function persistCable(
   const resourceType = classifyCable(model?.capacidade ?? null);
   const specName = model?.nome ? `Netwin ${model.nome}` : `Netwin ${resourceType}`;
   const specId = await resourceSpecId(target, t, specName, resourceType, input.tenantId);
-  const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
+  const designation =
+    node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
   const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
-  await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Cabo ${node.id}`);
+  await upsertLineLocation(
+    target,
+    t,
+    nexusId,
+    node.wkt,
+    input.tenantId,
+    node.name || `Cabo ${node.id}`,
+  );
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
     tenant_id: input.tenantId,
@@ -981,10 +1053,18 @@ async function persistRoute(
     resourceType,
     input.tenantId,
   );
-  const designation = node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
+  const designation =
+    node.lifeCycleStateId !== null ? lifecycleStates.get(node.lifeCycleStateId) : undefined;
   const { status, substatus, assumed } = resolveLifecycleStatus(designation);
 
-  await upsertLineLocation(target, t, nexusId, node.wkt, input.tenantId, node.name || `Lance ${node.id}`);
+  await upsertLineLocation(
+    target,
+    t,
+    nexusId,
+    node.wkt,
+    input.tenantId,
+    node.name || `Lance ${node.id}`,
+  );
   await merge(target, t, 'tmf_physical_resource', ['id'], {
     id: nexusId,
     tenant_id: input.tenantId,

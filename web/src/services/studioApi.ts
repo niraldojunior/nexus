@@ -160,7 +160,9 @@ export const saveStudioDraft = async (
   });
 };
 
-export const validateStudioDraft = async (domain: StudioDomain): Promise<StudioValidationResult> => {
+export const validateStudioDraft = async (
+  domain: StudioDomain,
+): Promise<StudioValidationResult> => {
   invalidateStudioStatus(domain);
   return await requestJson<StudioValidationResult>(`/${domain}/validate`, { method: 'POST' });
 };

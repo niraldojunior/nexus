@@ -72,7 +72,9 @@ export function ReferenceDataStudio({
     try {
       const next = await listReferenceDataSets();
       setSets(next);
-      setSelectedId((current) => (next.some((item) => item.id === current) ? current : next[0]?.id ?? null));
+      setSelectedId((current) =>
+        next.some((item) => item.id === current) ? current : (next[0]?.id ?? null),
+      );
     } catch {
       setError('Não foi possível carregar os conjuntos de dados de referência.');
     }
@@ -110,7 +112,11 @@ export function ReferenceDataStudio({
   useEffect(() => {
     const capture = async (): Promise<void> => {
       const status = await getStudioStatus('reference-data');
-      await saveStudioDraft('reference-data', await captureSnapshot(), status.draftVersion?.checksum);
+      await saveStudioDraft(
+        'reference-data',
+        await captureSnapshot(),
+        status.draftVersion?.checksum,
+      );
     };
     onRegisterCaptureDraft(capture);
     onRegisterCaptureInitialSnapshot(captureSnapshot);
@@ -124,7 +130,9 @@ export function ReferenceDataStudio({
     const term = filterText.toLowerCase().trim();
     if (!term) return sets;
     return sets.filter((item) =>
-      [item.name, item.description, item.key].some((value) => (value ?? '').toLowerCase().includes(term)),
+      [item.name, item.description, item.key].some((value) =>
+        (value ?? '').toLowerCase().includes(term),
+      ),
     );
   }, [filterText, sets]);
   const selectedSet = sets.find((item) => item.id === selectedId) ?? null;
@@ -151,7 +159,9 @@ export function ReferenceDataStudio({
         name: draft.name.trim(),
         description: draft.description?.trim() || null,
       });
-      setSets((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+      setSets((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+      );
       setSelectedId(created.id);
       setCreating(false);
     } catch (reason) {
@@ -207,7 +217,9 @@ export function ReferenceDataStudio({
 
           <div className="max-h-[640px] flex-1 space-y-1.5 overflow-y-auto pr-1">
             {filteredSets.length === 0 ? (
-              <div className="p-8 text-center text-[0.84rem] text-app-muted">Nenhum conjunto encontrado.</div>
+              <div className="p-8 text-center text-[0.84rem] text-app-muted">
+                Nenhum conjunto encontrado.
+              </div>
             ) : (
               filteredSets.map((item) => (
                 <button
@@ -243,7 +255,7 @@ export function ReferenceDataStudio({
               onDeactivated={(id) => {
                 setSets((current) => {
                   const next = current.filter((item) => item.id !== id);
-                  setSelectedId((selected) => (selected === id ? next[0]?.id ?? null : selected));
+                  setSelectedId((selected) => (selected === id ? (next[0]?.id ?? null) : selected));
                   return next;
                 });
               }}
@@ -267,7 +279,11 @@ export function ReferenceDataStudio({
               <Button variant="secondary" onClick={() => setCreating(false)} disabled={saving}>
                 Cancelar
               </Button>
-              <Button type="submit" form="reference-data-set-form" disabled={saving || !draftIsValid}>
+              <Button
+                type="submit"
+                form="reference-data-set-form"
+                disabled={saving || !draftIsValid}
+              >
                 {saving ? 'Criando…' : 'Criar'}
               </Button>
             </>
@@ -278,7 +294,11 @@ export function ReferenceDataStudio({
               {error}
             </p>
           )}
-          <form id="reference-data-set-form" onSubmit={(event) => void handleCreate(event)} className="grid gap-4">
+          <form
+            id="reference-data-set-form"
+            onSubmit={(event) => void handleCreate(event)}
+            className="grid gap-4"
+          >
             <Field label="Nome">
               <input
                 value={draft.name}

@@ -13,10 +13,19 @@ export type AssignRoleDialogProps = {
   onClose: () => void;
   availableRoleTypes: PartyRoleType[];
   organizationName: string;
-  onAssign: (roleName: string, roleTypeId: string, characteristics: Characteristic[], validFor?: TimePeriod) => Promise<void>;
+  onAssign: (
+    roleName: string,
+    roleTypeId: string,
+    characteristics: Characteristic[],
+    validFor?: TimePeriod,
+  ) => Promise<void>;
   /** Presente = modal em modo edição de um papel já atribuído, em vez de atribuição nova. */
   editingRole?: PartyRole;
-  onUpdate?: (roleId: string, characteristics: Characteristic[], validFor?: TimePeriod) => Promise<void>;
+  onUpdate?: (
+    roleId: string,
+    characteristics: Characteristic[],
+    validFor?: TimePeriod,
+  ) => Promise<void>;
   /** Sessão sem `canMutate` — mostra o papel já atribuído, mas sem permitir alterá-lo. */
   readOnly?: boolean;
 };
@@ -65,9 +74,9 @@ export function AssignRoleDialog({
       // Usa o roleTypeId real gravado no papel — fallback por roleName apenas para dados
       // pré-migration V24, onde role_type_id ainda é NULL.
       setSelectedRoleTypeId(
-        editingRole.roleTypeId
-          ?? availableRoleTypes.find((r) => r.roleName === editingRole.name)?.id
-          ?? '',
+        editingRole.roleTypeId ??
+          availableRoleTypes.find((r) => r.roleName === editingRole.name)?.id ??
+          '',
       );
       setStartDate(toDateInputValue(editingRole.validFor?.startDateTime));
       setEndDate(toDateInputValue(editingRole.validFor?.endDateTime));
@@ -166,7 +175,8 @@ export function AssignRoleDialog({
         <div className="flex items-center gap-2">
           <BadgeCheck className="h-5 w-5 text-app-accent" />
           <span>
-            {readOnly ? 'Papel de' : isEditing ? 'Editar Papel de' : 'Atribuir Papel a'} {organizationName}
+            {readOnly ? 'Papel de' : isEditing ? 'Editar Papel de' : 'Atribuir Papel a'}{' '}
+            {organizationName}
           </span>
         </div>
       }
@@ -250,9 +260,7 @@ export function AssignRoleDialog({
           </div>
         ) : characteristics.length > 0 ? (
           <div className="space-y-3 pt-2">
-            <h5 className="text-[0.82rem] font-bold text-app-text">
-              Características do papel
-            </h5>
+            <h5 className="text-[0.82rem] font-bold text-app-text">Características do papel</h5>
             {characteristics.map((c) => (
               <div key={c.id} className="space-y-1">
                 <label className="block text-[0.78rem] font-semibold text-app-text">
@@ -292,7 +300,9 @@ export function AssignRoleDialog({
                   </select>
                 ) : (
                   <input
-                    type={c.valueType === 'integer' || c.valueType === 'decimal' ? 'number' : 'text'}
+                    type={
+                      c.valueType === 'integer' || c.valueType === 'decimal' ? 'number' : 'text'
+                    }
                     value={String(formValues[c.name] ?? '')}
                     onChange={(e) =>
                       setFormValues((curr) => ({ ...curr, [c.name]: e.target.value }))

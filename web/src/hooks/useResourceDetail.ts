@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  fetchPhysicalResourceDetail,
-  type PhysicalResourceDetail,
-} from '../services/resourceApi';
+import { fetchPhysicalResourceDetail, type PhysicalResourceDetail } from '../services/resourceApi';
 
 export type ResourceDetailState = {
   detail: PhysicalResourceDetail | null;

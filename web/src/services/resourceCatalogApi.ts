@@ -137,7 +137,10 @@ const authHeaders = (): HeadersInit => ({
   Authorization: `Bearer ${bearerToken()}`,
 });
 
-async function requestJson<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  options: { method?: string; body?: unknown } = {},
+): Promise<T> {
   const response = await fetch(path, {
     method: options.method ?? 'GET',
     headers: authHeaders(),
@@ -323,10 +326,12 @@ export async function listResourceTypes(): Promise<ResourceType[]> {
   return await requestJson<ResourceType[]>('/v1/resource-types');
 }
 
-export async function listResourceSpecifications(query: {
-  resourceTypeId?: string;
-  includeEnded?: boolean;
-} = {}): Promise<ResourceSpecification[]> {
+export async function listResourceSpecifications(
+  query: {
+    resourceTypeId?: string;
+    includeEnded?: boolean;
+  } = {},
+): Promise<ResourceSpecification[]> {
   const params = new URLSearchParams();
   if (query.resourceTypeId) params.set('resourceTypeId', query.resourceTypeId);
   if (query.includeEnded) params.set('includeEnded', 'true');

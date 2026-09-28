@@ -59,7 +59,9 @@ function parseArgs(argv: string[]): Args {
     }
   }
   if (!args.file) {
-    throw new Error('Uso: --file <caminho/catalogo_nexus_vtal_v3.csv> [--dry-run] [--force] [--base-url URL]');
+    throw new Error(
+      'Uso: --file <caminho/catalogo_nexus_vtal_v3.csv> [--dry-run] [--force] [--base-url URL]',
+    );
   }
   return args as Args;
 }
@@ -191,7 +193,9 @@ async function main(): Promise<void> {
     const response = await fetch(`${args.baseUrl}/v1/service/specifications/bulk-import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ items: toCreate.map((row) => ({ line: row.line, input: row.input })) }),
+      body: JSON.stringify({
+        items: toCreate.map((row) => ({ line: row.line, input: row.input })),
+      }),
     });
     if (!response.ok) {
       throw new Error(`Falha na carga em massa (${response.status}): ${await response.text()}`);
@@ -220,7 +224,9 @@ async function main(): Promise<void> {
       },
     );
     if (!response.ok) {
-      console.error(`  [linha ${row.line}] falha ao atualizar "${row.input.name}" (${response.status})`);
+      console.error(
+        `  [linha ${row.line}] falha ao atualizar "${row.input.name}" (${response.status})`,
+      );
     }
   }
 

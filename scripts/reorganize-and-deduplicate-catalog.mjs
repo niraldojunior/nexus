@@ -99,7 +99,13 @@ const CANONICAL_TREE = [
     kind: 'GROUP',
     parentCode: 'infra_passiva',
     sortOrder: 1,
-    matchKeywords: ['infraestrutura subterrânea', 'subterrânea', 'subterranea', 'underground', 'civil'],
+    matchKeywords: [
+      'infraestrutura subterrânea',
+      'subterrânea',
+      'subterranea',
+      'underground',
+      'civil',
+    ],
   },
   {
     name: 'Duto',
@@ -191,7 +197,13 @@ const CANONICAL_TREE = [
     kind: 'GROUP',
     parentCode: 'infra_passiva',
     sortOrder: 3,
-    matchKeywords: ['infraestrutura óptica compartilhada', 'óptica compartilhada', 'optica compartilhada', 'cables', 'cabos'],
+    matchKeywords: [
+      'infraestrutura óptica compartilhada',
+      'óptica compartilhada',
+      'optica compartilhada',
+      'cables',
+      'cabos',
+    ],
   },
   {
     name: 'Cabo Óptico',
@@ -215,7 +227,14 @@ const CANONICAL_TREE = [
     typeCodes: ['PatchCord', 'Jumper'],
     parentCode: 'infra_optica_compartilhada',
     sortOrder: 2,
-    matchKeywords: ['cordão óptico', 'cordao optico', 'cordão', 'patch cord', 'patchcord', 'jumper'],
+    matchKeywords: [
+      'cordão óptico',
+      'cordao optico',
+      'cordão',
+      'patch cord',
+      'patchcord',
+      'jumper',
+    ],
   },
   {
     name: 'DIO / ODF',
@@ -640,17 +659,23 @@ async function run() {
 
   for (const groupDef of canonicalGroups) {
     // Tenta encontrar um nó existente que seja GROUP com mesmo código ou palavra-chave
-    let existingGroup = currentNodes.find((n) =>
-      !assignedNodeIds.has(n.id) &&
-      n.kind === 'GROUP' &&
-      (n.code === groupDef.code || groupDef.matchKeywords?.some((kw) => n.name.toLowerCase() === kw || n.code.toLowerCase().includes(kw)))
+    let existingGroup = currentNodes.find(
+      (n) =>
+        !assignedNodeIds.has(n.id) &&
+        n.kind === 'GROUP' &&
+        (n.code === groupDef.code ||
+          groupDef.matchKeywords?.some(
+            (kw) => n.name.toLowerCase() === kw || n.code.toLowerCase().includes(kw),
+          )),
     );
 
     let groupId;
     if (existingGroup) {
       groupId = existingGroup.id;
       assignedNodeIds.add(groupId);
-      console.log(`  (✓) Grupo reaproveitado: "${existingGroup.name}" (${existingGroup.code}) -> será "${groupDef.name}" (${groupDef.code})`);
+      console.log(
+        `  (✓) Grupo reaproveitado: "${existingGroup.name}" (${existingGroup.code}) -> será "${groupDef.name}" (${groupDef.code})`,
+      );
     } else {
       groupId = crypto.randomUUID();
       console.log(`  (+) Novo grupo necessário: "${groupDef.name}" (code: ${groupDef.code})`);
@@ -659,7 +684,16 @@ async function run() {
           `INSERT INTO tmf_resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, $4, $5, 'GROUP', null, 'active', $6, $7, $8)`,
-          [groupId, TENANT_ID, catalogId, groupDef.code, groupDef.name, groupDef.sortOrder, now, now],
+          [
+            groupId,
+            TENANT_ID,
+            catalogId,
+            groupDef.code,
+            groupDef.name,
+            groupDef.sortOrder,
+            now,
+            now,
+          ],
         );
       }
     }
@@ -686,37 +720,43 @@ async function run() {
       .filter(Boolean);
 
     // Candidatos: nós que ainda não foram associados
-    const candidates = currentNodes.filter((n) => !assignedNodeIds.has(n.id) && n.kind === 'RESOURCE_TYPE');
+    const candidates = currentNodes.filter(
+      (n) => !assignedNodeIds.has(n.id) && n.kind === 'RESOURCE_TYPE',
+    );
 
     // Prioridade 1: nó que já aponta para o resource_type_id correto e NÃO é leaf_* (é o original)
-    let matchedNode = candidates.find((n) =>
-      !isNewlyGeneratedLeaf(n) &&
-      n.resource_type_id && targetTypeIds.includes(n.resource_type_id)
+    let matchedNode = candidates.find(
+      (n) =>
+        !isNewlyGeneratedLeaf(n) &&
+        n.resource_type_id &&
+        targetTypeIds.includes(n.resource_type_id),
     );
 
     // Prioridade 2: nó que casa por nome ou código e NÃO é leaf_*
     if (!matchedNode) {
-      matchedNode = candidates.find((n) =>
-        !isNewlyGeneratedLeaf(n) &&
-        leafDef.matchKeywords?.some((kw) =>
-          n.name.toLowerCase() === kw ||
-          n.name.toLowerCase().includes(kw) ||
-          n.code.toLowerCase().includes(kw)
-        )
+      matchedNode = candidates.find(
+        (n) =>
+          !isNewlyGeneratedLeaf(n) &&
+          leafDef.matchKeywords?.some(
+            (kw) =>
+              n.name.toLowerCase() === kw ||
+              n.name.toLowerCase().includes(kw) ||
+              n.code.toLowerCase().includes(kw),
+          ),
       );
     }
 
     // Prioridade 3: nó leaf_* criado anteriormente se não houver original
     if (!matchedNode) {
-      matchedNode = candidates.find((n) =>
-        n.resource_type_id && targetTypeIds.includes(n.resource_type_id)
+      matchedNode = candidates.find(
+        (n) => n.resource_type_id && targetTypeIds.includes(n.resource_type_id),
       );
     }
 
     // Prioridade 4: qualquer nó com código exato
     if (!matchedNode) {
       matchedNode = candidates.find((n) =>
-        leafDef.matchKeywords?.some((kw) => n.code.toLowerCase() === kw)
+        leafDef.matchKeywords?.some((kw) => n.code.toLowerCase() === kw),
       );
     }
 
@@ -725,7 +765,9 @@ async function run() {
 
     if (matchedNode) {
       assignedNodeIds.add(matchedNode.id);
-      console.log(`  (✓) Nó vinculado: "${matchedNode.name}" (code: ${matchedNode.code}, id: ${matchedNode.id}) -> "${leafDef.name}" sob ${leafDef.parentCode}`);
+      console.log(
+        `  (✓) Nó vinculado: "${matchedNode.name}" (code: ${matchedNode.code}, id: ${matchedNode.id}) -> "${leafDef.name}" sob ${leafDef.parentCode}`,
+      );
       nodesToUpdate.push({
         id: matchedNode.id,
         name: leafDef.name,
@@ -737,14 +779,18 @@ async function run() {
       });
 
       // Se houver DUPLICATAS para este mesmo tipo (ex: leaf_* criado pelo script anterior), marcar para DELETAR
-      const duplicates = candidates.filter((n) =>
-        n.id !== matchedNode.id &&
-        isNewlyGeneratedLeaf(n) &&
-        n.resource_type_id && targetTypeIds.includes(n.resource_type_id)
+      const duplicates = candidates.filter(
+        (n) =>
+          n.id !== matchedNode.id &&
+          isNewlyGeneratedLeaf(n) &&
+          n.resource_type_id &&
+          targetTypeIds.includes(n.resource_type_id),
       );
       for (const dup of duplicates) {
         if (!nodesToDelete.includes(dup.id)) {
-          console.log(`    🗑️ Deletando duplicata temporária: "${dup.name}" (code: ${dup.code}, id: ${dup.id})`);
+          console.log(
+            `    🗑️ Deletando duplicata temporária: "${dup.name}" (code: ${dup.code}, id: ${dup.id})`,
+          );
           nodesToDelete.push(dup.id);
           assignedNodeIds.add(dup.id);
         }
@@ -753,13 +799,25 @@ async function run() {
       // Criar nó folha novo se de fato não existia
       const newLeafId = crypto.randomUUID();
       const code = `rt_${leafDef.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-      console.log(`  (+) Criando nó folha novo: "${leafDef.name}" (${code}) sob ${leafDef.parentCode}`);
+      console.log(
+        `  (+) Criando nó folha novo: "${leafDef.name}" (${code}) sob ${leafDef.parentCode}`,
+      );
       if (APPLY) {
         await db.query(
           `INSERT INTO tmf_resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, $4, $5, 'RESOURCE_TYPE', $6, 'active', $7, $8, $9)`,
-          [newLeafId, TENANT_ID, catalogId, code, leafDef.name, finalTypeId, leafDef.sortOrder, now, now],
+          [
+            newLeafId,
+            TENANT_ID,
+            catalogId,
+            code,
+            leafDef.name,
+            finalTypeId,
+            leafDef.sortOrder,
+            now,
+            now,
+          ],
         );
       }
       assignedNodeIds.add(newLeafId);
@@ -777,10 +835,8 @@ async function run() {
 
   // 3.3 Identificar os nós restantes e classificar como SOBRA ou DELETAR duplicata
   console.log(`\n--- 3. Analisando nós não alocados (Sobras e Duplicatas) ---`);
-  const remainingNodes = currentNodes.filter((n) =>
-    !assignedNodeIds.has(n.id) &&
-    !nodesToDelete.includes(n.id) &&
-    n.code !== 'sobra'
+  const remainingNodes = currentNodes.filter(
+    (n) => !assignedNodeIds.has(n.id) && !nodesToDelete.includes(n.id) && n.code !== 'sobra',
   );
 
   for (const rem of remainingNodes) {
@@ -840,7 +896,9 @@ async function run() {
   console.log(`\n--- 6. Aplicando Estrutura Hierárquica e Ordenação ---`);
   for (const item of nodesToUpdate) {
     const parentId = item.parentCode ? groupNodeMap.get(item.parentCode) : null;
-    console.log(`  🔗 [${item.kind}] "${item.name}" -> pai: ${item.parentCode || 'RAIZ'} (sort: ${item.sortOrder})`);
+    console.log(
+      `  🔗 [${item.kind}] "${item.name}" -> pai: ${item.parentCode || 'RAIZ'} (sort: ${item.sortOrder})`,
+    );
     if (APPLY) {
       await db.query(
         `UPDATE tmf_resource_catalog_node

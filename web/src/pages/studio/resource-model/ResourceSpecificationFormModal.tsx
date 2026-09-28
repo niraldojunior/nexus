@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { FileCode, AlertCircle } from 'lucide-react';
 import type { ResourceType, ResourceSpecification } from '../../../services/resourceApi';
-import { createResourceSpecification, updateResourceSpecification } from '../../../services/resourceApi';
+import {
+  createResourceSpecification,
+  updateResourceSpecification,
+} from '../../../services/resourceApi';
 import { listOrganizationsByRoleTypeIds } from '../../../services/partyApi';
 import {
   buildCharacteristicPayload,
@@ -41,7 +44,9 @@ export function ResourceSpecificationFormModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [rows, setRows] = useState<ResourceCharacteristicRow[]>([]);
-  const [roleOrganizations, setRoleOrganizations] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [roleOrganizations, setRoleOrganizations] = useState<
+    Record<string, Array<{ id: string; name: string }>>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -181,8 +186,17 @@ export function ResourceSpecificationFormModal({
             <Button variant="secondary" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" type="submit" form="resource-specification-form" disabled={submitting}>
-              {submitting ? 'Salvando…' : isEditing ? 'Atualizar especificação' : 'Criar especificação'}
+            <Button
+              variant="primary"
+              type="submit"
+              form="resource-specification-form"
+              disabled={submitting}
+            >
+              {submitting
+                ? 'Salvando…'
+                : isEditing
+                  ? 'Atualizar especificação'
+                  : 'Criar especificação'}
             </Button>
           </>
         )
@@ -257,12 +271,12 @@ export function ResourceSpecificationFormModal({
                       {section.rows.map((row) => {
                         const listOptions =
                           row.valueType === 'list'
-                            ? (row.allowedValuesText
+                            ? ((row.allowedValuesText
                                 ? row.allowedValuesText
                                     .split(',')
                                     .map((s) => s.trim())
                                     .filter(Boolean)
-                                : row.allowedValues) ?? []
+                                : row.allowedValues) ?? [])
                             : [];
                         const orgCacheKey = (row.allowedValues ?? []).sort().join(',');
                         const orgOptions = roleOrganizations[orgCacheKey] ?? [];
@@ -299,7 +313,9 @@ export function ResourceSpecificationFormModal({
                                   }
                                 />
                               ) : row.valueType === 'boolean' ? (
-                                <label className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
+                                <label
+                                  className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={row.valueText === 'true'}
@@ -308,7 +324,10 @@ export function ResourceSpecificationFormModal({
                                       setRows((prev) =>
                                         prev.map((r) =>
                                           r.key === row.key
-                                            ? { ...r, valueText: e.target.checked ? 'true' : 'false' }
+                                            ? {
+                                                ...r,
+                                                valueText: e.target.checked ? 'true' : 'false',
+                                              }
                                             : r,
                                         ),
                                       )
@@ -332,7 +351,9 @@ export function ResourceSpecificationFormModal({
                                   }
                                   className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                                 >
-                                  <option value="">{readOnly ? 'Não especificado' : 'Selecione uma opção...'}</option>
+                                  <option value="">
+                                    {readOnly ? 'Não especificado' : 'Selecione uma opção...'}
+                                  </option>
                                   {listOptions.map((opt) => (
                                     <option key={opt} value={opt}>
                                       {opt}
@@ -352,7 +373,9 @@ export function ResourceSpecificationFormModal({
                                   }
                                   className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-text"
                                 >
-                                  <option value="">{readOnly ? 'Não especificado' : 'Selecione uma organização...'}</option>
+                                  <option value="">
+                                    {readOnly ? 'Não especificado' : 'Selecione uma organização...'}
+                                  </option>
                                   {orgOptions.map((org) => (
                                     <option key={org.id} value={org.id}>
                                       {org.name}

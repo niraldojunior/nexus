@@ -30,7 +30,13 @@ export function sortedBy<T, K extends string>(
     const av = valueOf(a.row, sort.key);
     const bv = valueOf(b.row, sort.key);
     const cmp =
-      typeof av === 'string' && typeof bv === 'string' ? av.localeCompare(bv, 'pt-BR') : av < bv ? -1 : av > bv ? 1 : 0;
+      typeof av === 'string' && typeof bv === 'string'
+        ? av.localeCompare(bv, 'pt-BR')
+        : av < bv
+          ? -1
+          : av > bv
+            ? 1
+            : 0;
     return (sort.direction === 'asc' ? cmp : -cmp) || a.index - b.index;
   });
   return indexed.map((entry) => entry.row);
@@ -50,7 +56,12 @@ export function SortableHeader<K extends string>({
   align?: 'left' | 'center';
 }) {
   const active = sort?.key === sortKey;
-  const Icon = sort && sort.key === sortKey ? (sort.direction === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
+  const Icon =
+    sort && sort.key === sortKey
+      ? sort.direction === 'asc'
+        ? ChevronUp
+        : ChevronDown
+      : ChevronsUpDown;
   return (
     <th style={{ textAlign: align === 'center' ? 'center' : 'left' }}>
       <button

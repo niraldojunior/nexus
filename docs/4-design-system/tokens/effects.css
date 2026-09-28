@@ -8,11 +8,11 @@
 :root {
   /* ---- Radii (10px base, shadcn-style derivation) ----------- */
   --radius: 10px;
-  --radius-sm: 6px;     /* chips, badges, small inputs */
-  --radius-md: 8px;     /* buttons, inputs, nav items */
-  --radius-lg: 10px;    /* cards, panels */
-  --radius-xl: 14px;    /* sheets, dialogs, popovers */
-  --radius-2xl: 18px;   /* floating panels over the map */
+  --radius-sm: 6px; /* chips, badges, small inputs */
+  --radius-md: 8px; /* buttons, inputs, nav items */
+  --radius-lg: 10px; /* cards, panels */
+  --radius-xl: 14px; /* sheets, dialogs, popovers */
+  --radius-2xl: 18px; /* floating panels over the map */
   --radius-full: 9999px;
 
   /* ---- Shadows --------------------------------------------- */

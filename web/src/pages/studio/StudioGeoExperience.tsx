@@ -153,7 +153,9 @@ const visualIdentityForEntity = (
     return resourceType?.visualIdentity;
   }
   if (entity.sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION') {
-    const siteSpec = siteSpecs.find((item) => item.id === entity.sourceId || item.code === entity.sourceId);
+    const siteSpec = siteSpecs.find(
+      (item) => item.id === entity.sourceId || item.code === entity.sourceId,
+    );
     return siteSpec?.visualIdentity;
   }
   return undefined;
@@ -255,9 +257,13 @@ export function StudioGeoExperience({
       setSiteSpecs(specs);
       setResourceTypes(types);
       setSelectedId((current) =>
-        current && next.nodes.some((node) => node.id === current) ? current : next.nodes[0]?.id ?? null,
+        current && next.nodes.some((node) => node.id === current)
+          ? current
+          : (next.nodes[0]?.id ?? null),
       );
-      setExpanded(new Set(next.nodes.filter((node) => node.kind === 'GROUP').map((node) => node.id)));
+      setExpanded(
+        new Set(next.nodes.filter((node) => node.kind === 'GROUP').map((node) => node.id)),
+      );
       setError(null);
     } catch (reason) {
       // Erro de rede/leitura fica sendo erro — nunca é convertido silenciosamente em dados
@@ -368,18 +374,22 @@ export function StudioGeoExperience({
       )
         return current;
 
-      const newParentNodeId = position === 'inside' ? target!.id : target?.parentNodeId ?? null;
+      const newParentNodeId = position === 'inside' ? target!.id : (target?.parentNodeId ?? null);
       // A lista física do snapshot pode estar em qualquer ordem. O Studio sempre exibe irmãos por
       // sortOrder/id (mapLayerTree), portanto o cálculo da posição precisa usar essa mesma ordem.
       const siblings = current.nodes
         .filter((node) => node.parentNodeId === newParentNodeId && node.id !== moving.id)
         .sort(compareNodeOrder);
-      const targetIndex = target ? siblings.findIndex((node) => node.id === target.id) : siblings.length;
+      const targetIndex = target
+        ? siblings.findIndex((node) => node.id === target.id)
+        : siblings.length;
       const insertAt =
         position === 'before'
           ? Math.max(targetIndex, 0)
           : position === 'after'
-            ? (targetIndex >= 0 ? targetIndex + 1 : siblings.length)
+            ? targetIndex >= 0
+              ? targetIndex + 1
+              : siblings.length
             : siblings.length;
 
       const reordered = [
@@ -403,7 +413,10 @@ export function StudioGeoExperience({
 
   // Filtragem de candidatos elegíveis usando o helper canônico
   const eligibleSites: EligibleOption[] = useMemo(() => buildEligibleSites(siteSpecs), [siteSpecs]);
-  const eligibleResources: EligibleOption[] = useMemo(() => buildEligibleResources(resourceTypes), [resourceTypes]);
+  const eligibleResources: EligibleOption[] = useMemo(
+    () => buildEligibleResources(resourceTypes),
+    [resourceTypes],
+  );
   const eligibleCoverages: EligibleOption[] = useMemo(
     () => buildEligibleCoverages(siteSpecs),
     [siteSpecs],
@@ -443,7 +456,8 @@ export function StudioGeoExperience({
   };
 
   const createNode = (kind: StudioGeoNode['kind']) => {
-    const parentNodeId = selected?.kind === 'GROUP' ? selected.id : selected?.parentNodeId ?? null;
+    const parentNodeId =
+      selected?.kind === 'GROUP' ? selected.id : (selected?.parentNodeId ?? null);
     const id = createId(kind === 'GROUP' ? 'group' : 'entity');
 
     if (kind === 'GROUP') {
@@ -467,7 +481,13 @@ export function StudioGeoExperience({
         defaultVisible: true,
         entity,
         ...(option
-          ? { visualConfig: defaultVisualConfigForGeometry(option.geometryKind, option.reference, 'Nova Entidade') }
+          ? {
+              visualConfig: defaultVisualConfigForGeometry(
+                option.geometryKind,
+                option.reference,
+                'Nova Entidade',
+              ),
+            }
           : {}),
       };
       setSnapshot((current) => ({ ...current, nodes: [...current.nodes, node] }));
@@ -580,11 +600,7 @@ export function StudioGeoExperience({
     32,
     selectedPointConfig && selected?.kind === 'ENTITY'
       ? {
-          color: resolveStudioGeoColor(
-            selectedPointConfig.color,
-            selected.entity.category,
-            null,
-          ),
+          color: resolveStudioGeoColor(selectedPointConfig.color, selected.entity.category, null),
           opacity: selectedPointConfig.opacity,
         }
       : {},
@@ -601,7 +617,10 @@ export function StudioGeoExperience({
   const handleDragOver = (targetNode: MapLayerTreeNode, e: React.DragEvent) => {
     if (!canMutate || !draggedNode) return;
     if (draggedNode.id === targetNode.id) return;
-    if (draggedNode.kind === 'GROUP' && isDescendant(snapshot.nodes, targetNode.id, draggedNode.id)) {
+    if (
+      draggedNode.kind === 'GROUP' &&
+      isDescendant(snapshot.nodes, targetNode.id, draggedNode.id)
+    ) {
       e.dataTransfer.dropEffect = 'none';
       return;
     }
@@ -637,7 +656,10 @@ export function StudioGeoExperience({
       setDropPosition(null);
       return;
     }
-    if (draggedNode.kind === 'GROUP' && isDescendant(snapshot.nodes, targetNode.id, draggedNode.id)) {
+    if (
+      draggedNode.kind === 'GROUP' &&
+      isDescendant(snapshot.nodes, targetNode.id, draggedNode.id)
+    ) {
       setDraggedNode(null);
       setDropTargetId(null);
       setDropPosition(null);
@@ -1112,7 +1134,6 @@ export function StudioGeoExperience({
                           </div>
                         </div>
 
-
                         <div>
                           <label className="block text-[0.78rem] font-semibold text-app-text mb-1">
                             Entidade Cadastrada (Elegível no Mapa)
@@ -1135,7 +1156,8 @@ export function StudioGeoExperience({
                       </div>
                     ) : (
                       <p className="text-[0.8rem] text-app-muted">
-                        Grupos agregam todos os nós descendentes em múltiplos níveis na árvore do seletor de camadas.
+                        Grupos agregam todos os nós descendentes em múltiplos níveis na árvore do
+                        seletor de camadas.
                       </p>
                     )}
                   </>
@@ -1172,8 +1194,8 @@ export function StudioGeoExperience({
             A configuração visual desta entidade será redefinida com os padrões da nova origem.
           </p>
           <p className="mt-2 text-[0.84rem] text-app-muted">
-            Cores, transparência, estilo de traço e tamanhos por escala configurados aqui
-            serão redefinidos.
+            Cores, transparência, estilo de traço e tamanhos por escala configurados aqui serão
+            redefinidos.
           </p>
         </Modal>
       )}

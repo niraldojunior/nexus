@@ -119,7 +119,11 @@ export const studioGeoGeometryIndex = (snapshot: unknown): Map<string, ResourceG
     const layer = asRecord(entry);
     if (!layer) continue;
     const geometryKind =
-      layer.shape === 'resource-points' ? 'POINT' : layer.shape === 'resource-lines' ? 'LINE' : undefined;
+      layer.shape === 'resource-points'
+        ? 'POINT'
+        : layer.shape === 'resource-lines'
+          ? 'LINE'
+          : undefined;
     if (!geometryKind) continue;
     if (typeof layer.matcher !== 'string') continue;
     remember(`legacy-${layer.matcher}`, geometryKind);
@@ -141,7 +145,9 @@ const bareTypeCode = (typeCode: string): string => {
 };
 
 /** Geometria legada de um tipo, resolvida pelo seu `code`. Códigos desconhecidos não têm evidência. */
-export const legacyGeometryForTypeCode = (typeCode: string | null | undefined): ResourceGeometryKind | undefined => {
+export const legacyGeometryForTypeCode = (
+  typeCode: string | null | undefined,
+): ResourceGeometryKind | undefined => {
   if (!typeCode) return undefined;
   const sourceId = LEGACY_TYPE_CODE_SOURCE_ID[bareTypeCode(typeCode.trim())];
   return sourceId ? LEGACY_SOURCE_ID_GEOMETRY[sourceId] : undefined;

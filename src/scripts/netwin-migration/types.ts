@@ -1,8 +1,9 @@
-export type MigrationPhase = '1' | '2' | 'all';
+export type MigrationPhase = '1' | '2' | '2c' | '2d' | 'all';
 
 export type MigrationScope = {
   municipio?: string | undefined;
   uf?: string | undefined;
+  bairro?: string | undefined;
   full: boolean;
 };
 

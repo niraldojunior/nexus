@@ -69,10 +69,7 @@ import type { RequestContext } from '../../shared/http/request-context.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { recordMutation } from '../../shared/persistence/audit-outbox.js';
 import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
-import {
-  isVisualIdentity,
-  type VisualIdentity,
-} from '../../shared/ui/visual-identity.js';
+import { isVisualIdentity, type VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
@@ -107,10 +104,7 @@ type ResourceServiceDependencies = {
     id: string,
   ) => Promise<{ id: string; name: string } | undefined> | { id: string; name: string } | undefined;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
-  lookupActiveVisualAsset?: (
-    tenantId: string,
-    assetId: string,
-  ) => Promise<boolean> | boolean;
+  lookupActiveVisualAsset?: (tenantId: string, assetId: string) => Promise<boolean> | boolean;
   /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
    *  serviço com um repositório em memória), a auditoria só não roda. */
   db?: DatabaseClient;
@@ -590,19 +584,8 @@ export class ResourceService {
     context?: RequestContext,
     includeRetired = false,
   ): Promise<ResourceTypeRelationshipRule[]> {
-    const uniqueIds = [...new Set(resourceTypeIds)];
+    const uniqueIds = [...new Set(resourceTypeIds.filter(Boolean))];
     if (uniqueIds.length === 0) return [];
-    const visibleTypes = new Set(
-      (await this.repository.listResourceTypes(scopeOf(context))).map(
-        (resourceType) => resourceType.id,
-      ),
-    );
-    if (uniqueIds.some((id) => !visibleTypes.has(id))) {
-      throw new AppError('resource type not found', {
-        code: 'RESOURCE_TYPE_NOT_FOUND',
-        statusCode: 404,
-      });
-    }
     return await this.repository.listResourceTypeRelationshipRulesBySourceIds(uniqueIds, {
       ...scopeOf(context),
       includeRetired,
@@ -2095,10 +2078,7 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceConnectionsView> {
     await this.getResourceOrThrow(resourceId, context);
-    const connections = await this.repository.listResourceConnections(
-      resourceId,
-      scopeOf(context),
-    );
+    const connections = await this.repository.listResourceConnections(resourceId, scopeOf(context));
     return {
       '@type': 'ResourceConnectionsView',
       resourceId,
@@ -2666,10 +2646,13 @@ const resolveResourceTypeMapConfiguration = (
   const geometryKind =
     input.geometryKind === null ? undefined : (input.geometryKind ?? current?.geometryKind);
   if (mapPresence && !geometryKind) {
-    throw new AppError('geometryKind is required when a physical resource type is visible on the map', {
-      code: 'RESOURCE_TYPE_GEOMETRY_REQUIRED',
-      statusCode: 422,
-    });
+    throw new AppError(
+      'geometryKind is required when a physical resource type is visible on the map',
+      {
+        code: 'RESOURCE_TYPE_GEOMETRY_REQUIRED',
+        statusCode: 422,
+      },
+    );
   }
   return {
     nature,

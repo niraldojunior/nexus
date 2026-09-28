@@ -249,7 +249,9 @@ export function RoleCharacteristicFormModal({
                   ...current,
                   hasDefaultValue: event.target.checked,
                   valueText:
-                    event.target.checked && current.valueType === 'boolean' ? 'false' : current.valueText,
+                    event.target.checked && current.valueType === 'boolean'
+                      ? 'false'
+                      : current.valueText,
                 }))
               }
               className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"

@@ -3,7 +3,12 @@ import { Loader2, Search, Trash2 } from 'lucide-react';
 import { linkSiteResource, unlinkSiteResource } from '../../services/geoApi';
 import { fetchTreeChildren, fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import { ResourceIcon } from '../../components/ResourceIcon';
-import { resourceIconFor, resourcePlant, plantLabel, type ResourcePlant } from '../../utils/resourceIcon';
+import {
+  resourceIconFor,
+  resourcePlant,
+  plantLabel,
+  type ResourcePlant,
+} from '../../utils/resourceIcon';
 import { Modal } from './Modal';
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -130,7 +135,9 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
                 placeholder="Buscar recurso pelo nome…"
                 className="h-10 w-full bg-transparent text-[0.86rem] text-app-text outline-none placeholder:text-app-muted"
               />
-              {linking ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-app-muted" /> : null}
+              {linking ? (
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-app-muted" />
+              ) : null}
             </div>
             {predictionsOpen && predictions.length > 0 ? (
               <>
@@ -193,7 +200,9 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
                     >
                       <button
                         type="button"
-                        onClick={() => (resource.refId ? onOpenResource(resource.refId) : undefined)}
+                        onClick={() =>
+                          resource.refId ? onOpenResource(resource.refId) : undefined
+                        }
                         className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                       >
                         <ResourceIcon resource={resourceLike} variant="badge" size={26} />

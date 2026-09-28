@@ -16,7 +16,9 @@ const prompt = createInterface({ input, output });
 
 const ask = async (question: string): Promise<string> => (await prompt.question(question)).trim();
 
-const selectEnvironment = async (environments: OracleEnvironment[]): Promise<OracleEnvironment | undefined> => {
+const selectEnvironment = async (
+  environments: OracleEnvironment[],
+): Promise<OracleEnvironment | undefined> => {
   if (environments.length === 0) {
     output.write('\nNenhum ambiente Nexus foi encontrado no schema Oracle atual.\n');
     return undefined;
@@ -50,9 +52,14 @@ const createEnvironment = async (): Promise<void> => {
     output.write('O nome do Tenant é obrigatório. Operação cancelada.\n');
     return;
   }
+  const tenantId = await ask('ID do Tenant inicial (vazio = UUID v7 gerado): ');
 
   output.write(`\nCriando ${prefix} para o Tenant "${tenantName}"...\n`);
-  const environment = await manager.create({ prefix, tenantName });
+  const environment = await manager.create({
+    prefix,
+    tenantName,
+    ...(tenantId ? { tenantId } : {}),
+  });
   output.write('\nAmbiente criado com sucesso.\n');
   output.write(`Prefixo: ${environment.prefix}\n`);
   output.write(`Tenant: ${environment.tenantName}\n`);
@@ -60,7 +67,9 @@ const createEnvironment = async (): Promise<void> => {
   output.write(`Administrador: ${environment.adminEmail}\n`);
   output.write(`Senha temporária: ${environment.temporaryPassword}\n`);
   output.write('Use a senha temporária somente no primeiro login e altere-a imediatamente.\n');
-  output.write('O script não altera seu .env: configure ORACLE_OBJECT_PREFIX com o prefixo acima.\n');
+  output.write(
+    'O script não altera seu .env: configure ORACLE_OBJECT_PREFIX com o prefixo acima.\n',
+  );
 };
 
 const destroyEnvironment = async (): Promise<void> => {
@@ -82,7 +91,9 @@ const destroyEnvironment = async (): Promise<void> => {
       `A remoção de ${result.prefix} ficou parcial; restaram: ${result.remainingTables.join(', ')}.`,
     );
   }
-  output.write(`\nAmbiente ${result.prefix} removido com sucesso (${result.droppedTables.length} tabela(s)).\n`);
+  output.write(
+    `\nAmbiente ${result.prefix} removido com sucesso (${result.droppedTables.length} tabela(s)).\n`,
+  );
 };
 
 try {
@@ -95,7 +106,9 @@ try {
   else if (operation === '2') await destroyEnvironment();
   else output.write('Operação cancelada.\n');
 } catch (error) {
-  output.write(`\nFalha ao gerenciar o ambiente: ${error instanceof Error ? error.message : String(error)}\n`);
+  output.write(
+    `\nFalha ao gerenciar o ambiente: ${error instanceof Error ? error.message : String(error)}\n`,
+  );
   process.exitCode = 1;
 } finally {
   prompt.close();

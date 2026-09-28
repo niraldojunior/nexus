@@ -15,7 +15,8 @@ export const HREF_PATHS = {
   /** Fora do namespace TMF e chaveado por `code`, não por `id` (ver src/modules/geo/service.ts). */
   geographicRelationshipType: '/v1/geo/relationship-types',
   resourceSpecification: '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-  resourceFunctionSpecification: '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
+  resourceFunctionSpecification:
+    '/tmf-api/resourceCatalogManagement/v4/resourceFunctionSpecification',
   resourceCategory: '/tmf-api/resourceCatalogManagement/v4/resourceCategory',
   resourceType: '/tmf-api/resourceCatalogManagement/v4/resourceType',
   resourceLayer: '/v1/resource-layers',

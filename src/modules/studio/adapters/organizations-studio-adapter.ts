@@ -11,7 +11,11 @@
 // estado canônico no descarte de rascunho.
 
 import { AppError } from '../../../shared/errors/app-error.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
 import type { PartyService } from '../../party/service.js';
 import type { PartyStatus, PartyType } from '../../party/domain.js';
 import type { Characteristic } from '../../../shared/tmf/types.js';

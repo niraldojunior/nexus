@@ -59,12 +59,22 @@ export default function Modal({
         ref={panelRef}
         tabIndex={-1}
         className="vt-popover"
-        style={{ borderRadius: 'var(--radius-xl)', width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 64px)', overflowY: 'auto', outline: 'none' }}
+        style={{
+          borderRadius: 'var(--radius-xl)',
+          width,
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: 'calc(100vh - 64px)',
+          overflowY: 'auto',
+          outline: 'none',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
           <div style={{ padding: '20px 20px 0' }}>
-            <h3 className="text-app-text" style={{ font: 'var(--text-h3)', letterSpacing: 'var(--tracking-snug)' }}>
+            <h3
+              className="text-app-text"
+              style={{ font: 'var(--text-h3)', letterSpacing: 'var(--tracking-snug)' }}
+            >
               {title}
             </h3>
           </div>

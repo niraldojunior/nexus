@@ -46,15 +46,25 @@ describe('readStoredViewState / writeStoredViewState', () => {
   });
 
   it('migra a chave sem namespace apenas para legacy', () => {
-    const state: GeoViewState = { v: 1, camera: CAMERA, context: { kind: 'site', siteId: 'legacy' } };
+    const state: GeoViewState = {
+      v: 1,
+      camera: CAMERA,
+      context: { kind: 'site', siteId: 'legacy' },
+    };
     window.localStorage.setItem('nexus.geo.viewState', JSON.stringify(state));
 
     expect(readStoredViewState(LEGACY_ENVIRONMENT_ID)).toEqual(state);
-    expect(window.localStorage.getItem(namespacedKey(LEGACY_ENVIRONMENT_ID))).toBe(JSON.stringify(state));
+    expect(window.localStorage.getItem(namespacedKey(LEGACY_ENVIRONMENT_ID))).toBe(
+      JSON.stringify(state),
+    );
   });
 
   it('ambiente empty não lê, move nem apaga a chave legada', () => {
-    const legacy: GeoViewState = { v: 1, camera: CAMERA, context: { kind: 'site', siteId: 'legacy' } };
+    const legacy: GeoViewState = {
+      v: 1,
+      camera: CAMERA,
+      context: { kind: 'site', siteId: 'legacy' },
+    };
     window.localStorage.setItem('nexus.geo.viewState', JSON.stringify(legacy));
 
     expect(readStoredViewState(EMPTY_ENVIRONMENT_ID)).toBeNull();
@@ -67,8 +77,19 @@ describe('readStoredViewState / writeStoredViewState', () => {
       v: 1,
       camera: CAMERA,
       context: {
-        kind: 'address', source: 'search', lat: -22.9, lng: -43.1, placeId: 'place-1', query: 'Rua X, 100',
-        address: { street: 'Rua X', streetNr: '100', country: 'BR', coordinates: [-43.1, -22.9], label: 'Rua X, 100' },
+        kind: 'address',
+        source: 'search',
+        lat: -22.9,
+        lng: -43.1,
+        placeId: 'place-1',
+        query: 'Rua X, 100',
+        address: {
+          street: 'Rua X',
+          streetNr: '100',
+          country: 'BR',
+          coordinates: [-43.1, -22.9],
+          label: 'Rua X, 100',
+        },
       },
     };
     writeStoredViewState(state, EMPTY_ENVIRONMENT_ID);
@@ -81,9 +102,15 @@ describe('readStoredViewState / writeStoredViewState', () => {
   });
 
   it('versão ou câmera inválida cai em null', () => {
-    window.localStorage.setItem(namespacedKey(EMPTY_ENVIRONMENT_ID), JSON.stringify({ v: 2, camera: CAMERA, context: { kind: 'none' } }));
+    window.localStorage.setItem(
+      namespacedKey(EMPTY_ENVIRONMENT_ID),
+      JSON.stringify({ v: 2, camera: CAMERA, context: { kind: 'none' } }),
+    );
     expect(readStoredViewState(EMPTY_ENVIRONMENT_ID)).toBeNull();
-    window.localStorage.setItem(namespacedKey(EMPTY_ENVIRONMENT_ID), JSON.stringify({ v: 1, camera: { lat: 999, lng: -43, zoom: 15 }, context: { kind: 'none' } }));
+    window.localStorage.setItem(
+      namespacedKey(EMPTY_ENVIRONMENT_ID),
+      JSON.stringify({ v: 1, camera: { lat: 999, lng: -43, zoom: 15 }, context: { kind: 'none' } }),
+    );
     expect(readStoredViewState(EMPTY_ENVIRONMENT_ID)).toBeNull();
   });
 });
@@ -129,12 +156,23 @@ describe('resolveInitialViewState', () => {
   beforeEach(() => window.localStorage.clear());
 
   it('URL vence storage do mesmo ambiente', () => {
-    writeStoredViewState({ v: 1, camera: { lat: 0, lng: 0, zoom: 5 }, context: { kind: 'none' } }, EMPTY_ENVIRONMENT_ID);
-    expect(resolveInitialViewState(EMPTY_ENVIRONMENT_ID, '?ll=-22.9,-43.1&z=17')?.camera).toEqual({ lat: -22.9, lng: -43.1, zoom: 17 });
+    writeStoredViewState(
+      { v: 1, camera: { lat: 0, lng: 0, zoom: 5 }, context: { kind: 'none' } },
+      EMPTY_ENVIRONMENT_ID,
+    );
+    expect(resolveInitialViewState(EMPTY_ENVIRONMENT_ID, '?ll=-22.9,-43.1&z=17')?.camera).toEqual({
+      lat: -22.9,
+      lng: -43.1,
+      zoom: 17,
+    });
   });
 
   it('sem câmera na URL, cai no storage do ambiente', () => {
-    const stored: GeoViewState = { v: 1, camera: { lat: -22.9, lng: -43.1, zoom: 15 }, context: { kind: 'site', siteId: 'abc' } };
+    const stored: GeoViewState = {
+      v: 1,
+      camera: { lat: -22.9, lng: -43.1, zoom: 15 },
+      context: { kind: 'site', siteId: 'abc' },
+    };
     writeStoredViewState(stored, EMPTY_ENVIRONMENT_ID);
     expect(resolveInitialViewState(EMPTY_ENVIRONMENT_ID, '')).toEqual(stored);
   });

@@ -19,10 +19,7 @@ import {
   reorderResourceCatalogNodes,
   getResourceModelSnapshotSource,
 } from '../../../services/resourceCatalogApi';
-import {
-  getStudioStatus,
-  saveStudioDraft,
-} from '../../../services/studioApi';
+import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
 import { ResourceCatalogTree } from './ResourceCatalogTree';
 import { StudioCollectionHeader } from '../../../components/studio/StudioCollectionHeader';
@@ -35,10 +32,7 @@ const AUTOSAVE_BLOCK_REASON: Partial<Record<AutosaveState, string>> = {
   error: 'Uma alteração falhou ao salvar — corrija antes de publicar.',
 };
 
-const findNodeById = (
-  nodes: ResourceCatalogTreeNode[],
-  id: string,
-): ResourceCatalogNode | null => {
+const findNodeById = (nodes: ResourceCatalogTreeNode[], id: string): ResourceCatalogNode | null => {
   for (const n of nodes) {
     if (n.id === id) return n;
     if (n.children) {
@@ -177,11 +171,7 @@ export function ResourceModelStudio({
 
   const handleUpdateSelectedNode = async (input: UpdateResourceCatalogNodeInput) => {
     if (!selectedCatalogId || !selectedNode) return;
-    const updated = await updateResourceCatalogNode(
-      selectedCatalogId,
-      selectedNode.id,
-      input,
-    );
+    const updated = await updateResourceCatalogNode(selectedCatalogId, selectedNode.id, input);
     await reloadTree();
     setSelectedNode(updated);
   };
@@ -231,7 +221,9 @@ export function ResourceModelStudio({
   // Resolve o pai para uma nova criação: sem seleção, cria na raiz; com um GROUP selecionado,
   // cria abaixo dele; com um RESOURCE_TYPE selecionado (que nunca tem filhos — é sempre folha),
   // cria como irmão, usando o mesmo pai do nó selecionado.
-  const resolveNewNodeParent = (explicitParent?: ResourceCatalogNode): ResourceCatalogNode | null => {
+  const resolveNewNodeParent = (
+    explicitParent?: ResourceCatalogNode,
+  ): ResourceCatalogNode | null => {
     if (explicitParent) return explicitParent;
     if (!selectedNode) return null;
     if (selectedNode.kind === 'GROUP') return selectedNode;
@@ -338,7 +330,9 @@ export function ResourceModelStudio({
                   // Só declara a geometria quando ela existe: o campo ausente é o que faz o
                   // adapter preservar o estado vivo ao materializar um snapshot histórico.
                   ...(type.geometryKind ? { geometryKind: type.geometryKind } : {}),
-                  ...(type.visualIdentity !== undefined ? { visualIdentity: type.visualIdentity } : {}),
+                  ...(type.visualIdentity !== undefined
+                    ? { visualIdentity: type.visualIdentity }
+                    : {}),
                   resourceTypeCharacteristic: type.resourceTypeCharacteristic,
                 },
               }
@@ -442,10 +436,7 @@ export function ResourceModelStudio({
                 </Button>
                 {createMenuOpen && !createMenuAnchorRect && (
                   <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setCreateMenuOpen(false)}
-                    />
+                    <div className="fixed inset-0 z-40" onClick={() => setCreateMenuOpen(false)} />
                     <div
                       role="menu"
                       aria-label="Tipo de nó a incluir"
@@ -542,46 +533,48 @@ export function ResourceModelStudio({
       )}
 
       {/* Menu flutuante contextual quando ancorado a um nó específico */}
-      {createMenuOpen && createMenuAnchorRect && createPortal(
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => {
-              setCreateMenuOpen(false);
-              setCreateMenuAnchorRect(null);
-            }}
-          />
-          <div
-            role="menu"
-            aria-label="Tipo de nó a incluir"
-            className="fixed z-50 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
-            style={{
-              top: `${Math.min(createMenuAnchorRect.bottom + 4, window.innerHeight - 90)}px`,
-              left: `${Math.max(12, Math.min(createMenuAnchorRect.left, window.innerWidth - 220))}px`,
-            }}
-          >
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => handleCreateFromMenu('GROUP')}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+      {createMenuOpen &&
+        createMenuAnchorRect &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => {
+                setCreateMenuOpen(false);
+                setCreateMenuAnchorRect(null);
+              }}
+            />
+            <div
+              role="menu"
+              aria-label="Tipo de nó a incluir"
+              className="fixed z-50 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
+              style={{
+                top: `${Math.min(createMenuAnchorRect.bottom + 4, window.innerHeight - 90)}px`,
+                left: `${Math.max(12, Math.min(createMenuAnchorRect.left, window.innerWidth - 220))}px`,
+              }}
             >
-              <Folder className="h-3.5 w-3.5" />
-              Grupo
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => handleCreateFromMenu('RESOURCE_TYPE')}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
-            >
-              <Layers className="h-3.5 w-3.5" />
-              Tipo de Recurso
-            </button>
-          </div>
-        </>,
-        document.body,
-      )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleCreateFromMenu('GROUP')}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+              >
+                <Folder className="h-3.5 w-3.5" />
+                Grupo
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => handleCreateFromMenu('RESOURCE_TYPE')}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.84rem] font-medium text-app-text transition hover:bg-app-accent-soft"
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Tipo de Recurso
+              </button>
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -231,10 +231,7 @@ export function useGeoTree(): GeoTree {
     [loadChildren],
   );
 
-  const isExpanded = useCallback(
-    (rowKey: string) => expandedRows.has(rowKey),
-    [expandedRows],
-  );
+  const isExpanded = useCallback((rowKey: string) => expandedRows.has(rowKey), [expandedRows]);
 
   const reload = useCallback(() => {
     setState(EMPTY_STATE);
@@ -242,10 +239,7 @@ export function useGeoTree(): GeoTree {
     setReloadToken((token) => token + 1);
   }, []);
 
-  const nodeById = useCallback(
-    (nodeId: string) => state.nodesById[nodeId],
-    [state.nodesById],
-  );
+  const nodeById = useCallback((nodeId: string) => state.nodesById[nodeId], [state.nodesById]);
 
   const busy = loading || loadingNodes.size > 0;
 
@@ -267,6 +261,18 @@ export function useGeoTree(): GeoTree {
       nodeById,
       revealNode,
     }),
-    [rows, mapNodes, loading, busy, error, isExpanded, toggle, loadMore, reload, nodeById, revealNode],
+    [
+      rows,
+      mapNodes,
+      loading,
+      busy,
+      error,
+      isExpanded,
+      toggle,
+      loadMore,
+      reload,
+      nodeById,
+      revealNode,
+    ],
   );
 }

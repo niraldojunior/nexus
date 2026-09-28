@@ -1,6 +1,10 @@
 import { AppError } from '../../../shared/errors/app-error.js';
 import { createCanonicalId } from '../../../shared/utils/canonical-id.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
 import type { GeoService } from '../../geo/service.js';
 import type { Characteristic, GeoJSONPolygon, GeographicLocation } from '../../geo/domain.js';
 
@@ -50,7 +54,9 @@ export const isStudioSpatialCoverage = (location: GeographicLocation): boolean =
 
 export const spatialCoverageName = (location: GeographicLocation): string => {
   const name = spatialCharacteristic(location.characteristic, 'name')?.value;
-  return typeof name === 'string' ? name : location.referencePoint?.slice(SPATIAL_REFERENCE_PREFIX.length) ?? location.id;
+  return typeof name === 'string'
+    ? name
+    : (location.referencePoint?.slice(SPATIAL_REFERENCE_PREFIX.length) ?? location.id);
 };
 
 export const spatialCoverageType = (location: GeographicLocation): string => {
@@ -63,8 +69,18 @@ const characteristicsFor = (
   current: Characteristic[] = [],
 ): Characteristic[] => [
   ...current.filter((characteristic) => characteristic.group !== SPATIAL_CHARACTERISTIC_GROUP),
-  { group: SPATIAL_CHARACTERISTIC_GROUP, name: 'kind', value: EDITABLE_COVERAGE_KIND, valueType: 'string' },
-  { group: SPATIAL_CHARACTERISTIC_GROUP, name: 'name', value: coverage.name.trim(), valueType: 'string' },
+  {
+    group: SPATIAL_CHARACTERISTIC_GROUP,
+    name: 'kind',
+    value: EDITABLE_COVERAGE_KIND,
+    valueType: 'string',
+  },
+  {
+    group: SPATIAL_CHARACTERISTIC_GROUP,
+    name: 'name',
+    value: coverage.name.trim(),
+    valueType: 'string',
+  },
   {
     group: SPATIAL_CHARACTERISTIC_GROUP,
     name: 'coverageType',
@@ -140,27 +156,60 @@ export class SpatialStudioAdapter implements StudioDomainAdapter {
       const key = coverage?.key?.trim();
       const name = coverage?.name?.trim();
       if (!key) {
-        issues.push({ severity: 'error', code: 'SPATIAL_KEY_REQUIRED', message: 'A chave da cobertura é obrigatória.', path: `${path}.key` });
+        issues.push({
+          severity: 'error',
+          code: 'SPATIAL_KEY_REQUIRED',
+          message: 'A chave da cobertura é obrigatória.',
+          path: `${path}.key`,
+        });
       } else if (keys.has(key.toLowerCase())) {
-        issues.push({ severity: 'error', code: 'SPATIAL_KEY_DUPLICATE', message: `Chave de cobertura duplicada: ${key}.`, path: `${path}.key` });
+        issues.push({
+          severity: 'error',
+          code: 'SPATIAL_KEY_DUPLICATE',
+          message: `Chave de cobertura duplicada: ${key}.`,
+          path: `${path}.key`,
+        });
       } else keys.add(key.toLowerCase());
       if (!name) {
-        issues.push({ severity: 'error', code: 'SPATIAL_NAME_REQUIRED', message: 'O nome da cobertura é obrigatório.', path: `${path}.name` });
+        issues.push({
+          severity: 'error',
+          code: 'SPATIAL_NAME_REQUIRED',
+          message: 'O nome da cobertura é obrigatório.',
+          path: `${path}.name`,
+        });
       } else if (names.has(name.toLowerCase())) {
-        issues.push({ severity: 'error', code: 'SPATIAL_NAME_DUPLICATE', message: `Nome de cobertura duplicado: ${name}.`, path: `${path}.name` });
+        issues.push({
+          severity: 'error',
+          code: 'SPATIAL_NAME_DUPLICATE',
+          message: `Nome de cobertura duplicado: ${name}.`,
+          path: `${path}.name`,
+        });
       } else names.add(name.toLowerCase());
       if (!coverage?.coverageType?.trim()) {
-        issues.push({ severity: 'error', code: 'SPATIAL_TYPE_REQUIRED', message: 'O tipo da cobertura é obrigatório.', path: `${path}.coverageType` });
+        issues.push({
+          severity: 'error',
+          code: 'SPATIAL_TYPE_REQUIRED',
+          message: 'O tipo da cobertura é obrigatório.',
+          path: `${path}.coverageType`,
+        });
       }
       const geometryError = validatePolygon(coverage?.geometry);
       if (geometryError) {
-        issues.push({ severity: 'error', code: 'SPATIAL_POLYGON_INVALID', message: geometryError, path: `${path}.geometry` });
+        issues.push({
+          severity: 'error',
+          code: 'SPATIAL_POLYGON_INVALID',
+          message: geometryError,
+          path: `${path}.geometry`,
+        });
       }
     }
     return { valid: issues.length === 0, issues, validatedAt: new Date().toISOString() };
   }
 
-  public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
+  public async materialize(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<void> {
     const validation = await this.validate(snapshot);
     if (!validation.valid) {
       throw new AppError(validation.issues.map((issue) => issue.message).join('; '), {
@@ -179,17 +228,23 @@ export class SpatialStudioAdapter implements StudioDomainAdapter {
     );
     const managedById = new Map(managed.map((location) => [location.id, location]));
     const managedByKey = new Map(
-      managed.map((location) => [location.referencePoint!.slice(SPATIAL_REFERENCE_PREFIX.length), location]),
+      managed.map((location) => [
+        location.referencePoint!.slice(SPATIAL_REFERENCE_PREFIX.length),
+        location,
+      ]),
     );
     const snapshotIds = new Set<string>();
 
     for (const coverage of typed.coverages) {
       const current = coverage.id ? managedById.get(coverage.id) : managedByKey.get(coverage.key);
       if (coverage.id && !current) {
-        throw new AppError(`A cobertura ${coverage.id} não pertence ao domínio Espacial do Studio.`, {
-          code: 'STUDIO_MATERIALIZE_INVALID',
-          statusCode: 422,
-        });
+        throw new AppError(
+          `A cobertura ${coverage.id} não pertence ao domínio Espacial do Studio.`,
+          {
+            code: 'STUDIO_MATERIALIZE_INVALID',
+            statusCode: 422,
+          },
+        );
       }
       if (current) {
         snapshotIds.add(current.id);
@@ -223,7 +278,8 @@ export class SpatialStudioAdapter implements StudioDomainAdapter {
     }
 
     for (const coverage of managed) {
-      if (!snapshotIds.has(coverage.id)) await this.geoService.terminateLocation(coverage.id, reqContext);
+      if (!snapshotIds.has(coverage.id))
+        await this.geoService.terminateLocation(coverage.id, reqContext);
     }
   }
 }

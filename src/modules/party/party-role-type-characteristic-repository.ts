@@ -9,13 +9,7 @@ import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 
 export type PartyRoleTypeCharacteristicValueType =
-  | 'string'
-  | 'integer'
-  | 'decimal'
-  | 'boolean'
-  | 'date'
-  | 'list'
-  | 'json';
+  'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'json';
 
 export type PartyRoleTypeCharacteristic = {
   id: string;
@@ -204,7 +198,9 @@ export class PartyRoleTypeCharacteristicRepository {
     const nextAllowedValues =
       patch.allowedValues !== undefined ? patch.allowedValues : current.allowedValues;
     const nextReferenceDataSetKey =
-      patch.referenceDataSetKey !== undefined ? patch.referenceDataSetKey : current.referenceDataSetKey;
+      patch.referenceDataSetKey !== undefined
+        ? patch.referenceDataSetKey
+        : current.referenceDataSetKey;
     const nextMandatory = patch.mandatory !== undefined ? patch.mandatory : current.mandatory;
     const nextDefaultValue =
       patch.defaultValue !== undefined ? patch.defaultValue : current.defaultValue;

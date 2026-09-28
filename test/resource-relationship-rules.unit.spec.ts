@@ -49,16 +49,36 @@ test('ResourceService.ensureBootstrapResourceRelationshipTypes: seeds canonical 
   const first = await service.ensureBootstrapResourceRelationshipTypes(context);
   assert.equal(first.created, 11);
   assert.equal(first.relationshipTypes.length, 11);
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'containsAsChild' && t.inverseCode === 'containedBy'));
+  assert.ok(
+    first.relationshipTypes.some(
+      (t) => t.code === 'containsAsChild' && t.inverseCode === 'containedBy',
+    ),
+  );
   assert.ok(first.relationshipTypes.some((t) => t.code === 'connectedTo' && t.symmetric === true));
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'mountedOn' && t.inverseCode === 'supports'));
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'supports' && t.inverseCode === 'mountedOn'));
+  assert.ok(
+    first.relationshipTypes.some((t) => t.code === 'mountedOn' && t.inverseCode === 'supports'),
+  );
+  assert.ok(
+    first.relationshipTypes.some((t) => t.code === 'supports' && t.inverseCode === 'mountedOn'),
+  );
   assert.ok(first.relationshipTypes.some((t) => t.code === 'fedBy' && t.inverseCode === 'feeds'));
   assert.ok(first.relationshipTypes.some((t) => t.code === 'feeds' && t.inverseCode === 'fedBy'));
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'serves' && t.inverseCode === 'servedBy'));
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'servedBy' && t.inverseCode === 'serves'));
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'terminatesOn' && t.inverseCode === 'terminates'));
-  assert.ok(first.relationshipTypes.some((t) => t.code === 'terminates' && t.inverseCode === 'terminatesOn'));
+  assert.ok(
+    first.relationshipTypes.some((t) => t.code === 'serves' && t.inverseCode === 'servedBy'),
+  );
+  assert.ok(
+    first.relationshipTypes.some((t) => t.code === 'servedBy' && t.inverseCode === 'serves'),
+  );
+  assert.ok(
+    first.relationshipTypes.some(
+      (t) => t.code === 'terminatesOn' && t.inverseCode === 'terminates',
+    ),
+  );
+  assert.ok(
+    first.relationshipTypes.some(
+      (t) => t.code === 'terminates' && t.inverseCode === 'terminatesOn',
+    ),
+  );
 
   // Reexecutar não duplica — insert-if-missing protegido (C9).
   const second = await service.ensureBootstrapResourceRelationshipTypes(context);
@@ -121,7 +141,11 @@ test('ResourceService.createResourceTypeRelationshipRule: RESOURCE_TYPE target v
   await assert.rejects(
     service.createResourceTypeRelationshipRule(
       ctoType.id,
-      { relationshipTypeCode: 'connectedTo', targetKind: 'RESOURCE_TYPE', targetId: 'does-not-exist' },
+      {
+        relationshipTypeCode: 'connectedTo',
+        targetKind: 'RESOURCE_TYPE',
+        targetId: 'does-not-exist',
+      },
       context,
     ),
   );
@@ -188,7 +212,11 @@ test('ResourceService.createResourceTypeRelationshipRule: without an injected Ge
   await assert.rejects(
     service.createResourceTypeRelationshipRule(
       ctoType.id,
-      { relationshipTypeCode: 'containedBy', targetKind: 'GEOGRAPHIC_SITE_SPECIFICATION', targetId: 'any-id' },
+      {
+        relationshipTypeCode: 'containedBy',
+        targetKind: 'GEOGRAPHIC_SITE_SPECIFICATION',
+        targetId: 'any-id',
+      },
       context,
     ),
     /geographic site specification not found/i,
@@ -218,7 +246,10 @@ test('ResourceService.updateResourceTypeRelationshipRule: retiring is soft (C6) 
   );
 
   const activeOnly = await service.listResourceTypeRelationshipRules(ctoType.id, context);
-  assert.equal(activeOnly.some((r) => r.id === rule.id), false);
+  assert.equal(
+    activeOnly.some((r) => r.id === rule.id),
+    false,
+  );
 
   const withRetired = await service.listResourceTypeRelationshipRules(ctoType.id, context, true);
   const retired = withRetired.find((r) => r.id === rule.id);

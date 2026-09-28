@@ -98,9 +98,7 @@ describe('StudioGovernanceOverview', () => {
 
   it('mostra o erro do domínio sem interromper a listagem dos demais', async () => {
     vi.mocked(studioApi.getStudioStatus).mockImplementation(async (domain) =>
-      domain === 'spatial'
-        ? Promise.reject(new Error('falha de rede'))
-        : makeStatus(domain),
+      domain === 'spatial' ? Promise.reject(new Error('falha de rede')) : makeStatus(domain),
     );
     vi.mocked(studioApi.listStudioAudit).mockResolvedValue([]);
 

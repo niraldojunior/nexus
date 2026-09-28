@@ -106,7 +106,9 @@ export function ImageCharacteristicInput({
     const isLeftAligned = align === 'left';
     if (!value) {
       return (
-        <div className={`flex items-center w-full ${isLeftAligned ? 'justify-start' : 'justify-center'}`}>
+        <div
+          className={`flex items-center w-full ${isLeftAligned ? 'justify-start' : 'justify-center'}`}
+        >
           <span className="text-[0.84rem] text-app-muted">—</span>
         </div>
       );
@@ -216,9 +218,7 @@ export function ImageCharacteristicInput({
         )}
       </div>
 
-      {fileError && (
-        <p className="text-[0.78rem] text-status-red">{fileError}</p>
-      )}
+      {fileError && <p className="text-[0.78rem] text-status-red">{fileError}</p>}
 
       {!isDataUri && (
         <input

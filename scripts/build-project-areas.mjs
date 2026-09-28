@@ -235,14 +235,7 @@ async function processProject(client, project) {
 
     const insertedLocations = await client.bulkInsert(
       'tmf_geographic_location',
-      [
-        'id',
-        'geometry_type',
-        'geometry',
-        'spatial_ref',
-        'reference_point',
-        'characteristics',
-      ],
+      ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
       locations.map((entry) => ({
         id: entry.id,
         geometry_type: 'Polygon',

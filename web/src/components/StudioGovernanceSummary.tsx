@@ -300,9 +300,7 @@ export function StudioGovernanceSummary({
                     />
                     <span>
                       {issue.message}
-                      {issue.path ? (
-                        <span className="text-app-muted"> ({issue.path})</span>
-                      ) : null}
+                      {issue.path ? <span className="text-app-muted"> ({issue.path})</span> : null}
                     </span>
                   </li>
                 ))}

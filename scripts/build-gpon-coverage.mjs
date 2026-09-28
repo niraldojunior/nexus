@@ -408,7 +408,10 @@ async function main() {
       // agregação evita na geometria.
       const statsCells = isNeighborhood
         ? fineCells
-        : fineCells.map((cell) => ({ ...cell, neighborhoodKey: levelConfig.keyOf(cell.neighborhoodKey) }));
+        : fineCells.map((cell) => ({
+            ...cell,
+            neighborhoodKey: levelConfig.keyOf(cell.neighborhoodKey),
+          }));
       const neighborhoods = neighborhoodStats(cdosForLevel, statsCells, CELL_METERS);
 
       // Geometria (o traçado do polígono) usa a grade agregada na resolução do nível — mais
@@ -438,7 +441,11 @@ async function main() {
       for (const stat of neighborhoods.slice(0, 5)) {
         const pct = (stat.availabilityRatio * 100).toFixed(1);
         const label =
-          levelConfig.level === 'uf' ? stat.uf : levelConfig.level === 'city' ? stat.city : stat.neighborhood;
+          levelConfig.level === 'uf'
+            ? stat.uf
+            : levelConfig.level === 'city'
+              ? stat.city
+              : stat.neighborhood;
         console.log(
           `     ${label}: ${stat.cdoTotal} CDOs · ${stat.cdoAvailable} disp. (${pct}%) · ${stat.coveredAreaKm2.toFixed(2)} km²`,
         );
@@ -550,14 +557,7 @@ async function main() {
 
         insertedLocationsTotal += await client.bulkInsert(
           'tmf_geographic_location',
-          [
-            'id',
-                'geometry_type',
-            'geometry',
-            'spatial_ref',
-            'reference_point',
-            'characteristics',
-          ],
+          ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
           locations,
         );
         insertedIndexTotal += await client.bulkInsert(

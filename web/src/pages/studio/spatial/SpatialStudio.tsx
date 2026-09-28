@@ -226,7 +226,9 @@ export function SpatialStudio({
           </div>
           <div>
             <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>TMF675</p>
-            <p className="text-[0.9rem] font-semibold text-app-text">Coberturas operacionais manuais</p>
+            <p className="text-[0.9rem] font-semibold text-app-text">
+              Coberturas operacionais manuais
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -251,64 +253,151 @@ export function SpatialStudio({
           </Button>
         </div>
       </div>
-      {error ? <Notice icon={<AlertCircle className="h-4 w-4" />} className="border-red-200 bg-red-50 text-red-700" text={error} /> : null}
-      {success ? <Notice icon={<CheckCircle2 className="h-4 w-4" />} className="border-emerald-200 bg-emerald-50 text-emerald-800" text={success} /> : null}
+      {error ? (
+        <Notice
+          icon={<AlertCircle className="h-4 w-4" />}
+          className="border-red-200 bg-red-50 text-red-700"
+          text={error}
+        />
+      ) : null}
+      {success ? (
+        <Notice
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          className="border-emerald-200 bg-emerald-50 text-emerald-800"
+          text={success}
+        />
+      ) : null}
       <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="vt-card min-h-[520px] p-4">
           <label className="flex items-center gap-2 rounded-[10px] border border-app-border px-3 py-2 text-app-muted">
             <Search className="h-4 w-4" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full bg-transparent text-[0.86rem] outline-none" placeholder="Buscar cobertura" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="w-full bg-transparent text-[0.86rem] outline-none"
+              placeholder="Buscar cobertura"
+            />
           </label>
           <div className="mt-3 space-y-1">
             {filtered.map((location) => (
-              <button type="button" key={location.id} onClick={() => setSelectedId(location.id)} className={`w-full rounded-[10px] p-3 text-left ${location.id === selectedId ? 'bg-app-accent-soft' : 'vt-hover-muted'}`}>
-                <p className="text-[0.88rem] font-semibold text-app-text">{valueOf(location, 'name')}</p>
-                <p className="mt-1 text-[0.76rem] text-app-muted">{valueOf(location, 'coverageType')} · {location.validFor?.endDateTime ? 'Encerrada' : 'Ativa'}</p>
+              <button
+                type="button"
+                key={location.id}
+                onClick={() => setSelectedId(location.id)}
+                className={`w-full rounded-[10px] p-3 text-left ${location.id === selectedId ? 'bg-app-accent-soft' : 'vt-hover-muted'}`}
+              >
+                <p className="text-[0.88rem] font-semibold text-app-text">
+                  {valueOf(location, 'name')}
+                </p>
+                <p className="mt-1 text-[0.76rem] text-app-muted">
+                  {valueOf(location, 'coverageType')} ·{' '}
+                  {location.validFor?.endDateTime ? 'Encerrada' : 'Ativa'}
+                </p>
               </button>
             ))}
           </div>
         </aside>
         <section className="vt-card min-h-[520px] p-5">
-          {selected ? <CoverageDetail location={selected} canEdit={canMutate} onEdit={() => setEditing(selected)} onTerminate={() => setTerminating(selected)} /> : <div className="flex h-full flex-col items-center justify-center text-center text-app-muted"><Map className="h-10 w-10 opacity-30" /><p className="mt-3 text-[0.9rem]">Nenhuma cobertura manual selecionada.</p></div>}
+          {selected ? (
+            <CoverageDetail
+              location={selected}
+              canEdit={canMutate}
+              onEdit={() => setEditing(selected)}
+              onTerminate={() => setTerminating(selected)}
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center text-center text-app-muted">
+              <Map className="h-10 w-10 opacity-30" />
+              <p className="mt-3 text-[0.9rem]">Nenhuma cobertura manual selecionada.</p>
+            </div>
+          )}
         </section>
       </div>
-      {editing !== undefined ? <SpatialCoverageFormModal location={editing ?? undefined} onClose={() => setEditing(undefined)} onSave={saveCoverage} /> : null}
-      {terminating ? <SpatialCoverageImpactModal location={terminating} onClose={() => setTerminating(null)} onConfirm={terminate} /> : null}
+      {editing !== undefined ? (
+        <SpatialCoverageFormModal
+          location={editing ?? undefined}
+          onClose={() => setEditing(undefined)}
+          onSave={saveCoverage}
+        />
+      ) : null}
+      {terminating ? (
+        <SpatialCoverageImpactModal
+          location={terminating}
+          onClose={() => setTerminating(null)}
+          onConfirm={terminate}
+        />
+      ) : null}
     </div>
   );
 }
 
 function Notice({ icon, className, text }: { icon: ReactNode; className: string; text: string }) {
-  return <div className={`flex items-center gap-2 rounded-[10px] border p-3 text-[0.84rem] ${className}`}>{icon}<span>{text}</span></div>;
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-[10px] border p-3 text-[0.84rem] ${className}`}
+    >
+      {icon}
+      <span>{text}</span>
+    </div>
+  );
 }
 
-function CoverageDetail({ location, canEdit, onEdit, onTerminate }: { location: GeoLocation; canEdit: boolean; onEdit: () => void; onTerminate: () => void }) {
+function CoverageDetail({
+  location,
+  canEdit,
+  onEdit,
+  onTerminate,
+}: {
+  location: GeoLocation;
+  canEdit: boolean;
+  onEdit: () => void;
+  onTerminate: () => void;
+}) {
   const vertexCount = polygonVertices(location.geometry).length;
   return (
     <div>
       <div className="flex items-start justify-between gap-4 border-b border-app-border pb-4">
         <div>
-          <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Cobertura espacial</p>
+          <p style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+            Cobertura espacial
+          </p>
           <h3 className="mt-1">{valueOf(location, 'name')}</h3>
-          <p className="mt-1 text-[0.86rem] text-app-muted">{valueOf(location, 'coverageType')} · EPSG:4326 · {vertexCount} vértices</p>
+          <p className="mt-1 text-[0.86rem] text-app-muted">
+            {valueOf(location, 'coverageType')} · EPSG:4326 · {vertexCount} vértices
+          </p>
         </div>
         {canEdit && !location.validFor?.endDateTime ? (
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={onEdit}>
               Editar
             </Button>
-            <Button variant="danger" size="sm" iconLeft={<Trash2 className="h-4 w-4" />} onClick={onTerminate}>
+            <Button
+              variant="danger"
+              size="sm"
+              iconLeft={<Trash2 className="h-4 w-4" />}
+              onClick={onTerminate}
+            >
               Encerrar
             </Button>
           </div>
         ) : null}
       </div>
-      <pre className="mt-5 max-h-[360px] overflow-auto rounded-[10px] border border-app-border p-4 text-[0.75rem] leading-5 text-app-text">{JSON.stringify(location.geometry, null, 2)}</pre>
+      <pre className="mt-5 max-h-[360px] overflow-auto rounded-[10px] border border-app-border p-4 text-[0.75rem] leading-5 text-app-text">
+        {JSON.stringify(location.geometry, null, 2)}
+      </pre>
     </div>
   );
 }
 
-function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: GeoLocation; onClose: () => void; onSave: (draft: CoverageDraft, location?: GeoLocation) => Promise<void> }) {
+function SpatialCoverageFormModal({
+  location,
+  onClose,
+  onSave,
+}: {
+  location?: GeoLocation;
+  onClose: () => void;
+  onSave: (draft: CoverageDraft, location?: GeoLocation) => Promise<void>;
+}) {
   const initial = draftOf(location);
   const [draft, setDraft] = useState(initial);
   const [vertices, setVertices] = useState(() => polygonVertices(initial.geometry));
@@ -325,14 +414,26 @@ function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: Ge
   useEffect(() => {
     if (!GOOGLE_MAPS_KEY || !mapElement.current) return;
     let cancelled = false;
-    void loadGoogleMaps(GOOGLE_MAPS_KEY).then(() => {
-      const maps = window.google?.maps;
-      if (cancelled || !maps || !mapElement.current || map.current) return;
-      const [lng, lat] = vertices[0] ?? [DEFAULT_CENTER.lng, DEFAULT_CENTER.lat];
-      map.current = new maps.Map(mapElement.current, { center: { lat, lng }, zoom: 14, mapTypeControl: false, streetViewControl: false, fullscreenControl: false });
-      listeners.current.push(map.current.addListener('click', (event) => setVertices((current) => [...current, [event.latLng.lng(), event.latLng.lat()]])));
-      setMapsReady(true);
-    }).catch(() => setError('Não foi possível carregar o editor de mapa.'));
+    void loadGoogleMaps(GOOGLE_MAPS_KEY)
+      .then(() => {
+        const maps = window.google?.maps;
+        if (cancelled || !maps || !mapElement.current || map.current) return;
+        const [lng, lat] = vertices[0] ?? [DEFAULT_CENTER.lng, DEFAULT_CENTER.lat];
+        map.current = new maps.Map(mapElement.current, {
+          center: { lat, lng },
+          zoom: 14,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+        listeners.current.push(
+          map.current.addListener('click', (event) =>
+            setVertices((current) => [...current, [event.latLng.lng(), event.latLng.lat()]]),
+          ),
+        );
+        setMapsReady(true);
+      })
+      .catch(() => setError('Não foi possível carregar o editor de mapa.'));
     return () => {
       cancelled = true;
       for (const listener of listeners.current) listener.remove();
@@ -356,14 +457,32 @@ function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: Ge
     markerListeners.current = [];
     for (const marker of markers.current) marker.setMap(null);
     markers.current = [];
-    if (vertices.length >= 2) polygon.current = new maps.Polygon({ map: map.current, paths: closePolygonRing(vertices).map(([lng, lat]) => ({ lng, lat })), strokeWeight: 2, fillOpacity: 0.18, clickable: false });
+    if (vertices.length >= 2)
+      polygon.current = new maps.Polygon({
+        map: map.current,
+        paths: closePolygonRing(vertices).map(([lng, lat]) => ({ lng, lat })),
+        strokeWeight: 2,
+        fillOpacity: 0.18,
+        clickable: false,
+      });
     markers.current = vertices.map(([lng, lat], index) => {
-      const marker = new maps.Marker({ map: map.current, position: { lng, lat }, draggable: true, title: `Vértice ${index + 1}` });
-      markerListeners.current.push(marker.addListener('dragend', () => {
-        const position = marker.getPosition();
-        if (!position) return;
-        setVertices((current) => current.map((vertex, vertexIndex) => vertexIndex === index ? [position.lng(), position.lat()] : vertex));
-      }));
+      const marker = new maps.Marker({
+        map: map.current,
+        position: { lng, lat },
+        draggable: true,
+        title: `Vértice ${index + 1}`,
+      });
+      markerListeners.current.push(
+        marker.addListener('dragend', () => {
+          const position = marker.getPosition();
+          if (!position) return;
+          setVertices((current) =>
+            current.map((vertex, vertexIndex) =>
+              vertexIndex === index ? [position.lng(), position.lat()] : vertex,
+            ),
+          );
+        }),
+      );
       return marker;
     });
   }, [mapsReady, vertices]);
@@ -393,7 +512,8 @@ function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: Ge
         <div>
           <h3>{location ? 'Editar cobertura' : 'Nova cobertura'}</h3>
           <p className="mt-1 text-[0.84rem] text-app-muted font-normal">
-            Clique no mapa para desenhar; arraste os vértices para ajustar. A camada GPON derivada não é alterada.
+            Clique no mapa para desenhar; arraste os vértices para ajustar. A camada GPON derivada
+            não é alterada.
           </p>
         </div>
       }
@@ -457,7 +577,8 @@ function SpatialCoverageFormModal({ location, onClose, onSave }: { location?: Ge
             <div ref={mapElement} className="h-[360px] bg-[var(--surface-muted)]" />
             {!GOOGLE_MAPS_KEY ? (
               <p className="p-3 text-[0.82rem] text-app-muted">
-                Google Maps não está configurado neste ambiente. Configure a chave para desenhar a cobertura.
+                Google Maps não está configurado neste ambiente. Configure a chave para desenhar a
+                cobertura.
               </p>
             ) : null}
           </div>
@@ -536,7 +657,9 @@ function SpatialCoverageImpactModal({
       title={
         <div>
           <h3>Encerrar cobertura</h3>
-          <p className="mt-1 text-[0.84rem] text-app-muted font-normal">{valueOf(location, 'name')}</p>
+          <p className="mt-1 text-[0.84rem] text-app-muted font-normal">
+            {valueOf(location, 'name')}
+          </p>
         </div>
       }
       footer={
@@ -571,13 +694,17 @@ function SpatialCoverageImpactModal({
               <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
                 Endereços ativos
               </span>
-              <p className="mt-1 text-lg font-semibold text-app-text">{references.activeAddressCount}</p>
+              <p className="mt-1 text-lg font-semibold text-app-text">
+                {references.activeAddressCount}
+              </p>
             </div>
             <div className="rounded-[10px] border border-app-border p-3">
               <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
                 Locais ativos
               </span>
-              <p className="mt-1 text-lg font-semibold text-app-text">{references.activeSiteCount}</p>
+              <p className="mt-1 text-lg font-semibold text-app-text">
+                {references.activeSiteCount}
+              </p>
             </div>
           </div>
         ) : (

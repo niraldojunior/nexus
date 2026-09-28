@@ -128,8 +128,7 @@ test.skipIf(!oracleConfigured)(
       );
       assert.equal(fetchedDeletedSpec.statusCode, 200);
       assert.ok(
-        (fetchedDeletedSpec.body as { validFor?: { endDateTime?: string } }).validFor
-          ?.endDateTime,
+        (fetchedDeletedSpec.body as { validFor?: { endDateTime?: string } }).validFor?.endDateTime,
       );
 
       const functionSpec = await requestJson(

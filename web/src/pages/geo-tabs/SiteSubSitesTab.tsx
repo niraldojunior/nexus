@@ -126,7 +126,10 @@ export function SiteSubSitesTab({
         <CreateSubSiteModal
           parentId={createTarget.parentId}
           parentLabel={createTarget.parentLabel}
-          allowedSpecs={allowedChildSpecsOf(specById.get(createTarget.parentSpecificationId), specs)}
+          allowedSpecs={allowedChildSpecsOf(
+            specById.get(createTarget.parentSpecificationId),
+            specs,
+          )}
           onClose={() => setCreateTarget(null)}
           onCreated={() => {
             setCreateTarget(null);
@@ -213,7 +216,11 @@ function SubSiteBranch({
           aria-label={expanded ? `Recolher ${node.label}` : `Expandir ${node.label}`}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] text-app-muted hover:bg-black/5"
         >
-          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
         </button>
         <button
           type="button"

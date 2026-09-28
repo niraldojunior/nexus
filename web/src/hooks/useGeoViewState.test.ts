@@ -82,7 +82,11 @@ describe('useGeoViewState', () => {
   // null → real. Se a restauração via URL (`ll`/`z`) só funcionasse no `useState` inicial (que
   // roda com environmentId ainda null) e não no ramo de correção em fase de render, isto pegaria.
   it('URL com ll/z é restaurada quando o environmentId chega depois (null → real, como em GeoPage)', () => {
-    window.history.replaceState({}, '', `/geo?ll=${CAMERA_1.lat},${CAMERA_1.lng}&z=${CAMERA_1.zoom}`);
+    window.history.replaceState(
+      {},
+      '',
+      `/geo?ll=${CAMERA_1.lat},${CAMERA_1.lng}&z=${CAMERA_1.zoom}`,
+    );
     const { result, rerender } = renderViewState({ environmentId: null as string | null });
     expect(result.current.initialView).toBeNull();
 

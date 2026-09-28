@@ -12,7 +12,13 @@ export function siteStreetViewMarker(
   point: [number, number],
 ): StreetViewMarker {
   const icon = resolveOperationalIcon(
-    { kind: 'site', siteCategory: spec?.category, name: site.name, sublabel: spec?.name, status: site.status },
+    {
+      kind: 'site',
+      siteCategory: spec?.category,
+      name: site.name,
+      sublabel: spec?.name,
+      status: site.status,
+    },
     spec?.visualIdentity,
     { size: STREET_VIEW_MARKER_SIZE },
   );

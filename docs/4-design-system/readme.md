@@ -1,6 +1,6 @@
 # V.tal Nexus — Design System
 
-**V.tal Nexus** is V.tal's next-generation **Network Inventory** product — *Inteligência de rede de nova geração*. It consolidates and evolves V.tal's existing in-house solutions — **Geosite**, **Logradouros**, **Geonet** and **Viabilidade Fuzzy** — into a single best-in-class telco inventory, under a modular, **API-first**, **TM Forum**-standard architecture, dimensioned for V.tal's national scale and complexity.
+**V.tal Nexus** is V.tal's next-generation **Network Inventory** product — _Inteligência de rede de nova geração_. It consolidates and evolves V.tal's existing in-house solutions — **Geosite**, **Logradouros**, **Geonet** and **Viabilidade Fuzzy** — into a single best-in-class telco inventory, under a modular, **API-first**, **TM Forum**-standard architecture, dimensioned for V.tal's national scale and complexity.
 
 This repository is a **design system**: brand foundations (color, type, spacing, effects), reusable React component primitives, foundation specimen cards, and a full interactive UI kit recreating the product. Consuming projects link `styles.css` and import components from the compiled bundle.
 
@@ -19,17 +19,17 @@ V.tal Nexus sits inside this holding as the network-inventory backbone.
 ### Source material
 
 - **GitHub — `niraldojunior/oraculo`** (https://github.com/niraldojunior/oraculo) — the authoritative source for the visual system. Oráculo is a tech-portfolio/governance web app (React 19 + Vite + Lucide), and its `frontend/src/index.css` explicitly defines the **V.tal Yellow (`#FFD919`)** brand accent, the light-corporate surface system, the dark sidebar, the Inter + Montserrat type pairing, the soft-shadow + golden-glow elevation, and the badge/button/table patterns lifted into this system. Explore that repo to go deeper on real product patterns (dashboards, data tables, modals, org charts).
-  - The network-inventory *screens* in this system's UI kit are original to the V.tal Nexus product brief; only the foundations and component vocabulary come from Oráculo.
+  - The network-inventory _screens_ in this system's UI kit are original to the V.tal Nexus product brief; only the foundations and component vocabulary come from Oráculo.
 
 ---
 
 ## Content fundamentals
 
-**Language.** Portuguese (Brazil), product/enterprise register. Technical telco vocabulary is used precisely: *inventário, viabilidade, elemento de rede, OLT, CTO, splitter, caixa terminal, recurso, topologia, caminho óptico, homes passed*.
+**Language.** Portuguese (Brazil), product/enterprise register. Technical telco vocabulary is used precisely: _inventário, viabilidade, elemento de rede, OLT, CTO, splitter, caixa terminal, recurso, topologia, caminho óptico, homes passed_.
 
 **Voice.** Confident, precise, infrastructural — not playful. The product positions itself as serious network intelligence ("Inteligência de rede de nova geração"). Sentences are short and declarative.
 
-**Person.** Impersonal/system voice in the UI ("Endereço viável", "Avaliando rede no raio de atendimento…"). Addresses the operator by action, not "you/I". Buttons are imperative verbs: *Verificar viabilidade, Gerar ordem de serviço, Novo elemento, Exportar*.
+**Person.** Impersonal/system voice in the UI ("Endereço viável", "Avaliando rede no raio de atendimento…"). Addresses the operator by action, not "you/I". Buttons are imperative verbs: _Verificar viabilidade, Gerar ordem de serviço, Novo elemento, Exportar_.
 
 **Casing.** Sentence case for titles and body. **UPPERCASE** only for eyebrow labels, table headers, and badges (with `+0.05em` tracking). Element IDs are uppercase mono (`CTO-4821`, `OLT-SP-CAS-014`).
 
@@ -45,18 +45,19 @@ V.tal Nexus sits inside this holding as the network-inventory backbone.
 
 **Overall vibe.** A quiet LLM-console surface, in the register of shadcn/ui: flat white canvas, near-white chrome, hairline borders, one restrained type family. Nothing lifts, glows, or drop-shadows without a reason. The chrome recedes so that the two things that carry meaning — the map and the brand yellow — are the only saturated elements on screen. Yellow marks state, never decorates: primary actions, the active nav pill, focus, selection, one hero KPI.
 
-**No fixed top bar.** The content area runs from the sidebar to the right edge and from the yellow hairline to the bottom. Page titles live *inside* the scrolling content (`PageHead`: title + subtitle, no search bar or notification bell — those belong to a real top bar this system doesn't have), so they can be as tall as the page needs and scroll away as the user reads. Content padding is 20px (`--content-pad`) on the sides/bottom; the top padding is 8px so the page `<h1>` sits in a 48px box that lines up with the "Nexus" wordmark's box in the sidebar header — titles and the brand mark share one baseline.
+**No fixed top bar.** The content area runs from the sidebar to the right edge and from the yellow hairline to the bottom. Page titles live _inside_ the scrolling content (`PageHead`: title + subtitle, no search bar or notification bell — those belong to a real top bar this system doesn't have), so they can be as tall as the page needs and scroll away as the user reads. Content padding is 20px (`--content-pad`) on the sides/bottom; the top padding is 8px so the page `<h1>` sits in a 48px box that lines up with the "Nexus" wordmark's box in the sidebar header — titles and the brand mark share one baseline.
 
 **Chrome is light.** The dark sidebar is gone. Primary navigation is either a **72px icon rail** (`--rail-width`, Locais module — the map owns the canvas) or a **248px labeled sidebar** (`--sidebar-width`, Studio and conversational modules), both on `#FAFAFB` with a single hairline border. `Shell.jsx` composes it the way shadcn/ui composes its Sidebar — header (brand) / content (menu-button groups, a bare list for the primary + domain + system items, a labeled "Conversas recentes" group) / footer (account) / an edge rail the user can click to toggle icon-collapse — with only V.tal's colors swapped in: the active item is a yellow-washed pill (`--sidebar-item-active`), not a white-alpha tint. Collapsed (rail) items show their label as a small dark tooltip on hover, same as shadcn's `collapsible="icon"`. One dark surface remains, `--surface-ink` (`#2E2D39`): the login brand panel, dark buttons, the inverted hero KPI.
 
 **Color.** The neutral ramp is derived from the V.tal brand grays (`#2E2D39` / `#514F66` / `#BCC1D6`) at very low chroma, so the greys read as V.tal rather than as generic Tailwind slate.
-- *Brand accent* — V.tal Yellow `#FFD919` (hover `#FFE047`), paired with brand ink `#181919` for text on yellow. Opaque wash `--vt-yellow-tint` `#FEF7DC` for active nav and selected rows.
-- *Surfaces* — canvas `#FFFFFF`, chrome/sidebar `#FAFAFB`, muted `#F5F5F8`, ink `#2E2D39`.
-- *Borders* — hairline `#E8E8EE`, strong `#DADAE3`. **The border is what makes a card a card.**
-- *Text* — primary `#2E2D39`, secondary `#514F66`, tertiary `#8A8899`, disabled `#BCC1D6`. Pure black is reserved for the logotype.
-- *Status* — green `#10B981`, blue `#3B82F6`, amber `#F59E0B`, red `#EF4444`, purple `#8B5CF6`, each with a soft tinted fill for badges.
-- *Map layers* (`--map-*`, Locais module) — disponível `#12805C`, suspenso `#E8615C`, parcial `#F0A32E`, estação `#7C5CE0`, selecionado `#FFD919`, cobertura `#C08A2A` @ 35%. Markers are the one place saturated color is allowed to shout, because they sit on the Google basemap. Legend ramp `--map-ramp` runs suspenso → disponível.
-- *Network taxonomy* — element classes are color-coded (OLT blue, splitter purple, CTO green, pole amber, cable slate, site yellow).
+
+- _Brand accent_ — V.tal Yellow `#FFD919` (hover `#FFE047`), paired with brand ink `#181919` for text on yellow. Opaque wash `--vt-yellow-tint` `#FEF7DC` for active nav and selected rows.
+- _Surfaces_ — canvas `#FFFFFF`, chrome/sidebar `#FAFAFB`, muted `#F5F5F8`, ink `#2E2D39`.
+- _Borders_ — hairline `#E8E8EE`, strong `#DADAE3`. **The border is what makes a card a card.**
+- _Text_ — primary `#2E2D39`, secondary `#514F66`, tertiary `#8A8899`, disabled `#BCC1D6`. Pure black is reserved for the logotype.
+- _Status_ — green `#10B981`, blue `#3B82F6`, amber `#F59E0B`, red `#EF4444`, purple `#8B5CF6`, each with a soft tinted fill for badges.
+- _Map layers_ (`--map-*`, Locais module) — disponível `#12805C`, suspenso `#E8615C`, parcial `#F0A32E`, estação `#7C5CE0`, selecionado `#FFD919`, cobertura `#C08A2A` @ 35%. Markers are the one place saturated color is allowed to shout, because they sit on the Google basemap. Legend ramp `--map-ramp` runs suspenso → disponível.
+- _Network taxonomy_ — element classes are color-coded (OLT blue, splitter purple, CTO green, pole amber, cable slate, site yellow).
 
 **Type.** Product UI is **single-family: Inter**, headings included — `h1`/`h2`/`h3` are Inter **semibold (600)** at `-0.01em`, not Montserrat extrabold. **Montserrat** survives only on `--text-display`: the brand hero, the login headline, and big KPI numbers. **JetBrains Mono** for IDs, coordinates, codes, and API payloads. Scale is rem against a 16px root: body 14px (`--fs-body-lg`), 15px with `--lh-relaxed` for reading and chat columns (`--text-prose`, capped at `--prose-max`), 13px for dense tables, 12px labels, 11px eyebrows.
 
@@ -94,10 +95,11 @@ V.tal Nexus sits inside this holding as the network-inventory backbone.
 ## Logo & brand assets
 
 `assets/` holds:
+
 - **Nexus symbol** — `nexus-mark.svg` (ink + gold, light bg), `nexus-mark-white.svg` (dark bg), `nexus-mark-solid.svg` (one-color, for the yellow chip / favicon). The mark is a **cube-hub inside a connection diamond**: the cube is the inventory hub, the diamond is the network mesh, and the four vertices are network nodes — one in V·tal gold marks the active node.
 - **Official V·tal logo** — `vtal-logo.png` (black wordmark + yellow dot) and `vtal-logo-white.png` (recolored for dark surfaces).
 
-**Lockup:** assemble inline as `[Nexus mark] · [V·tal logo] · | · Nexus` — reads as the product name *V·tal Nexus* (parent endorsement + product). See `guidelines/brand-logo.card.html`, the UI-kit sidebar (`Shell.jsx`) and login (`Login.jsx`) for the canonical assembly. App icons sit on black (`#141516`), V·tal yellow, or white.
+**Lockup:** assemble inline as `[Nexus mark] · [V·tal logo] · | · Nexus` — reads as the product name _V·tal Nexus_ (parent endorsement + product). See `guidelines/brand-logo.card.html`, the UI-kit sidebar (`Shell.jsx`) and login (`Login.jsx`) for the canonical assembly. App icons sit on black (`#141516`), V·tal yellow, or white.
 
 The full logo exploration and rationale live in `Nexus Logo C.html` (chosen direction) — earlier rounds in `Nexus Logo.html`, `Nexus Logo v2.html`, `Nexus Logo v3.html`.
 
@@ -106,6 +108,7 @@ The full logo exploration and rationale live in `Nexus Logo C.html` (chosen dire
 ## Index / manifest
 
 **Foundations**
+
 - `styles.css` — root entry point (`@import` list only).
 - `tokens/fonts.css` · `colors.css` · `typography.css` · `spacing.css` · `effects.css` · `base.css` — all design tokens + base element styles.
 - `guidelines/*.card.html` — foundation specimen cards (Colors, Type, Spacing, Effects, Brand) shown on the Design System tab.

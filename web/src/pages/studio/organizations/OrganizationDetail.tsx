@@ -24,7 +24,11 @@ export type OrganizationDetailProps = {
     characteristics: Characteristic[],
     validFor?: TimePeriod,
   ) => Promise<void>;
-  onUpdateRole: (roleId: string, characteristics: Characteristic[], validFor?: TimePeriod) => Promise<void>;
+  onUpdateRole: (
+    roleId: string,
+    characteristics: Characteristic[],
+    validFor?: TimePeriod,
+  ) => Promise<void>;
   onRemoveRole: (roleId: string) => Promise<void>;
 };
 
@@ -179,11 +183,7 @@ export function OrganizationDetail({
           <OrganizationGeneralTab item={item} canMutate={canMutate} onChange={onChange} />
         )}
         {activeTab === 'identifications' && (
-          <OrganizationIdentificationsTab
-            item={item}
-            canMutate={canMutate}
-            onChange={onChange}
-          />
+          <OrganizationIdentificationsTab item={item} canMutate={canMutate} onChange={onChange} />
         )}
         {activeTab === 'contacts' && (
           <OrganizationContactsTab item={item} canMutate={canMutate} onChange={onChange} />

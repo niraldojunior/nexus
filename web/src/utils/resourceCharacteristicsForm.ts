@@ -235,7 +235,9 @@ export function parseAllowedValues(text?: string): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
-export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): ResourceCharacteristic[] {
+export function buildCharacteristicPayload(
+  rows: ResourceCharacteristicRow[],
+): ResourceCharacteristic[] {
   return rows
     .filter((row) => row.name.trim().length > 0)
     .map((row) => {
@@ -245,7 +247,8 @@ export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): R
         row.valueType === 'list' && row.referenceDataSetKey ? row.referenceDataSetKey : undefined;
       let allowedValues: string[] | undefined;
       if (row.valueType === 'organization') {
-        allowedValues = row.allowedValues && row.allowedValues.length > 0 ? row.allowedValues : undefined;
+        allowedValues =
+          row.allowedValues && row.allowedValues.length > 0 ? row.allowedValues : undefined;
       } else if (row.valueType === 'list' && !referenceDataSetKey) {
         allowedValues = parseAllowedValues(row.allowedValuesText) ?? row.allowedValues;
       }
@@ -260,7 +263,9 @@ export function buildCharacteristicPayload(rows: ResourceCharacteristicRow[]): R
         // Ausência já significa 'specification' (issue #273) — simétrico à normalização do backend
         // em assertCanonicalCharacteristics (service.ts). Emitir o campo nos dois casos criaria duas
         // representações do mesmo significado e um PATCH idempotente pareceria uma diferença real.
-        ...(row.characteristicLevel === 'instance' ? { characteristicLevel: 'instance' as const } : {}),
+        ...(row.characteristicLevel === 'instance'
+          ? { characteristicLevel: 'instance' as const }
+          : {}),
       };
     });
 }

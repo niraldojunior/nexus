@@ -14,7 +14,11 @@ function mapSourceTypeToValueType(sourceType: string): ServiceSpecCharacteristic
   if (normalized.startsWith('float') || normalized.startsWith('decimal')) return 'decimal';
   if (normalized.startsWith('bool')) return 'boolean';
   if (normalized.startsWith('date')) return 'date';
-  if (normalized.startsWith('list') || normalized.startsWith('map') || normalized.startsWith('multi-enum'))
+  if (
+    normalized.startsWith('list') ||
+    normalized.startsWith('map') ||
+    normalized.startsWith('multi-enum')
+  )
     return 'json';
   return 'string';
 }
@@ -64,6 +68,8 @@ export function parseServiceSpecCharacteristicBlock(
   return block
     .split('\n')
     .map((line) => parseLine(line))
-    .filter((characteristic): characteristic is ServiceSpecCharacteristic => characteristic !== null)
+    .filter(
+      (characteristic): characteristic is ServiceSpecCharacteristic => characteristic !== null,
+    )
     .map((characteristic) => ({ ...characteristic, group }));
 }

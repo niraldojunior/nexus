@@ -200,10 +200,7 @@ export const ConversasPage: React.FC<{
                   className="vt-card-interactive group flex items-center p-4 text-left"
                 >
                   <div className="flex-1 min-w-0">
-                    <h3
-                      className="truncate mb-1 text-app-text"
-                      style={{ font: 'var(--text-h3)' }}
-                    >
+                    <h3 className="truncate mb-1 text-app-text" style={{ font: 'var(--text-h3)' }}>
                       {session.title}
                     </h3>
                     <div

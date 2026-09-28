@@ -28,7 +28,11 @@ const HREF_TABLES = [
   ],
   ['tmf_geographic_site', '/tmf-api/geographicSiteManagement/v4/geographicSite', 'id'],
   ['tmf_geographic_relationship_type', '/v1/geo/relationship-types', 'code'],
-  ['tmf_resource_specification', '/tmf-api/resourceCatalogManagement/v4/resourceSpecification', 'id'],
+  [
+    'tmf_resource_specification',
+    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    'id',
+  ],
   ['tmf_resource_type', '/tmf-api/resourceCatalogManagement/v4/resourceType', 'id'],
   [
     'tmf_resource_function_specification',
@@ -73,7 +77,9 @@ const allowDivergentHrefs = hasFlag('--allow-divergent-hrefs');
 const reclaimSpace = hasFlag('--reclaim-space');
 
 if (apply && !confirmed) {
-  throw new Error('A remoção física exige --apply --confirm-drop-href. Sem flags, o script apenas audita.');
+  throw new Error(
+    'A remoção física exige --apply --confirm-drop-href. Sem flags, o script apenas audita.',
+  );
 }
 if (reclaimSpace && !apply) {
   throw new Error('--reclaim-space exige --apply --confirm-drop-href.');
@@ -162,7 +168,9 @@ try {
   );
 
   if (!apply) {
-    process.stdout.write('Nenhuma alteração aplicada. Use --apply --confirm-drop-href somente após revisar esta auditoria.\n');
+    process.stdout.write(
+      'Nenhuma alteração aplicada. Use --apply --confirm-drop-href somente após revisar esta auditoria.\n',
+    );
   } else {
     for (const [table] of HREF_TABLES) {
       if (!(await hrefColumnExists(table))) continue;

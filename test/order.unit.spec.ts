@@ -281,7 +281,9 @@ test.skipIf(!oracleConfigured)(
       assert.equal(siteQualification.serviceQualificationItem[0]?.eligibility, 'qualified');
 
       const addressQualification = await order.createServiceQualification({ placeId: address.id });
-      const locationQualification = await order.createServiceQualification({ placeId: location.id });
+      const locationQualification = await order.createServiceQualification({
+        placeId: location.id,
+      });
       assert.equal(addressQualification.place[0]?.id, address.id);
       assert.equal(locationQualification.place[0]?.id, location.id);
 
@@ -353,7 +355,10 @@ test.skipIf(!oracleConfigured)(
       });
       assert.equal(resourceOrder.state, 'completed');
       assert.equal(resourceOrder.resourceOrderItem.length, 3);
-      assert.equal(resourceOrder.resourceOrderItem[0]?.resourceResult?.['@type'], 'PhysicalResource');
+      assert.equal(
+        resourceOrder.resourceOrderItem[0]?.resourceResult?.['@type'],
+        'PhysicalResource',
+      );
       assert.equal(resourceOrder.resourceOrderItem[2]?.resourceResult?.status, 'terminated');
 
       const serviceOrderList = await order.listServiceOrders({ relatedPartyId: party.id });

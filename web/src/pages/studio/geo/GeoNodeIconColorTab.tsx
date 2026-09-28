@@ -286,12 +286,7 @@ function PolygonColor({
   );
 }
 
-export function GeoNodeColorTab({
-  node,
-  visualConfig,
-  canEdit,
-  onChange,
-}: GeoNodeColorTabProps) {
+export function GeoNodeColorTab({ node, visualConfig, canEdit, onChange }: GeoNodeColorTabProps) {
   const handleReset = () => onChange(appearanceDefaults(visualConfig, node));
 
   return (
@@ -304,30 +299,15 @@ export function GeoNodeColorTab({
       />
 
       {visualConfig.geometryKind === 'POINT' && (
-        <PointColor
-          node={node}
-          config={visualConfig}
-          canEdit={canEdit}
-          onChange={onChange}
-        />
+        <PointColor node={node} config={visualConfig} canEdit={canEdit} onChange={onChange} />
       )}
 
       {visualConfig.geometryKind === 'LINE' && (
-        <LineColor
-          node={node}
-          config={visualConfig}
-          canEdit={canEdit}
-          onChange={onChange}
-        />
+        <LineColor node={node} config={visualConfig} canEdit={canEdit} onChange={onChange} />
       )}
 
       {visualConfig.geometryKind === 'POLYGON' && (
-        <PolygonColor
-          node={node}
-          config={visualConfig}
-          canEdit={canEdit}
-          onChange={onChange}
-        />
+        <PolygonColor node={node} config={visualConfig} canEdit={canEdit} onChange={onChange} />
       )}
     </div>
   );

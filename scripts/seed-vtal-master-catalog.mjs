@@ -36,8 +36,16 @@ const REQUIRED_RESOURCE_TYPES = [
   // Infra Subterrânea
   { code: 'Duct', name: 'Duto', categoryCode: 'Infrastructure.Passive.Underground' },
   { code: 'Subduct', name: 'Subduto', categoryCode: 'Infrastructure.Passive.Underground' },
-  { code: 'Manhole', name: 'Caixa de Passagem', categoryCode: 'Infrastructure.Passive.Underground' },
-  { code: 'UndergroundChamber', name: 'Câmara Subterrânea', categoryCode: 'Infrastructure.Passive.Underground' },
+  {
+    code: 'Manhole',
+    name: 'Caixa de Passagem',
+    categoryCode: 'Infrastructure.Passive.Underground',
+  },
+  {
+    code: 'UndergroundChamber',
+    name: 'Câmara Subterrânea',
+    categoryCode: 'Infrastructure.Passive.Underground',
+  },
   { code: 'Trench', name: 'Canaleta', categoryCode: 'Infrastructure.Passive.Underground' },
 
   // Estruturas Internas
@@ -51,8 +59,16 @@ const REQUIRED_RESOURCE_TYPES = [
   { code: 'Fiber', name: 'Fibra Óptica', categoryCode: 'Infrastructure.Passive.Optical' },
   { code: 'PatchCord', name: 'Cordão Óptico', categoryCode: 'Infrastructure.Passive.Optical' },
   { code: 'DIO', name: 'DIO / ODF', categoryCode: 'Infrastructure.Passive.Optical' },
-  { code: 'SpliceClosure', name: 'CEO (Caixa de Emenda Óptica)', categoryCode: 'Infrastructure.Passive.Optical' },
-  { code: 'OpticalConnector', name: 'Conector Óptico', categoryCode: 'Infrastructure.Passive.Optical' },
+  {
+    code: 'SpliceClosure',
+    name: 'CEO (Caixa de Emenda Óptica)',
+    categoryCode: 'Infrastructure.Passive.Optical',
+  },
+  {
+    code: 'OpticalConnector',
+    name: 'Conector Óptico',
+    categoryCode: 'Infrastructure.Passive.Optical',
+  },
 
   // Rede de Acesso - GPON - Equipamentos
   { code: 'OLT', name: 'OLT', categoryCode: 'Telecom.Access.GPON.Equipment' },
@@ -625,7 +641,15 @@ async function run() {
       await db.query(
         `INSERT INTO tmf_resource_catalog (id, tenant_id, code, name, description, status, is_default, sort_order, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, 'active', 1, 0, $6, $7)`,
-        [catalogId, TENANT_ID, CATALOG_CODE, 'Catálogo Mestre V.tal Nexus', 'Árvore de navegação governada.', now, now],
+        [
+          catalogId,
+          TENANT_ID,
+          CATALOG_CODE,
+          'Catálogo Mestre V.tal Nexus',
+          'Árvore de navegação governada.',
+          now,
+          now,
+        ],
       );
       console.log(`(+) Catálogo criado com ID: ${catalogId}`);
     } else {
@@ -643,7 +667,9 @@ async function run() {
   );
   const typeMapByCode = new Map(existingTypesRes.rows.map((r) => [r.code, r.id]));
 
-  console.log(`\n--- Garantindo ResourceTypes necessários (${REQUIRED_RESOURCE_TYPES.length} no catálogo) ---`);
+  console.log(
+    `\n--- Garantindo ResourceTypes necessários (${REQUIRED_RESOURCE_TYPES.length} no catálogo) ---`,
+  );
   for (const rt of REQUIRED_RESOURCE_TYPES) {
     if (!typeMapByCode.has(rt.code)) {
       console.log(`(+) Criando ResourceType: ${rt.name} (${rt.code})`);
@@ -667,7 +693,11 @@ async function run() {
   const getTypeId = (code) => {
     if (typeMapByCode.has(code)) return typeMapByCode.get(code);
     if (code === 'OpticalCable') {
-      return typeMapByCode.get('DistributionCable') || typeMapByCode.get('BackboneCable') || typeMapByCode.get('DropCable');
+      return (
+        typeMapByCode.get('DistributionCable') ||
+        typeMapByCode.get('BackboneCable') ||
+        typeMapByCode.get('DropCable')
+      );
     }
     return null;
   };
@@ -687,7 +717,9 @@ async function run() {
 
   // 4. Identificar Sobras (nós existentes que não constam na nova árvore canônica)
   const sobraNodes = currentNodes.filter((n) => !canonicalCodes.has(n.code) && n.code !== 'sobra');
-  console.log(`\n--- Identificação de Sobras: ${sobraNodes.length} nós existentes para mover para 'Sobra' ---`);
+  console.log(
+    `\n--- Identificação de Sobras: ${sobraNodes.length} nós existentes para mover para 'Sobra' ---`,
+  );
   for (const s of sobraNodes) {
     console.log(`  - [${s.kind}] ${s.name} (code: ${s.code}, id: ${s.id})`);
   }
@@ -712,7 +744,18 @@ async function run() {
           `INSERT INTO tmf_resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, $4, $5, $6, $7, 'active', $8, $9, $10)`,
-          [newNodeId, TENANT_ID, catalogId, nodeDef.code, nodeDef.name, nodeDef.kind, resourceTypeId, nodeDef.sortOrder, now, now],
+          [
+            newNodeId,
+            TENANT_ID,
+            catalogId,
+            nodeDef.code,
+            nodeDef.name,
+            nodeDef.kind,
+            resourceTypeId,
+            nodeDef.sortOrder,
+            now,
+            now,
+          ],
         );
       }
     } else {
@@ -728,7 +771,14 @@ async function run() {
           `UPDATE tmf_resource_catalog_node
               SET name = $1, kind = $2, resource_type_id = $3, status = 'active', sort_order = $4, updated_at = $5
             WHERE id = $6`,
-          [nodeDef.name, nodeDef.kind, reconciledResourceTypeId, nodeDef.sortOrder, now, existingNode.id],
+          [
+            nodeDef.name,
+            nodeDef.kind,
+            reconciledResourceTypeId,
+            nodeDef.sortOrder,
+            now,
+            existingNode.id,
+          ],
         );
       }
     }
@@ -739,7 +789,9 @@ async function run() {
   for (const nodeDef of CANONICAL_TREE_NODES) {
     const nodeId = codeToIdMap.get(nodeDef.code);
     const parentNodeId = nodeDef.parentCode ? codeToIdMap.get(nodeDef.parentCode) : null;
-    console.log(`  🔗 ${nodeDef.code} -> pai: ${nodeDef.parentCode || 'RAIZ'} (sort: ${nodeDef.sortOrder})`);
+    console.log(
+      `  🔗 ${nodeDef.code} -> pai: ${nodeDef.parentCode || 'RAIZ'} (sort: ${nodeDef.sortOrder})`,
+    );
     if (APPLY) {
       await db.query(
         `UPDATE tmf_resource_catalog_node
@@ -802,9 +854,13 @@ async function run() {
     [TENANT_ID],
   );
   if (dupCheckRes.rows.length > 0) {
-    console.error(`\n[ERRO] ${dupCheckRes.rows.length} ResourceType(s) compartilhado(s) por mais de uma folha ativa:`);
+    console.error(
+      `\n[ERRO] ${dupCheckRes.rows.length} ResourceType(s) compartilhado(s) por mais de uma folha ativa:`,
+    );
     for (const row of dupCheckRes.rows) {
-      console.error(`  - resource_type_id=${row.resource_type_id} usado por ${row.leaf_count} folhas`);
+      console.error(
+        `  - resource_type_id=${row.resource_type_id} usado por ${row.leaf_count} folhas`,
+      );
     }
     if (APPLY) {
       throw new Error('Violação de identidade 1:1 folha↔ResourceType detectada após o seed.');

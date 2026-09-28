@@ -105,7 +105,11 @@ export function StudioGovernanceOverview() {
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" role="list" aria-label="Domínios do Studio">
+    <div
+      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      role="list"
+      aria-label="Domínios do Studio"
+    >
       {rows.map((row) => {
         const draft = row.status?.draftVersion;
         const published = row.status?.publishedVersion;

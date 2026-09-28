@@ -42,7 +42,8 @@ export function LocationSpecImpactModal({
 
   if (!isOpen) return null;
 
-  const hasImpact = impact && (impact.impactedParentAssignments > 0 || impact.impactedChildAssignments > 0);
+  const hasImpact =
+    impact && (impact.impactedParentAssignments > 0 || impact.impactedChildAssignments > 0);
 
   const handleConfirm = async () => {
     try {
@@ -69,9 +70,7 @@ export function LocationSpecImpactModal({
           </div>
           <div>
             <h3>Inativar especificação de local</h3>
-            <p className="text-[0.78rem] text-app-muted">
-              {spec.name}
-            </p>
+            <p className="text-[0.78rem] text-app-muted">{spec.name}</p>
           </div>
         </div>
       }
@@ -111,15 +110,19 @@ export function LocationSpecImpactModal({
             <>
               <p className="text-[0.88rem] text-app-text leading-relaxed">
                 Você está prestes a marcar <strong>{spec.name}</strong> para inativação. Conforme o
-                cânone arquitetural C6, a publicação aplicará a inativação lógica
-                (<code className="mx-1 rounded bg-[var(--surface-muted)] px-1 py-0.5 text-[0.8rem]">lifecycleStatus=Retired</code>).
-                A alteração só será materializada quando o draft do Studio for publicado; locais existentes
-                serão preservados.
+                cânone arquitetural C6, a publicação aplicará a inativação lógica (
+                <code className="mx-1 rounded bg-[var(--surface-muted)] px-1 py-0.5 text-[0.8rem]">
+                  lifecycleStatus=Retired
+                </code>
+                ). A alteração só será materializada quando o draft do Studio for publicado; locais
+                existentes serão preservados.
               </p>
 
               {hasImpact && (
                 <div className="rounded-[16px] border border-red-200 bg-red-50/70 p-4 text-red-800 text-[0.84rem]">
-                  <strong className="font-semibold block mb-1">Atenção: locais dependem desta especificação</strong>
+                  <strong className="font-semibold block mb-1">
+                    Atenção: locais dependem desta especificação
+                  </strong>
                   Há locais ativos cuja relação de contenção (pai ou filho direto) depende desta
                   especificação. Reveja essas relações antes de inativá-la.
                 </div>

@@ -94,7 +94,7 @@ export function draftRolesFromSnapshot(
       label: item.label,
       description: item.description ?? null,
       active: item.active !== false,
-      characteristics: chars.length > 0 ? chars : canonicalCharsByRole[roleTypeId] ?? [],
+      characteristics: chars.length > 0 ? chars : (canonicalCharsByRole[roleTypeId] ?? []),
     };
   });
 }

@@ -212,7 +212,9 @@ export function ReferenceDataValueEditor({ setId, canMutate }: ReferenceDataValu
                             <td>
                               <input
                                 value={editDraft.key}
-                                onChange={(e) => setEditDraft({ ...editDraft, key: e.target.value })}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, key: e.target.value })
+                                }
                                 className={`${inputClass} font-mono`}
                                 autoFocus
                               />
@@ -220,20 +222,26 @@ export function ReferenceDataValueEditor({ setId, canMutate }: ReferenceDataValu
                             <td>
                               <input
                                 value={editDraft.label}
-                                onChange={(e) => setEditDraft({ ...editDraft, label: e.target.value })}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, label: e.target.value })
+                                }
                                 className={inputClass}
                               />
                             </td>
                             <td>
                               <input
                                 value={editDraft.sortOrder}
-                                onChange={(e) => setEditDraft({ ...editDraft, sortOrder: e.target.value })}
+                                onChange={(e) =>
+                                  setEditDraft({ ...editDraft, sortOrder: e.target.value })
+                                }
                                 className={inputClass}
                                 type="number"
                               />
                             </td>
                             <td>
-                              <span className="text-[0.82rem] text-app-text">{item.active ? 'Sim' : 'Não'}</span>
+                              <span className="text-[0.82rem] text-app-text">
+                                {item.active ? 'Sim' : 'Não'}
+                              </span>
                             </td>
                             <td>
                               <div className="flex justify-end gap-1">
@@ -242,7 +250,9 @@ export function ReferenceDataValueEditor({ setId, canMutate }: ReferenceDataValu
                                   onClick={() => void saveRow()}
                                   className="rounded-xl border border-transparent p-1.5 text-status-green transition hover:border-status-green hover:bg-status-green-soft"
                                   aria-label="Salvar"
-                                  disabled={saving || !editDraft.key.trim() || !editDraft.label.trim()}
+                                  disabled={
+                                    saving || !editDraft.key.trim() || !editDraft.label.trim()
+                                  }
                                 >
                                   <Check className="h-4 w-4" />
                                 </button>

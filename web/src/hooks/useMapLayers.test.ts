@@ -63,7 +63,9 @@ describe('useMapLayers', () => {
     rerender({ catalog: CATALOG });
 
     await waitFor(() => expect(result.current.layers.stations).toBe(false));
-    expect(JSON.parse(window.localStorage.getItem('nexus.geo.mapLayers::environment-a') ?? '{}')).toMatchObject({
+    expect(
+      JSON.parse(window.localStorage.getItem('nexus.geo.mapLayers::environment-a') ?? '{}'),
+    ).toMatchObject({
       stations: false,
     });
   });
@@ -75,7 +77,9 @@ describe('useMapLayers', () => {
     act(() => result.current.toggleLayer('stations'));
 
     await waitFor(() =>
-      expect(JSON.parse(window.localStorage.getItem('nexus.geo.mapLayers::environment-a') ?? '{}')).toMatchObject({
+      expect(
+        JSON.parse(window.localStorage.getItem('nexus.geo.mapLayers::environment-a') ?? '{}'),
+      ).toMatchObject({
         stations: false,
       }),
     );
@@ -94,7 +98,9 @@ describe('useMapLayers', () => {
       firstMount.result.current.toggleLayer('building');
     });
     await waitFor(() =>
-      expect(JSON.parse(window.localStorage.getItem('nexus.geo.mapLayers::environment-a') ?? '{}')).toMatchObject({
+      expect(
+        JSON.parse(window.localStorage.getItem('nexus.geo.mapLayers::environment-a') ?? '{}'),
+      ).toMatchObject({
         stations: false,
         building: false,
       }),

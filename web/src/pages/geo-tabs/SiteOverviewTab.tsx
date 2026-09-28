@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Building2, Crosshair, Database, FileText, MapPin, Activity } from 'lucide-react';
-import type { GeoAddress, GeoLocation, GeoSite, GeoSiteStatus, GeoSpec, SiteOrigin } from '../../services/geoApi';
+import type {
+  GeoAddress,
+  GeoLocation,
+  GeoSite,
+  GeoSiteStatus,
+  GeoSpec,
+  SiteOrigin,
+} from '../../services/geoApi';
 import { SITE_STATUS_OPTIONS, siteSpecLabel } from '../../utils/geoLabels';
 import { formatAddressWithSource } from '../../utils/placeLabel';
 import { StatusBadge } from './StatusBadge';
@@ -112,7 +119,9 @@ export function SiteOverviewTab({
           icon={Activity}
           editing={editingStatus}
           onActivate={() => setEditingStatus(true)}
-          readOnlyNote={lockedByProjectName ? `herdado do projeto ${lockedByProjectName}` : undefined}
+          readOnlyNote={
+            lockedByProjectName ? `herdado do projeto ${lockedByProjectName}` : undefined
+          }
           value={<StatusBadge status={site.status} />}
         >
           <select
@@ -166,7 +175,9 @@ export function SiteOverviewTab({
                 </button>
               ) : null}
               {parentMatches.length === 0 ? (
-                <p className="px-3 py-2 text-[0.8rem] text-app-muted">Nenhum local compatível encontrado.</p>
+                <p className="px-3 py-2 text-[0.8rem] text-app-muted">
+                  Nenhum local compatível encontrado.
+                </p>
               ) : (
                 parentMatches.map((candidate) => (
                   <button
@@ -191,7 +202,10 @@ export function SiteOverviewTab({
 
       {canEdit ? (
         <div className="flex min-w-0 items-start gap-2.5 py-1" title="Endereço">
-          <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true">
+          <span
+            className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+            aria-hidden="true"
+          >
             <MapPin className="h-[18px] w-[18px]" />
           </span>
           <span className="sr-only">Endereço</span>
@@ -215,16 +229,27 @@ export function SiteOverviewTab({
 
       {!address && location?.geometry.type === 'Point' ? (
         <div className="flex min-w-0 items-start gap-2.5 py-1" title="Coordenadas">
-          <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><Crosshair className="h-[18px] w-[18px]" /></span>
+          <span
+            className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+            aria-hidden="true"
+          >
+            <Crosshair className="h-[18px] w-[18px]" />
+          </span>
           <span className="sr-only">Coordenadas</span>
           <div className="min-w-0 flex-1 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text">
-            {location.geometry.coordinates[1].toFixed(6)}, {location.geometry.coordinates[0].toFixed(6)}
+            {location.geometry.coordinates[1].toFixed(6)},{' '}
+            {location.geometry.coordinates[0].toFixed(6)}
           </div>
         </div>
       ) : null}
 
       <div className="flex min-w-0 items-start gap-2.5 py-1" title="Origem">
-        <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><Database className="h-[18px] w-[18px]" /></span>
+        <span
+          className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+          aria-hidden="true"
+        >
+          <Database className="h-[18px] w-[18px]" />
+        </span>
         <span className="sr-only">Origem</span>
         <div className="min-w-0 flex-1 break-words px-1.5 py-1 text-[0.84rem] leading-snug text-app-text">
           {originLabel(origin)}
@@ -233,7 +258,12 @@ export function SiteOverviewTab({
 
       {canEdit ? (
         <div className="flex min-w-0 items-start gap-2.5 py-1" title="Observação">
-          <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted" aria-hidden="true"><FileText className="h-[18px] w-[18px]" /></span>
+          <span
+            className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+            aria-hidden="true"
+          >
+            <FileText className="h-[18px] w-[18px]" />
+          </span>
           <span className="sr-only">Observação</span>
           <textarea
             ref={noteRef}

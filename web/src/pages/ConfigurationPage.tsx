@@ -44,7 +44,13 @@ export function ConfigurationPage() {
       </aside>
 
       <section className="min-w-0 flex-1 overflow-y-auto bg-app-bg px-8 py-8 max-md:px-5 max-md:py-6">
-        {tab === 'users' ? <UsersTab /> : tab === 'environment' ? <EnvironmentTab /> : <EventsTab />}
+        {tab === 'users' ? (
+          <UsersTab />
+        ) : tab === 'environment' ? (
+          <EnvironmentTab />
+        ) : (
+          <EventsTab />
+        )}
       </section>
     </div>
   );

@@ -26,9 +26,27 @@ const mockResourceType: ResourceType = {
   status: 'active',
   nature: 'PhysicalResource',
   resourceTypeCharacteristic: [
-    { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16, group: 'Capacidade' },
-    { name: 'power', valueType: 'decimal', characteristicLevel: 'specification', value: 2.5, group: 'Técnico' },
-    { name: 'mac_address', valueType: 'string', characteristicLevel: 'instance', value: '00:11:22', group: 'Técnico' },
+    {
+      name: 'ports',
+      valueType: 'integer',
+      characteristicLevel: 'specification',
+      value: 16,
+      group: 'Capacidade',
+    },
+    {
+      name: 'power',
+      valueType: 'decimal',
+      characteristicLevel: 'specification',
+      value: 2.5,
+      group: 'Técnico',
+    },
+    {
+      name: 'mac_address',
+      valueType: 'string',
+      characteristicLevel: 'instance',
+      value: '00:11:22',
+      group: 'Técnico',
+    },
   ],
 };
 
@@ -92,7 +110,9 @@ describe('ResourceSpecificationFormModal', () => {
       );
       // Confirma que 'mac_address' (instância) não foi enviado no payload
       const calledArgs = mockCreateResourceSpecification.mock.calls[0][0];
-      const charNames = calledArgs.resourceSpecificationCharacteristic.map((c: { name: string }) => c.name);
+      const charNames = calledArgs.resourceSpecificationCharacteristic.map(
+        (c: { name: string }) => c.name,
+      );
       expect(charNames).not.toContain('mac_address');
     });
   });

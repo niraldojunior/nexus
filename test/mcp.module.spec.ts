@@ -23,23 +23,30 @@ const createFixture = async () => {
   };
 };
 
-test.skipIf(!oracleConfigured)('MCP registry exposes tool metadata and handles unknown tools', async () => {
-  const fixture = await createFixture();
+test.skipIf(!oracleConfigured)(
+  'MCP registry exposes tool metadata and handles unknown tools',
+  async () => {
+    const fixture = await createFixture();
 
-  try {
-    const tools = fixture.module.registry.listTools();
-    const geoTool = tools.find((tool) => tool.name === 'geo.list_sites');
-    assert.ok(geoTool);
-    assert.match(geoTool.description, /Geographic Sites/);
-    assert.equal(typeof geoTool.handler, 'function');
+    try {
+      const tools = fixture.module.registry.listTools();
+      const geoTool = tools.find((tool) => tool.name === 'geo.list_sites');
+      assert.ok(geoTool);
+      assert.match(geoTool.description, /Geographic Sites/);
+      assert.equal(typeof geoTool.handler, 'function');
 
-    const missing = await fixture.module.registry.executeTool('missing.tool', {}, fixture.context);
-    assert.equal(missing.ok, false);
-    assert.equal(missing.error?.code, 'MCP_TOOL_NOT_FOUND');
-  } finally {
-    await fixture.cleanup();
-  }
-});
+      const missing = await fixture.module.registry.executeTool(
+        'missing.tool',
+        {},
+        fixture.context,
+      );
+      assert.equal(missing.ok, false);
+      assert.equal(missing.error?.code, 'MCP_TOOL_NOT_FOUND');
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
 
 test.skipIf(!oracleConfigured)('MCP registry returns structured validation errors', async () => {
   const fixture = await createFixture();
@@ -54,157 +61,162 @@ test.skipIf(!oracleConfigured)('MCP registry returns structured validation error
   }
 });
 
-test.skipIf(!oracleConfigured)('MCP prepare/commit flow persists confirmation tokens and executes mutations', async () => {
-  const fixture = await createFixture();
+test.skipIf(!oracleConfigured)(
+  'MCP prepare/commit flow persists confirmation tokens and executes mutations',
+  async () => {
+    const fixture = await createFixture();
 
-  try {
-    const bootstrap = await fixture.runtime.geoService.ensureBootstrapSpecifications();
-    const spec = bootstrap.specs.find((candidate) => candidate.code === 'CO');
-    assert.ok(spec, 'bootstrap deve fornecer a specification canônica CO');
+    try {
+      const bootstrap = await fixture.runtime.geoService.ensureBootstrapSpecifications();
+      const spec = bootstrap.specs.find((candidate) => candidate.code === 'CO');
+      assert.ok(spec, 'bootstrap deve fornecer a specification canônica CO');
 
-    const prepared = await fixture.module.registry.executeTool(
-      'geo.create_site',
-      {
-        payload: {
-          name: 'CO Botafogo',
-          siteSpecificationId: spec.id,
+      const prepared = await fixture.module.registry.executeTool(
+        'geo.create_site',
+        {
+          payload: {
+            name: 'CO Botafogo',
+            siteSpecificationId: spec.id,
+          },
         },
-      },
-      fixture.context,
-    );
+        fixture.context,
+      );
 
-    assert.equal(prepared.ok, true);
-    const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
-    assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
+      assert.equal(prepared.ok, true);
+      const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
+      assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
 
-    const committed = await fixture.module.registry.executeTool(
-      'geo.commit_create_site',
-      { confirmationToken },
-      fixture.context,
-    );
+      const committed = await fixture.module.registry.executeTool(
+        'geo.commit_create_site',
+        { confirmationToken },
+        fixture.context,
+      );
 
-    assert.equal(committed.ok, true);
-    assert.equal((committed.data as { name: string }).name, 'CO Botafogo');
-    assert.equal((await fixture.runtime.geoService.listSites()).length, 1);
-  } finally {
-    await fixture.cleanup();
-  }
-});
+      assert.equal(committed.ok, true);
+      assert.equal((committed.data as { name: string }).name, 'CO Botafogo');
+      assert.equal((await fixture.runtime.geoService.listSites()).length, 1);
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
 
-test.skipIf(!oracleConfigured)('MCP exposes and executes resource specification creation', async () => {
-  const fixture = await createFixture();
+test.skipIf(!oracleConfigured)(
+  'MCP exposes and executes resource specification creation',
+  async () => {
+    const fixture = await createFixture();
 
-  try {
-    const tools = fixture.module.registry.listTools();
-    assert.ok(tools.some((tool) => tool.name === 'resource.create_resource_specification'));
-    assert.ok(tools.some((tool) => tool.name === 'resource.commit_create_resource_specification'));
+    try {
+      const tools = fixture.module.registry.listTools();
+      assert.ok(tools.some((tool) => tool.name === 'resource.create_resource_specification'));
+      assert.ok(
+        tools.some((tool) => tool.name === 'resource.commit_create_resource_specification'),
+      );
 
-    const vendor = await fixture.runtime.partyService.createParty({
-      name: 'HUAWEI',
-      partyType: 'Organization',
-    });
-    await fixture.runtime.partyService.createPartyRole({
-      partyId: vendor.id,
-      name: 'manufacturer',
-    });
+      const vendor = await fixture.runtime.partyService.createParty({
+        name: 'HUAWEI',
+        partyType: 'Organization',
+      });
+      await fixture.runtime.partyService.createPartyRole({
+        partyId: vendor.id,
+        name: 'manufacturer',
+      });
 
-    const prepared = await fixture.module.registry.executeTool(
-      'resource.create_resource_specification',
-      {
-        payload: {
-          name: 'F6201BV9.3.12',
-          resourceTypeId: 'rt-ont',
-          relatedParty: [
-            {
-              id: vendor.id,
-              '@referredType': 'Organization',
-              role: 'manufacturer',
-              name: vendor.name,
-            },
-          ],
+      const prepared = await fixture.module.registry.executeTool(
+        'resource.create_resource_specification',
+        {
+          payload: {
+            name: 'F6201BV9.3.12',
+            resourceTypeId: 'rt-ont',
+            relatedParty: [
+              {
+                id: vendor.id,
+                '@referredType': 'Organization',
+                role: 'manufacturer',
+                name: vendor.name,
+              },
+            ],
+          },
         },
-      },
-      fixture.context,
-    );
+        fixture.context,
+      );
 
-    assert.equal(prepared.ok, true);
-    const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
-    assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
+      assert.equal(prepared.ok, true);
+      const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
+      assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
 
-    const committed = await fixture.module.registry.executeTool(
-      'resource.commit_create_resource_specification',
-      { confirmationToken },
-      fixture.context,
-    );
+      const committed = await fixture.module.registry.executeTool(
+        'resource.commit_create_resource_specification',
+        { confirmationToken },
+        fixture.context,
+      );
 
-    assert.equal(committed.ok, true);
-    assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
-    assert.equal((committed.data as { resourceTypeId: string }).resourceTypeId, 'rt-ont');
-    assert.equal(
-      (committed.data as { resourceType: { code: string } }).resourceType.code,
-      'ONT',
-    );
-  } finally {
-    await fixture.cleanup();
-  }
-});
+      assert.equal(committed.ok, true);
+      assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
+      assert.equal((committed.data as { resourceTypeId: string }).resourceTypeId, 'rt-ont');
+      assert.equal((committed.data as { resourceType: { code: string } }).resourceType.code, 'ONT');
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
 
-test.skipIf(!oracleConfigured)('MCP cadastra modelo de equipamento resolvendo fabricante por nome', async () => {
-  const fixture = await createFixture();
+test.skipIf(!oracleConfigured)(
+  'MCP cadastra modelo de equipamento resolvendo fabricante por nome',
+  async () => {
+    const fixture = await createFixture();
 
-  try {
-    const prepared = await fixture.module.registry.executeTool(
-      'resource.create_equipment_model',
-      {
-        payload: {
-          model: 'F6201BV9.3.12',
-          manufacturerName: 'Huawei',
-          equipmentType: 'ONT',
+    try {
+      const prepared = await fixture.module.registry.executeTool(
+        'resource.create_equipment_model',
+        {
+          payload: {
+            model: 'F6201BV9.3.12',
+            manufacturerName: 'Huawei',
+            equipmentType: 'ONT',
+          },
         },
-      },
-      fixture.context,
-    );
+        fixture.context,
+      );
 
-    assert.equal(prepared.ok, true);
-    const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
-    assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
-    assert.match((prepared.data as { summary: string }).summary, /F6201BV9\.3\.12/);
-    assert.match((prepared.data as { summary: string }).summary, /HUAWEI/i);
+      assert.equal(prepared.ok, true);
+      const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
+      assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
+      assert.match((prepared.data as { summary: string }).summary, /F6201BV9\.3\.12/);
+      assert.match((prepared.data as { summary: string }).summary, /HUAWEI/i);
 
-    const committed = await fixture.module.registry.executeTool(
-      'resource.commit_create_equipment_model',
-      { confirmationToken },
-      fixture.context,
-    );
+      const committed = await fixture.module.registry.executeTool(
+        'resource.commit_create_equipment_model',
+        { confirmationToken },
+        fixture.context,
+      );
 
-    assert.equal(committed.ok, true);
-    assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
-    assert.equal((committed.data as { resourceTypeId: string }).resourceTypeId, 'rt-ont');
-    assert.equal(
-      (committed.data as { resourceType: { code: string } }).resourceType.code,
-      'ONT',
-    );
-    assert.equal(
-      (committed.data as { relatedParty?: Array<{ name?: string; role?: string }> })
-        .relatedParty?.[0]?.role,
-      'manufacturer',
-    );
-    assert.equal(
-      (committed.data as { relatedParty?: Array<{ name?: string }> }).relatedParty?.[0]?.name,
-      'HUAWEI',
-    );
-    assert.equal(
-      (
-        committed.data as {
-          resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }>;
-        }
-      ).resourceSpecificationCharacteristic?.find((item) => item.name === 'model')?.value,
-      'F6201BV9.3.12',
-    );
-  } finally {
-    await fixture.cleanup();
-  }
-});
+      assert.equal(committed.ok, true);
+      assert.equal((committed.data as { name: string }).name, 'F6201BV9.3.12');
+      assert.equal((committed.data as { resourceTypeId: string }).resourceTypeId, 'rt-ont');
+      assert.equal((committed.data as { resourceType: { code: string } }).resourceType.code, 'ONT');
+      assert.equal(
+        (committed.data as { relatedParty?: Array<{ name?: string; role?: string }> })
+          .relatedParty?.[0]?.role,
+        'manufacturer',
+      );
+      assert.equal(
+        (committed.data as { relatedParty?: Array<{ name?: string }> }).relatedParty?.[0]?.name,
+        'HUAWEI',
+      );
+      assert.equal(
+        (
+          committed.data as {
+            resourceSpecificationCharacteristic?: Array<{ name: string; value: unknown }>;
+          }
+        ).resourceSpecificationCharacteristic?.find((item) => item.name === 'model')?.value,
+        'F6201BV9.3.12',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
 
 test.skipIf(!oracleConfigured)('MCP cadastra modelos de equipamento em lote', async () => {
   const fixture = await createFixture();
@@ -250,147 +262,156 @@ test.skipIf(!oracleConfigured)('MCP cadastra modelos de equipamento em lote', as
   }
 });
 
-test.skipIf(!oracleConfigured)('MCP remove modelo de equipamento como soft-delete com fabricante resolvido por nome', async () => {
-  const fixture = await createFixture();
+test.skipIf(!oracleConfigured)(
+  'MCP remove modelo de equipamento como soft-delete com fabricante resolvido por nome',
+  async () => {
+    const fixture = await createFixture();
 
-  try {
-    const suffix = Date.now();
-    const manufacturerName = `ZTE-${suffix}`;
-    const model = `F6201BV9.3.12-${suffix}`;
-    const manufacturer = await fixture.runtime.partyService.createParty({
-      name: manufacturerName,
-      partyType: 'Organization',
-    });
-    await fixture.runtime.partyService.createPartyRole({
-      partyId: manufacturer.id,
-      name: 'manufacturer',
-    });
+    try {
+      const suffix = Date.now();
+      const manufacturerName = `ZTE-${suffix}`;
+      const model = `F6201BV9.3.12-${suffix}`;
+      const manufacturer = await fixture.runtime.partyService.createParty({
+        name: manufacturerName,
+        partyType: 'Organization',
+      });
+      await fixture.runtime.partyService.createPartyRole({
+        partyId: manufacturer.id,
+        name: 'manufacturer',
+      });
 
-    const created = await fixture.runtime.resourceService.createResourceSpecification({
-      name: model,
-      resourceTypeId: 'rt-ont',
-      relatedParty: [
+      const created = await fixture.runtime.resourceService.createResourceSpecification({
+        name: model,
+        resourceTypeId: 'rt-ont',
+        relatedParty: [
+          {
+            id: manufacturer.id,
+            '@referredType': 'Organization',
+            role: 'manufacturer',
+            name: manufacturer.name,
+          },
+        ],
+        resourceSpecificationCharacteristic: [
+          {
+            name: 'model',
+            value: model,
+            valueType: 'string',
+            group: 'commercial',
+          },
+        ],
+      });
+
+      const prepared = await fixture.module.registry.executeTool(
+        'resource.delete_equipment_model',
         {
-          id: manufacturer.id,
-          '@referredType': 'Organization',
-          role: 'manufacturer',
-          name: manufacturer.name,
+          payload: {
+            model,
+            manufacturerName,
+            equipmentType: 'ONT',
+          },
         },
-      ],
-      resourceSpecificationCharacteristic: [
+        fixture.context,
+      );
+
+      assert.equal(prepared.ok, true);
+      const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
+      assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
+      assert.match((prepared.data as { summary: string }).summary, /removido do catalogo/i);
+
+      const committed = await fixture.module.registry.executeTool(
+        'resource.commit_delete_equipment_model',
+        { confirmationToken },
+        fixture.context,
+      );
+
+      assert.equal(committed.ok, true);
+      assert.equal((committed.data as { id: string }).id, created.id);
+      assert.ok((committed.data as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
+
+      const activeList = await fixture.runtime.resourceService.listResourceSpecifications({
+        name: model,
+      });
+      assert.equal(activeList.length, 0);
+      const allList = await fixture.runtime.resourceService.listResourceSpecifications({
+        name: model,
+        includeEnded: true,
+      });
+      assert.equal(allList.length, 1);
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'MCP blocks commit without valid token and with expired token',
+  async () => {
+    const fixture = await createFixture();
+
+    try {
+      const missing = await fixture.module.registry.executeTool(
+        'party.commit_create_party',
+        { confirmationToken: 'missing-token' },
+        fixture.context,
+      );
+      assert.equal(missing.ok, false);
+      assert.equal(missing.error?.code, 'MCP_CONFIRMATION_NOT_FOUND');
+
+      await fixture.module.confirmations.create({
+        token: 'expired-token',
+        domain: 'party',
+        operation: 'create_party',
+        payload: { name: 'ISP Alfa' },
+        summary: 'expired',
+        warnings: [],
+        context: {},
+        createdAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-01T00:01:00.000Z',
+      });
+
+      const expired = await fixture.module.registry.executeTool(
+        'party.commit_create_party',
+        { confirmationToken: 'expired-token' },
+        fixture.context,
+      );
+      assert.equal(expired.ok, false);
+      assert.equal(expired.error?.code, 'MCP_CONFIRMATION_EXPIRED');
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'MCP rejects invalid CFS preparation that references supportingResource directly',
+  async () => {
+    const fixture = await createFixture();
+
+    try {
+      const cfsSpec = await fixture.runtime.serviceService.createServiceSpecification({
+        name: 'Bitstream GPON',
+        category: 'Broadband',
+        serviceType: 'CFS',
+      });
+
+      const result = await fixture.module.registry.executeTool(
+        'service.create_cfs',
         {
-          name: 'model',
-          value: model,
-          valueType: 'string',
-          group: 'commercial',
+          payload: {
+            name: 'CFS invalido',
+            serviceSpecificationId: cfsSpec.id,
+            subscriberId: 'SUB-1',
+            supportingService: [],
+            supportingResource: [{ id: 'resource-1', '@referredType': 'PhysicalResource' }],
+          },
         },
-      ],
-    });
+        fixture.context,
+      );
 
-    const prepared = await fixture.module.registry.executeTool(
-      'resource.delete_equipment_model',
-      {
-        payload: {
-          model,
-          manufacturerName,
-          equipmentType: 'ONT',
-        },
-      },
-      fixture.context,
-    );
-
-    assert.equal(prepared.ok, true);
-    const confirmationToken = (prepared.data as { confirmationToken: string }).confirmationToken;
-    assert.match(confirmationToken, /^[0-9a-f-]{36}$/);
-    assert.match((prepared.data as { summary: string }).summary, /removido do catalogo/i);
-
-    const committed = await fixture.module.registry.executeTool(
-      'resource.commit_delete_equipment_model',
-      { confirmationToken },
-      fixture.context,
-    );
-
-    assert.equal(committed.ok, true);
-    assert.equal((committed.data as { id: string }).id, created.id);
-    assert.ok((committed.data as { validFor?: { endDateTime?: string } }).validFor?.endDateTime);
-
-    const activeList = await fixture.runtime.resourceService.listResourceSpecifications({
-      name: model,
-    });
-    assert.equal(activeList.length, 0);
-    const allList = await fixture.runtime.resourceService.listResourceSpecifications({
-      name: model,
-      includeEnded: true,
-    });
-    assert.equal(allList.length, 1);
-  } finally {
-    await fixture.cleanup();
-  }
-});
-
-test.skipIf(!oracleConfigured)('MCP blocks commit without valid token and with expired token', async () => {
-  const fixture = await createFixture();
-
-  try {
-    const missing = await fixture.module.registry.executeTool(
-      'party.commit_create_party',
-      { confirmationToken: 'missing-token' },
-      fixture.context,
-    );
-    assert.equal(missing.ok, false);
-    assert.equal(missing.error?.code, 'MCP_CONFIRMATION_NOT_FOUND');
-
-    await fixture.module.confirmations.create({
-      token: 'expired-token',
-      domain: 'party',
-      operation: 'create_party',
-      payload: { name: 'ISP Alfa' },
-      summary: 'expired',
-      warnings: [],
-      context: {},
-      createdAt: '2026-01-01T00:00:00.000Z',
-      expiresAt: '2026-01-01T00:01:00.000Z',
-    });
-
-    const expired = await fixture.module.registry.executeTool(
-      'party.commit_create_party',
-      { confirmationToken: 'expired-token' },
-      fixture.context,
-    );
-    assert.equal(expired.ok, false);
-    assert.equal(expired.error?.code, 'MCP_CONFIRMATION_EXPIRED');
-  } finally {
-    await fixture.cleanup();
-  }
-});
-
-test.skipIf(!oracleConfigured)('MCP rejects invalid CFS preparation that references supportingResource directly', async () => {
-  const fixture = await createFixture();
-
-  try {
-    const cfsSpec = await fixture.runtime.serviceService.createServiceSpecification({
-      name: 'Bitstream GPON',
-      category: 'Broadband',
-      serviceType: 'CFS',
-    });
-
-    const result = await fixture.module.registry.executeTool(
-      'service.create_cfs',
-      {
-        payload: {
-          name: 'CFS invalido',
-          serviceSpecificationId: cfsSpec.id,
-          subscriberId: 'SUB-1',
-          supportingService: [],
-          supportingResource: [{ id: 'resource-1', '@referredType': 'PhysicalResource' }],
-        },
-      },
-      fixture.context,
-    );
-
-    assert.equal(result.ok, false);
-    assert.equal(result.error?.code, 'SERVICE_CFS_SUPPORTING_RESOURCE');
-  } finally {
-    await fixture.cleanup();
-  }
-});
+      assert.equal(result.ok, false);
+      assert.equal(result.error?.code, 'SERVICE_CFS_SUPPORTING_RESOURCE');
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);

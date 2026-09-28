@@ -763,8 +763,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
               >
                 <p>
                   O encerramento é lógico: os serviços passam ao estado Encerrado e saem da
-                  operação, mas permanecem no inventário para auditoria e rastreabilidade.
-                  Encerrar um RFS com CFS ativo é recusado pelo inventário.
+                  operação, mas permanecem no inventário para auditoria e rastreabilidade. Encerrar
+                  um RFS com CFS ativo é recusado pelo inventário.
                 </p>
                 {selectedTerminatePreview ? (
                   <div

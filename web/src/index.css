@@ -43,7 +43,15 @@ body {
   overflow: hidden;
   background: var(--surface-app, #fafafb);
   color: var(--text-primary, #2e2d39);
-  font-family: var(--font-ui, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-family: var(
+    --font-ui,
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif
+  );
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -126,15 +134,15 @@ button {
      demais para hairline): usado só nos textboxes (composer, busca) e nas
      tabelas de Configuração/Studio, onde --border-strong ainda ficava sutil
      demais sobre o canvas branco. */
-  --border-input-strong: #C7C7D4;
+  --border-input-strong: #c7c7d4;
 
   /* Amarelo dedicado ao item selecionado da sidebar principal do app — mesma
      família de matiz de --vt-yellow (51°), porém mais dourado e menos
      saturado que --vt-yellow-tint (#FEF7DC, usado em hovers/washes rasos),
      para que o item ativo se distinga com um preenchimento mais presente e
      uma borda visível em vez do wash plano sem contorno. */
-  --vt-yellow-selected-bg: #FBEFC2;
-  --vt-yellow-selected-border: #E8C34A;
+  --vt-yellow-selected-bg: #fbefc2;
+  --vt-yellow-selected-border: #e8c34a;
 }
 
 :root {
@@ -146,7 +154,7 @@ button {
 }
 
 [data-theme='dark'] {
-  --border-input-strong: #3D3E46;
+  --border-input-strong: #3d3e46;
   --vt-yellow-selected-bg: rgba(255, 217, 25, 0.15);
   --vt-yellow-selected-border: rgba(255, 217, 25, 0.35);
   /* Mesmo anel de foco do tema claro, um pouco mais fino e discreto — sobre

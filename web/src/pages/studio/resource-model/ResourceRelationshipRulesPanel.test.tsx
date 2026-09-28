@@ -60,13 +60,23 @@ const mockRelTypes: ResourceRelationshipType[] = [
 
 const mockResourceTypes = [
   { '@type': 'ResourceType' as const, id: 'rt-cto', code: 'CTO', name: 'CTO', status: 'active' },
-  { '@type': 'ResourceType' as const, id: 'rt-splitter', code: 'Splitter', name: 'Splitter', status: 'active' },
-  { '@type': 'ResourceType' as const, id: 'rt-port', code: 'Port', name: 'Porta', status: 'active' },
+  {
+    '@type': 'ResourceType' as const,
+    id: 'rt-splitter',
+    code: 'Splitter',
+    name: 'Splitter',
+    status: 'active',
+  },
+  {
+    '@type': 'ResourceType' as const,
+    id: 'rt-port',
+    code: 'Port',
+    name: 'Porta',
+    status: 'active',
+  },
 ];
 
-const mockGeoSpecs = [
-  { id: 'spec-pole', name: 'Poste', code: 'POLE' },
-];
+const mockGeoSpecs = [{ id: 'spec-pole', name: 'Poste', code: 'POLE' }];
 
 const mockRules: ResourceTypeRelationshipRule[] = [
   {
@@ -96,7 +106,10 @@ const mockRules: ResourceTypeRelationshipRule[] = [
 describe('ResourceRelationshipRulesPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.ensureBootstrapResourceRelationshipTypes.mockResolvedValue({ created: 0, relationshipTypes: mockRelTypes });
+    mocks.ensureBootstrapResourceRelationshipTypes.mockResolvedValue({
+      created: 0,
+      relationshipTypes: mockRelTypes,
+    });
     mocks.listResourceRelationshipTypes.mockResolvedValue(mockRelTypes);
     mocks.listCatalogResourceTypes.mockResolvedValue(mockResourceTypes);
     mocks.listGeoSiteSpecifications.mockResolvedValue(mockGeoSpecs);
@@ -109,11 +122,7 @@ describe('ResourceRelationshipRulesPanel', () => {
 
   it('renders active rules with cardinality labels (máx. 8 e exatamente 1)', async () => {
     render(
-      <ResourceRelationshipRulesPanel
-        resourceTypeId="rt-cto"
-        canEdit={true}
-        isEditing={true}
-      />,
+      <ResourceRelationshipRulesPanel resourceTypeId="rt-cto" canEdit={true} isEditing={true} />,
     );
 
     expect(await screen.findByText('Relações permitidas (2)')).toBeInTheDocument();
@@ -139,11 +148,7 @@ describe('ResourceRelationshipRulesPanel', () => {
     mocks.createResourceTypeRelationshipRule.mockResolvedValue(createdRule);
 
     render(
-      <ResourceRelationshipRulesPanel
-        resourceTypeId="rt-cto"
-        canEdit={true}
-        isEditing={true}
-      />,
+      <ResourceRelationshipRulesPanel resourceTypeId="rt-cto" canEdit={true} isEditing={true} />,
     );
 
     await screen.findByText('Relações permitidas (2)');
@@ -183,11 +188,7 @@ describe('ResourceRelationshipRulesPanel', () => {
     mocks.updateResourceTypeRelationshipRule.mockResolvedValue(updatedRule);
 
     render(
-      <ResourceRelationshipRulesPanel
-        resourceTypeId="rt-cto"
-        canEdit={true}
-        isEditing={true}
-      />,
+      <ResourceRelationshipRulesPanel resourceTypeId="rt-cto" canEdit={true} isEditing={true} />,
     );
 
     await screen.findByText('Relações permitidas (2)');
@@ -205,16 +206,12 @@ describe('ResourceRelationshipRulesPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar' }));
 
     await waitFor(() => {
-      expect(mocks.updateResourceTypeRelationshipRule).toHaveBeenCalledWith(
-        'rt-cto',
-        'rule-1',
-        {
-          relationshipTypeCode: 'containsAsChild',
-          targetKind: 'RESOURCE_TYPE',
-          targetId: 'rt-port',
-          cardinality: { maxTargetPerSource: 1 },
-        },
-      );
+      expect(mocks.updateResourceTypeRelationshipRule).toHaveBeenCalledWith('rt-cto', 'rule-1', {
+        relationshipTypeCode: 'containsAsChild',
+        targetKind: 'RESOURCE_TYPE',
+        targetId: 'rt-port',
+        cardinality: { maxTargetPerSource: 1 },
+      });
     });
   });
 });

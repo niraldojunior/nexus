@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { runOutboxRelayOnce, type OutboxMessage } from '../src/shared/runtime/outbox-relay.js';
-import type { DatabaseClient, DatabaseRunResult } from '../src/shared/persistence/database-client.js';
+import type {
+  DatabaseClient,
+  DatabaseRunResult,
+} from '../src/shared/persistence/database-client.js';
 
 // Fake mínimo de DatabaseClient sobre um array em memória — só `run`/`get`/`all` importam para
 // o relay; o resto da interface (transaction/close/healthCheck/...) nunca é chamado por ele.
@@ -34,7 +37,7 @@ const createFakeDb = (rows: FakeOutboxRow[]): DatabaseClient => {
       throw new Error('unexpected get()');
     },
     async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-      if (sql.includes("FROM tmf_outbox")) {
+      if (sql.includes('FROM tmf_outbox')) {
         const [limit] = params as [number];
         return rows.filter((row) => row.status === 'pending').slice(0, limit) as unknown as T[];
       }
@@ -89,7 +92,9 @@ test('runOutboxRelayOnce deixa a linha pending quando o publish falha (retry na 
 });
 
 test('runOutboxRelayOnce ignora linhas já publicadas', async () => {
-  const rows = [buildRow({ id: 'outbox-3', status: 'published', published_at: '2026-01-01T00:00:00.000Z' })];
+  const rows = [
+    buildRow({ id: 'outbox-3', status: 'published', published_at: '2026-01-01T00:00:00.000Z' }),
+  ];
   const db = createFakeDb(rows);
   let calls = 0;
 

@@ -54,7 +54,9 @@ function VisibilityToggle({
       aria-pressed={visible}
       onClick={onToggle}
       className={`flex items-center gap-1.5 rounded-[6px] px-2 py-1 text-[0.74rem] font-semibold transition ${
-        visible ? 'bg-status-green-soft text-status-green' : 'bg-[var(--surface-muted)] text-app-muted'
+        visible
+          ? 'bg-status-green-soft text-status-green'
+          : 'bg-[var(--surface-muted)] text-app-muted'
       }`}
     >
       {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}

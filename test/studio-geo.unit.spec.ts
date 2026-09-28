@@ -46,7 +46,10 @@ test('Studio SVG sanitizer accepts a self-contained SVG and rejects active conte
 
 test('Studio assets are tenant-scoped and soft-retired', async () => {
   const service = new StudioAssetService(new StudioAssetRepository());
-  const created = await service.create({ name: 'Ícone CDO', mimeType: STUDIO_ASSET_MIME_TYPE, content: svg }, context);
+  const created = await service.create(
+    { name: 'Ícone CDO', mimeType: STUDIO_ASSET_MIME_TYPE, content: svg },
+    context,
+  );
   assert.equal((await service.list(context)).length, 1);
   assert.equal(await service.get(created.id, { tenantId: 'other' }), undefined);
   const retired = await service.retire(created.id, context);
@@ -69,7 +72,10 @@ test('Studio GEO adapter validates canonical hierarchy and rejects duplicate ent
     ],
   });
   assert.equal(invalid.valid, false);
-  assert.equal(invalid.issues.some((issue) => issue.code === 'STUDIO_GEO_ENTITY_REFERENCE_DUPLICATE'), true);
+  assert.equal(
+    invalid.issues.some((issue) => issue.code === 'STUDIO_GEO_ENTITY_REFERENCE_DUPLICATE'),
+    true,
+  );
 });
 
 test('Studio GEO normalizes v2 point identity away while preserving contextual style', async () => {
@@ -145,8 +151,16 @@ test('Studio GEO normalizes v2 point identity away while preserving contextual s
 test('Studio GEO bootstrap publishes only once and keeps the published snapshot isolated from draft', async () => {
   const studio = new StudioService(new StudioRepository(), eventService as never);
   studio.registerAdapter(new StudioGeoAdapter(noResourceTypes));
-  const first = await studio.ensurePublishedBootstrap('studio-geo', CANONICAL_STUDIO_GEO_SNAPSHOT, context);
-  const second = await studio.ensurePublishedBootstrap('studio-geo', { groups: [], layers: [] }, context);
+  const first = await studio.ensurePublishedBootstrap(
+    'studio-geo',
+    CANONICAL_STUDIO_GEO_SNAPSHOT,
+    context,
+  );
+  const second = await studio.ensurePublishedBootstrap(
+    'studio-geo',
+    { groups: [], layers: [] },
+    context,
+  );
   assert.equal(first.id, second.id);
 
   const draft = await studio.saveDraft('studio-geo', { groups: [], layers: [] }, context);

@@ -90,7 +90,12 @@ export function ResourceNodeMoveModal({
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" type="submit" form="resource-node-move-form" disabled={submitting}>
+          <Button
+            variant="primary"
+            type="submit"
+            form="resource-node-move-form"
+            disabled={submitting}
+          >
             {submitting ? 'Movendo…' : 'Confirmar movimentação'}
           </Button>
         </>
@@ -141,7 +146,6 @@ export function ResourceNodeMoveModal({
               className="geo-input"
             />
           </div>
-
         </form>
       </div>
     </Modal>

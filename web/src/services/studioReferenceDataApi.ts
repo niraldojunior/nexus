@@ -46,8 +46,10 @@ const valuesUrl = (setId: string) => `${setsUrl}/${encodeURIComponent(setId)}/va
 export const listReferenceDataSets = (): Promise<ReferenceDataSet[]> => getJson(setsUrl);
 export const createReferenceDataSet = (input: ReferenceDataSetInput): Promise<ReferenceDataSet> =>
   postJson(setsUrl, input);
-export const updateReferenceDataSet = (id: string, input: ReferenceDataSetInput): Promise<ReferenceDataSet> =>
-  patchJson(`${setsUrl}/${encodeURIComponent(id)}`, input);
+export const updateReferenceDataSet = (
+  id: string,
+  input: ReferenceDataSetInput,
+): Promise<ReferenceDataSet> => patchJson(`${setsUrl}/${encodeURIComponent(id)}`, input);
 export const deactivateReferenceDataSet = (id: string): Promise<ReferenceDataSet> =>
   deleteJson(`${setsUrl}/${encodeURIComponent(id)}`);
 
@@ -62,5 +64,7 @@ export const updateReferenceDataValue = (
   id: string,
   input: ReferenceDataValueInput,
 ): Promise<ReferenceDataValue> => patchJson(`${valuesUrl(setId)}/${encodeURIComponent(id)}`, input);
-export const deactivateReferenceDataValue = (setId: string, id: string): Promise<ReferenceDataValue> =>
-  deleteJson(`${valuesUrl(setId)}/${encodeURIComponent(id)}`);
+export const deactivateReferenceDataValue = (
+  setId: string,
+  id: string,
+): Promise<ReferenceDataValue> => deleteJson(`${valuesUrl(setId)}/${encodeURIComponent(id)}`);

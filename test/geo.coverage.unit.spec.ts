@@ -263,7 +263,10 @@ test('aggregateCells não infla a cobertura: duas CDOs distantes não se conecta
         }
       }
     }
-    assert.ok(hasRealFineCell, 'célula grossa sem nenhuma célula fina real dentro — cobertura inflada');
+    assert.ok(
+      hasRealFineCell,
+      'célula grossa sem nenhuma célula fina real dentro — cobertura inflada',
+    );
   }
 });
 

@@ -164,7 +164,8 @@ export const domainCards: Record<string, DomainCardData[]> = {
     },
     {
       title: 'Path Computation',
-      description: 'Cálculo de caminho óptico e impacto via SQL recursivo CONNECT BY nativo no Oracle.',
+      description:
+        'Cálculo de caminho óptico e impacto via SQL recursivo CONNECT BY nativo no Oracle.',
       tag: 'TMF639',
     },
   ],

@@ -1,6 +1,10 @@
 import { AppError } from '../../../shared/errors/app-error.js';
 import type { DatabaseClient } from '../../../shared/persistence/database-client.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
 import {
   GEO_PROJECT_WORKFLOW_ID,
   GEO_PROJECT_WORKFLOW_ROLES,
@@ -21,7 +25,8 @@ const ALLOWED_ACTIONS_SET = new Set<GeoProjectWorkflowAction>([
 ]);
 const VALID_BEHAVIORS_SET = new Set(['planning', 'execution', 'suspended', 'close-release']);
 
-const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+const nonEmpty = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
 
 export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
   public readonly domain = 'rules-workflows';
@@ -299,7 +304,10 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
     };
   }
 
-  public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
+  public async materialize(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<void> {
     const validation = await this.validate(snapshot);
     if (!validation.valid) {
       throw new AppError(
@@ -327,13 +335,27 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
           `UPDATE geo_project_status_catalog
               SET name = ?, sort_order = ?, active = ?, behavior = ?
             WHERE tenant_id = ? AND code = ?`,
-          [state.name, state.sortOrder, state.active ? 1 : 0, state.behavior, context.tenantId, state.code],
+          [
+            state.name,
+            state.sortOrder,
+            state.active ? 1 : 0,
+            state.behavior,
+            context.tenantId,
+            state.code,
+          ],
         );
       } else {
         await this.db.run(
           `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [context.tenantId, state.code, state.name, state.sortOrder, state.active ? 1 : 0, state.behavior],
+          [
+            context.tenantId,
+            state.code,
+            state.name,
+            state.sortOrder,
+            state.active ? 1 : 0,
+            state.behavior,
+          ],
         );
       }
     }

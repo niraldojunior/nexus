@@ -81,7 +81,12 @@ describe('ResourceAboutTab', () => {
         ...CATALOG_CONTEXT.resourceType,
         resourceTypeCharacteristic: [
           { name: 'ports', valueType: 'integer', characteristicLevel: 'specification' },
-          { name: 'mac_address', valueType: 'string', characteristicLevel: 'instance', value: '00:00:00:00:00:00' },
+          {
+            name: 'mac_address',
+            valueType: 'string',
+            characteristicLevel: 'instance',
+            value: '00:00:00:00:00:00',
+          },
         ],
       },
     });

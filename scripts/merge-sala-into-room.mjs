@@ -78,7 +78,9 @@ async function main() {
     (s) => DUPLICATE_CODES.includes(s.code) && s.lifecycleStatus === 'Active' && s.id !== room.id,
   );
   if (duplicates.length === 0) {
-    console.log('Nenhuma spec duplicada (SALA/TECHNICAL_ROOM) ativa encontrada — nada para migrar.');
+    console.log(
+      'Nenhuma spec duplicada (SALA/TECHNICAL_ROOM) ativa encontrada — nada para migrar.',
+    );
     return;
   }
 

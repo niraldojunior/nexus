@@ -55,9 +55,7 @@ export function OrganizationRolesTab({
       <div className="flex items-center justify-between">
         <div>
           <h4 className="text-[0.88rem] font-bold text-app-text">Papéis Atribuídos</h4>
-          <p className="text-[0.78rem] text-app-muted">
-            Conforme modelado em Studio &gt; Papéis.
-          </p>
+          <p className="text-[0.78rem] text-app-muted">Conforme modelado em Studio &gt; Papéis.</p>
         </div>
         {canMutate && (
           <Button
@@ -74,11 +72,10 @@ export function OrganizationRolesTab({
       {item.roles.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-app-border p-8 text-center text-app-muted">
           <BadgeCheck className="h-8 w-8 opacity-40" />
-          <p className="mt-2 text-[0.84rem] font-semibold text-app-text">
-            Nenhum papel atribuído
-          </p>
+          <p className="mt-2 text-[0.84rem] font-semibold text-app-text">Nenhum papel atribuído</p>
           <p className="mt-0.5 text-[0.78rem]">
-            Atribua um papel (ex.: Fornecedor, Fabricante, ISP) para integrar esta organização ao inventário.
+            Atribua um papel (ex.: Fornecedor, Fabricante, ISP) para integrar esta organização ao
+            inventário.
           </p>
           {canMutate && (
             <Button
@@ -95,8 +92,9 @@ export function OrganizationRolesTab({
       ) : (
         <div className="space-y-2">
           {item.roles.map((role) => {
-            const roleType = (role.roleTypeId ? roleTypeById.get(role.roleTypeId) : undefined)
-              ?? roleTypeByRoleName.get(role.name);
+            const roleType =
+              (role.roleTypeId ? roleTypeById.get(role.roleTypeId) : undefined) ??
+              roleTypeByRoleName.get(role.name);
             const label = roleType?.label || role.name;
             const validityText = formatRoleValidity(role.validFor);
 
@@ -116,7 +114,9 @@ export function OrganizationRolesTab({
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-app-text">{label}</span>
                       {validityText && (
-                        <span className="text-[0.78rem] font-normal text-app-muted">{validityText}</span>
+                        <span className="text-[0.78rem] font-normal text-app-muted">
+                          {validityText}
+                        </span>
                       )}
                     </div>
                   </div>

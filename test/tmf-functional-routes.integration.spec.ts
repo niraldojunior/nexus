@@ -388,10 +388,7 @@ test.skipIf(!oracleConfigured)(
         { name: 'Default activation updated' },
       );
       assert.equal(functionSpecPatch.statusCode, 200);
-      assert.equal(
-        (functionSpecPatch.body as { name: string }).name,
-        'Default activation updated',
-      );
+      assert.equal((functionSpecPatch.body as { name: string }).name, 'Default activation updated');
 
       const functionSpecDelete = await requestJson(
         port,
@@ -704,10 +701,7 @@ test.skipIf(!oracleConfigured)(
         { name: 'Bitstream Candidate Updated' },
       );
       assert.equal(candidatePatch.statusCode, 200);
-      assert.equal(
-        (candidatePatch.body as { name: string }).name,
-        'Bitstream Candidate Updated',
-      );
+      assert.equal((candidatePatch.body as { name: string }).name, 'Bitstream Candidate Updated');
 
       const candidateDelete = await requestJson(
         port,
@@ -799,314 +793,303 @@ test.skipIf(!oracleConfigured)(
   },
 );
 
-test.skipIf(!oracleConfigured)(
-  'TMF order endpoints support read, update and delete',
-  async () => {
-    const server = createApp({ config: createTestConfig(0), logger: createTestLogger() });
-    const port = await server.start();
-    try {
-      const party = await requestJson(port, 'POST', '/tmf-api/partyManagement/v4/party', {
-        name: 'ISP Alfa',
-        partyType: 'Organization',
-      });
-      assert.equal(party.statusCode, 201);
+test.skipIf(!oracleConfigured)('TMF order endpoints support read, update and delete', async () => {
+  const server = createApp({ config: createTestConfig(0), logger: createTestLogger() });
+  const port = await server.start();
+  try {
+    const party = await requestJson(port, 'POST', '/tmf-api/partyManagement/v4/party', {
+      name: 'ISP Alfa',
+      partyType: 'Organization',
+    });
+    assert.equal(party.statusCode, 201);
 
-      const siteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-        name: 'Access Site',
-        category: 'Site',
-      });
-      assert.equal(siteSpec.statusCode, 201);
+    const siteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+      name: 'Access Site',
+      category: 'Site',
+    });
+    assert.equal(siteSpec.statusCode, 201);
 
-      const site = await requestJson(port, 'POST', '/v1/geo/sites', {
-        name: 'CO Botafogo',
-        siteSpecificationId: (siteSpec.body as { id: string }).id,
-      });
-      assert.equal(site.statusCode, 201);
+    const site = await requestJson(port, 'POST', '/v1/geo/sites', {
+      name: 'CO Botafogo',
+      siteSpecificationId: (siteSpec.body as { id: string }).id,
+    });
+    assert.equal(site.statusCode, 201);
 
-      const resourceSpec = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+    const resourceSpec = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+      {
+        name: 'ONT',
+        resourceTypeId: 'rt-olt',
+      },
+    );
+    assert.equal(resourceSpec.statusCode, 201);
+
+    const resource = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/resourceInventoryManagement/v4/resource',
+      {
+        '@type': 'PhysicalResource',
+        name: 'ONT-0001',
+        resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+        placeId: (site.body as { id: string }).id,
+        placeType: 'GeographicSite',
+        serialNumber: 'ONT-0001',
+      },
+    );
+    assert.equal(resource.statusCode, 201);
+
+    const cfsSpec = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',
+      {
+        name: 'Bitstream GPON',
+        category: 'Broadband',
+        serviceType: 'CFS',
+      },
+    );
+    assert.equal(cfsSpec.statusCode, 201);
+
+    const rfsSpec = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',
+      {
+        name: 'GPON Access',
+        category: 'Broadband',
+        serviceType: 'RFS',
+      },
+    );
+    assert.equal(rfsSpec.statusCode, 201);
+
+    const rfs = await requestJson(port, 'POST', '/tmf-api/serviceInventoryManagement/v4/service', {
+      '@type': 'ResourceFacingService',
+      name: 'RFS GPON 1',
+      serviceSpecificationId: (rfsSpec.body as { id: string }).id,
+      supportingResource: [
         {
-          name: 'ONT',
-          resourceTypeId: 'rt-olt',
+          id: (resource.body as { id: string }).id,
+          '@referredType': 'PhysicalResource',
+          role: 'access',
         },
-      );
-      assert.equal(resourceSpec.statusCode, 201);
+      ],
+      state: 'active',
+    });
+    assert.equal(rfs.statusCode, 201);
 
-      const resource = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/resourceInventoryManagement/v4/resource',
-        {
-          '@type': 'PhysicalResource',
-          name: 'ONT-0001',
-          resourceSpecificationId: (resourceSpec.body as { id: string }).id,
-          placeId: (site.body as { id: string }).id,
-          placeType: 'GeographicSite',
-          serialNumber: 'ONT-0001',
-        },
-      );
-      assert.equal(resource.statusCode, 201);
+    const qualification = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/serviceQualificationManagement/v4/serviceQualification',
+      {
+        placeId: (site.body as { id: string }).id,
+        serviceSpecificationId: (cfsSpec.body as { id: string }).id,
+        relatedParty: [
+          {
+            id: (party.body as { id: string }).id,
+            '@referredType': 'Organization',
+            role: 'requestor',
+          },
+        ],
+      },
+    );
+    assert.equal(qualification.statusCode, 201);
 
-      const cfsSpec = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',
-        {
-          name: 'Bitstream GPON',
-          category: 'Broadband',
-          serviceType: 'CFS',
-        },
-      );
-      assert.equal(cfsSpec.statusCode, 201);
+    const qualificationRead = await requestJson(
+      port,
+      'GET',
+      `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${(qualification.body as { id: string }).id}`,
+    );
+    assert.equal(qualificationRead.statusCode, 200);
 
-      const rfsSpec = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/serviceCatalogManagement/v4/serviceSpecification',
-        {
-          name: 'GPON Access',
-          category: 'Broadband',
-          serviceType: 'RFS',
-        },
-      );
-      assert.equal(rfsSpec.statusCode, 201);
+    const qualificationPatch = await requestJson(
+      port,
+      'PATCH',
+      `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${(qualification.body as { id: string }).id}`,
+      {
+        serviceCharacteristic: [
+          { name: 'qualificationMode', value: 'manual', valueType: 'string' },
+        ],
+      },
+    );
+    assert.equal(qualificationPatch.statusCode, 200);
 
-      const rfs = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/serviceInventoryManagement/v4/service',
-        {
-          '@type': 'ResourceFacingService',
-          name: 'RFS GPON 1',
-          serviceSpecificationId: (rfsSpec.body as { id: string }).id,
-          supportingResource: [
-            {
-              id: (resource.body as { id: string }).id,
-              '@referredType': 'PhysicalResource',
-              role: 'access',
+    const qualificationDelete = await requestJson(
+      port,
+      'DELETE',
+      `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${(qualification.body as { id: string }).id}`,
+    );
+    assert.equal(qualificationDelete.statusCode, 200);
+    assert.equal((qualificationDelete.body as { state: string }).state, 'terminated');
+
+    const serviceOrder = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
+      {
+        description: 'Ativacao do CFS principal',
+        relatedParty: [
+          {
+            id: (party.body as { id: string }).id,
+            '@referredType': 'Organization',
+            role: 'subscriber',
+          },
+        ],
+        serviceOrderItem: [
+          {
+            action: 'add',
+            service: {
+              '@type': 'CustomerFacingService',
+              name: 'CFS Bitstream 700',
+              serviceSpecificationId: (cfsSpec.body as { id: string }).id,
+              subscriberId: 'SUB-778899',
+              supportingService: [
+                {
+                  id: (rfs.body as { id: string }).id,
+                  '@referredType': 'ResourceFacingService',
+                  role: 'access',
+                },
+              ],
+              relatedParty: [
+                {
+                  id: (party.body as { id: string }).id,
+                  '@referredType': 'Organization',
+                  role: 'subscriber',
+                },
+              ],
+              place: [
+                {
+                  id: (site.body as { id: string }).id,
+                  '@referredType': 'GeographicSite',
+                  role: 'installationAddress',
+                },
+              ],
+              serviceCharacteristic: [
+                { name: 'SubscriberID', value: 'SUB-778899', valueType: 'string' },
+              ],
             },
-          ],
-          state: 'active',
-        },
-      );
-      assert.equal(rfs.statusCode, 201);
+          },
+        ],
+      },
+    );
+    assert.equal(serviceOrder.statusCode, 201);
+    assert.equal((serviceOrder.body as { state: string }).state, 'completed');
 
-      const qualification = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/serviceQualificationManagement/v4/serviceQualification',
-        {
-          placeId: (site.body as { id: string }).id,
-          serviceSpecificationId: (cfsSpec.body as { id: string }).id,
-          relatedParty: [
-            {
-              id: (party.body as { id: string }).id,
-              '@referredType': 'Organization',
-              role: 'requestor',
+    const serviceOrderRead = await requestJson(
+      port,
+      'GET',
+      `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${(serviceOrder.body as { id: string }).id}`,
+    );
+    assert.equal(serviceOrderRead.statusCode, 200);
+
+    const serviceOrderPatch = await requestJson(
+      port,
+      'PATCH',
+      `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${(serviceOrder.body as { id: string }).id}`,
+      { description: 'Ativacao do CFS principal atualizada' },
+    );
+    assert.equal(serviceOrderPatch.statusCode, 200);
+    assert.equal(
+      (serviceOrderPatch.body as { description: string }).description,
+      'Ativacao do CFS principal atualizada',
+    );
+
+    const serviceOrderDelete = await requestJson(
+      port,
+      'DELETE',
+      `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${(serviceOrder.body as { id: string }).id}`,
+    );
+    assert.equal(serviceOrderDelete.statusCode, 200);
+    assert.equal((serviceOrderDelete.body as { state: string }).state, 'cancelled');
+
+    const resourceOrder = await requestJson(
+      port,
+      'POST',
+      '/tmf-api/resourceOrderingManagement/v4/resourceOrder',
+      {
+        description: 'Provisionamento de recurso fisico',
+        relatedParty: [
+          {
+            id: (party.body as { id: string }).id,
+            '@referredType': 'Organization',
+            role: 'requestor',
+          },
+        ],
+        resourceOrderItem: [
+          {
+            action: 'add',
+            resource: {
+              '@type': 'PhysicalResource',
+              name: 'ONT-0002',
+              resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+              placeId: (site.body as { id: string }).id,
+              placeType: 'GeographicSite',
+              serialNumber: 'ONT-0002',
             },
-          ],
-        },
-      );
-      assert.equal(qualification.statusCode, 201);
+          },
+        ],
+      },
+    );
+    assert.equal(resourceOrder.statusCode, 201);
+    assert.equal((resourceOrder.body as { state: string }).state, 'completed');
 
-      const qualificationRead = await requestJson(
-        port,
-        'GET',
-        `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${(qualification.body as { id: string }).id}`,
-      );
-      assert.equal(qualificationRead.statusCode, 200);
+    const resourceOrderRead = await requestJson(
+      port,
+      'GET',
+      `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${(resourceOrder.body as { id: string }).id}`,
+    );
+    assert.equal(resourceOrderRead.statusCode, 200);
 
-      const qualificationPatch = await requestJson(
-        port,
-        'PATCH',
-        `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${(qualification.body as { id: string }).id}`,
-        {
-          serviceCharacteristic: [
-            { name: 'qualificationMode', value: 'manual', valueType: 'string' },
-          ],
-        },
-      );
-      assert.equal(qualificationPatch.statusCode, 200);
+    const resourceOrderPatch = await requestJson(
+      port,
+      'PATCH',
+      `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${(resourceOrder.body as { id: string }).id}`,
+      { description: 'Provisionamento de recurso fisico atualizado' },
+    );
+    assert.equal(resourceOrderPatch.statusCode, 200);
+    assert.equal(
+      (resourceOrderPatch.body as { description: string }).description,
+      'Provisionamento de recurso fisico atualizado',
+    );
 
-      const qualificationDelete = await requestJson(
-        port,
-        'DELETE',
-        `/tmf-api/serviceQualificationManagement/v4/serviceQualification/${(qualification.body as { id: string }).id}`,
-      );
-      assert.equal(qualificationDelete.statusCode, 200);
-      assert.equal((qualificationDelete.body as { state: string }).state, 'terminated');
+    const resourceOrderDelete = await requestJson(
+      port,
+      'DELETE',
+      `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${(resourceOrder.body as { id: string }).id}`,
+    );
+    assert.equal(resourceOrderDelete.statusCode, 200);
+    assert.equal((resourceOrderDelete.body as { state: string }).state, 'cancelled');
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
+});
 
-      const serviceOrder = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
-        {
-          description: 'Ativacao do CFS principal',
-          relatedParty: [
-            {
-              id: (party.body as { id: string }).id,
-              '@referredType': 'Organization',
-              role: 'subscriber',
-            },
-          ],
-          serviceOrderItem: [
-            {
-              action: 'add',
-              service: {
-                '@type': 'CustomerFacingService',
-                name: 'CFS Bitstream 700',
-                serviceSpecificationId: (cfsSpec.body as { id: string }).id,
-                subscriberId: 'SUB-778899',
-                supportingService: [
-                  {
-                    id: (rfs.body as { id: string }).id,
-                    '@referredType': 'ResourceFacingService',
-                    role: 'access',
-                  },
-                ],
-                relatedParty: [
-                  {
-                    id: (party.body as { id: string }).id,
-                    '@referredType': 'Organization',
-                    role: 'subscriber',
-                  },
-                ],
-                place: [
-                  {
-                    id: (site.body as { id: string }).id,
-                    '@referredType': 'GeographicSite',
-                    role: 'installationAddress',
-                  },
-                ],
-                serviceCharacteristic: [
-                  { name: 'SubscriberID', value: 'SUB-778899', valueType: 'string' },
-                ],
-              },
-            },
-          ],
-        },
-      );
-      assert.equal(serviceOrder.statusCode, 201);
-      assert.equal((serviceOrder.body as { state: string }).state, 'completed');
+test.skipIf(!oracleConfigured)('Research sessions default to Nexus Copilot context', async () => {
+  const server = createApp({ config: createTestConfig(0), logger: createTestLogger() });
+  const port = await server.start();
+  try {
+    // Sessões de pesquisa exigem um usuário real (requireUser) — o token estático de máquina
+    // não corresponde a nenhuma conta, então o teste se autentica como o usuário semente via
+    // `x-actor-sub` (aceito fora de produção, ver request-context.ts).
+    const session = await requestJson(
+      port,
+      'POST',
+      '/v1/research/sessions',
+      { title: 'Nova conversa' },
+      { 'x-actor-sub': 'VT158145' },
+    );
 
-      const serviceOrderRead = await requestJson(
-        port,
-        'GET',
-        `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${(serviceOrder.body as { id: string }).id}`,
-      );
-      assert.equal(serviceOrderRead.statusCode, 200);
-
-      const serviceOrderPatch = await requestJson(
-        port,
-        'PATCH',
-        `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${(serviceOrder.body as { id: string }).id}`,
-        { description: 'Ativacao do CFS principal atualizada' },
-      );
-      assert.equal(serviceOrderPatch.statusCode, 200);
-      assert.equal(
-        (serviceOrderPatch.body as { description: string }).description,
-        'Ativacao do CFS principal atualizada',
-      );
-
-      const serviceOrderDelete = await requestJson(
-        port,
-        'DELETE',
-        `/tmf-api/serviceOrderingManagement/v4/serviceOrder/${(serviceOrder.body as { id: string }).id}`,
-      );
-      assert.equal(serviceOrderDelete.statusCode, 200);
-      assert.equal((serviceOrderDelete.body as { state: string }).state, 'cancelled');
-
-      const resourceOrder = await requestJson(
-        port,
-        'POST',
-        '/tmf-api/resourceOrderingManagement/v4/resourceOrder',
-        {
-          description: 'Provisionamento de recurso fisico',
-          relatedParty: [
-            {
-              id: (party.body as { id: string }).id,
-              '@referredType': 'Organization',
-              role: 'requestor',
-            },
-          ],
-          resourceOrderItem: [
-            {
-              action: 'add',
-              resource: {
-                '@type': 'PhysicalResource',
-                name: 'ONT-0002',
-                resourceSpecificationId: (resourceSpec.body as { id: string }).id,
-                placeId: (site.body as { id: string }).id,
-                placeType: 'GeographicSite',
-                serialNumber: 'ONT-0002',
-              },
-            },
-          ],
-        },
-      );
-      assert.equal(resourceOrder.statusCode, 201);
-      assert.equal((resourceOrder.body as { state: string }).state, 'completed');
-
-      const resourceOrderRead = await requestJson(
-        port,
-        'GET',
-        `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${(resourceOrder.body as { id: string }).id}`,
-      );
-      assert.equal(resourceOrderRead.statusCode, 200);
-
-      const resourceOrderPatch = await requestJson(
-        port,
-        'PATCH',
-        `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${(resourceOrder.body as { id: string }).id}`,
-        { description: 'Provisionamento de recurso fisico atualizado' },
-      );
-      assert.equal(resourceOrderPatch.statusCode, 200);
-      assert.equal(
-        (resourceOrderPatch.body as { description: string }).description,
-        'Provisionamento de recurso fisico atualizado',
-      );
-
-      const resourceOrderDelete = await requestJson(
-        port,
-        'DELETE',
-        `/tmf-api/resourceOrderingManagement/v4/resourceOrder/${(resourceOrder.body as { id: string }).id}`,
-      );
-      assert.equal(resourceOrderDelete.statusCode, 200);
-      assert.equal((resourceOrderDelete.body as { state: string }).state, 'cancelled');
-    } finally {
-      await server.stop();
-      const client = await getOracleTestClient();
-      await cleanupOracleTables(client);
-    }
-  },
-);
-
-test.skipIf(!oracleConfigured)(
-  'Research sessions default to Nexus Copilot context',
-  async () => {
-    const server = createApp({ config: createTestConfig(0), logger: createTestLogger() });
-    const port = await server.start();
-    try {
-      // Sessões de pesquisa exigem um usuário real (requireUser) — o token estático de máquina
-      // não corresponde a nenhuma conta, então o teste se autentica como o usuário semente via
-      // `x-actor-sub` (aceito fora de produção, ver request-context.ts).
-      const session = await requestJson(
-        port,
-        'POST',
-        '/v1/research/sessions',
-        { title: 'Nova conversa' },
-        { 'x-actor-sub': 'VT158145' },
-      );
-
-      assert.equal(session.statusCode, 201);
-      assert.match((session.body as { context: string }).context, /Nexus Copilot/);
-      assert.match((session.body as { context: string }).context, /Telecom/);
-    } finally {
-      await server.stop();
-      const client = await getOracleTestClient();
-      await cleanupOracleTables(client);
-    }
-  },
-);
+    assert.equal(session.statusCode, 201);
+    assert.match((session.body as { context: string }).context, /Nexus Copilot/);
+    assert.match((session.body as { context: string }).context, /Telecom/);
+  } finally {
+    await server.stop();
+    const client = await getOracleTestClient();
+    await cleanupOracleTables(client);
+  }
+});

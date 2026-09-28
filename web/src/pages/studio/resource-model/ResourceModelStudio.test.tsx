@@ -3,7 +3,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ResourceModelStudio } from './ResourceModelStudio';
 import * as resourceCatalogApi from '../../../services/resourceCatalogApi';
-import type { ResourceCatalog, ResourceCatalogTreeNode } from '../../../services/resourceCatalogApi';
+import type {
+  ResourceCatalog,
+  ResourceCatalogTreeNode,
+} from '../../../services/resourceCatalogApi';
 
 vi.mock('../../../services/resourceCatalogApi', () => ({
   listResourceCatalogs: vi.fn(),

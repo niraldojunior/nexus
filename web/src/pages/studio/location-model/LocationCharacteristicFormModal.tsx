@@ -44,7 +44,9 @@ export function LocationCharacteristicFormModal({
   const [row, setRow] = useState<GeoCharacteristicRow>(emptyGeoCharacteristicRow());
   const [referenceDataSets, setReferenceDataSets] = useState<ReferenceDataSet[]>([]);
   const [availableRoleTypes, setAvailableRoleTypes] = useState<PartyRoleType[]>([]);
-  const [organizationOptions, setOrganizationOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [organizationOptions, setOrganizationOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

@@ -23,16 +23,41 @@ body {
 }
 
 /* ---- Headings ------------------------------------------------ */
-h1, h2, h3, h4 { margin: 0; color: var(--text-primary); }
-h1 { font: var(--text-h1); letter-spacing: var(--tracking-snug); }
-h2 { font: var(--text-h2); letter-spacing: var(--tracking-snug); }
-h3 { font: var(--text-h3); }
-p  { margin: 0; }
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  color: var(--text-primary);
+}
+h1 {
+  font: var(--text-h1);
+  letter-spacing: var(--tracking-snug);
+}
+h2 {
+  font: var(--text-h2);
+  letter-spacing: var(--tracking-snug);
+}
+h3 {
+  font: var(--text-h3);
+}
+p {
+  margin: 0;
+}
 
-a { color: var(--text-primary); text-decoration: none; }
-a:hover { color: var(--text-secondary); }
+a {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--text-secondary);
+}
 
-:focus-visible { outline: none; box-shadow: var(--focus-shadow); border-radius: var(--radius-md); }
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-shadow);
+  border-radius: var(--radius-md);
+}
 
 /* ---- Eyebrow / section label -------------------------------- */
 .vt-eyebrow {
@@ -43,8 +68,14 @@ a:hover { color: var(--text-secondary); }
 }
 
 /* ---- Prose / chat column ------------------------------------ */
-.vt-prose { font: var(--text-prose); color: var(--text-secondary); max-width: var(--prose-max); }
-.vt-prose > * + * { margin-top: 0.85em; }
+.vt-prose {
+  font: var(--text-prose);
+  color: var(--text-secondary);
+  max-width: var(--prose-max);
+}
+.vt-prose > * + * {
+  margin-top: 0.85em;
+}
 
 /* ---- Surfaces ----------------------------------------------- */
 .vt-card {
@@ -56,7 +87,9 @@ a:hover { color: var(--text-secondary); }
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
   cursor: pointer;
 }
 .vt-card-interactive:hover {
@@ -90,16 +123,24 @@ a:hover { color: var(--text-secondary); }
   font: var(--text-label);
   color: var(--sidebar-fg);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
-.vt-nav-item:hover { background: var(--sidebar-item-hover); color: var(--sidebar-fg-active); }
+.vt-nav-item:hover {
+  background: var(--sidebar-item-hover);
+  color: var(--sidebar-fg-active);
+}
 .vt-nav-item[aria-current='page'],
 .vt-nav-item.is-active {
   background: var(--sidebar-item-active);
   color: var(--sidebar-fg-active);
   font-weight: var(--fw-semibold);
 }
-.vt-nav-item.is-selected { background: var(--sidebar-item-active); color: var(--text-primary); }
+.vt-nav-item.is-selected {
+  background: var(--sidebar-item-active);
+  color: var(--text-primary);
+}
 .vt-nav-section {
   font: var(--text-eyebrow);
   text-transform: uppercase;
@@ -109,10 +150,24 @@ a:hover { color: var(--text-secondary); }
 }
 
 /* ---- Conversation (LLM console) ---------------------------- */
-.vt-thread { max-width: var(--thread-max); margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-5); }
-.vt-turn { display: flex; flex-direction: column; gap: 6px; }
-.vt-turn-user { align-items: flex-end; }
-.vt-turn-assistant { align-items: flex-start; }
+.vt-thread {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.vt-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vt-turn-user {
+  align-items: flex-end;
+}
+.vt-turn-assistant {
+  align-items: flex-start;
+}
 .vt-turn-user .vt-bubble {
   background: var(--chat-user-bubble);
   border: 1px solid var(--border);
@@ -131,7 +186,10 @@ a:hover { color: var(--text-secondary); }
   line-height: var(--lh-relaxed);
   color: var(--text-primary);
 }
-.vt-turn-time { font-size: var(--fs-sm); color: var(--chat-meta); }
+.vt-turn-time {
+  font-size: var(--fs-sm);
+  color: var(--chat-meta);
+}
 
 /* Flat like every other input: hairline border, no elevation. */
 .vt-composer {
@@ -142,54 +200,172 @@ a:hover { color: var(--text-secondary); }
   background: var(--composer-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 .vt-composer:focus-within {
   border-color: var(--vt-yellow);
   box-shadow: var(--focus-shadow);
 }
-.vt-composer textarea, .vt-composer input {
-  flex: 1; min-width: 0; border: none; outline: none; background: transparent; resize: none;
+.vt-composer textarea,
+.vt-composer input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
   font: var(--fw-regular) var(--fs-body-relaxed)/var(--lh-normal) var(--font-ui);
   color: var(--text-primary);
 }
-.vt-composer textarea:focus-visible, .vt-composer input:focus-visible { box-shadow: none; }
-.vt-composer textarea::placeholder, .vt-composer input::placeholder { color: var(--text-tertiary); }
+.vt-composer textarea:focus-visible,
+.vt-composer input:focus-visible {
+  box-shadow: none;
+}
+.vt-composer textarea::placeholder,
+.vt-composer input::placeholder {
+  color: var(--text-tertiary);
+}
 /* Single-line hero composer on the new-conversation screen. Same surface,
    just centred and one line tall — not a different visual species. */
-.vt-composer-hero { align-items: center; padding: 8px 8px 8px 16px; }
+.vt-composer-hero {
+  align-items: center;
+  padding: 8px 8px 8px 16px;
+}
 /* Send is an ordinary primary button, not a floating yellow disc. */
 .vt-send {
-  flex-shrink: 0; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--vt-yellow); border-radius: var(--radius-md);
-  background: var(--vt-yellow); color: var(--vt-ink);
-  cursor: pointer; transition: background var(--transition-fast), border-color var(--transition-fast);
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vt-yellow);
+  border-radius: var(--radius-md);
+  background: var(--vt-yellow);
+  color: var(--vt-ink);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
 }
-.vt-send:hover { background: var(--vt-yellow-light); border-color: var(--vt-yellow-light); }
-.vt-send:disabled { background: var(--surface-muted); border-color: var(--border); color: var(--text-disabled); cursor: not-allowed; }
+.vt-send:hover {
+  background: var(--vt-yellow-light);
+  border-color: var(--vt-yellow-light);
+}
+.vt-send:disabled {
+  background: var(--surface-muted);
+  border-color: var(--border);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
 
 /* Suggestion entry points under the hero composer. */
-.vt-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
-.vt-suggestion {
-  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
-  border: none; background: transparent; border-radius: var(--radius-md);
-  font: var(--fw-regular) var(--fs-body-relaxed)/1 var(--font-ui); color: var(--text-secondary);
-  cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast);
+.vt-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
 }
-.vt-suggestion:hover { background: var(--surface-muted); color: var(--text-primary); }
+.vt-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  font: var(--fw-regular) var(--fs-body-relaxed)/1 var(--font-ui);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+.vt-suggestion:hover {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
 
 /* ---- Sidebar (shadcn-composition: header/content/groups/footer/rail) ---- */
-.vt-sb-group-label { display: flex; align-items: center; height: 28px; padding: 0 8px; font: var(--fw-medium) var(--fs-sm)/1.2 var(--font-ui); color: var(--text-tertiary); }
-.vt-sb-btn { position: relative; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radius-md); font: var(--text-label); color: var(--sidebar-fg); cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast); }
-.vt-sb-btn:hover { background: var(--sidebar-item-hover); color: var(--sidebar-fg-active); }
-.vt-sb-btn.is-active { background: var(--sidebar-item-active); color: var(--sidebar-fg-active); font-weight: var(--fw-semibold); }
-.vt-sb-btn-lg { height: 48px; padding: 0 10px; }
-.vt-sb-btn-rail { justify-content: center; padding: 0; width: 40px; }
-.vt-sb-tip { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); background: var(--surface-ink); color: var(--text-on-dark); font: var(--fw-medium) var(--fs-sm)/1 var(--font-ui); padding: 5px 9px; border-radius: var(--radius-sm); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity var(--transition-fast); z-index: 60; box-shadow: var(--shadow-md); }
+.vt-sb-group-label {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  font: var(--fw-medium) var(--fs-sm)/1.2 var(--font-ui);
+  color: var(--text-tertiary);
+}
+.vt-sb-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  font: var(--text-label);
+  color: var(--sidebar-fg);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+.vt-sb-btn:hover {
+  background: var(--sidebar-item-hover);
+  color: var(--sidebar-fg-active);
+}
+.vt-sb-btn.is-active {
+  background: var(--sidebar-item-active);
+  color: var(--sidebar-fg-active);
+  font-weight: var(--fw-semibold);
+}
+.vt-sb-btn-lg {
+  height: 48px;
+  padding: 0 10px;
+}
+.vt-sb-btn-rail {
+  justify-content: center;
+  padding: 0;
+  width: 40px;
+}
+.vt-sb-tip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--surface-ink);
+  color: var(--text-on-dark);
+  font: var(--fw-medium) var(--fs-sm)/1 var(--font-ui);
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+  z-index: 60;
+  box-shadow: var(--shadow-md);
+}
 .vt-sb-btn:hover .vt-sb-tip,
-.vt-sb-btn:focus-visible .vt-sb-tip { opacity: 1; }
-.vt-sb-rail { position: absolute; top: 0; bottom: 0; right: -2px; width: 4px; cursor: col-resize; z-index: 21; background: transparent; transition: background var(--transition-fast); }
-.vt-sb-rail:hover { background: var(--border-strong); }
+.vt-sb-btn:focus-visible .vt-sb-tip {
+  opacity: 1;
+}
+.vt-sb-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -2px;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 21;
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+.vt-sb-rail:hover {
+  background: var(--border-strong);
+}
 
 /* ---- Icon rail (Locais module primary nav) ----------------- */
 .vt-rail {
@@ -213,9 +389,14 @@ a:hover { color: var(--text-secondary); }
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
-.vt-rail-item:hover { background: var(--surface-muted); color: var(--text-primary); }
+.vt-rail-item:hover {
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
 .vt-rail-item[aria-current='page'],
 .vt-rail-item.is-active {
   background: var(--sidebar-item-active);
@@ -241,7 +422,9 @@ a:hover { color: var(--text-secondary); }
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-float);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 .vt-searchbar:focus-within {
   border-color: var(--vt-yellow);
@@ -256,11 +439,18 @@ a:hover { color: var(--text-secondary); }
   font: var(--fw-regular) var(--fs-body-relaxed)/1 var(--font-ui);
   color: var(--text-primary);
 }
-.vt-searchbar input:focus-visible { box-shadow: none; }
+.vt-searchbar input:focus-visible {
+  box-shadow: none;
+}
 /* Flat variant: same shape/shadow rest-state as .vt-composer — used where the
    search bar sits on a plain page instead of floating over the map. */
-.vt-searchbar-flat { border-radius: var(--radius-lg); box-shadow: none; }
-.vt-searchbar input::placeholder { color: var(--text-tertiary); }
+.vt-searchbar-flat {
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+.vt-searchbar input::placeholder {
+  color: var(--text-tertiary);
+}
 .vt-map-btn {
   width: 44px;
   height: 44px;
@@ -274,7 +464,10 @@ a:hover { color: var(--text-secondary); }
   color: var(--text-secondary);
   cursor: pointer;
 }
-.vt-map-btn:hover { color: var(--text-primary); background: var(--surface-card-hover); }
+.vt-map-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-card-hover);
+}
 
 /* ---- Panel header (back · title · actions) ------------------ */
 .vt-panel-head {
@@ -292,13 +485,28 @@ a:hover { color: var(--text-secondary); }
 }
 
 /* ---- Key/value rows (entity detail, map popover) ----------- */
-.vt-kv { display: grid; grid-template-columns: minmax(88px, auto) 1fr; gap: 6px 20px; }
-.vt-kv dt { font-size: var(--fs-body-lg); color: var(--text-tertiary); }
-.vt-kv dd { margin: 0; font-size: var(--fs-body-lg); color: var(--text-primary); }
+.vt-kv {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) 1fr;
+  gap: 6px 20px;
+}
+.vt-kv dt {
+  font-size: var(--fs-body-lg);
+  color: var(--text-tertiary);
+}
+.vt-kv dd {
+  margin: 0;
+  font-size: var(--fs-body-lg);
+  color: var(--text-primary);
+}
 
 /* ---- Data table --------------------------------------------- */
 /* Sentence-case, medium-weight heads — not uppercase micro-caps. */
-.vt-table { width: 100%; border-collapse: collapse; text-align: left; }
+.vt-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
 .vt-table th {
   padding: 8px 12px;
   font: var(--text-label);
@@ -313,11 +521,28 @@ a:hover { color: var(--text-secondary); }
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
-.vt-table tbody tr { transition: background var(--transition-fast); }
-.vt-table tbody tr:hover { background: var(--surface-muted); }
+.vt-table tbody tr {
+  transition: background var(--transition-fast);
+}
+.vt-table tbody tr:hover {
+  background: var(--surface-muted);
+}
 
 /* ---- Scrollbar ---------------------------------------------- */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--neutral-400); border-radius: var(--radius-full); border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: var(--neutral-500); background-clip: content-box; }
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-400);
+  border-radius: var(--radius-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-500);
+  background-clip: content-box;
+}

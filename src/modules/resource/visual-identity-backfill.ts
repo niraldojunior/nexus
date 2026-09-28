@@ -1,7 +1,4 @@
-import {
-  isValidNativeMapIconCode,
-  type VisualIdentity,
-} from '../../shared/ui/visual-identity.js';
+import { isValidNativeMapIconCode, type VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 export type VisualIdentityEvidenceSource = 'studio-geo' | 'catalog-node-metadata';
 
@@ -74,7 +71,8 @@ export function extractStudioGeoVisualIdentities(
     if (!sourceId) continue;
 
     const visualConfig = asRecord(node.visualConfig);
-    const nodeAssetId = typeof node.assetId === 'string' && node.assetId.trim() ? node.assetId.trim() : undefined;
+    const nodeAssetId =
+      typeof node.assetId === 'string' && node.assetId.trim() ? node.assetId.trim() : undefined;
     const configAssetId =
       typeof visualConfig?.assetId === 'string' && visualConfig.assetId.trim()
         ? visualConfig.assetId.trim()
@@ -110,7 +108,8 @@ export function extractStudioGeoVisualIdentities(
   for (const entry of layers) {
     const layer = asRecord(entry);
     if (!layer) continue;
-    const layerAssetId = typeof layer.assetId === 'string' && layer.assetId.trim() ? layer.assetId.trim() : undefined;
+    const layerAssetId =
+      typeof layer.assetId === 'string' && layer.assetId.trim() ? layer.assetId.trim() : undefined;
     if (layerAssetId && typeof layer.matcher === 'string') {
       const matcher = layer.matcher.trim();
       const sourceType =
@@ -132,9 +131,7 @@ export function extractStudioGeoVisualIdentities(
  * Extrai evidência secundária a partir de `ResourceCatalogNode.metadata.icon`.
  * Apenas aceito se for código nativo válido.
  */
-export function extractCatalogNodeIconEvidence(
-  metadata: unknown,
-): VisualIdentity | undefined {
+export function extractCatalogNodeIconEvidence(metadata: unknown): VisualIdentity | undefined {
   const record = asRecord(metadata);
   if (!record) return undefined;
   const icon = typeof record.icon === 'string' ? record.icon.trim() : undefined;

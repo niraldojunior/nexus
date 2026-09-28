@@ -86,11 +86,7 @@ export type LifecycleResolution = {
 };
 
 function normalizeDesignation(designation: string | undefined): string {
-  return (designation ?? '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .trim();
+  return (designation ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
 }
 
 const TERMINATED_PATTERN = /TERMINAD|ABORT|RETIRA|CANCELAD/;
@@ -121,6 +117,25 @@ export function makeTablePrefixer(targetPrefix?: string): TablePrefixer {
   return (name: string) => quote(prefixed(name, prefix));
 }
 
+export function mergeSql(
+  t: TablePrefixer,
+  table: string,
+  keys: string[],
+  columns: string[],
+): string {
+  if (keys.length === 0) throw new Error(`MERGE ${table} exige ao menos uma chave.`);
+  const source = columns.map((column, index) => `:${index + 1} ${quote(column)}`).join(', ');
+  const on = keys.map((key) => `target.${quote(key)}=source.${quote(key)}`).join(' AND ');
+  const mutable = columns.filter((column) => !keys.includes(column));
+  const matched =
+    mutable.length > 0
+      ? `WHEN MATCHED THEN UPDATE SET ${mutable.map((column) => `target.${quote(column)}=source.${quote(column)}`).join(', ')}`
+      : '';
+  return `MERGE INTO ${t(table)} target USING (SELECT ${source} FROM DUAL) source ON (${on})
+    ${matched}
+    WHEN NOT MATCHED THEN INSERT (${columns.map(quote).join(',')}) VALUES (${columns.map((column) => `source.${quote(column)}`).join(',')})`;
+}
+
 export async function merge(
   target: Connection,
   t: TablePrefixer,
@@ -129,13 +144,38 @@ export async function merge(
   record: Record<string, unknown>,
 ): Promise<void> {
   const columns = Object.keys(record);
-  const source = columns.map((column, i) => `:${i + 1} ${quote(column)}`).join(', ');
-  const on = keys.map((key) => `target.${quote(key)}=source.${quote(key)}`).join(' AND ');
-  const mutable = columns.filter((column) => !keys.includes(column));
-  const sql = `MERGE INTO ${t(table)} target USING (SELECT ${source} FROM DUAL) source ON (${on})
-    WHEN MATCHED THEN UPDATE SET ${mutable.map((column) => `target.${quote(column)}=source.${quote(column)}`).join(', ')}
-    WHEN NOT MATCHED THEN INSERT (${columns.map(quote).join(',')}) VALUES (${columns.map((column) => `source.${quote(column)}`).join(',')})`;
-  await target.execute(sql, Object.values(record));
+  await target.execute(mergeSql(t, table, keys, columns), Object.values(record));
+}
+
+/**
+ * Reconcilia registros Oracle por `MERGE` em lote. Ao contrário de `bulkInsertRows`, registros já
+ * existentes são atualizados; relações compostas só recebem o ramo `WHEN NOT MATCHED`, sem usar
+ * ORA-00001 como controle de fluxo em reexecuções idempotentes.
+ */
+export async function bulkMergeRows(
+  target: Connection,
+  t: TablePrefixer,
+  table: string,
+  keys: string[],
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+  chunkSize = 1000,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  const sql = mergeSql(t, table, keys, columns);
+  const safeChunkSize = Math.max(1, chunkSize);
+  let executed = 0;
+  for (let offset = 0; offset < rows.length; offset += safeChunkSize) {
+    const chunk = rows.slice(offset, offset + safeChunkSize);
+    await target.executeMany(
+      sql,
+      chunk.map((row) => columns.map((column) => row[column] ?? null)),
+      { autoCommit: false },
+    );
+    executed += chunk.length;
+  }
+  return executed;
 }
 
 // ---- catálogo (Category / ResourceType / ResourceSpecification / SiteSpecification) ----
@@ -209,7 +249,13 @@ export async function resourceSpecId(
   resourceTypeCode: string,
   tenantId: string,
 ): Promise<string> {
-  const resourceTypeId = await ensureResourceType(target, t, resourceTypeCode, resourceTypeCode, tenantId);
+  const resourceTypeId = await ensureResourceType(
+    target,
+    t,
+    resourceTypeCode,
+    resourceTypeCode,
+    tenantId,
+  );
   const row = await target.execute<{ ID: string }>(
     `SELECT id AS "ID" FROM ${t('tmf_resource_specification')} WHERE tenant_id=:1 AND name=:2 AND resource_type_id=:3 FETCH FIRST 1 ROWS ONLY`,
     [tenantId, name, resourceTypeId],

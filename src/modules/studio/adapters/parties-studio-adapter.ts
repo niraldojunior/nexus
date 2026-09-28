@@ -7,7 +7,11 @@
 // estado canônico no descarte de rascunho.
 
 import { AppError } from '../../../shared/errors/app-error.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
 import type {
   PartyRoleTypeCharacteristicRepository,
   PartyRoleTypeCharacteristicValueType,
@@ -43,7 +47,13 @@ export type PartiesStudioSnapshot = {
 };
 
 const VALUE_TYPES: PartyRoleTypeCharacteristicValueType[] = [
-  'string', 'integer', 'decimal', 'boolean', 'date', 'list', 'json',
+  'string',
+  'integer',
+  'decimal',
+  'boolean',
+  'date',
+  'list',
+  'json',
 ];
 
 export class PartiesStudioAdapter implements StudioDomainAdapter {
@@ -82,36 +92,78 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
       const roleName = type?.roleName?.trim();
       const label = type?.label?.trim();
       if (!key) {
-        issues.push({ severity: 'error', code: 'PARTIES_KEY_REQUIRED', message: 'A chave do tipo de parte é obrigatória.', path: `${path}.key` });
+        issues.push({
+          severity: 'error',
+          code: 'PARTIES_KEY_REQUIRED',
+          message: 'A chave do tipo de parte é obrigatória.',
+          path: `${path}.key`,
+        });
       } else if (keys.has(key.toLowerCase())) {
-        issues.push({ severity: 'error', code: 'PARTIES_KEY_DUPLICATE', message: `Chave de tipo de parte duplicada: ${key}.`, path: `${path}.key` });
+        issues.push({
+          severity: 'error',
+          code: 'PARTIES_KEY_DUPLICATE',
+          message: `Chave de tipo de parte duplicada: ${key}.`,
+          path: `${path}.key`,
+        });
       } else keys.add(key.toLowerCase());
       if (!roleName) {
-        issues.push({ severity: 'error', code: 'PARTIES_ROLE_NAME_REQUIRED', message: 'O papel (roleName) do tipo de parte é obrigatório.', path: `${path}.roleName` });
+        issues.push({
+          severity: 'error',
+          code: 'PARTIES_ROLE_NAME_REQUIRED',
+          message: 'O papel (roleName) do tipo de parte é obrigatório.',
+          path: `${path}.roleName`,
+        });
       }
       if (!label) {
-        issues.push({ severity: 'error', code: 'PARTIES_LABEL_REQUIRED', message: 'O título do tipo de parte é obrigatório.', path: `${path}.label` });
+        issues.push({
+          severity: 'error',
+          code: 'PARTIES_LABEL_REQUIRED',
+          message: 'O título do tipo de parte é obrigatório.',
+          path: `${path}.label`,
+        });
       }
 
       const characteristicNames = new Set<string>();
-      for (let characteristicIndex = 0; characteristicIndex < (type?.characteristics?.length ?? 0); characteristicIndex += 1) {
+      for (
+        let characteristicIndex = 0;
+        characteristicIndex < (type?.characteristics?.length ?? 0);
+        characteristicIndex += 1
+      ) {
         const characteristic = type!.characteristics![characteristicIndex];
         const characteristicPath = `${path}.characteristics[${characteristicIndex}]`;
         const name = characteristic?.name?.trim();
         if (!name) {
-          issues.push({ severity: 'error', code: 'PARTIES_CHARACTERISTIC_NAME_REQUIRED', message: 'O nome da characteristic é obrigatório.', path: `${characteristicPath}.name` });
+          issues.push({
+            severity: 'error',
+            code: 'PARTIES_CHARACTERISTIC_NAME_REQUIRED',
+            message: 'O nome da characteristic é obrigatório.',
+            path: `${characteristicPath}.name`,
+          });
         } else if (characteristicNames.has(name.toLowerCase())) {
-          issues.push({ severity: 'error', code: 'PARTIES_CHARACTERISTIC_NAME_DUPLICATE', message: `Characteristic duplicada: ${name}.`, path: `${characteristicPath}.name` });
+          issues.push({
+            severity: 'error',
+            code: 'PARTIES_CHARACTERISTIC_NAME_DUPLICATE',
+            message: `Characteristic duplicada: ${name}.`,
+            path: `${characteristicPath}.name`,
+          });
         } else characteristicNames.add(name.toLowerCase());
         if (!characteristic?.valueType || !VALUE_TYPES.includes(characteristic.valueType)) {
-          issues.push({ severity: 'error', code: 'PARTIES_CHARACTERISTIC_TYPE_INVALID', message: 'O tipo de valor da characteristic é inválido.', path: `${characteristicPath}.valueType` });
+          issues.push({
+            severity: 'error',
+            code: 'PARTIES_CHARACTERISTIC_TYPE_INVALID',
+            message: 'O tipo de valor da characteristic é inválido.',
+            path: `${characteristicPath}.valueType`,
+          });
         }
       }
     }
     return { valid: issues.length === 0, issues, validatedAt: new Date().toISOString() };
   }
 
-  public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
+  public async materialize(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<void> {
     const validation = await this.validate(snapshot);
     if (!validation.valid) {
       throw new AppError(validation.issues.map((issue) => issue.message).join('; '), {
@@ -164,7 +216,10 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
       }
       snapshotIds.add(materialized.id);
 
-      const existingCharacteristics = await this.characteristicRepository.list(tenantId, materialized.id);
+      const existingCharacteristics = await this.characteristicRepository.list(
+        tenantId,
+        materialized.id,
+      );
       const characteristicsByName = new Map(existingCharacteristics.map((c) => [c.name, c]));
       const snapshotCharacteristicNames = new Set<string>();
       for (const characteristic of type.characteristics ?? []) {
@@ -181,7 +236,10 @@ export class PartiesStudioAdapter implements StudioDomainAdapter {
             referenceDataSetKey: characteristic.referenceDataSetKey ?? null,
             sortOrder: characteristic.sortOrder ?? currentCharacteristic.sortOrder,
             mandatory: characteristic.mandatory ?? currentCharacteristic.mandatory,
-            defaultValue: characteristic.defaultValue !== undefined ? characteristic.defaultValue : currentCharacteristic.defaultValue,
+            defaultValue:
+              characteristic.defaultValue !== undefined
+                ? characteristic.defaultValue
+                : currentCharacteristic.defaultValue,
             active: true,
           });
         } else {

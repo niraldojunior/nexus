@@ -42,7 +42,14 @@ const createServices = () => {
 test('SpatialStudioAdapter validates coverage snapshots', async () => {
   const { adapter } = createServices();
   const valid = await adapter.validate({
-    coverages: [{ key: 'niteroi-norte', name: 'Niterói Norte', coverageType: 'operational', geometry: polygon }],
+    coverages: [
+      {
+        key: 'niteroi-norte',
+        name: 'Niterói Norte',
+        coverageType: 'operational',
+        geometry: polygon,
+      },
+    ],
   });
   assert.equal(valid.valid, true);
 
@@ -53,15 +60,36 @@ test('SpatialStudioAdapter validates coverage snapshots', async () => {
         key: 'DUP',
         name: 'duplicada',
         coverageType: 'operational',
-        geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1]]] },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+            ],
+          ],
+        },
       },
     ],
   });
   assert.equal(invalid.valid, false);
-  assert.equal(invalid.issues.some((issue) => issue.code === 'SPATIAL_KEY_DUPLICATE'), true);
-  assert.equal(invalid.issues.some((issue) => issue.code === 'SPATIAL_NAME_DUPLICATE'), true);
-  assert.equal(invalid.issues.some((issue) => issue.code === 'SPATIAL_TYPE_REQUIRED'), true);
-  assert.equal(invalid.issues.some((issue) => issue.code === 'SPATIAL_POLYGON_INVALID'), true);
+  assert.equal(
+    invalid.issues.some((issue) => issue.code === 'SPATIAL_KEY_DUPLICATE'),
+    true,
+  );
+  assert.equal(
+    invalid.issues.some((issue) => issue.code === 'SPATIAL_NAME_DUPLICATE'),
+    true,
+  );
+  assert.equal(
+    invalid.issues.some((issue) => issue.code === 'SPATIAL_TYPE_REQUIRED'),
+    true,
+  );
+  assert.equal(
+    invalid.issues.some((issue) => issue.code === 'SPATIAL_POLYGON_INVALID'),
+    true,
+  );
 });
 
 test('SpatialStudioAdapter publishes TMF675 manual coverage and preserves derived locations', async () => {
@@ -71,17 +99,28 @@ test('SpatialStudioAdapter publishes TMF675 manual coverage and preserves derive
       geometryType: 'Polygon',
       geometry: polygon,
       referencePoint: 'GPON:RJ|Niterói|Icaraí',
-      characteristic: [{ group: '_coverage', name: 'kind', value: 'GponCoverage', valueType: 'string' }],
+      characteristic: [
+        { group: '_coverage', name: 'kind', value: 'GponCoverage', valueType: 'string' },
+      ],
     },
     context,
   );
   const snapshot: SpatialStudioSnapshot = {
     coverages: [
-      { key: 'niteroi-norte', name: 'Niterói Norte', coverageType: 'operational', geometry: polygon },
+      {
+        key: 'niteroi-norte',
+        name: 'Niterói Norte',
+        coverageType: 'operational',
+        geometry: polygon,
+      },
     ],
   };
 
-  const draft = await studioService.saveDraft('spatial', snapshot as unknown as Record<string, unknown>, context);
+  const draft = await studioService.saveDraft(
+    'spatial',
+    snapshot as unknown as Record<string, unknown>,
+    context,
+  );
   assert.equal((await studioService.validateDraft('spatial', context)).valid, true);
   await studioService.publish('spatial', context, draft.checksum);
 
@@ -90,8 +129,16 @@ test('SpatialStudioAdapter publishes TMF675 manual coverage and preserves derive
   assert.ok(coverage);
   assert.equal(coverage.geometryType, 'Polygon');
   assert.equal(coverage.sourceSystem, 'MANUAL');
-  assert.equal(coverage.characteristic.some((item) => item.name === 'coverageType' && item.value === 'operational'), true);
-  assert.equal((await geoService.getLocation(derived.id, context))?.referencePoint, derived.referencePoint);
+  assert.equal(
+    coverage.characteristic.some(
+      (item) => item.name === 'coverageType' && item.value === 'operational',
+    ),
+    true,
+  );
+  assert.equal(
+    (await geoService.getLocation(derived.id, context))?.referencePoint,
+    derived.referencePoint,
+  );
 });
 
 test('SpatialStudioAdapter updates and soft-terminates managed coverages only', async () => {
@@ -100,7 +147,9 @@ test('SpatialStudioAdapter updates and soft-terminates managed coverages only', 
     coverages: [{ key: 'centro', name: 'Centro', coverageType: 'operational', geometry: polygon }],
   };
   await adapter.materialize(initial as unknown as Record<string, unknown>, context);
-  const created = (await geoService.listLocations(undefined, context)).find(isStudioSpatialCoverage);
+  const created = (await geoService.listLocations(undefined, context)).find(
+    isStudioSpatialCoverage,
+  );
   assert.ok(created);
 
   await adapter.materialize(
@@ -118,7 +167,12 @@ test('SpatialStudioAdapter updates and soft-terminates managed coverages only', 
     context,
   );
   const updated = await geoService.getLocation(created.id, context);
-  assert.equal(updated?.characteristic.some((item) => item.name === 'name' && item.value === 'Centro Expandido'), true);
+  assert.equal(
+    updated?.characteristic.some(
+      (item) => item.name === 'name' && item.value === 'Centro Expandido',
+    ),
+    true,
+  );
 
   await adapter.materialize({ coverages: [] }, context);
   assert.ok((await geoService.getLocation(created.id, context))?.validFor?.endDateTime);

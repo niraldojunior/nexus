@@ -147,14 +147,19 @@ export interface StudioDomainAdapter {
     context: { tenantId: string },
   ): Promise<Record<string, unknown>> | Record<string, unknown>;
   /** Valida a forma/consistência do snapshot antes de permitir publicação. */
-  validate(snapshot: Record<string, unknown>): Promise<StudioValidationResult> | StudioValidationResult;
+  validate(
+    snapshot: Record<string, unknown>,
+  ): Promise<StudioValidationResult> | StudioValidationResult;
   /**
    * Materializa o snapshot publicado nas tabelas canônicas do domínio. Chamado dentro da mesma
    * transação da publicação do kernel. Adapters ainda não implementados (PR3+) usam o no-op padrão
    * (`createNoopStudioDomainAdapter`), que bloqueia a publicação até existir uma implementação
    * capaz de materializar a projeção canônica.
    */
-  materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> | void;
+  materialize(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<void> | void;
   /**
    * Indica que o domínio grava o estado canônico durante a edição e, por isso, precisa
    * materializar a baseline ao descartar o draft. O padrão é `true` para preservar os adapters

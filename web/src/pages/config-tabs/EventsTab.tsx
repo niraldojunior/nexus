@@ -1,6 +1,10 @@
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listStudioAudit, type StudioAuditEntry, type StudioDomain } from '../../services/studioApi';
+import {
+  listStudioAudit,
+  type StudioAuditEntry,
+  type StudioDomain,
+} from '../../services/studioApi';
 import PageHead from '../../components/ui/PageHead';
 import Button from '../../components/ui/Button';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
@@ -26,7 +30,9 @@ const actionLabel: Record<StudioAuditEntry['action'], string> = {
 };
 
 const formatDateTime = (value: string): string =>
-  new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value));
+  new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(
+    new Date(value),
+  );
 
 /** Consulta tenant-scoped à trilha de publicação do Studio; não usa o feed TMF688 transversal. */
 export function EventsTab() {

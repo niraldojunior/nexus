@@ -23,7 +23,9 @@ class InMemoryReferenceDataRepository implements IReferenceDataRepository {
   private nextId = () => `id-${(this.seq += 1)}`;
 
   async listSets(tenantId: string, includeInactive = false): Promise<ReferenceDataSet[]> {
-    return [...this.sets.values()].filter((s) => s.tenantId === tenantId && (includeInactive || s.active));
+    return [...this.sets.values()].filter(
+      (s) => s.tenantId === tenantId && (includeInactive || s.active),
+    );
   }
   async getSet(tenantId: string, id: string): Promise<ReferenceDataSet | null> {
     const set = this.sets.get(id);
@@ -47,7 +49,11 @@ class InMemoryReferenceDataRepository implements IReferenceDataRepository {
     this.sets.set(set.id, set);
     return set;
   }
-  async updateSet(tenantId: string, id: string, patch: UpdateReferenceDataSetInput): Promise<ReferenceDataSet | null> {
+  async updateSet(
+    tenantId: string,
+    id: string,
+    patch: UpdateReferenceDataSetInput,
+  ): Promise<ReferenceDataSet | null> {
     const current = await this.getSet(tenantId, id);
     if (!current) return null;
     const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
@@ -69,7 +75,11 @@ class InMemoryReferenceDataRepository implements IReferenceDataRepository {
     return updated;
   }
 
-  async listValues(tenantId: string, setId: string, includeInactive = false): Promise<ReferenceDataValue[]> {
+  async listValues(
+    tenantId: string,
+    setId: string,
+    includeInactive = false,
+  ): Promise<ReferenceDataValue[]> {
     return [...this.values.values()].filter(
       (v) => v.tenantId === tenantId && v.setId === setId && (includeInactive || v.active),
     );
@@ -132,7 +142,9 @@ test('ReferenceDataStudioAdapter validates snapshot shape, required fields and d
 
   const missingArray = await adapter.validate({});
   assert.equal(missingArray.valid, false);
-  assert.ok(missingArray.issues.some((issue) => issue.code === 'REFERENCE_DATA_SETS_ARRAY_REQUIRED'));
+  assert.ok(
+    missingArray.issues.some((issue) => issue.code === 'REFERENCE_DATA_SETS_ARRAY_REQUIRED'),
+  );
 
   const valid = await adapter.validate({
     sets: [{ key: 'uf', name: 'UF', values: [{ key: 'rj', label: 'Rio de Janeiro' }] }],
@@ -141,7 +153,14 @@ test('ReferenceDataStudioAdapter validates snapshot shape, required fields and d
 
   const duplicated = await adapter.validate({
     sets: [
-      { key: 'uf', name: 'UF', values: [{ key: 'rj', label: 'Rio de Janeiro' }, { key: 'RJ', label: 'dup' }] },
+      {
+        key: 'uf',
+        name: 'UF',
+        values: [
+          { key: 'rj', label: 'Rio de Janeiro' },
+          { key: 'RJ', label: 'dup' },
+        ],
+      },
       { key: 'UF', name: 'UF dup', values: [] },
     ],
   });
@@ -191,17 +210,29 @@ test('ReferenceDataStudioAdapter materialize creates sets/values and never delet
 
   // Republicar o mesmo conjunto (agora por chave, sem id) restabelece a baseline ativa.
   await adapter.materialize(
-    { sets: [{ key: 'uf', name: 'UF', values: [{ key: 'rj', label: 'Rio de Janeiro', sortOrder: 1 }] }] },
+    {
+      sets: [
+        { key: 'uf', name: 'UF', values: [{ key: 'rj', label: 'Rio de Janeiro', sortOrder: 1 }] },
+      ],
+    },
     context,
   );
   const setsAfterRepublish = await repository.listSets(TENANT_ID, true);
   assert.equal(setsAfterRepublish.length, 1);
-  assert.equal(setsAfterRepublish[0]?.active, true, 'reativação restabelece o conjunto ao publicar de novo');
+  assert.equal(
+    setsAfterRepublish[0]?.active,
+    true,
+    'reativação restabelece o conjunto ao publicar de novo',
+  );
   const valuesAfterRepublish = await repository.listValues(TENANT_ID, ufSet!.id, true);
   const rj = valuesAfterRepublish.find((v) => v.key === 'rj');
   const sp = valuesAfterRepublish.find((v) => v.key === 'sp');
   assert.equal(rj?.active, true);
-  assert.equal(sp?.active, false, 'valor ausente do novo snapshot permanece inativo, não é ressuscitado');
+  assert.equal(
+    sp?.active,
+    false,
+    'valor ausente do novo snapshot permanece inativo, não é ressuscitado',
+  );
 });
 
 test('ReferenceDataStudioAdapter materialize rejects invalid snapshots and unknown ids', async () => {

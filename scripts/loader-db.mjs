@@ -25,7 +25,11 @@ export async function openLoaderDb() {
   if (!prefix) {
     throw new Error('ORACLE_OBJECT_PREFIX obrigatório (ex.: NEXUS_DEV_) para executar loaders.');
   }
-  if (!process.env.ORACLE_CONNECTION_STRING || !process.env.ORACLE_USER || !process.env.ORACLE_PASSWORD) {
+  if (
+    !process.env.ORACLE_CONNECTION_STRING ||
+    !process.env.ORACLE_USER ||
+    !process.env.ORACLE_PASSWORD
+  ) {
     throw new Error('ORACLE_CONNECTION_STRING, ORACLE_USER e ORACLE_PASSWORD são obrigatórios.');
   }
 
@@ -38,7 +42,8 @@ export async function openLoaderDb() {
   return {
     provider: 'oracle',
     query: (sql, params = []) => oracleQuery(conn, prefix, sql, params),
-    bulkInsert: (table, columns, rows, opts) => bulkInsertOracle(conn, prefix, table, columns, rows, opts),
+    bulkInsert: (table, columns, rows, opts) =>
+      bulkInsertOracle(conn, prefix, table, columns, rows, opts),
     gatherStats: (table) => gatherStatsOracle(conn, prefix, table),
     close: async () => {
       try {
@@ -87,12 +92,16 @@ async function oracleQuery(conn, prefix, sql, params) {
     return { rows: [], rowCount: 0 };
   }
 
-  const result = await conn.execute(toOracleSql(sql, prefix), (params ?? []).map(normalizeBindValue), {
-    outFormat: oracledb.OUT_FORMAT_OBJECT,
-    autoCommit: false,
-    fetchArraySize: 2000,
-    prefetchRows: 2000,
-  });
+  const result = await conn.execute(
+    toOracleSql(sql, prefix),
+    (params ?? []).map(normalizeBindValue),
+    {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+      autoCommit: false,
+      fetchArraySize: 2000,
+      prefetchRows: 2000,
+    },
+  );
   return {
     rows: (result.rows ?? []).map(lowerKeys),
     rowCount: result.rowsAffected ?? result.rows?.length ?? 0,
@@ -133,7 +142,14 @@ const bindValueFor = (value, bindDef) => {
   return value;
 };
 
-async function bulkInsertOracle(conn, prefix, table, columns, rows, { ignoreDuplicates = false } = {}) {
+async function bulkInsertOracle(
+  conn,
+  prefix,
+  table,
+  columns,
+  rows,
+  { ignoreDuplicates = false } = {},
+) {
   if (rows.length === 0) return 0;
   const bindDefs = columns.map((column) => bindDefFor(column, rows));
   const sql = toOracleSql(
@@ -142,7 +158,9 @@ async function bulkInsertOracle(conn, prefix, table, columns, rows, { ignoreDupl
   );
   let inserted = 0;
   for (const block of chunk(rows, 1000)) {
-    const data = block.map((row) => columns.map((column, index) => bindValueFor(row[column], bindDefs[index])));
+    const data = block.map((row) =>
+      columns.map((column, index) => bindValueFor(row[column], bindDefs[index])),
+    );
     const result = await conn.executeMany(sql, data, {
       autoCommit: false,
       bindDefs,

@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react';
 import type { ResourceCharacteristic } from '../../services/resourceApi';
 import { coerceValue, type CharacteristicValueType } from '../../utils/resourceCharacteristicsForm';
-import { listReferenceDataSets, listReferenceDataValues } from '../../services/studioReferenceDataApi';
+import {
+  listReferenceDataSets,
+  listReferenceDataValues,
+} from '../../services/studioReferenceDataApi';
 import { getParty, listOrganizationsByRoleTypeIds } from '../../services/partyApi';
 import { ImageCharacteristicInput } from '../studio/resource-model/ImageCharacteristicInput';
 import { Info } from './InfoRow';
 import { InlineEditRow } from './InlineEditRow';
 
-type ResourceCharacteristicValue = { name: string; value: unknown; valueType?: string; group?: string };
+type ResourceCharacteristicValue = {
+  name: string;
+  value: unknown;
+  valueType?: string;
+  group?: string;
+};
 
 export type ResourceInstanceCharacteristicsProps = {
   /** Definições de nível instância do `ResourceType` (issue #273) — nunca as de nível especificação;
@@ -42,7 +50,9 @@ export function ResourceInstanceCharacteristics({
   // ao entrar em edição — nunca no mount do painel (mesmo padrão de `startEditStatusCode` em
   // ResourceOverviewTab.tsx, que também busca catálogo só quando o usuário clica para editar).
   const [referenceOptions, setReferenceOptions] = useState<Record<string, string[]>>({});
-  const [roleOrganizations, setRoleOrganizations] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [roleOrganizations, setRoleOrganizations] = useState<
+    Record<string, Array<{ id: string; name: string }>>
+  >({});
   const [resolvedOrgNames, setResolvedOrgNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -111,7 +121,10 @@ export function ResourceInstanceCharacteristics({
     const isEmpty = textValue.trim() === '';
     const next = isEmpty
       ? rest
-      : [...rest, { name: def.name, value: coerceValue(textValue, valueType), valueType: def.valueType }];
+      : [
+          ...rest,
+          { name: def.name, value: coerceValue(textValue, valueType), valueType: def.valueType },
+        ];
     void onPatch({ characteristic: next });
   };
 
@@ -127,12 +140,14 @@ export function ResourceInstanceCharacteristics({
         const editing = editingName === def.name;
         const listOptions =
           def.valueType === 'list'
-            ? (def.referenceDataSetKey ? referenceOptions[def.referenceDataSetKey] : def.allowedValues) ?? []
+            ? ((def.referenceDataSetKey
+                ? referenceOptions[def.referenceDataSetKey]
+                : def.allowedValues) ?? [])
             : [];
 
         const displayValue =
           def.valueType === 'organization' && currentText
-            ? resolvedOrgNames[currentText] ?? currentText
+            ? (resolvedOrgNames[currentText] ?? currentText)
             : currentText;
 
         if (!canEdit) {
@@ -201,7 +216,9 @@ export function ResourceInstanceCharacteristics({
                   }}
                   className="h-4 w-4 rounded border-app-border text-app-accent focus:ring-app-accent"
                 />
-                <span className="text-[0.82rem] text-app-text">{draft === 'true' ? 'Sim' : 'Não'}</span>
+                <span className="text-[0.82rem] text-app-text">
+                  {draft === 'true' ? 'Sim' : 'Não'}
+                </span>
               </label>
             ) : def.valueType === 'list' && listOptions.length > 0 ? (
               <select
@@ -245,7 +262,13 @@ export function ResourceInstanceCharacteristics({
                       ? 'number'
                       : 'text'
                 }
-                step={def.valueType === 'integer' ? '1' : def.valueType === 'decimal' ? 'any' : undefined}
+                step={
+                  def.valueType === 'integer'
+                    ? '1'
+                    : def.valueType === 'decimal'
+                      ? 'any'
+                      : undefined
+                }
                 value={draft}
                 onChange={(event) => {
                   const val = event.target.value;

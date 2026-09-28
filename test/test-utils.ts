@@ -1,7 +1,11 @@
 import http from 'node:http';
 import { config as loadEnv } from 'dotenv';
 import { createApp } from '../src/shared/http/app.js';
-import { resolveDatabaseConfig, type AppConfig, type OracleConfig } from '../src/shared/config/env.js';
+import {
+  resolveDatabaseConfig,
+  type AppConfig,
+  type OracleConfig,
+} from '../src/shared/config/env.js';
 import { GEO_ADMIN_ROLES } from '../src/shared/http/request-context.js';
 import { createDatabaseClient } from '../src/shared/persistence/database-factory.js';
 import type { DatabaseClient } from '../src/shared/persistence/database-client.js';
@@ -23,7 +27,9 @@ export const TEST_ORACLE_PREFIX = process.env.ORACLE_TEST_OBJECT_PREFIX ?? 'NEXU
 // True when the environment carries enough to reach a real Oracle. DB-backed specs skip unless this
 // holds, so a plain `npm run test:unit` (no ORACLE_* configured) never tries to connect.
 export const isOracleTestConfigured = (): boolean =>
-  Boolean(process.env.ORACLE_CONNECTION_STRING && process.env.ORACLE_USER && process.env.ORACLE_PASSWORD);
+  Boolean(
+    process.env.ORACLE_CONNECTION_STRING && process.env.ORACLE_USER && process.env.ORACLE_PASSWORD,
+  );
 
 // Guard against the shared-schema hazard: DEV/HML/PRD live in the same Oracle schema as TEST, and
 // the suite DELETEs every prefixed table between runs. Refusing anything but a `_TEST_`/`_TST_`
@@ -39,7 +45,10 @@ export const assertOracleTestPrefix = (prefix: string): void => {
 };
 
 const resolveTestOracleConfig = (): OracleConfig => {
-  const config = resolveDatabaseConfig({ ...process.env, ORACLE_OBJECT_PREFIX: TEST_ORACLE_PREFIX });
+  const config = resolveDatabaseConfig({
+    ...process.env,
+    ORACLE_OBJECT_PREFIX: TEST_ORACLE_PREFIX,
+  });
   assertOracleTestPrefix(config.objectPrefix);
   return config;
 };
@@ -148,12 +157,8 @@ export const startHttpTestApp = async () => {
 
   return {
     port,
-    requestJson: (
-      method: string,
-      path: string,
-      body?: unknown,
-      headers?: Record<string, string>,
-    ) => requestJson(port, method, path, body, headers),
+    requestJson: (method: string, path: string, body?: unknown, headers?: Record<string, string>) =>
+      requestJson(port, method, path, body, headers),
     cleanup: async () => {
       await server.stop();
       const client = await getOracleTestClient();

@@ -46,14 +46,8 @@ const colorRule = (value: unknown, fallback: StudioGeoColorRule): StudioGeoColor
   };
 };
 
-const strokeStyle = (
-  value: unknown,
-  fallback: StudioGeoStrokeStyle,
-): StudioGeoStrokeStyle =>
-  value === 'solid' ||
-  value === 'dashed' ||
-  value === 'dotted' ||
-  value === 'animated-dotted'
+const strokeStyle = (value: unknown, fallback: StudioGeoStrokeStyle): StudioGeoStrokeStyle =>
+  value === 'solid' || value === 'dashed' || value === 'dotted' || value === 'animated-dotted'
     ? value
     : fallback;
 
@@ -214,9 +208,7 @@ export type ResolvedStudioGeoPolygonStyle = {
 };
 
 export type ResolvedStudioGeoStyle =
-  | ResolvedStudioGeoPointStyle
-  | ResolvedStudioGeoLineStyle
-  | ResolvedStudioGeoPolygonStyle;
+  ResolvedStudioGeoPointStyle | ResolvedStudioGeoLineStyle | ResolvedStudioGeoPolygonStyle;
 
 export function resolveStudioGeoVisualStyle(
   config: StudioGeoVisualConfig,

@@ -178,20 +178,12 @@ test('ResourceRepository clones stored entities and filters across resource kind
     1,
   );
   // Filtros de relatedParty (RF-004, issue #251)
+  assert.equal(repository.listPhysicalResources({ relatedPartyId: 'party-1' }).length, 1);
+  assert.equal(repository.listPhysicalResources({ relatedPartyId: 'missing-party' }).length, 0);
+  assert.equal(repository.listPhysicalResources({ relatedPartyRole: 'vendor' }).length, 0);
   assert.equal(
-    repository.listPhysicalResources({ relatedPartyId: 'party-1' }).length,
-    1,
-  );
-  assert.equal(
-    repository.listPhysicalResources({ relatedPartyId: 'missing-party' }).length,
-    0,
-  );
-  assert.equal(
-    repository.listPhysicalResources({ relatedPartyRole: 'vendor' }).length,
-    0,
-  );
-  assert.equal(
-    repository.listPhysicalResources({ relatedPartyId: 'party-1', relatedPartyRole: 'vendor' }).length,
+    repository.listPhysicalResources({ relatedPartyId: 'party-1', relatedPartyRole: 'vendor' })
+      .length,
     0,
   );
   assert.equal(
@@ -407,7 +399,7 @@ test('ResourceService allows one active drop per splitter output in either relat
         id: dropTwo.id,
         relationshipType: 'connectedTo',
         '@referredType': 'Resource',
-    }),
+      }),
     (error: unknown) => error instanceof AppError && error.code === 'RESOURCE_PORT_DROP_OCCUPIED',
   );
   await service.addResourceRelationship(output.id, {
@@ -850,23 +842,30 @@ test('ResourceService: validates vendor and forbids manufacturer on PhysicalReso
     name: 'Huawei Brasil',
   };
 
-  const partyRolesMap: Record<string, Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>> = {
+  const partyRolesMap: Record<
+    string,
+    Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>
+  > = {
     'party-vendor-1': [{ name: 'vendor', status: 'active' }],
     'party-other-1': [{ name: 'supplier', status: 'active' }],
     'party-mfg-1': [{ name: 'manufacturer', status: 'active' }],
   };
 
-  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never, {
-    lookupParty: (id) =>
-      id === partyVendor.id
-        ? partyVendor
-        : id === partyOther.id
-          ? partyOther
-          : id === partyManufacturer.id
-            ? partyManufacturer
-            : undefined,
-    lookupPartyRoles: async (partyId) => partyRolesMap[partyId] ?? [],
-  });
+  const service = new ResourceService(
+    repository,
+    { appendEvent: vi.fn(() => undefined) } as never,
+    {
+      lookupParty: (id) =>
+        id === partyVendor.id
+          ? partyVendor
+          : id === partyOther.id
+            ? partyOther
+            : id === partyManufacturer.id
+              ? partyManufacturer
+              : undefined,
+      lookupPartyRoles: async (partyId) => partyRolesMap[partyId] ?? [],
+    },
+  );
 
   const spec = await service.createResourceSpecification({
     name: 'OLT MA5800',
@@ -878,7 +877,9 @@ test('ResourceService: validates vendor and forbids manufacturer on PhysicalReso
     service.createPhysicalResource({
       name: 'OLT-01',
       resourceSpecificationId: spec.id,
-      relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+      relatedParty: [
+        { id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' },
+      ],
     }),
     (error: unknown) =>
       error instanceof AppError &&
@@ -928,7 +929,9 @@ test('ResourceService: validates vendor and forbids manufacturer on PhysicalReso
   // 5. Update: rejeita fabricante em updatePhysicalResource
   await assert.rejects(
     service.updatePhysicalResource(created.id, {
-      relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+      relatedParty: [
+        { id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' },
+      ],
     }),
     (error: unknown) =>
       error instanceof AppError &&
@@ -961,26 +964,35 @@ test('ResourceService: lookupPartyRoles recebe o tenant da requisição, não um
   // Simula um diretório de papéis por tenant: o papel de fabricante da VANTIVA só existe (e está
   // ativo) sob o tenant 'vtal' — nunca sob 'default'. Isso reproduz fielmente o cenário relatado:
   // papel cadastrado e ativo no tenant real da sessão, mas ausente no tenant 'default'.
-  const rolesByTenant: Record<string, Record<string, Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>>> = {
+  const rolesByTenant: Record<
+    string,
+    Record<string, Array<{ name: string; status: 'active' | 'inactive' | 'terminated' }>>
+  > = {
     vtal: { [partyManufacturer.id]: [{ name: 'manufacturer', status: 'active' }] },
     default: { [partyManufacturer.id]: [] },
   };
   const receivedTenantIds: string[] = [];
 
-  const service = new ResourceService(repository, { appendEvent: vi.fn(() => undefined) } as never, {
-    lookupParty: (id) => (id === partyManufacturer.id ? partyManufacturer : undefined),
-    lookupPartyRoles: async (partyId, tenantId) => {
-      receivedTenantIds.push(tenantId);
-      return rolesByTenant[tenantId]?.[partyId] ?? [];
+  const service = new ResourceService(
+    repository,
+    { appendEvent: vi.fn(() => undefined) } as never,
+    {
+      lookupParty: (id) => (id === partyManufacturer.id ? partyManufacturer : undefined),
+      lookupPartyRoles: async (partyId, tenantId) => {
+        receivedTenantIds.push(tenantId);
+        return rolesByTenant[tenantId]?.[partyId] ?? [];
+      },
     },
-  });
+  );
 
   // 1. Sob o tenant 'vtal' (o da sessão real), o papel é encontrado e a spec salva normalmente.
   const spec = await service.createResourceSpecification(
     {
       name: 'ONT VANTIVA',
       resourceTypeId: 'rt-ont',
-      relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+      relatedParty: [
+        { id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' },
+      ],
     },
     { tenantId: 'vtal' } as never,
   );
@@ -995,7 +1007,9 @@ test('ResourceService: lookupPartyRoles recebe o tenant da requisição, não um
       {
         name: 'ONT VANTIVA (default)',
         resourceTypeId: 'rt-ont',
-        relatedParty: [{ id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' }],
+        relatedParty: [
+          { id: partyManufacturer.id, '@referredType': 'Organization', role: 'manufacturer' },
+        ],
       },
       { tenantId: 'default' } as never,
     ),
@@ -1023,7 +1037,12 @@ test('ResourceService: characteristicLevel on ResourceType and ResourceSpecifica
     nature: 'PhysicalResource',
     resourceTypeCharacteristic: [
       { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16 },
-      { name: 'serial_number_logic', valueType: 'string', characteristicLevel: 'instance', value: 'SN-DEFAULT' },
+      {
+        name: 'serial_number_logic',
+        valueType: 'string',
+        characteristicLevel: 'instance',
+        value: 'SN-DEFAULT',
+      },
       { name: 'legacy_spec_char', valueType: 'string', value: 'def' },
     ],
   });
@@ -1033,7 +1052,12 @@ test('ResourceService: characteristicLevel on ResourceType and ResourceSpecifica
   const updatedType = await service.updateResourceType(resourceTypeId, {
     resourceTypeCharacteristic: [
       { name: 'ports', valueType: 'integer', characteristicLevel: 'specification', value: 16 },
-      { name: 'mac', valueType: 'string', characteristicLevel: 'instance', value: '00:11:22:33:44:55' },
+      {
+        name: 'mac',
+        valueType: 'string',
+        characteristicLevel: 'instance',
+        value: '00:11:22:33:44:55',
+      },
     ],
   });
   const portsChar = updatedType.resourceTypeCharacteristic?.find((c) => c.name === 'ports');
@@ -1045,7 +1069,12 @@ test('ResourceService: characteristicLevel on ResourceType and ResourceSpecifica
   await assert.rejects(
     service.updateResourceType(resourceTypeId, {
       resourceTypeCharacteristic: [
-        { name: 'bad_level', valueType: 'string', characteristicLevel: 'invalid' as never, value: null },
+        {
+          name: 'bad_level',
+          valueType: 'string',
+          characteristicLevel: 'invalid' as never,
+          value: null,
+        },
       ],
     }),
     (error: unknown) =>
@@ -1059,9 +1088,7 @@ test('ResourceService: characteristicLevel on ResourceType and ResourceSpecifica
     service.createResourceSpecification({
       name: 'Spec com Char de Instância',
       resourceTypeId,
-      resourceSpecificationCharacteristic: [
-        { name: 'mac', value: '00:11:22:33:44:55' },
-      ],
+      resourceSpecificationCharacteristic: [{ name: 'mac', value: '00:11:22:33:44:55' }],
     }),
     (error: unknown) =>
       error instanceof AppError &&
@@ -1073,9 +1100,7 @@ test('ResourceService: characteristicLevel on ResourceType and ResourceSpecifica
   const validSpec = await service.createResourceSpecification({
     name: 'Spec Válida',
     resourceTypeId,
-    resourceSpecificationCharacteristic: [
-      { name: 'ports', value: 32 },
-    ],
+    resourceSpecificationCharacteristic: [{ name: 'ports', value: 32 }],
   });
   assert.equal(validSpec.resourceSpecificationCharacteristic?.length, 1);
   assert.equal(validSpec.resourceSpecificationCharacteristic?.[0]?.name, 'ports');
@@ -1092,9 +1117,7 @@ test('ResourceService: characteristicLevel on ResourceType and ResourceSpecifica
   // 6. updateResourceSpecification com novo array: rejeita se contiver characteristic de nível instância
   await assert.rejects(
     service.updateResourceSpecification(validSpec.id, {
-      resourceSpecificationCharacteristic: [
-        { name: 'mac', value: 'AA:BB:CC:DD:EE:FF' },
-      ],
+      resourceSpecificationCharacteristic: [{ name: 'mac', value: 'AA:BB:CC:DD:EE:FF' }],
     }),
     (error: unknown) =>
       error instanceof AppError &&

@@ -318,8 +318,14 @@ export class OracleDatabase implements DatabaseClient {
     const prefix = this.config.objectPrefix;
     const typeTable = prefixed('tmf_resource_type', prefix);
     const references = [
-      { table: prefixed('tmf_resource_specification', prefix), name: `${prefix}tmf_resource_specification_type_fk` },
-      { table: prefixed('tmf_resource_catalog_node', prefix), name: `${prefix}tmf_resource_catalog_node_type_fk` },
+      {
+        table: prefixed('tmf_resource_specification', prefix),
+        name: `${prefix}tmf_resource_specification_type_fk`,
+      },
+      {
+        table: prefixed('tmf_resource_catalog_node', prefix),
+        name: `${prefix}tmf_resource_catalog_node_type_fk`,
+      },
     ];
 
     for (const reference of references) {
@@ -448,7 +454,10 @@ export class OracleDatabase implements DatabaseClient {
         duplicate.resource_type_id,
       );
       const source = original.rows?.[0];
-      if (!source) throw new Error(`ResourceType ${duplicate.resource_type_id} referenced by catalog node is missing`);
+      if (!source)
+        throw new Error(
+          `ResourceType ${duplicate.resource_type_id} referenced by catalog node is missing`,
+        );
 
       for (const leaf of (leaves.rows ?? []).slice(1)) {
         const existing = await connection.execute<{ cloned_resource_type_id: string }>(
@@ -686,7 +695,12 @@ export class OracleDatabase implements DatabaseClient {
     }
 
     const resourceTypes = await connection.execute<{
-      id: string; tenant_id: string; code: string; icon_code: string | null; icon_asset_id: string | null; metadata: string | null;
+      id: string;
+      tenant_id: string;
+      code: string;
+      icon_code: string | null;
+      icon_asset_id: string | null;
+      metadata: string | null;
     }>(
       `SELECT rt.id AS "id", rt.tenant_id AS "tenant_id", rt.code AS "code",
               rt.icon_code AS "icon_code", rt.icon_asset_id AS "icon_asset_id", n.metadata AS "metadata"
@@ -703,18 +717,37 @@ export class OracleDatabase implements DatabaseClient {
         : row.icon_asset_id
           ? { kind: 'asset', assetId: row.icon_asset_id }
           : null;
-      const metadata = row.metadata ? (() => { try { return JSON.parse(row.metadata); } catch { return undefined; } })() : undefined;
+      const metadata = row.metadata
+        ? (() => {
+            try {
+              return JSON.parse(row.metadata);
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
       const resolved = resolveTargetVisualIdentity({
-        sourceType: 'RESOURCE_TYPE', targetId: row.id, targetCode: row.code,
-        studioGeoMap: studioGeoByTenant.get(row.tenant_id) ?? new Map(), catalogNodeMetadata: metadata,
-        activeAssetIds: activeAssetsByTenant.get(row.tenant_id) ?? new Set(), existingIdentity,
+        sourceType: 'RESOURCE_TYPE',
+        targetId: row.id,
+        targetCode: row.code,
+        studioGeoMap: studioGeoByTenant.get(row.tenant_id) ?? new Map(),
+        catalogNodeMetadata: metadata,
+        activeAssetIds: activeAssetsByTenant.get(row.tenant_id) ?? new Set(),
+        existingIdentity,
       });
-      if (resolved.status === 'invalid_asset') { unresolved.push(`ResourceType ${row.code}: asset ${resolved.assetId} inválido`); continue; }
+      if (resolved.status === 'invalid_asset') {
+        unresolved.push(`ResourceType ${row.code}: asset ${resolved.assetId} inválido`);
+        continue;
+      }
       if (resolved.status !== 'resolved') continue;
       const identity = resolved.evidence.visualIdentity;
       await connection.execute(
         `UPDATE ${types} SET icon_code = :1, icon_asset_id = :2, updated_at = CURRENT_TIMESTAMP WHERE id = :3`,
-        [identity.kind === 'system' ? identity.iconCode : null, identity.kind === 'asset' ? identity.assetId : null, row.id],
+        [
+          identity.kind === 'system' ? identity.iconCode : null,
+          identity.kind === 'asset' ? identity.assetId : null,
+          row.id,
+        ],
         { autoCommit: true },
       );
     }
@@ -726,14 +759,35 @@ export class OracleDatabase implements DatabaseClient {
     );
     for (const [tenantId, candidates] of studioGeoByTenant) {
       for (const spec of siteSpecs.rows ?? []) {
-        const existing = await connection.execute<{ icon_code: string | null; icon_asset_id: string | null }>(
+        const existing = await connection.execute<{
+          icon_code: string | null;
+          icon_asset_id: string | null;
+        }>(
           `SELECT icon_code AS "icon_code", icon_asset_id AS "icon_asset_id" FROM ${specIdentities}
-            WHERE tenant_id = :1 AND site_specification_id = :2`, [tenantId, spec.id], QUERY_OPTIONS,
+            WHERE tenant_id = :1 AND site_specification_id = :2`,
+          [tenantId, spec.id],
+          QUERY_OPTIONS,
         );
         const row = existing.rows?.[0];
-        const existingIdentity: VisualIdentity | null = row?.icon_code ? { kind: 'system', iconCode: row.icon_code } : row?.icon_asset_id ? { kind: 'asset', assetId: row.icon_asset_id } : null;
-        const resolved = resolveTargetVisualIdentity({ sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', targetId: spec.id, targetCode: spec.code, studioGeoMap: candidates, activeAssetIds: activeAssetsByTenant.get(tenantId) ?? new Set(), existingIdentity });
-        if (resolved.status === 'invalid_asset') { unresolved.push(`GeographicSiteSpecification ${spec.code}: asset ${resolved.assetId} inválido`); continue; }
+        const existingIdentity: VisualIdentity | null = row?.icon_code
+          ? { kind: 'system', iconCode: row.icon_code }
+          : row?.icon_asset_id
+            ? { kind: 'asset', assetId: row.icon_asset_id }
+            : null;
+        const resolved = resolveTargetVisualIdentity({
+          sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+          targetId: spec.id,
+          targetCode: spec.code,
+          studioGeoMap: candidates,
+          activeAssetIds: activeAssetsByTenant.get(tenantId) ?? new Set(),
+          existingIdentity,
+        });
+        if (resolved.status === 'invalid_asset') {
+          unresolved.push(
+            `GeographicSiteSpecification ${spec.code}: asset ${resolved.assetId} inválido`,
+          );
+          continue;
+        }
         if (resolved.status !== 'resolved') continue;
         const identity = resolved.evidence.visualIdentity;
         await connection.execute(
@@ -741,18 +795,27 @@ export class OracleDatabase implements DatabaseClient {
              ON (target.tenant_id = source.tenant_id AND target.site_specification_id = source.site_specification_id)
            WHEN NOT MATCHED THEN INSERT (tenant_id, site_specification_id, icon_code, icon_asset_id, created_at, updated_at)
              VALUES (source.tenant_id, source.site_specification_id, source.icon_code, source.icon_asset_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-          [tenantId, spec.id, identity.kind === 'system' ? identity.iconCode : null, identity.kind === 'asset' ? identity.assetId : null],
+          [
+            tenantId,
+            spec.id,
+            identity.kind === 'system' ? identity.iconCode : null,
+            identity.kind === 'asset' ? identity.assetId : null,
+          ],
           { autoCommit: true },
         );
       }
     }
-    if (unresolved.length > 0) throw new Error(`Visual identity backfill has unresolved evidence: ${unresolved.join('; ')}`);
+    if (unresolved.length > 0)
+      throw new Error(`Visual identity backfill has unresolved evidence: ${unresolved.join('; ')}`);
   }
 
   private async widenGeoMapFeatureShapeCheck(connection: Connection): Promise<void> {
     const table = prefixed('geo_map_feature', this.config.objectPrefix);
     const constraintName = `${this.config.objectPrefix}geo_map_feature_shape_ck`;
-    const existing = await connection.execute<{ constraint_name: string; search_condition: string }>(
+    const existing = await connection.execute<{
+      constraint_name: string;
+      search_condition: string;
+    }>(
       `SELECT constraint_name AS "constraint_name", search_condition AS "search_condition"
          FROM user_constraints
         WHERE table_name = :1 AND constraint_type = 'C' AND search_condition IS NOT NULL`,
@@ -801,7 +864,9 @@ export class OracleDatabase implements DatabaseClient {
    * (que passou a filtrar por `role_type_id`) não enxerga características antigas gravadas por
    * `role_name`.
    */
-  private async backfillPartyRoleTypeCharacteristicRoleTypeId(connection: Connection): Promise<void> {
+  private async backfillPartyRoleTypeCharacteristicRoleTypeId(
+    connection: Connection,
+  ): Promise<void> {
     const prefix = this.config.objectPrefix;
     const characteristics = prefixed('party_role_type_characteristic', prefix);
     const roleTypes = prefixed('party_role_type', prefix);
@@ -894,7 +959,10 @@ export class OracleDatabase implements DatabaseClient {
     const resources = prefixed('tmf_physical_resource', prefix);
     const specifications = prefixed('tmf_resource_specification', prefix);
     const locations = prefixed('tmf_geographic_location', prefix);
-    const result = await connection.execute<{ resource_type_id: string; geometry_type: string | null }>(
+    const result = await connection.execute<{
+      resource_type_id: string;
+      geometry_type: string | null;
+    }>(
       `SELECT DISTINCT rs.resource_type_id AS "resource_type_id", l.geometry_type AS "geometry_type"
          FROM ${resources} r
          JOIN ${specifications} rs
@@ -927,7 +995,8 @@ export class OracleDatabase implements DatabaseClient {
       );
       return result.rows?.[0]?.geometry_kind ?? null;
     } catch (error) {
-      if (/ORA-00904/.test(String((error as { message?: string })?.message ?? error))) return undefined;
+      if (/ORA-00904/.test(String((error as { message?: string })?.message ?? error)))
+        return undefined;
       throw error;
     }
   }

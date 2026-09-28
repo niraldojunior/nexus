@@ -56,10 +56,7 @@ export default function Composer({
 
   return (
     <div className="w-full" style={{ maxWidth: 'var(--thread-max)' }}>
-      <form
-        onSubmit={handleSubmit}
-        className={`vt-composer ${isHero ? 'vt-composer-hero' : ''}`}
-      >
+      <form onSubmit={handleSubmit} className={`vt-composer ${isHero ? 'vt-composer-hero' : ''}`}>
         <textarea
           ref={textareaRef}
           value={value}

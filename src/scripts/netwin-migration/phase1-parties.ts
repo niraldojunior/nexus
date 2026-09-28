@@ -1,19 +1,69 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { merge } from '../netwin-migration-kit.js';
-import { netwinPartyId, netwinPartyRoleId, deterministicUuid, NEXUS_NETWIN_NAMESPACE } from './identity.js';
+import {
+  netwinPartyId,
+  netwinPartyRoleId,
+  deterministicUuid,
+  NEXUS_NETWIN_NAMESPACE,
+} from './identity.js';
 import type { PhaseStats } from './types.js';
 
 const CANONICAL_PARTY_ROLES = [
-  { key: 'manufacturer', roleName: 'manufacturer', label: 'Fabricante', description: 'Quem fabrica o recurso/equipamento' },
-  { key: 'supplier', roleName: 'supplier', label: 'Fornecedor', description: 'Quem fornece comercialmente recurso/material' },
-  { key: 'maintainer', roleName: 'maintainer', label: 'Mantenedor', description: 'Responsável pela manutenção' },
-  { key: 'infrastructure_owner', roleName: 'infrastructure_owner', label: 'Proprietário', description: 'Dono jurídico/econômico da infraestrutura' },
-  { key: 'operator', roleName: 'operator', label: 'Operador', description: 'Quem opera tecnicamente a infraestrutura' },
-  { key: 'system_integrator', roleName: 'system_integrator', label: 'Integrador', description: 'Empresa responsável por integração/implantação' },
-  { key: 'partner', roleName: 'partner', label: 'Parceiro', description: 'Relação ampla de parceria' },
-  { key: 'service_provider', roleName: 'service_provider', label: 'Prestador de Serviço', description: 'Organização que presta um serviço operacional' },
-  { key: 'tenant', roleName: 'tenant', label: 'Tenant / ISP', description: 'Operadora ou ISP cliente de atacado' },
+  {
+    key: 'manufacturer',
+    roleName: 'manufacturer',
+    label: 'Fabricante',
+    description: 'Quem fabrica o recurso/equipamento',
+  },
+  {
+    key: 'supplier',
+    roleName: 'supplier',
+    label: 'Fornecedor',
+    description: 'Quem fornece comercialmente recurso/material',
+  },
+  {
+    key: 'maintainer',
+    roleName: 'maintainer',
+    label: 'Mantenedor',
+    description: 'Responsável pela manutenção',
+  },
+  {
+    key: 'infrastructure_owner',
+    roleName: 'infrastructure_owner',
+    label: 'Proprietário',
+    description: 'Dono jurídico/econômico da infraestrutura',
+  },
+  {
+    key: 'operator',
+    roleName: 'operator',
+    label: 'Operador',
+    description: 'Quem opera tecnicamente a infraestrutura',
+  },
+  {
+    key: 'system_integrator',
+    roleName: 'system_integrator',
+    label: 'Integrador',
+    description: 'Empresa responsável por integração/implantação',
+  },
+  {
+    key: 'partner',
+    roleName: 'partner',
+    label: 'Parceiro',
+    description: 'Relação ampla de parceria',
+  },
+  {
+    key: 'service_provider',
+    roleName: 'service_provider',
+    label: 'Prestador de Serviço',
+    description: 'Organização que presta um serviço operacional',
+  },
+  {
+    key: 'tenant',
+    roleName: 'tenant',
+    label: 'Tenant / ISP',
+    description: 'Operadora ou ISP cliente de atacado',
+  },
 ];
 
 export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStats> {
@@ -69,7 +119,9 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
         roleTypeIdMap.set(row.TYPE_KEY.toLowerCase(), row.ID);
         roleTypeIdMap.set(row.ROLE_NAME.toLowerCase(), row.ID);
       }
-      console.log(`Papéis cadastrados/atualizados em party_role_type: ${CANONICAL_PARTY_ROLES.length}`);
+      console.log(
+        `Papéis cadastrados/atualizados em party_role_type: ${CANONICAL_PARTY_ROLES.length}`,
+      );
 
       // Garante a organização dona da infraestrutura (V.tal)
       const ownerId = ctx.options.ownerPartyId;
@@ -104,11 +156,9 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
       NAME: string;
       ACRONYM: string | null;
       DESCRIPTION: string | null;
-    }>(
-      `SELECT ID, NAME, ACRONYM, DESCRIPTION FROM NETWIN.MANUFACTURER ORDER BY ID`,
-      [],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
-    );
+    }>(`SELECT ID, NAME, ACRONYM, DESCRIPTION FROM NETWIN.MANUFACTURER ORDER BY ID`, [], {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
 
     const manufacturers = rows.rows ?? [];
     console.log(`Fabricantes encontrados em NETWIN.MANUFACTURER: ${manufacturers.length}`);
@@ -137,7 +187,9 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
             { group: '_origin', name: 'entity', value: 'MANUFACTURER', valueType: 'string' },
             { group: '_origin', name: 'id', value: String(m.ID), valueType: 'string' },
-            ...(m.ACRONYM ? [{ group: '_origin', name: 'acronym', value: m.ACRONYM, valueType: 'string' }] : []),
+            ...(m.ACRONYM
+              ? [{ group: '_origin', name: 'acronym', value: m.ACRONYM, valueType: 'string' }]
+              : []),
           ]),
         });
 

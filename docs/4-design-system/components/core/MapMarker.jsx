@@ -13,7 +13,14 @@ const TONES = {
   station: 'var(--map-station)',
 };
 
-export function MapMarker({ tone = 'available', size = 'sm', icon, selected = false, style, ...rest }) {
+export function MapMarker({
+  tone = 'available',
+  size = 'sm',
+  icon,
+  selected = false,
+  style,
+  ...rest
+}) {
   const d = { sm: 18, md: 26, lg: 34 }[size] || 18;
   const fill = TONES[tone] || TONES.available;
   if (selected) {
@@ -21,21 +28,43 @@ export function MapMarker({ tone = 'available', size = 'sm', icon, selected = fa
     // not a stack. Built absolutely so the two shapes always overlap.
     const badge = d + 10;
     return (
-      <span style={{ position: 'relative', display: 'inline-block', width: 34, height: 46, ...style }} {...rest}>
-        <span style={{
-          position: 'absolute', left: 2, top: 0, width: 30, height: 30,
-          borderRadius: '50% 50% 50% 0',
-          transform: 'rotate(-45deg)',
-          background: 'var(--map-selected)',
-          boxShadow: 'var(--shadow-md)',
-        }} />
-        <span style={{
-          position: 'absolute', left: '50%', bottom: 0, transform: 'translateX(-50%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: badge, height: badge, borderRadius: '50%',
-          background: fill, color: '#fff',
-          border: '2px solid #fff', boxShadow: 'var(--shadow-md)',
-        }}>{icon}</span>
+      <span
+        style={{ position: 'relative', display: 'inline-block', width: 34, height: 46, ...style }}
+        {...rest}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            left: 2,
+            top: 0,
+            width: 30,
+            height: 30,
+            borderRadius: '50% 50% 50% 0',
+            transform: 'rotate(-45deg)',
+            background: 'var(--map-selected)',
+            boxShadow: 'var(--shadow-md)',
+          }}
+        />
+        <span
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 0,
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: badge,
+            height: badge,
+            borderRadius: '50%',
+            background: fill,
+            color: '#fff',
+            border: '2px solid #fff',
+            boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          {icon}
+        </span>
       </span>
     );
   }

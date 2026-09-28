@@ -10,7 +10,13 @@ export function IconTabs({ items = [], value, onChange, style, ...rest }) {
   return (
     <div
       role="tablist"
-      style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 4, ...style }}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 4,
+        ...style,
+      }}
       {...rest}
     >
       {items.map((it) => {

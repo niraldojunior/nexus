@@ -46,14 +46,18 @@ async function main() {
     );
     const specs = specsResult.rows;
     const room = specs.find((s) => s.code === 'ROOM' && s.lifecycle_status === 'Active');
-    if (!room) throw new Error('spec "Room" (code ROOM) ativa não encontrada — bootstrap não rodou?');
+    if (!room)
+      throw new Error('spec "Room" (code ROOM) ativa não encontrada — bootstrap não rodou?');
     console.log(`Room (canônica): ${room.id}`);
 
     const duplicates = specs.filter(
-      (s) => DUPLICATE_CODES.includes(s.code) && s.lifecycle_status === 'Active' && s.id !== room.id,
+      (s) =>
+        DUPLICATE_CODES.includes(s.code) && s.lifecycle_status === 'Active' && s.id !== room.id,
     );
     if (duplicates.length === 0) {
-      console.log('Nenhuma spec duplicada (SALA/TECHNICAL_ROOM) ativa encontrada — nada para migrar.');
+      console.log(
+        'Nenhuma spec duplicada (SALA/TECHNICAL_ROOM) ativa encontrada — nada para migrar.',
+      );
       await db.query('ROLLBACK');
       return;
     }

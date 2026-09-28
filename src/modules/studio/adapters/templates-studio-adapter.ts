@@ -2,10 +2,12 @@ import { AppError } from '../../../shared/errors/app-error.js';
 import type { RequestContext } from '../../../shared/http/request-context.js';
 import type { Characteristic } from '../../../shared/tmf/index.js';
 import type { ResourceService } from '../../resource/service.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
-import {
-  type StudioTemplateItem,
-} from '../template-import-planner.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
+import { type StudioTemplateItem } from '../template-import-planner.js';
 
 export const TEMPLATE_CHARACTERISTIC_GROUP = '_studioTemplate';
 
@@ -18,7 +20,8 @@ export const CANONICAL_TEMPLATES_SNAPSHOT: TemplatesStudioSnapshot = {
     {
       code: 'ftth-gpon-standard',
       name: 'FTTH GPON Standard',
-      description: 'Template de referência para topologia FTTH GPON: Central Office, POP, CTOs, Cabos ópticos e splitters 1:8 e 1:16.',
+      description:
+        'Template de referência para topologia FTTH GPON: Central Office, POP, CTOs, Cabos ópticos e splitters 1:8 e 1:16.',
       category: 'FTTH',
       version: '1.0.0',
       author: 'V.tal Nexus Engineering',
@@ -80,7 +83,8 @@ export const CANONICAL_TEMPLATES_SNAPSHOT: TemplatesStudioSnapshot = {
     {
       code: 'wholesale-interconnection',
       name: 'Interconexão Atacado (Wholesale)',
-      description: 'Template para pontos de entrega e interconexão de tráfego de ISP / Tenants wholesale.',
+      description:
+        'Template para pontos de entrega e interconexão de tráfego de ISP / Tenants wholesale.',
       category: 'Wholesale',
       version: '1.0.0',
       author: 'V.tal Nexus Engineering',
@@ -222,14 +226,17 @@ export class TemplatesStudioAdapter implements StudioDomainAdapter {
       traceId: 'studio-templates-materialize',
     };
 
-    const existingSpecs = await this.resourceService.listResourceFunctionSpecifications(undefined, context);
+    const existingSpecs = await this.resourceService.listResourceFunctionSpecifications(
+      undefined,
+      context,
+    );
     const existingTemplateSpecs = existingSpecs.filter((s) =>
       s.resourceFunctionSpecificationCharacteristic.some(
         (c) => c.group === TEMPLATE_CHARACTERISTIC_GROUP && c.name === 'code',
       ),
     );
 
-    const existingByCode = new Map<string, typeof existingSpecs[0]>();
+    const existingByCode = new Map<string, (typeof existingSpecs)[0]>();
     for (const spec of existingTemplateSpecs) {
       const codeChar = spec.resourceFunctionSpecificationCharacteristic.find(
         (c) => c.group === TEMPLATE_CHARACTERISTIC_GROUP && c.name === 'code',
@@ -244,11 +251,33 @@ export class TemplatesStudioAdapter implements StudioDomainAdapter {
     for (const tpl of typedSnapshot.templates) {
       desiredCodes.add(tpl.code);
       const characteristics: Characteristic[] = [
-        { group: TEMPLATE_CHARACTERISTIC_GROUP, name: 'code', value: tpl.code, valueType: 'string' },
-        { group: TEMPLATE_CHARACTERISTIC_GROUP, name: 'category', value: tpl.category, valueType: 'string' },
-        { group: TEMPLATE_CHARACTERISTIC_GROUP, name: 'version', value: tpl.version || '1.0.0', valueType: 'string' },
+        {
+          group: TEMPLATE_CHARACTERISTIC_GROUP,
+          name: 'code',
+          value: tpl.code,
+          valueType: 'string',
+        },
+        {
+          group: TEMPLATE_CHARACTERISTIC_GROUP,
+          name: 'category',
+          value: tpl.category,
+          valueType: 'string',
+        },
+        {
+          group: TEMPLATE_CHARACTERISTIC_GROUP,
+          name: 'version',
+          value: tpl.version || '1.0.0',
+          valueType: 'string',
+        },
         ...(tpl.author
-          ? [{ group: TEMPLATE_CHARACTERISTIC_GROUP, name: 'author', value: tpl.author, valueType: 'string' as const }]
+          ? [
+              {
+                group: TEMPLATE_CHARACTERISTIC_GROUP,
+                name: 'author',
+                value: tpl.author,
+                valueType: 'string' as const,
+              },
+            ]
           : []),
         {
           group: TEMPLATE_CHARACTERISTIC_GROUP,
@@ -257,7 +286,14 @@ export class TemplatesStudioAdapter implements StudioDomainAdapter {
           valueType: 'json',
         },
         ...(tpl.metadata
-          ? [{ group: TEMPLATE_CHARACTERISTIC_GROUP, name: 'metadata', value: JSON.stringify(tpl.metadata), valueType: 'json' as const }]
+          ? [
+              {
+                group: TEMPLATE_CHARACTERISTIC_GROUP,
+                name: 'metadata',
+                value: JSON.stringify(tpl.metadata),
+                valueType: 'json' as const,
+              },
+            ]
           : []),
       ];
 
@@ -302,7 +338,9 @@ export class TemplatesStudioAdapter implements StudioDomainAdapter {
           spec.id,
           {
             validFor: {
-              ...(spec.validFor?.startDateTime ? { startDateTime: spec.validFor.startDateTime } : {}),
+              ...(spec.validFor?.startDateTime
+                ? { startDateTime: spec.validFor.startDateTime }
+                : {}),
               endDateTime: now,
             },
           },

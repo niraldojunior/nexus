@@ -15,21 +15,98 @@ configureOracleClient();
 export type MigrationContext = {
   options: CliOptions;
   t: TablePrefixer;
-  sourcePool: Pool;
-  targetPool: Pool | null;
   getSourceConnection: () => Promise<Connection>;
   getTargetConnection: () => Promise<Connection | null>;
   close: () => Promise<void>;
 };
 
+const READ_ONLY_SOURCE_SQL = /^(?:SELECT|WITH)\b/iu;
+const SOURCE_BLOCKED_METHODS = new Set<keyof Connection>([
+  'changePassword',
+  'clearAppContext',
+  'clearEndUserSecurityContext',
+  'commit',
+  'createLob',
+  'directPathLoad',
+  'executeMany',
+  'rollback',
+  'runPipeline',
+  'setEndUserSecurityContext',
+  'shutdown',
+  'startup',
+  'subscribe',
+  'unsubscribe',
+]);
+
+function stripLeadingSqlComments(sql: string): string {
+  return sql.replace(/^(?:\s|--[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)+/u, '');
+}
+
+export function assertReadOnlySourceSql(sql: string): void {
+  const normalized = stripLeadingSqlComments(sql);
+  if (!READ_ONLY_SOURCE_SQL.test(normalized)) {
+    throw new Error(
+      'Operação bloqueada: a origem Netwin aceita exclusivamente consultas SELECT ou WITH somente-leitura.',
+    );
+  }
+
+  if (
+    /\b(?:FOR\s+UPDATE|INSERT|UPDATE|DELETE|MERGE|ALTER|CREATE|DROP|TRUNCATE|COMMIT|ROLLBACK|LOCK\s+TABLE)\b/iu.test(
+      normalized,
+    )
+  ) {
+    throw new Error(
+      'Operação bloqueada: a origem Netwin aceita exclusivamente consultas sem escrita ou bloqueio.',
+    );
+  }
+}
+
+function guardReadOnlySourceConnection(connection: Connection): Connection {
+  return new Proxy(connection, {
+    get(target, property, receiver) {
+      if (property === 'execute' || property === 'queryStream') {
+        return (sql: string, ...args: unknown[]) => {
+          assertReadOnlySourceSql(sql);
+          return Reflect.apply(target[property], target, [sql, ...args]);
+        };
+      }
+      if (
+        typeof property === 'string' &&
+        SOURCE_BLOCKED_METHODS.has(property as keyof Connection)
+      ) {
+        return () => {
+          throw new Error(`Operação ${property} bloqueada na origem Netwin read-only.`);
+        };
+      }
+      const value = Reflect.get(target, property, receiver) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 export async function createMigrationContext(options: CliOptions): Promise<MigrationContext> {
+  const t = makeTablePrefixer(options.targetPrefix);
+  const normalizedPrefix = options.targetPrefix.toUpperCase();
+  if (options.apply && options.tenantId === 'default') {
+    throw new Error(
+      'Em modo APPLY, informe explicitamente --tenant-id. A seleção automática de tenant foi removida.',
+    );
+  }
+  if (['NX_DEV1_', 'NX_DEV2_'].includes(normalizedPrefix) && options.tenantId !== 'vtal') {
+    throw new Error(
+      `O prefixo ${normalizedPrefix} é exclusivo do tenant vtal. Informe --tenant-id vtal.`,
+    );
+  }
+
   const netwinTnsAdmin = process.env.NETWIN_DR_TNS_ADMIN ?? process.env.TNS_ADMIN;
   const sourceConnectString = process.env.NETWIN_DR_ORACLE_CONNECT_STRING;
   const sourceUser = process.env.NETWIN_DR_ORACLE_USER;
   const sourcePassword = process.env.NETWIN_DR_ORACLE_PASSWORD;
 
   if (!sourceConnectString || !sourceUser || !sourcePassword) {
-    throw new Error('NETWIN_DR_ORACLE_CONNECT_STRING, NETWIN_DR_ORACLE_USER e NETWIN_DR_ORACLE_PASSWORD são obrigatórios.');
+    throw new Error(
+      'NETWIN_DR_ORACLE_CONNECT_STRING, NETWIN_DR_ORACLE_USER e NETWIN_DR_ORACLE_PASSWORD são obrigatórios.',
+    );
   }
 
   const sourcePool = await oracledb.createPool({
@@ -43,12 +120,15 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
 
   let targetPool: Pool | null = null;
   if (options.apply) {
-    const targetConnectString = process.env.TARGET_ORACLE_CONNECT_STRING || process.env.ORACLE_CONNECTION_STRING;
+    const targetConnectString =
+      process.env.TARGET_ORACLE_CONNECT_STRING || process.env.ORACLE_CONNECTION_STRING;
     const targetUser = process.env.TARGET_ORACLE_USER || process.env.ORACLE_USER;
     const targetPassword = process.env.TARGET_ORACLE_PASSWORD || process.env.ORACLE_PASSWORD;
 
     if (!targetConnectString || !targetUser || !targetPassword) {
-      throw new Error('ORACLE_CONNECTION_STRING, ORACLE_USER e ORACLE_PASSWORD são obrigatórios para gravar (--apply).');
+      throw new Error(
+        'ORACLE_CONNECTION_STRING, ORACLE_USER e ORACLE_PASSWORD são obrigatórios para gravar (--apply).',
+      );
     }
 
     targetPool = await oracledb.createPool({
@@ -60,48 +140,13 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
     });
   }
 
-  const t = makeTablePrefixer(options.targetPrefix);
-
-  if (targetPool && options.tenantId === 'default') {
-    try {
-      const testConn = await targetPool.getConnection();
-      try {
-        const userRes = await testConn.execute<{ TENANT_ID: string }>(
-          `SELECT tenant_id FROM ${t('users')} WHERE tenant_id IS NOT NULL AND tenant_id <> 'default' FETCH FIRST 1 ROWS ONLY`,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT },
-        );
-        if (userRes.rows?.[0]?.TENANT_ID) {
-          options.tenantId = userRes.rows[0].TENANT_ID;
-          console.log(`[Auto-Detect] Tenant ID detectado da instância: ${options.tenantId}`);
-        } else {
-          const catRes = await testConn.execute<{ TENANT_ID: string }>(
-            `SELECT tenant_id FROM ${t('tmf_resource_catalog')} WHERE tenant_id IS NOT NULL AND tenant_id <> 'default' FETCH FIRST 1 ROWS ONLY`,
-            [],
-            { outFormat: oracledb.OUT_FORMAT_OBJECT },
-          );
-          if (catRes.rows?.[0]?.TENANT_ID) {
-            options.tenantId = catRes.rows[0].TENANT_ID;
-            console.log(`[Auto-Detect] Tenant ID detectado via catálogo: ${options.tenantId}`);
-          }
-        }
-      } finally {
-        await testConn.close();
-      }
-    } catch {
-      // Tabelas podem não existir se for um target novo
-    }
-  }
-
   return {
     options,
     t,
-    sourcePool,
-    targetPool,
     getSourceConnection: async () => {
       const conn = await sourcePool.getConnection();
       await conn.execute('SET TRANSACTION READ ONLY');
-      return conn;
+      return guardReadOnlySourceConnection(conn);
     },
     getTargetConnection: async () => {
       if (!targetPool) return null;

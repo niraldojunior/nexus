@@ -10,7 +10,14 @@ export type OrganizationIdentificationsTabProps = {
   onChange: (updated: Partial<OrganizationDraftItem>) => void;
 };
 
-const IDENTIFICATION_TYPES = ['CNPJ', 'CPF', 'Inscrição Estadual', 'Inscrição Municipal', 'DUNS', 'Passaporte'];
+const IDENTIFICATION_TYPES = [
+  'CNPJ',
+  'CPF',
+  'Inscrição Estadual',
+  'Inscrição Municipal',
+  'DUNS',
+  'Passaporte',
+];
 
 export function OrganizationIdentificationsTab({
   item,
@@ -28,7 +35,12 @@ export function OrganizationIdentificationsTab({
 
   const handleOpenNew = () => {
     setEditingIndex(null);
-    setDraft({ type: 'CNPJ', value: '', origin: 'Receita Federal', isPrimary: item.identifications.length === 0 });
+    setDraft({
+      type: 'CNPJ',
+      value: '',
+      origin: 'Receita Federal',
+      isPrimary: item.identifications.length === 0,
+    });
     setModalOpen(true);
   };
 
@@ -66,7 +78,9 @@ export function OrganizationIdentificationsTab({
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
         <div>
-          <h4 className="text-[0.88rem] font-bold text-app-text">Documentos e Identificações Fiscais</h4>
+          <h4 className="text-[0.88rem] font-bold text-app-text">
+            Documentos e Identificações Fiscais
+          </h4>
           <p className="text-[0.78rem] text-app-muted">
             CNPJ, Inscrição Estadual, Municipal ou identificadores regulatórios da empresa.
           </p>

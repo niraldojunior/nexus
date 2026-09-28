@@ -33,7 +33,10 @@ export type MapLayerControlProps = {
 // Genérico: qualquer geometria pode ter faixas de escala ocultas no Studio GEO. Quando a
 // faixa correspondente está marcada `visible: false` no catálogo publicado, o switch fica
 // inibido — sem regra fixa por tipo, origem ou forma.
-function disabledHint(node: MapLayerTreeNode, scaleMeters: number | null | undefined): string | null {
+function disabledHint(
+  node: MapLayerTreeNode,
+  scaleMeters: number | null | undefined,
+): string | null {
   if (node.kind !== 'ENTITY') return null;
   const config = node.visualConfig;
   if (!config) return null;
@@ -75,7 +78,10 @@ function LayerEntitySample({ node }: { node: StudioGeoEntityNode }) {
     return previewUrl ? (
       <img src={previewUrl} alt="" className="h-[23px] w-[23px] shrink-0" />
     ) : (
-      <span className="h-[23px] w-[23px] shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span
+        className="h-[23px] w-[23px] shrink-0 rounded-full"
+        style={{ backgroundColor: color }}
+      />
     );
   }
 
@@ -313,10 +319,7 @@ export function MapLayerControl({
   };
 
   return (
-    <div
-      className="absolute right-3 top-[72px] z-30 md:top-3"
-      data-testid="map-layer-control"
-    >
+    <div className="absolute right-3 top-[72px] z-30 md:top-3" data-testid="map-layer-control">
       {/* Botão Launcher (oculto quando a janela está aberta) */}
       {!open && (
         <button
@@ -350,7 +353,9 @@ export function MapLayerControl({
           <div className="flex items-center justify-between px-1 pb-2 pt-0.5 border-b border-app-border mb-2">
             <div className="flex items-center gap-1.5">
               <Layers className="h-4 w-4 text-app-muted" />
-              <span className="font-display text-[0.82rem] font-bold text-app-text">Camadas do Mapa</span>
+              <span className="font-display text-[0.82rem] font-bold text-app-text">
+                Camadas do Mapa
+              </span>
             </div>
             <button
               type="button"

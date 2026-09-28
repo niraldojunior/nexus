@@ -9,10 +9,7 @@ import {
   candidatesSql,
 } from '../src/modules/geo/map-feature-synchronizer.js';
 import { INTERNAL_RESOURCE_TYPES } from '../src/modules/geo/map-visibility.js';
-import type {
-  DatabaseClient,
-  DatabaseSession,
-} from '../src/shared/persistence/database-client.js';
+import type { DatabaseClient, DatabaseSession } from '../src/shared/persistence/database-client.js';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -164,7 +161,10 @@ test('syncLocation procura dependentes no tenant informado mesmo com Location co
     'location-default',
     'vtal',
   ]);
-  assert.match(lookupCalls[0]?.sql ?? '', /tmf_physical_resource WHERE place_id = \? AND tenant_id = \?/);
+  assert.match(
+    lookupCalls[0]?.sql ?? '',
+    /tmf_physical_resource WHERE place_id = \? AND tenant_id = \?/,
+  );
 });
 
 test('rebuild do índice inclui somente PhysicalResource, compatível com ResourcePanel', async () => {
@@ -243,7 +243,10 @@ test('loader infranode versiona a mudança canônica e grava tenant no Resource'
 });
 
 test('repositório de Resource não consulta a coluna textual resource_type removida da specification', async () => {
-  const repository = await readFile(resolve(rootDir, 'src/modules/resource/oracle-repository.ts'), 'utf8');
+  const repository = await readFile(
+    resolve(rootDir, 'src/modules/resource/oracle-repository.ts'),
+    'utf8',
+  );
   assert.doesNotMatch(repository, /\b(?:ps|ss|ctos|rs|ds|os)\.resource_type\b/);
   assert.match(repository, /prt\.code AS resource_type/);
   assert.match(repository, /srt\.code = 'Splitter'/);
@@ -254,9 +257,9 @@ test('repositório de Resource não consulta a coluna textual resource_type remo
 test('rebuild preserva o rank dos trechos de cabo e a chave inclui o ordinal', async () => {
   const script = await readFile(resolve(rootDir, 'scripts/build-map-features.mjs'), 'utf8');
   assert.match(script, /segments\.map\(\(\{ tile, coordinates, rank \}\)/);
-  assert.match(script, /geometry: JSON\.stringify\(\{ type: 'LineString', coordinates \}\),\s*rank,/);
   assert.match(
     script,
-    /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank\)/,
+    /geometry: JSON\.stringify\(\{ type: 'LineString', coordinates \}\),\s*rank,/,
   );
+  assert.match(script, /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank\)/);
 });

@@ -21,7 +21,9 @@ describe('TemplatesStudioAdapter (unit)', () => {
   const adapter = new TemplatesStudioAdapter(mockResourceService);
 
   it('validates canonical templates snapshot successfully', async () => {
-    const result = await adapter.validate(CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>);
+    const result = await adapter.validate(
+      CANONICAL_TEMPLATES_SNAPSHOT as unknown as Record<string, unknown>,
+    );
     assert.equal(result.valid, true);
     assert.equal(result.issues.length, 0);
   });

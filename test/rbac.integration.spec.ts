@@ -23,7 +23,9 @@ const JWT_SECRET = 'test-jwt-secret-rbac-1234567890';
 
 type TestResponse = { statusCode: number; body: unknown };
 
-const startApp = async (overrides: { llmRateLimitMax?: number; llmRateLimitWindowMs?: number } = {}) => {
+const startApp = async (
+  overrides: { llmRateLimitMax?: number; llmRateLimitWindowMs?: number } = {},
+) => {
   const config = {
     ...createTestConfig(0),
     authJwtSecret: JWT_SECRET,
@@ -91,37 +93,46 @@ const createUserWithRoles = async (
   return await loginToken(port, email, `${email}-password-1234`);
 };
 
-test.skipIf(!oracleConfigured)('RBAC: Party exige inventory.editor para escrever, inventory.reader só lê', async () => {
-  const app = await startApp();
-  try {
-    const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-    const readerToken = await createUserWithRoles(app.port, adminToken, 'party-reader@vtal.com.br', [
-      'inventory.reader',
-    ]);
-    const editorToken = await createUserWithRoles(app.port, adminToken, 'party-editor@vtal.com.br', [
-      'inventory.editor',
-    ]);
+test.skipIf(!oracleConfigured)(
+  'RBAC: Party exige inventory.editor para escrever, inventory.reader só lê',
+  async () => {
+    const app = await startApp();
+    try {
+      const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
+      const readerToken = await createUserWithRoles(
+        app.port,
+        adminToken,
+        'party-reader@vtal.com.br',
+        ['inventory.reader'],
+      );
+      const editorToken = await createUserWithRoles(
+        app.port,
+        adminToken,
+        'party-editor@vtal.com.br',
+        ['inventory.editor'],
+      );
 
-    const readAllowed = await request(app.port, 'GET', '/tmf-api/partyManagement/v4/party', {
-      token: readerToken,
-    });
-    assert.equal(readAllowed.statusCode, 200);
+      const readAllowed = await request(app.port, 'GET', '/tmf-api/partyManagement/v4/party', {
+        token: readerToken,
+      });
+      assert.equal(readAllowed.statusCode, 200);
 
-    const writeDenied = await request(app.port, 'POST', '/tmf-api/partyManagement/v4/party', {
-      token: readerToken,
-      body: { '@type': 'Organization', name: 'Tentativa negada' },
-    });
-    assert.equal(writeDenied.statusCode, 403);
+      const writeDenied = await request(app.port, 'POST', '/tmf-api/partyManagement/v4/party', {
+        token: readerToken,
+        body: { '@type': 'Organization', name: 'Tentativa negada' },
+      });
+      assert.equal(writeDenied.statusCode, 403);
 
-    const writeAllowed = await request(app.port, 'POST', '/tmf-api/partyManagement/v4/party', {
-      token: editorToken,
-      body: { name: 'ISP Exemplo', partyType: 'Organization' },
-    });
-    assert.equal(writeAllowed.statusCode, 201);
-  } finally {
-    await app.cleanup();
-  }
-});
+      const writeAllowed = await request(app.port, 'POST', '/tmf-api/partyManagement/v4/party', {
+        token: editorToken,
+        body: { name: 'ISP Exemplo', partyType: 'Organization' },
+      });
+      assert.equal(writeAllowed.statusCode, 201);
+    } finally {
+      await app.cleanup();
+    }
+  },
+);
 
 test.skipIf(!oracleConfigured)(
   'RBAC: Resource — catálogo (Specification) exige catalog.admin, instância exige inventory.editor',
@@ -181,9 +192,12 @@ test.skipIf(!oracleConfigured)(
     const app = await startApp();
     try {
       const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-      const editorToken = await createUserWithRoles(app.port, adminToken, 'service-editor@vtal.com.br', [
-        'inventory.editor',
-      ]);
+      const editorToken = await createUserWithRoles(
+        app.port,
+        adminToken,
+        'service-editor@vtal.com.br',
+        ['inventory.editor'],
+      );
 
       const specDenied = await request(
         app.port,
@@ -198,60 +212,63 @@ test.skipIf(!oracleConfigured)(
   },
 );
 
-test.skipIf(!oracleConfigured)('RBAC: Order — order.requester abre ordens, order.operator avança estado', async () => {
-  const app = await startApp();
-  try {
-    const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
-    const requesterToken = await createUserWithRoles(
-      app.port,
-      adminToken,
-      'order-requester@vtal.com.br',
-      ['order.requester'],
-    );
-    const operatorToken = await createUserWithRoles(
-      app.port,
-      adminToken,
-      'order-operator@vtal.com.br',
-      ['order.operator'],
-    );
+test.skipIf(!oracleConfigured)(
+  'RBAC: Order — order.requester abre ordens, order.operator avança estado',
+  async () => {
+    const app = await startApp();
+    try {
+      const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
+      const requesterToken = await createUserWithRoles(
+        app.port,
+        adminToken,
+        'order-requester@vtal.com.br',
+        ['order.requester'],
+      );
+      const operatorToken = await createUserWithRoles(
+        app.port,
+        adminToken,
+        'order-operator@vtal.com.br',
+        ['order.operator'],
+      );
 
-    // order.operator sozinho não abre ordem (POST) — só order.requester ou platform.admin.
-    const openDenied = await request(
-      app.port,
-      'POST',
-      '/tmf-api/serviceQualificationManagement/v4/serviceQualification',
-      { token: operatorToken, body: {} },
-    );
-    assert.equal(openDenied.statusCode, 403);
+      // order.operator sozinho não abre ordem (POST) — só order.requester ou platform.admin.
+      const openDenied = await request(
+        app.port,
+        'POST',
+        '/tmf-api/serviceQualificationManagement/v4/serviceQualification',
+        { token: operatorToken, body: {} },
+      );
+      assert.equal(openDenied.statusCode, 403);
 
-    // order.requester sozinho não avança estado (PATCH) — só order.operator ou platform.admin.
-    const advanceDenied = await request(
-      app.port,
-      'PATCH',
-      '/tmf-api/serviceOrderingManagement/v4/serviceOrder/algum-id',
-      { token: requesterToken, body: {} },
-    );
-    assert.equal(advanceDenied.statusCode, 403);
+      // order.requester sozinho não avança estado (PATCH) — só order.operator ou platform.admin.
+      const advanceDenied = await request(
+        app.port,
+        'PATCH',
+        '/tmf-api/serviceOrderingManagement/v4/serviceOrder/algum-id',
+        { token: requesterToken, body: {} },
+      );
+      assert.equal(advanceDenied.statusCode, 403);
 
-    // Ambos leem.
-    const requesterRead = await request(
-      app.port,
-      'GET',
-      '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
-      { token: requesterToken },
-    );
-    assert.equal(requesterRead.statusCode, 200);
-    const operatorRead = await request(
-      app.port,
-      'GET',
-      '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
-      { token: operatorToken },
-    );
-    assert.equal(operatorRead.statusCode, 200);
-  } finally {
-    await app.cleanup();
-  }
-});
+      // Ambos leem.
+      const requesterRead = await request(
+        app.port,
+        'GET',
+        '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
+        { token: requesterToken },
+      );
+      assert.equal(requesterRead.statusCode, 200);
+      const operatorRead = await request(
+        app.port,
+        'GET',
+        '/tmf-api/serviceOrderingManagement/v4/serviceOrder',
+        { token: operatorToken },
+      );
+      assert.equal(operatorRead.statusCode, 200);
+    } finally {
+      await app.cleanup();
+    }
+  },
+);
 
 test.skipIf(!oracleConfigured)('RBAC: Event (TMF688) exige ao menos inventory.reader', async () => {
   const app = await startApp();
@@ -264,9 +281,12 @@ test.skipIf(!oracleConfigured)('RBAC: Event (TMF688) exige ao menos inventory.re
       'event-tenant-admin@vtal.com.br',
       ['tenant.admin'],
     );
-    const readerToken = await createUserWithRoles(app.port, adminToken, 'event-reader@vtal.com.br', [
-      'inventory.reader',
-    ]);
+    const readerToken = await createUserWithRoles(
+      app.port,
+      adminToken,
+      'event-reader@vtal.com.br',
+      ['inventory.reader'],
+    );
 
     const denied = await request(app.port, 'GET', '/tmf-api/eventManagement/v4/event', {
       token: tenantAdminToken,
@@ -282,40 +302,43 @@ test.skipIf(!oracleConfigured)('RBAC: Event (TMF688) exige ao menos inventory.re
   }
 });
 
-test.skipIf(!oracleConfigured)('V-08: proxy do LLM (chat/completions) aplica rate limit por ator', async () => {
-  // Limite baixo (3/min) injetado só para este teste: cada requisição neste harness leva
-  // vários segundos (ida e volta HTTP completa + verificação de JWT), então exercitar o
-  // default de produção (20/min) tornaria o teste lento e sensível à janela de 60s expirar
-  // no meio da sequência. `llmRateLimitMax`/`llmRateLimitWindowMs` existem só para isso.
-  // O .env local pode conter credenciais remotas; removê-las força o provider local síncrono e
-  // impede que a janela expire durante chamadas externas.
-  const openAiApiKey = process.env.OPENAI_API_KEY;
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.GEMINI_API_KEY;
-  const app = await startApp({ llmRateLimitMax: 3, llmRateLimitWindowMs: 60_000 });
-  try {
-    const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
+test.skipIf(!oracleConfigured)(
+  'V-08: proxy do LLM (chat/completions) aplica rate limit por ator',
+  async () => {
+    // Limite baixo (3/min) injetado só para este teste: cada requisição neste harness leva
+    // vários segundos (ida e volta HTTP completa + verificação de JWT), então exercitar o
+    // default de produção (20/min) tornaria o teste lento e sensível à janela de 60s expirar
+    // no meio da sequência. `llmRateLimitMax`/`llmRateLimitWindowMs` existem só para isso.
+    // O .env local pode conter credenciais remotas; removê-las força o provider local síncrono e
+    // impede que a janela expire durante chamadas externas.
+    const openAiApiKey = process.env.OPENAI_API_KEY;
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    const app = await startApp({ llmRateLimitMax: 3, llmRateLimitWindowMs: 60_000 });
+    try {
+      const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-    const responses: TestResponse[] = [];
-    for (let i = 0; i < 4; i += 1) {
-      responses.push(
-        await request(app.port, 'POST', '/v1/chat/completions', {
-          token: adminToken,
-          body: { messages: [{ role: 'user', content: `mensagem ${i}` }] },
-        }),
-      );
+      const responses: TestResponse[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        responses.push(
+          await request(app.port, 'POST', '/v1/chat/completions', {
+            token: adminToken,
+            body: { messages: [{ role: 'user', content: `mensagem ${i}` }] },
+          }),
+        );
+      }
+
+      const okCount = responses.filter((r) => r.statusCode === 200).length;
+      const limitedCount = responses.filter((r) => r.statusCode === 429).length;
+      assert.equal(okCount, 3);
+      assert.equal(limitedCount, 1);
+    } finally {
+      await app.cleanup();
+      if (openAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = openAiApiKey;
+      if (geminiApiKey === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = geminiApiKey;
     }
-
-    const okCount = responses.filter((r) => r.statusCode === 200).length;
-    const limitedCount = responses.filter((r) => r.statusCode === 429).length;
-    assert.equal(okCount, 3);
-    assert.equal(limitedCount, 1);
-  } finally {
-    await app.cleanup();
-    if (openAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = openAiApiKey;
-    if (geminiApiKey === undefined) delete process.env.GEMINI_API_KEY;
-    else process.env.GEMINI_API_KEY = geminiApiKey;
-  }
-});
+  },
+);

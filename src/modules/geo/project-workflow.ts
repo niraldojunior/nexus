@@ -1,4 +1,8 @@
-import type { GeoProjectStatus, GeoProjectStatusBehavior, GeoProjectStatusCatalogItem } from './project-repository.js';
+import type {
+  GeoProjectStatus,
+  GeoProjectStatusBehavior,
+  GeoProjectStatusCatalogItem,
+} from './project-repository.js';
 
 export const GEO_PROJECT_WORKFLOW_SCHEMA_VERSION = 1 as const;
 export const GEO_PROJECT_WORKFLOW_ID = 'geo-project' as const;
@@ -46,21 +50,57 @@ export type GeoProjectWorkflowTransitionResult = {
 
 export const PROJECT_STATUS_DEFAULTS: ReadonlyArray<GeoProjectStatusCatalogItem> = [
   { code: '1', name: 'Projeto criado', sortOrder: 1, active: true, behavior: 'planning' },
-  { code: '11', name: 'Projeto em planejamento', sortOrder: 11, active: true, behavior: 'planning' },
+  {
+    code: '11',
+    name: 'Projeto em planejamento',
+    sortOrder: 11,
+    active: true,
+    behavior: 'planning',
+  },
   { code: '12', name: 'Obra em execução', sortOrder: 12, active: true, behavior: 'execution' },
   { code: '13', name: 'Obra concluída', sortOrder: 13, active: true, behavior: 'execution' },
   { code: '14', name: 'Enviado ao SAP', sortOrder: 14, active: true, behavior: 'execution' },
   { code: '15', name: 'Erro de conciliação', sortOrder: 15, active: true, behavior: 'suspended' },
   { code: '16', name: 'Conciliado com o SAP', sortOrder: 16, active: true, behavior: 'execution' },
   { code: '17', name: 'Projeto encerrado', sortOrder: 17, active: true, behavior: 'close-release' },
-  { code: '18', name: 'Projeto em quantificação', sortOrder: 18, active: true, behavior: 'planning' },
-  { code: '19', name: 'Projeto enviado para orçamento CRE', sortOrder: 19, active: true, behavior: 'planning' },
-  { code: '20', name: 'Projeto aguardando verba', sortOrder: 20, active: true, behavior: 'planning' },
+  {
+    code: '18',
+    name: 'Projeto em quantificação',
+    sortOrder: 18,
+    active: true,
+    behavior: 'planning',
+  },
+  {
+    code: '19',
+    name: 'Projeto enviado para orçamento CRE',
+    sortOrder: 19,
+    active: true,
+    behavior: 'planning',
+  },
+  {
+    code: '20',
+    name: 'Projeto aguardando verba',
+    sortOrder: 20,
+    active: true,
+    behavior: 'planning',
+  },
   { code: '21', name: 'Projeto em contratação', sortOrder: 21, active: true, behavior: 'planning' },
   { code: '22', name: 'Projeto em execução', sortOrder: 22, active: true, behavior: 'execution' },
   { code: '23', name: 'Projeto paralisado', sortOrder: 23, active: true, behavior: 'suspended' },
-  { code: '25', name: 'Projeto conciliado físico-contábil', sortOrder: 25, active: true, behavior: 'execution' },
-  { code: 'legacy-cancelled', name: 'Cancelado (legado)', sortOrder: 99_999, active: false, behavior: 'close-release' },
+  {
+    code: '25',
+    name: 'Projeto conciliado físico-contábil',
+    sortOrder: 25,
+    active: true,
+    behavior: 'execution',
+  },
+  {
+    code: 'legacy-cancelled',
+    name: 'Cancelado (legado)',
+    sortOrder: 99_999,
+    active: false,
+    behavior: 'close-release',
+  },
 ];
 
 const statesByBehavior = (behavior: GeoProjectStatusBehavior): string[] =>

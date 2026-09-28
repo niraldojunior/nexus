@@ -68,7 +68,8 @@ async function main() {
     }
     if (unknown.size > 0) {
       console.log('\nSem mapeamento (não serão alterados):');
-      for (const [value, total] of [...unknown.entries()].sort()) console.log(`  ${total} × ${value}`);
+      for (const [value, total] of [...unknown.entries()].sort())
+        console.log(`  ${total} × ${value}`);
     }
 
     if (!APPLY) return;
@@ -87,7 +88,9 @@ async function main() {
       }
     }
     await db.query('COMMIT');
-    console.log(`\nAtualizados: ${updated}. Sem mapeamento: ${[...unknown.values()].reduce((a, b) => a + b, 0)}.`);
+    console.log(
+      `\nAtualizados: ${updated}. Sem mapeamento: ${[...unknown.values()].reduce((a, b) => a + b, 0)}.`,
+    );
   } catch (error) {
     if (APPLY) await db.query('ROLLBACK').catch(() => {});
     throw error;

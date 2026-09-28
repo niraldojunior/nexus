@@ -1,4 +1,14 @@
-import { AlertCircle, CheckCircle2, Copy, FileStack, Layers, Plus, RefreshCw, Trash2, ArrowRight } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  FileStack,
+  Layers,
+  Plus,
+  RefreshCw,
+  Trash2,
+  ArrowRight,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getStudioStatus, saveStudioDraft, type StudioDomain } from '../../../services/studioApi';
 import {
@@ -41,7 +51,9 @@ export function TemplatesStudio({
   // Import / Planner state
   const [activeTab, setActiveTab] = useState<'library' | 'import'>('library');
   const [selectedTargets, setSelectedTargets] = useState<StudioDomain[]>([]);
-  const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictStrategy>>({});
+  const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictStrategy>>(
+    {},
+  );
   const [plan, setPlan] = useState<StudioTemplateImportPlan | null>(null);
   const [planning, setPlanning] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -260,7 +272,9 @@ export function TemplatesStudio({
           {/* Template List */}
           <div className="space-y-3 lg:col-span-1">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">Templates Disponíveis</h3>
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
+                Templates Disponíveis
+              </h3>
               {isEditing && canEdit && (
                 <Button
                   size="sm"
@@ -338,7 +352,9 @@ export function TemplatesStudio({
                       variant="danger"
                       onClick={() => {
                         setSnapshot((prev) => ({
-                          templates: (prev?.templates ?? []).filter((t) => t.code !== selectedTemplate.code),
+                          templates: (prev?.templates ?? []).filter(
+                            (t) => t.code !== selectedTemplate.code,
+                          ),
                         }));
                         setSelectedTemplateCode(null);
                       }}
@@ -349,7 +365,9 @@ export function TemplatesStudio({
                   )}
                 </div>
 
-                <p className="text-sm text-[var(--color-text-secondary)]">{selectedTemplate.description}</p>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  {selectedTemplate.description}
+                </p>
 
                 <div className="border-t border-[var(--color-border-default)] pt-4">
                   <h4 className="text-sm font-medium text-[var(--color-text-primary)] mb-3">
@@ -388,14 +406,17 @@ export function TemplatesStudio({
               Clonar Template para os Domínios do Studio
             </h3>
             <p className="text-sm text-[var(--color-text-secondary)]">
-              Gera um plano determinístico de importação e aplica como rascunho (draft) nos domínios selecionados sem publicar diretamente.
+              Gera um plano determinístico de importação e aplica como rascunho (draft) nos domínios
+              selecionados sem publicar diretamente.
             </p>
           </div>
 
           {selectedTemplate ? (
             <div className="space-y-4">
               <div className="rounded bg-[var(--color-bg-subtle)] p-3 text-sm">
-                <span className="font-medium text-[var(--color-text-primary)]">Template selecionado:</span>{' '}
+                <span className="font-medium text-[var(--color-text-primary)]">
+                  Template selecionado:
+                </span>{' '}
                 {selectedTemplate.name} ({selectedTemplate.code} v{selectedTemplate.version})
               </div>
 
@@ -405,30 +426,30 @@ export function TemplatesStudio({
                   Domínios de Destino para Importação
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from(new Set(selectedTemplate.fragments.map((f) => f.domain as StudioDomain))).map(
-                    (domain) => {
-                      const isSelected = selectedTargets.includes(domain);
-                      return (
-                        <button
-                          key={domain}
-                          type="button"
-                          onClick={() => {
-                            setSelectedTargets((prev) =>
-                              isSelected ? prev.filter((d) => d !== domain) : [...prev, domain],
-                            );
-                            setPlan(null);
-                          }}
-                          className={`rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
-                            isSelected
-                              ? 'border-[var(--color-brand)] bg-[var(--color-brand)] text-white'
-                              : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
-                          }`}
-                        >
-                          {DOMAIN_LABELS[domain] ?? domain}
-                        </button>
-                      );
-                    },
-                  )}
+                  {Array.from(
+                    new Set(selectedTemplate.fragments.map((f) => f.domain as StudioDomain)),
+                  ).map((domain) => {
+                    const isSelected = selectedTargets.includes(domain);
+                    return (
+                      <button
+                        key={domain}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTargets((prev) =>
+                            isSelected ? prev.filter((d) => d !== domain) : [...prev, domain],
+                          );
+                          setPlan(null);
+                        }}
+                        className={`rounded-md px-3 py-1.5 text-xs font-medium border transition-colors ${
+                          isSelected
+                            ? 'border-[var(--color-brand)] bg-[var(--color-brand)] text-white'
+                            : 'border-[var(--color-border-default)] bg-[var(--color-bg-surface)] text-[var(--color-text-secondary)]'
+                        }`}
+                      >
+                        {DOMAIN_LABELS[domain] ?? domain}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -482,11 +503,14 @@ export function TemplatesStudio({
                                 {conflict.name} ({conflict.code})
                               </div>
                               <div className="text-[var(--color-text-secondary)]">
-                                Domínio: {DOMAIN_LABELS[conflict.domain] ?? conflict.domain} • Tipo: {conflict.kind}
+                                Domínio: {DOMAIN_LABELS[conflict.domain] ?? conflict.domain} • Tipo:{' '}
+                                {conflict.kind}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <label className="text-[var(--color-text-secondary)]">Resolução:</label>
+                              <label className="text-[var(--color-text-secondary)]">
+                                Resolução:
+                              </label>
                               <select
                                 value={conflictResolutions[conflict.id] ?? 'reject'}
                                 onChange={(e) => {
@@ -536,8 +560,12 @@ export function TemplatesStudio({
                             >
                               {op.action.toUpperCase()}
                             </span>
-                            <span className="font-medium text-[var(--color-text-primary)]">{op.name}</span>
-                            <span className="font-mono text-[var(--color-text-secondary)]">({op.code})</span>
+                            <span className="font-medium text-[var(--color-text-primary)]">
+                              {op.name}
+                            </span>
+                            <span className="font-mono text-[var(--color-text-secondary)]">
+                              ({op.code})
+                            </span>
                           </div>
                           <span className="text-[var(--color-text-secondary)]">
                             {DOMAIN_LABELS[op.domain] ?? op.domain}

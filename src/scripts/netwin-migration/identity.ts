@@ -11,7 +11,9 @@ export function deterministicUuid(namespaceUuid: string, name: string): string {
   const nsHex = namespaceUuid.replace(/-/g, '');
   const nsBytes = Buffer.from(nsHex, 'hex');
   const nameBytes = Buffer.from(name, 'utf8');
-  const hash = createHash('sha1').update(Buffer.concat([nsBytes, nameBytes])).digest();
+  const hash = createHash('sha1')
+    .update(Buffer.concat([nsBytes, nameBytes]))
+    .digest();
 
   // Set version to 5 (0101)
   hash[6] = (hash[6]! & 0x0f) | 0x50;
@@ -32,6 +34,30 @@ export function netwinEquipmentId(sourceId: number | string): string {
 
 export function netwinCableId(sourceId: number | string): string {
   return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:OSP_CABLE:${sourceId}`);
+}
+
+export function netwinInternalRackId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ISP_INS_BASTIDOR:${sourceId}`);
+}
+
+export function netwinInternalSubrackId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ISP_INS_SUBBASTIDOR:${sourceId}`);
+}
+
+export function netwinInternalEquipmentId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ISP_INS_EQUIPAMENTO:${sourceId}`);
+}
+
+export function netwinInternalCardId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ISP_INS_CARTA:${sourceId}`);
+}
+
+export function netwinInternalSlotId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ISP_INS_SLOT:${sourceId}`);
+}
+
+export function netwinInternalPhysicalPortId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ISP_INS_PORTO_FISICO:${sourceId}`);
 }
 
 export function netwinRouteId(sourceId: number | string): string {

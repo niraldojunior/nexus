@@ -257,6 +257,10 @@ describe('SitePanel', () => {
         expect.objectContaining({ geonetAddressId: 'geo-1' }),
       ),
     );
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ site: expect.objectContaining({ id: 'site-novo' }) }));
+    await waitFor(() =>
+      expect(onCreated).toHaveBeenCalledWith({
+        site: expect.objectContaining({ id: 'site-novo' }),
+      }),
+    );
   });
 });

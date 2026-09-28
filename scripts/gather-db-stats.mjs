@@ -27,9 +27,7 @@ const argOf = (flag) => {
   return idx >= 0 ? args[idx + 1] : undefined;
 };
 const tableArg = argOf('--table');
-const tables = tableArg
-  ? tableArg.split(',').map((t) => t.trim())
-  : [...TABLE_NAMES];
+const tables = tableArg ? tableArg.split(',').map((t) => t.trim()) : [...TABLE_NAMES];
 
 async function main() {
   const client = await openLoaderDb();

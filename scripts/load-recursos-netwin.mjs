@@ -576,7 +576,10 @@ async function main() {
         `INSERT INTO tmf_geographic_site
            (id, tenant_id, name, site_specification_id, status, characteristics)
          VALUES ($1, 'default', $2, $3, 'Active', $4)`,
-        [orphanSiteId, ORPHAN_SITE_NAME, siteSpecId,
+        [
+          orphanSiteId,
+          ORPHAN_SITE_NAME,
+          siteSpecId,
           JSON.stringify([
             { name: 'seed', value: SEED_TAG, valueType: 'string' },
             { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
@@ -738,14 +741,7 @@ async function main() {
     await bulkInsert(
       client,
       'tmf_geographic_location',
-      [
-        'id',
-        'geometry_type',
-        'geometry',
-        'spatial_ref',
-        'reference_point',
-        'characteristics',
-      ],
+      ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
       locations,
     );
     await bulkInsert(

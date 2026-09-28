@@ -101,7 +101,8 @@ function CharacteristicListRow({
         <h4 className="text-[0.88rem] text-app-text truncate">
           <span className="font-bold">{row.name}</span>{' '}
           <span className="font-normal text-app-muted">
-            ({row.group ? `${row.group} · ` : ''}{VALUE_TYPE_LABELS[row.valueType] ?? row.valueType})
+            ({row.group ? `${row.group} · ` : ''}
+            {VALUE_TYPE_LABELS[row.valueType] ?? row.valueType})
           </span>
         </h4>
       </div>
@@ -208,12 +209,13 @@ export function ResourceNodeDetail({
   // deixou de ser por especificação: edita `context.resourceType.resourceTypeCharacteristic`,
   // herdado por todas as specs desse tipo. Lista + modal de item único (plano §8) em vez da
   // edição tabular de `ResourceCharacteristicsEditor` — cada add/edit/remove persiste de imediato.
-  const [typeCharacteristicRows, setTypeCharacteristicRows] = useState<ResourceCharacteristicRow[]>([]);
+  const [typeCharacteristicRows, setTypeCharacteristicRows] = useState<ResourceCharacteristicRow[]>(
+    [],
+  );
   const [typeCharacteristicError, setTypeCharacteristicError] = useState<string | null>(null);
   const [characteristicModalOpen, setCharacteristicModalOpen] = useState(false);
-  const [editingCharacteristicRow, setEditingCharacteristicRow] = useState<ResourceCharacteristicRow | null>(
-    null,
-  );
+  const [editingCharacteristicRow, setEditingCharacteristicRow] =
+    useState<ResourceCharacteristicRow | null>(null);
   const [characteristicDeletingKey, setCharacteristicDeletingKey] = useState<string | null>(null);
 
   // Modal de criação/edição/leitura de ResourceSpecification (aba "Especificações", issue #216).
@@ -228,9 +230,13 @@ export function ResourceNodeDetail({
   const [formName, setFormName] = useState(node.name);
   const [formCode, setFormCode] = useState(node.code);
   const [formDescription, setFormDescription] = useState(node.description || '');
-  const [formNature, setFormNature] = useState<'PhysicalResource' | 'LogicalResource'>('PhysicalResource');
+  const [formNature, setFormNature] = useState<'PhysicalResource' | 'LogicalResource'>(
+    'PhysicalResource',
+  );
   const [formMapPresence, setFormMapPresence] = useState<boolean>(false);
-  const [formGeometryKind, setFormGeometryKind] = useState<ResourceGeometryKind | undefined>(undefined);
+  const [formGeometryKind, setFormGeometryKind] = useState<ResourceGeometryKind | undefined>(
+    undefined,
+  );
   const [formIcon, setFormIcon] = useState<string | undefined>(
     (node.metadata?.icon as string) || undefined,
   );
@@ -391,7 +397,10 @@ export function ResourceNodeDetail({
 
   const pathString = path
     ? path.nodes.length > 1
-      ? `/ ${path.nodes.slice(0, -1).map((n) => n.name).join(' / ')} /`
+      ? `/ ${path.nodes
+          .slice(0, -1)
+          .map((n) => n.name)
+          .join(' / ')} /`
       : '/'
     : '';
 
@@ -553,7 +562,9 @@ export function ResourceNodeDetail({
   // Persiste um array completo de linhas como `resourceTypeCharacteristic` do tipo — chamada por
   // add/edit/remove, que montam o array alvo antes de chamar isto (plano §8.5). Em falha, o
   // array em tela não é alterado, para o modal/estado local não sumirem antes da confirmação.
-  const persistCharacteristicRows = async (nextRows: ResourceCharacteristicRow[]): Promise<void> => {
+  const persistCharacteristicRows = async (
+    nextRows: ResourceCharacteristicRow[],
+  ): Promise<void> => {
     if (!context) return;
     const updated = await updateResourceType(context.resourceType.id, {
       resourceTypeCharacteristic: buildCharacteristicPayload(nextRows),
@@ -663,7 +674,11 @@ export function ResourceNodeDetail({
   // RESOURCE_TYPE nunca lê `metadata.icon`: o cabeçalho é read-only e reflete somente
   // `context.resourceType.visualIdentity` (issue #264) — `resolveNodeIcon` aqui só serve de
   // glifo genérico enquanto a identidade canônica não chegou/não foi definida.
-  const displayIcon = isGroup ? (isEditing ? formIcon : (node.metadata?.icon as string | undefined)) : undefined;
+  const displayIcon = isGroup
+    ? isEditing
+      ? formIcon
+      : (node.metadata?.icon as string | undefined)
+    : undefined;
   const CurrentNodeIcon = resolveNodeIcon(displayIcon, node.kind, isLogical);
   const visualIdentity = context?.resourceType.visualIdentity ?? null;
   // No editor de modelo, identidade é somente o glifo azul do ResourceType. Fundo, cor
@@ -971,7 +986,8 @@ export function ResourceNodeDetail({
                               Exibir no mapa
                             </span>
                             <span className="block text-[0.76rem] text-app-muted mt-0.5">
-                              Instâncias deste recurso físico serão indexadas na camada geoespacial do mapa.
+                              Instâncias deste recurso físico serão indexadas na camada geoespacial
+                              do mapa.
                             </span>
                           </div>
                         </label>
@@ -999,9 +1015,7 @@ export function ResourceNodeDetail({
                                     <Icon
                                       className={`mt-0.5 h-4 w-4 ${
                                         value === 'POINT' ? 'fill-current' : ''
-                                      } ${
-                                        selected ? 'text-app-text' : 'text-app-muted'
-                                      }`}
+                                      } ${selected ? 'text-app-text' : 'text-app-muted'}`}
                                     />
                                     <span>
                                       <span
@@ -1013,7 +1027,9 @@ export function ResourceNodeDetail({
                                       >
                                         {label}
                                       </span>
-                                      <span className="block text-[0.72rem] text-app-muted">{hint}</span>
+                                      <span className="block text-[0.72rem] text-app-muted">
+                                        {hint}
+                                      </span>
                                     </span>
                                   </button>
                                 );
@@ -1037,7 +1053,10 @@ export function ResourceNodeDetail({
               <>
                 {Boolean(node.description?.trim()) && (
                   <div>
-                    <h3 className="mb-3" style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    <h3
+                      className="mb-3"
+                      style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}
+                    >
                       Descrição
                     </h3>
                     <p className="text-[0.92rem] text-app-text leading-relaxed">
@@ -1189,7 +1208,10 @@ export function ResourceNodeDetail({
                 const { specification, instance } =
                   partitionCharacteristicRowsByLevel(typeCharacteristicRows);
                 const sections: Array<{ heading: string; rows: ResourceCharacteristicRow[] }> = [
-                  { heading: `Nível de especificação (${specification.length})`, rows: specification },
+                  {
+                    heading: `Nível de especificação (${specification.length})`,
+                    rows: specification,
+                  },
                   { heading: `Nível de instância (${instance.length})`, rows: instance },
                 ].filter((section) => section.rows.length > 0);
 
@@ -1285,9 +1307,14 @@ export function ResourceNodeDetail({
                     }}
                   >
                     <div className="min-w-0">
-                      <h4 className="text-[0.88rem] font-semibold text-app-text truncate">{spec.name}</h4>
+                      <h4 className="text-[0.88rem] font-semibold text-app-text truncate">
+                        {spec.name}
+                      </h4>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="flex items-center gap-1.5 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {canEdit && isEditing ? (
                         <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1.5">
                           <button
@@ -1402,7 +1429,10 @@ function AutosaveIndicator({ state, error }: { state: AutosaveState; error: stri
   }
   if (state === 'error') {
     return (
-      <span className="flex items-center gap-1.5 text-[0.78rem] text-status-red" title={error ?? undefined}>
+      <span
+        className="flex items-center gap-1.5 text-[0.78rem] text-status-red"
+        title={error ?? undefined}
+      >
         <AlertCircle className="h-3.5 w-3.5" />
         Falha ao salvar
       </span>

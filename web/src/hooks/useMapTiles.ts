@@ -103,7 +103,7 @@ export function useMapTiles(
       ? Object.entries(visibility)
           .map(([layer, visible]) => `${layer}:${visible ? '1' : '0'}`)
           .join(',')
-      : include?.join(',') ?? 'all';
+      : (include?.join(',') ?? 'all');
     const key = `${tiles.map(tileKey).join(',')}|${visibilityKey}|${scaleMeters ?? 'unknown'}`;
     if (key === lastKeyRef.current) return;
 

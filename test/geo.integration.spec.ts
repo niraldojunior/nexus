@@ -23,2202 +23,2351 @@ type GeoTreeResponseNode = {
   geometry?: { coordinates?: unknown };
 };
 
-test.skipIf(!oracleConfigured)('Geo HTTP integration handles spec, location and site creation', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
-    street: 'Rua Voluntarios da Patria',
-  });
-  assert.equal(address.statusCode, 201);
-
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Central Office',
-    category: 'Site',
-  });
-  assert.equal(spec.statusCode, 201);
-
-  const location = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.18, -22.9] },
-  });
-  assert.equal(location.statusCode, 201);
-
-  const site = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'CO Botafogo',
-    siteSpecificationId: (spec.body as { id: string }).id,
-    placeId: (location.body as { id: string }).id,
-    addressId: (address.body as { id: string }).id,
-  });
-  assert.equal(site.statusCode, 201);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
-
-test.skipIf(!oracleConfigured)('Geo specification instance count returns only sites of the selected specification', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-    const countedSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-      name: 'Tipo contado',
-      category: 'Site',
+test.skipIf(!oracleConfigured)(
+  'Geo HTTP integration handles spec, location and site creation',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
     });
-    const otherSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-      name: 'Outro tipo',
-      category: 'Site',
+    const port = await server.start();
+    try {
+      const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
+        street: 'Rua Voluntarios da Patria',
+      });
+      assert.equal(address.statusCode, 201);
+
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Central Office',
+        category: 'Site',
+      });
+      assert.equal(spec.statusCode, 201);
+
+      const location = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.18, -22.9] },
+      });
+      assert.equal(location.statusCode, 201);
+
+      const site = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'CO Botafogo',
+        siteSpecificationId: (spec.body as { id: string }).id,
+        placeId: (location.body as { id: string }).id,
+        addressId: (address.body as { id: string }).id,
+      });
+      assert.equal(site.statusCode, 201);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Geo specification instance count returns only sites of the selected specification',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
     });
-    const countedSpecId = (countedSpec.body as { id: string }).id;
-    const otherSpecId = (otherSpec.body as { id: string }).id;
+    const port = await server.start();
+    try {
+      const countedSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Tipo contado',
+        category: 'Site',
+      });
+      const otherSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Outro tipo',
+        category: 'Site',
+      });
+      const countedSpecId = (countedSpec.body as { id: string }).id;
+      const otherSpecId = (otherSpec.body as { id: string }).id;
 
-    await requestJson(port, 'POST', '/v1/geo/sites', {
-      name: 'Local contado 1',
-      siteSpecificationId: countedSpecId,
+      await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Local contado 1',
+        siteSpecificationId: countedSpecId,
+      });
+      await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Local contado 2',
+        siteSpecificationId: countedSpecId,
+      });
+      await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Local de outro tipo',
+        siteSpecificationId: otherSpecId,
+      });
+
+      const count = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/site-specifications/${countedSpecId}/instance-count`,
+      );
+      assert.equal(count.statusCode, 200);
+      assert.deepEqual(count.body, { specificationId: countedSpecId, instanceCount: 2 });
+
+      const missing = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/site-specifications/does-not-exist/instance-count',
+      );
+      assert.equal(missing.statusCode, 404);
+      assert.equal((missing.body as { error: string }).error, 'GEO_SPEC_NOT_FOUND');
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
     });
-    await requestJson(port, 'POST', '/v1/geo/sites', {
-      name: 'Local contado 2',
-      siteSpecificationId: countedSpecId,
+    const port = await server.start();
+    try {
+      const spec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification',
+        {
+          name: 'Ponto de Instalacao',
+          category: 'Site',
+        },
+      );
+      assert.equal(spec.statusCode, 201);
+
+      const feederSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'CTO',
+        category: 'Site',
+      });
+      assert.equal(feederSpec.statusCode, 201);
+
+      const feeder = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'CTO ICA-014',
+        siteSpecificationId: (feederSpec.body as { id: string }).id,
+      });
+      assert.equal(feeder.statusCode, 201);
+
+      const workspace = await requestJson(port, 'POST', '/v1/geo/workspace/site-at-address', {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.1059, -22.9092] },
+        },
+        address: {
+          street: 'Rua Belisario Augusto',
+          streetNr: '145',
+          city: 'Niteroi',
+          stateOrProvince: 'RJ',
+          country: 'BR',
+        },
+        site: {
+          name: 'PI Belisario',
+          siteSpecificationId: (spec.body as { id: string }).id,
+        },
+        fedBySiteId: (feeder.body as { id: string }).id,
+      });
+      assert.equal(workspace.statusCode, 201);
+      assert.equal(
+        (workspace.body as { site: { '@type': string } }).site['@type'],
+        'GeographicSite',
+      );
+      assert.equal(
+        (workspace.body as { site: { relatedSite: Array<{ relationshipType: string }> } }).site
+          .relatedSite[0]?.relationshipType,
+        'fedBy',
+      );
+
+      const siteId = (workspace.body as { site: { id: string } }).site.id;
+      const patch = await requestJson(
+        port,
+        'PATCH',
+        `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`,
+        {
+          status: 'active',
+        },
+      );
+      assert.equal(patch.statusCode, 200);
+
+      const events = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/events`);
+      assert.equal(events.statusCode, 200);
+      assert.ok(
+        (events.body as Array<{ eventType: string }>).some(
+          (event) => event.eventType === 'GeographicSiteStatusChangeEvent',
+        ),
+      );
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Geo HTTP integration exposes bootstrap, allowedChildren and containment impact',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
     });
-    await requestJson(port, 'POST', '/v1/geo/sites', {
-      name: 'Local de outro tipo',
-      siteSpecificationId: otherSpecId,
+    const port = await server.start();
+    try {
+      const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
+      assert.equal(bootstrap.statusCode, 200);
+      // BOOTSTRAP_SPECIFICATIONS em service.ts — Region, CO, POP, Cabinet, Installation Point,
+      // Customer Site, Condominium, Block, Floor, Room, Cage. Functional Group foi descontinuada
+      // (D-GEO-003 superada — categoria removida do domínio).
+      assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 11);
+
+      const regionSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=REGION');
+      const centralSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=CO');
+      assert.equal(regionSpecs.statusCode, 200);
+      assert.equal(centralSpecs.statusCode, 200);
+
+      const regionSpecId = (regionSpecs.body as Array<{ id: string }>)[0]?.id;
+      const centralSpecId = (centralSpecs.body as Array<{ id: string }>)[0]?.id;
+      assert.ok(regionSpecId);
+      assert.ok(centralSpecId);
+
+      const allowedChildren = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/site-specifications/${regionSpecId}/allowedChildren`,
+      );
+      assert.equal(allowedChildren.statusCode, 200);
+      assert.ok(
+        (allowedChildren.body as Array<{ code: string }>).some((item) => item.code === 'CO'),
+      );
+
+      const region = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'RJ',
+        siteSpecificationId: regionSpecId,
+      });
+      assert.equal(region.statusCode, 201);
+
+      const central = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'CO Botafogo',
+        siteSpecificationId: centralSpecId,
+        parentSiteId: (region.body as { id: string }).id,
+      });
+      assert.equal(central.statusCode, 201);
+
+      const impact = await requestJson(
+        port,
+        'POST',
+        `/v1/geo/site-specifications/${regionSpecId}/containment-impact`,
+        {
+          allowedChildSpecIds: [],
+        },
+      );
+      assert.equal(impact.statusCode, 200);
+      assert.equal((impact.body as { blocking: boolean }).blocking, true);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Geo tree serves one level per call, with counts, pagination and child flags',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
     });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-    const count = await requestJson(
-      port,
-      'GET',
-      `/v1/geo/site-specifications/${countedSpecId}/instance-count`,
-    );
-    assert.equal(count.statusCode, 200);
-    assert.deepEqual(count.body, { specificationId: countedSpecId, instanceCount: 2 });
+      // Estação com endereço (é dela que saem UF e Município) e ponto próprio. A árvore só expõe
+      // as specifications canônicas CO/POP como raiz; reutilizamos o bootstrap, em vez de disputar o
+      // código protegido CO com a inicialização do runtime.
+      const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
+      assert.equal(bootstrap.statusCode, 200);
+      const specifications = (bootstrap.body as { specs: Array<{ id: string; code: string }> })
+        .specs;
+      const stationSpecId = specifications.find((spec) => spec.code === 'CO')?.id;
+      const roomSpecId = specifications.find((spec) => spec.code === 'ROOM')?.id;
+      assert.ok(stationSpecId, 'bootstrap deve fornecer a specification canônica CO');
+      assert.ok(roomSpecId, 'bootstrap deve fornecer a specification canônica ROOM');
+      const stationSpec = { body: { id: stationSpecId } };
+      const roomSpec = { body: { id: roomSpecId } };
+      const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
+        street: 'Rua Coronel Moreira Cesar',
+        city: 'Niterói',
+        stateOrProvince: 'RJ',
+        country: 'BR',
+      });
+      const stationPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.107, -22.906] },
+      });
+      const station = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Icaraí (ICI)',
+        siteSpecificationId: idOf(stationSpec),
+        placeId: idOf(stationPlace),
+        addressId: idOf(address),
+        status: 'active',
+      });
+      const room = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Sala GPON',
+        siteSpecificationId: idOf(roomSpec),
+        parentSiteId: idOf(station),
+        status: 'active',
+      });
+      assert.equal(room.statusCode, 201);
 
-    const missing = await requestJson(
-      port,
-      'GET',
-      '/v1/geo/site-specifications/does-not-exist/instance-count',
-    );
-    assert.equal(missing.statusCode, 404);
-    assert.equal((missing.body as { error: string }).error, 'GEO_SPEC_NOT_FOUND');
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // Planta externa: a caixa fica na rua (place = Location própria) e se liga à
+      // estação pela characteristic `servingSite`; o splitter pende da caixa e reaproveita
+      // a mesma Location (é o mesmo ponto físico — não tem pin próprio no mapa).
+      const boxSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'CDOE 1:8',
+          resourceTypeId: 'rt-cto',
+        },
+      );
+      const splitterSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'Splitter óptico 1:8',
+          resourceTypeId: 'rt-splitter',
+        },
+      );
+      const cableSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'Cabo secundário 6FO',
+          resourceTypeId: 'rt-distribution-cable',
+        },
+      );
+      const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+      });
+      const box = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-1108',
+          resourceSpecificationId: idOf(boxSpec),
+          placeId: idOf(boxPlace),
+          placeType: 'GeographicLocation',
+          characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
+        },
+      );
+      assert.equal(box.statusCode, 201);
 
-test.skipIf(!oracleConfigured)('Geo HTTP integration supports TMF aliases, workspace transaction, status event and relatedSite', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      const splitter = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-1108 · S32_1',
+          resourceSpecificationId: idOf(splitterSpec),
+          placeId: idOf(boxPlace),
+          placeType: 'GeographicLocation',
+          characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
+        },
+      );
+      assert.equal(splitter.statusCode, 201);
+      const containsLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
+        { id: idOf(splitter), relationshipType: 'containsAsChild' },
+      );
+      assert.equal(containsLink.statusCode, 201);
 
-  const spec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/geographicSiteManagement/v4/geographicSiteSpecification',
-    {
-      name: 'Ponto de Instalacao',
-      category: 'Site',
-    },
-  );
-  assert.equal(spec.statusCode, 201);
+      // O splitter alimenta um cabo secundário — é o que a árvore de navegação deve
+      // mostrar direto sob a caixa, pulando o splitter (pass-through).
+      const cablePlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'LineString',
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [-43.108, -22.907],
+            [-43.109, -22.908],
+          ],
+        },
+      });
+      const secondaryCable = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'Cabo Secundário 01',
+          resourceSpecificationId: idOf(cableSpec),
+          placeId: idOf(cablePlace),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(secondaryCable.statusCode, 201);
+      const connectedLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitter)}/relationships`,
+        { id: idOf(secondaryCable), relationshipType: 'connectedTo' },
+      );
+      assert.equal(connectedLink.statusCode, 201);
 
-  const feederSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'CTO',
-    category: 'Site',
-  });
-  assert.equal(feederSpec.statusCode, 201);
+      // Abertura: UF → Município → Estações → Estação, sem contar recursos de
+      // nenhuma delas — a estação nasce com "+" e o volume só chega ao abri-la.
+      const roots = await requestJson(port, 'GET', '/v1/geo/tree/roots');
+      assert.equal(roots.statusCode, 200);
+      const rootNodes = roots.body as GeoTreeResponseNode[];
+      assert.deepEqual(
+        rootNodes.map((item) => item.kind),
+        ['uf', 'city', 'group', 'site'],
+      );
+      assert.equal(rootNodes[0]?.label, 'RJ');
+      assert.equal(rootNodes[1]?.label, 'Niterói');
+      assert.equal(rootNodes[2]?.label, 'Estações');
+      const stationNode = rootNodes[3];
+      assert.equal(stationNode?.id, `site:${idOf(station)}`);
+      assert.equal(stationNode?.descendantCount, undefined);
+      assert.equal(stationNode?.hasChildren, true);
+      assert.deepEqual(stationNode?.geometry?.coordinates, [-43.107, -22.906]);
 
-  const feeder = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'CTO ICA-014',
-    siteSpecificationId: (feederSpec.body as { id: string }).id,
-  });
-  assert.equal(feeder.statusCode, 201);
+      // Escopo de navegação (default): a sala é item interno e some por completo — só
+      // a caixa aparece.
+      const children = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=site:${idOf(station)}`,
+      );
+      assert.equal(children.statusCode, 200);
+      const page = children.body as { total: number; nodes: GeoTreeResponseNode[] };
+      assert.equal(page.total, 1);
+      assert.deepEqual(
+        page.nodes.map((item) => item.label),
+        ['CDOE-1108'],
+      );
+      // A caixa ganha "+": mesmo com o splitter escondido, o pass-through acha o cabo.
+      assert.equal(page.nodes[0]?.hasChildren, true);
 
-  const workspace = await requestJson(port, 'POST', '/v1/geo/workspace/site-at-address', {
-    location: {
-      geometryType: 'Point',
-      geometry: { type: 'Point', coordinates: [-43.1059, -22.9092] },
-    },
-    address: {
-      street: 'Rua Belisario Augusto',
-      streetNr: '145',
-      city: 'Niteroi',
-      stateOrProvince: 'RJ',
-      country: 'BR',
-    },
-    site: {
-      name: 'PI Belisario',
-      siteSpecificationId: (spec.body as { id: string }).id,
-    },
-    fedBySiteId: (feeder.body as { id: string }).id,
-  });
-  assert.equal(workspace.statusCode, 201);
-  assert.equal((workspace.body as { site: { '@type': string } }).site['@type'], 'GeographicSite');
-  assert.equal(
-    (workspace.body as { site: { relatedSite: Array<{ relationshipType: string }> } }).site
-      .relatedSite[0]?.relationshipType,
-    'fedBy',
-  );
+      // Escopo de detalhe (`scope=all`): sala e caixa voltam as duas, sem filtro.
+      const childrenAll = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=site:${idOf(station)}&scope=all`,
+      );
+      assert.equal(childrenAll.statusCode, 200);
+      const pageAll = childrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+      assert.equal(pageAll.total, 2);
+      assert.deepEqual(
+        pageAll.nodes.map((item) => item.label),
+        ['Sala GPON', 'CDOE-1108'],
+      );
+      // Sala vazia não ganha "+"; caixa com splitter ganha (splitter tem 1 filho direto).
+      assert.equal(pageAll.nodes[0]?.hasChildren, false);
+      assert.equal(pageAll.nodes[1]?.hasChildren, true);
 
-  const siteId = (workspace.body as { site: { id: string } }).site.id;
-  const patch = await requestJson(
-    port,
-    'PATCH',
-    `/tmf-api/geographicSiteManagement/v4/geographicSite/${siteId}`,
-    {
-      status: 'active',
-    },
-  );
-  assert.equal(patch.statusCode, 200);
+      // Paginação em `scope=all`: a janela atravessa sub-locais e recursos, e o total
+      // não muda.
+      const firstPage = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&scope=all`,
+      );
+      const secondPage = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&offset=1&scope=all`,
+      );
+      assert.equal(
+        (firstPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
+        'Sala GPON',
+      );
+      assert.equal((secondPage.body as { total: number }).total, 2);
+      assert.equal(
+        (secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
+        'CDOE-1108',
+      );
 
-  const events = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/events`);
-  assert.equal(events.statusCode, 200);
-  assert.ok(
-    (events.body as Array<{ eventType: string }>).some(
-      (event) => event.eventType === 'GeographicSiteStatusChangeEvent',
-    ),
-  );
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // Nível seguinte da planta em escopo de navegação: o splitter não aparece — o
+      // cabo secundário que ele alimenta sobe direto para este nível (pass-through).
+      const boxChildren = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
+      );
+      const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
+      assert.equal(boxPage.total, 1);
+      assert.equal(boxPage.nodes[0]?.label, 'Cabo Secundário 01');
+      assert.equal(boxPage.nodes[0]?.hasChildren, false);
 
-test.skipIf(!oracleConfigured)('Geo HTTP integration exposes bootstrap, allowedChildren and containment impact', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      // O mesmo nível em `scope=all`: o splitter aparece, com "+" (tem o cabo como filho).
+      const boxChildrenAll = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=resource:${idOf(box)}&scope=all`,
+      );
+      const boxPageAll = boxChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+      assert.equal(boxPageAll.total, 1);
+      assert.equal(boxPageAll.nodes[0]?.label, 'CDOE-1108 · S32_1');
+      assert.equal(boxPageAll.nodes[0]?.hasChildren, true);
 
-  const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
-  assert.equal(bootstrap.statusCode, 200);
-  // BOOTSTRAP_SPECIFICATIONS em service.ts — Region, CO, POP, Cabinet, Installation Point,
-  // Customer Site, Condominium, Block, Floor, Room, Cage. Functional Group foi descontinuada
-  // (D-GEO-003 superada — categoria removida do domínio).
-  assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 11);
+      const missingNode = await requestJson(port, 'GET', '/v1/geo/tree/children');
+      assert.equal(missingNode.statusCode, 400);
 
-  const regionSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=REGION');
-  const centralSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=CO');
-  assert.equal(regionSpecs.statusCode, 200);
-  assert.equal(centralSpecs.statusCode, 200);
+      // Caminho até a Estação — é o que o cliente expande para revelar o nó na árvore.
+      const stationPath = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/path?nodeId=site:${idOf(station)}`,
+      );
+      assert.equal(stationPath.statusCode, 200);
+      assert.deepEqual((stationPath.body as { path: string[] }).path, [
+        'uf:RJ',
+        'city:RJ|Niterói',
+        'group:RJ|Niterói|stations',
+        `site:${idOf(station)}`,
+      ]);
 
-  const regionSpecId = (regionSpecs.body as Array<{ id: string }>)[0]?.id;
-  const centralSpecId = (centralSpecs.body as Array<{ id: string }>)[0]?.id;
-  assert.ok(regionSpecId);
-  assert.ok(centralSpecId);
+      // Caminho até a caixa: planta externa presa à estação por `servingSite`.
+      const boxPath = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/path?nodeId=resource:${idOf(box)}`,
+      );
+      assert.deepEqual((boxPath.body as { path: string[] }).path, [
+        'uf:RJ',
+        'city:RJ|Niterói',
+        'group:RJ|Niterói|stations',
+        `site:${idOf(station)}`,
+        `resource:${idOf(box)}`,
+      ]);
 
-  const allowedChildren = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/site-specifications/${regionSpecId}/allowedChildren`,
-  );
-  assert.equal(allowedChildren.statusCode, 200);
-  assert.ok((allowedChildren.body as Array<{ code: string }>).some((item) => item.code === 'CO'));
+      // Caminho até o cabo secundário: ele pende do splitter, que é item interno — o
+      // caminho devolvido pula o splitter, espelhando o pass-through da árvore.
+      const cablePath = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/path?nodeId=resource:${idOf(secondaryCable)}`,
+      );
+      assert.deepEqual((cablePath.body as { path: string[] }).path, [
+        'uf:RJ',
+        'city:RJ|Niterói',
+        'group:RJ|Niterói|stations',
+        `site:${idOf(station)}`,
+        `resource:${idOf(box)}`,
+        `resource:${idOf(secondaryCable)}`,
+      ]);
 
-  const region = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'RJ',
-    siteSpecificationId: regionSpecId,
-  });
-  assert.equal(region.statusCode, 201);
+      const missingPathNode = await requestJson(port, 'GET', '/v1/geo/tree/path');
+      assert.equal(missingPathNode.statusCode, 400);
 
-  const central = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'CO Botafogo',
-    siteSpecificationId: centralSpecId,
-    parentSiteId: (region.body as { id: string }).id,
-  });
-  assert.equal(central.statusCode, 201);
+      // Nó por id, hidratado — completa a seleção feita a partir de uma feature do InfraOverlay
+      // (canvas do mapa), que só carrega o essencial pra desenhar. A Estação vem completa (Site).
+      const stationNodeById = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/node?id=site:${idOf(station)}`,
+      );
+      assert.equal(stationNodeById.statusCode, 200);
+      assert.equal((stationNodeById.body as GeoTreeResponseNode).label, 'Icaraí (ICI)');
 
-  const impact = await requestJson(
-    port,
-    'POST',
-    `/v1/geo/site-specifications/${regionSpecId}/containment-impact`,
-    {
-      allowedChildSpecIds: [],
-    },
-  );
-  assert.equal(impact.statusCode, 200);
-  assert.equal((impact.body as { blocking: boolean }).blocking, true);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // A caixa vem com a geometria de ponto e `hasChildren` real (o splitter tem 1 filho direto,
+      // mesma régua de pass-through que `children` já valida acima).
+      const boxNodeById = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/node?id=resource:${idOf(box)}`,
+      );
+      assert.equal(boxNodeById.statusCode, 200);
+      const boxHydrated = boxNodeById.body as GeoTreeResponseNode;
+      assert.equal(boxHydrated.label, 'CDOE-1108');
+      assert.equal(boxHydrated.hasChildren, true);
+      assert.deepEqual(boxHydrated.geometry?.coordinates, [-43.108, -22.907]);
 
-test.skipIf(!oracleConfigured)('Geo tree serves one level per call, with counts, pagination and child flags', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
-
-  // Estação com endereço (é dela que saem UF e Município) e ponto próprio. A árvore só expõe
-  // as specifications canônicas CO/POP como raiz; reutilizamos o bootstrap, em vez de disputar o
-  // código protegido CO com a inicialização do runtime.
-  const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
-  assert.equal(bootstrap.statusCode, 200);
-  const specifications = (bootstrap.body as { specs: Array<{ id: string; code: string }> }).specs;
-  const stationSpecId = specifications.find((spec) => spec.code === 'CO')?.id;
-  const roomSpecId = specifications.find((spec) => spec.code === 'ROOM')?.id;
-  assert.ok(stationSpecId, 'bootstrap deve fornecer a specification canônica CO');
-  assert.ok(roomSpecId, 'bootstrap deve fornecer a specification canônica ROOM');
-  const stationSpec = { body: { id: stationSpecId } };
-  const roomSpec = { body: { id: roomSpecId } };
-  const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
-    street: 'Rua Coronel Moreira Cesar',
-    city: 'Niterói',
-    stateOrProvince: 'RJ',
-    country: 'BR',
-  });
-  const stationPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.107, -22.906] },
-  });
-  const station = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'Icaraí (ICI)',
-    siteSpecificationId: idOf(stationSpec),
-    placeId: idOf(stationPlace),
-    addressId: idOf(address),
-    status: 'active',
-  });
-  const room = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'Sala GPON',
-    siteSpecificationId: idOf(roomSpec),
-    parentSiteId: idOf(station),
-    status: 'active',
-  });
-  assert.equal(room.statusCode, 201);
-
-  // Planta externa: a caixa fica na rua (place = Location própria) e se liga à
-  // estação pela characteristic `servingSite`; o splitter pende da caixa e reaproveita
-  // a mesma Location (é o mesmo ponto físico — não tem pin próprio no mapa).
-  const boxSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    {
-      name: 'CDOE 1:8',
-      resourceTypeId: 'rt-cto',
-    },
-  );
-  const splitterSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    {
-      name: 'Splitter óptico 1:8',
-      resourceTypeId: 'rt-splitter',
-    },
-  );
-  const cableSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    {
-      name: 'Cabo secundário 6FO',
-      resourceTypeId: 'rt-distribution-cable',
-    },
-  );
-  const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
-  });
-  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-1108',
-    resourceSpecificationId: idOf(boxSpec),
-    placeId: idOf(boxPlace),
-    placeType: 'GeographicLocation',
-    characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
-  });
-  assert.equal(box.statusCode, 201);
-
-  const splitter = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE-1108 · S32_1',
-      resourceSpecificationId: idOf(splitterSpec),
-      placeId: idOf(boxPlace),
-      placeType: 'GeographicLocation',
-      characteristic: [{ name: 'servingSite', value: idOf(station), valueType: 'string' }],
-    },
-  );
-  assert.equal(splitter.statusCode, 201);
-  const containsLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
-    { id: idOf(splitter), relationshipType: 'containsAsChild' },
-  );
-  assert.equal(containsLink.statusCode, 201);
-
-  // O splitter alimenta um cabo secundário — é o que a árvore de navegação deve
-  // mostrar direto sob a caixa, pulando o splitter (pass-through).
-  const cablePlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'LineString',
-    geometry: {
-      type: 'LineString',
-      coordinates: [
+      // O cabo secundário vem com a rota INTEIRA (2 vértices) — não um trecho recortado por tile,
+      // ao contrário do que uma feature do índice `geo_map_feature` traria.
+      const cableNodeById = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/node?id=resource:${idOf(secondaryCable)}`,
+      );
+      assert.equal(cableNodeById.statusCode, 200);
+      assert.deepEqual((cableNodeById.body as GeoTreeResponseNode).geometry?.coordinates, [
         [-43.108, -22.907],
         [-43.109, -22.908],
-      ],
-    },
-  });
-  const secondaryCable = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'Cabo Secundário 01',
-      resourceSpecificationId: idOf(cableSpec),
-      placeId: idOf(cablePlace),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(secondaryCable.statusCode, 201);
-  const connectedLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitter)}/relationships`,
-    { id: idOf(secondaryCable), relationshipType: 'connectedTo' },
-  );
-  assert.equal(connectedLink.statusCode, 201);
+      ]);
 
-  // Abertura: UF → Município → Estações → Estação, sem contar recursos de
-  // nenhuma delas — a estação nasce com "+" e o volume só chega ao abri-la.
-  const roots = await requestJson(port, 'GET', '/v1/geo/tree/roots');
-  assert.equal(roots.statusCode, 200);
-  const rootNodes = roots.body as GeoTreeResponseNode[];
-  assert.deepEqual(
-    rootNodes.map((item) => item.kind),
-    ['uf', 'city', 'group', 'site'],
-  );
-  assert.equal(rootNodes[0]?.label, 'RJ');
-  assert.equal(rootNodes[1]?.label, 'Niterói');
-  assert.equal(rootNodes[2]?.label, 'Estações');
-  const stationNode = rootNodes[3];
-  assert.equal(stationNode?.id, `site:${idOf(station)}`);
-  assert.equal(stationNode?.descendantCount, undefined);
-  assert.equal(stationNode?.hasChildren, true);
-  assert.deepEqual(stationNode?.geometry?.coordinates, [-43.107, -22.906]);
+      const missingIdParam = await requestJson(port, 'GET', '/v1/geo/tree/node');
+      assert.equal(missingIdParam.statusCode, 400);
 
-  // Escopo de navegação (default): a sala é item interno e some por completo — só
-  // a caixa aparece.
-  const children = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=site:${idOf(station)}`,
-  );
-  assert.equal(children.statusCode, 200);
-  const page = children.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.equal(page.total, 1);
-  assert.deepEqual(
-    page.nodes.map((item) => item.label),
-    ['CDOE-1108'],
-  );
-  // A caixa ganha "+": mesmo com o splitter escondido, o pass-through acha o cabo.
-  assert.equal(page.nodes[0]?.hasChildren, true);
+      const unknownNode = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/node?id=resource:00000000-0000-0000-0000-000000000000',
+      );
+      assert.equal(unknownNode.statusCode, 404);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  // Escopo de detalhe (`scope=all`): sala e caixa voltam as duas, sem filtro.
-  const childrenAll = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&scope=all`,
-  );
-  assert.equal(childrenAll.statusCode, 200);
-  const pageAll = childrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.equal(pageAll.total, 2);
-  assert.deepEqual(
-    pageAll.nodes.map((item) => item.label),
-    ['Sala GPON', 'CDOE-1108'],
-  );
-  // Sala vazia não ganha "+"; caixa com splitter ganha (splitter tem 1 filho direto).
-  assert.equal(pageAll.nodes[0]?.hasChildren, false);
-  assert.equal(pageAll.nodes[1]?.hasChildren, true);
+test.skipIf(!oracleConfigured)(
+  'Geo tree pass-through skips a chain of hidden splitters to the first visible descendant',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-  // Paginação em `scope=all`: a janela atravessa sub-locais e recursos, e o total
-  // não muda.
-  const firstPage = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&scope=all`,
-  );
-  const secondPage = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=site:${idOf(station)}&limit=1&offset=1&scope=all`,
-  );
-  assert.equal(
-    (firstPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
-    'Sala GPON',
-  );
-  assert.equal((secondPage.body as { total: number }).total, 2);
-  assert.equal(
-    (secondPage.body as { nodes: Array<{ label: string }> }).nodes[0]?.label,
-    'CDOE-1108',
-  );
+      const boxSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'CDOE 1:8', resourceTypeId: 'rt-cto' },
+      );
+      const splitterSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
+      );
+      const cableSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'Cabo secundário 6FO',
+          resourceTypeId: 'rt-distribution-cable',
+        },
+      );
+      const place = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+      });
 
-  // Nível seguinte da planta em escopo de navegação: o splitter não aparece — o
-  // cabo secundário que ele alimenta sobe direto para este nível (pass-through).
-  const boxChildren = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
-  );
-  const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.equal(boxPage.total, 1);
-  assert.equal(boxPage.nodes[0]?.label, 'Cabo Secundário 01');
-  assert.equal(boxPage.nodes[0]?.hasChildren, false);
+      const box = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-2201',
+          resourceSpecificationId: idOf(boxSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(box.statusCode, 201);
+      // Caixa → splitter A (containsAsChild) → splitter B (connectedTo, cascata rara mas
+      // possível) → cabo (connectedTo). Dois saltos internos seguidos.
+      const splitterA = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-2201 · S1',
+          resourceSpecificationId: idOf(splitterSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(splitterA.statusCode, 201);
+      const splitterB = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-2201 · S1 · S1',
+          resourceSpecificationId: idOf(splitterSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(splitterB.statusCode, 201);
+      const cable = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'Cabo Secundário 02',
+          resourceSpecificationId: idOf(cableSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(cable.statusCode, 201);
 
-  // O mesmo nível em `scope=all`: o splitter aparece, com "+" (tem o cabo como filho).
-  const boxChildrenAll = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}&scope=all`,
-  );
-  const boxPageAll = boxChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.equal(boxPageAll.total, 1);
-  assert.equal(boxPageAll.nodes[0]?.label, 'CDOE-1108 · S32_1');
-  assert.equal(boxPageAll.nodes[0]?.hasChildren, true);
+      const boxSplitterLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
+        { id: idOf(splitterA), relationshipType: 'containsAsChild' },
+      );
+      assert.equal(boxSplitterLink.statusCode, 201);
+      const splitterSplitterLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitterA)}/relationships`,
+        { id: idOf(splitterB), relationshipType: 'connectedTo' },
+      );
+      assert.equal(splitterSplitterLink.statusCode, 201);
+      const splitterCableLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitterB)}/relationships`,
+        { id: idOf(cable), relationshipType: 'connectedTo' },
+      );
+      assert.equal(splitterCableLink.statusCode, 201);
 
-  const missingNode = await requestJson(port, 'GET', '/v1/geo/tree/children');
-  assert.equal(missingNode.statusCode, 400);
+      const boxChildren = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
+      );
+      const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
+      // Os dois splitters somem; só o cabo do fim da cadeia sobe para este nível, uma
+      // única vez (sem duplicar por causa dos dois saltos internos).
+      assert.equal(boxPage.total, 1);
+      assert.deepEqual(
+        boxPage.nodes.map((item) => item.label),
+        ['Cabo Secundário 02'],
+      );
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  // Caminho até a Estação — é o que o cliente expande para revelar o nó na árvore.
-  const stationPath = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/path?nodeId=site:${idOf(station)}`,
-  );
-  assert.equal(stationPath.statusCode, 200);
-  assert.deepEqual((stationPath.body as { path: string[] }).path, [
-    'uf:RJ',
-    'city:RJ|Niterói',
-    'group:RJ|Niterói|stations',
-    `site:${idOf(station)}`,
-  ]);
+test.skipIf(!oracleConfigured)(
+  'Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging off a hidden Port still passes through',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-  // Caminho até a caixa: planta externa presa à estação por `servingSite`.
-  const boxPath = await requestJson(port, 'GET', `/v1/geo/tree/path?nodeId=resource:${idOf(box)}`);
-  assert.deepEqual((boxPath.body as { path: string[] }).path, [
-    'uf:RJ',
-    'city:RJ|Niterói',
-    'group:RJ|Niterói|stations',
-    `site:${idOf(station)}`,
-    `resource:${idOf(box)}`,
-  ]);
+      const boxSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'CDOE 1:8', resourceTypeId: 'rt-cto' },
+      );
+      const splitterSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
+      );
+      const portSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'Porta de Splitter', resourceTypeId: 'rt-port' },
+      );
+      const cableSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'Cabo drop 1FO', resourceTypeId: 'rt-drop-cable' },
+      );
+      const place = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+      });
 
-  // Caminho até o cabo secundário: ele pende do splitter, que é item interno — o
-  // caminho devolvido pula o splitter, espelhando o pass-through da árvore.
-  const cablePath = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/path?nodeId=resource:${idOf(secondaryCable)}`,
-  );
-  assert.deepEqual((cablePath.body as { path: string[] }).path, [
-    'uf:RJ',
-    'city:RJ|Niterói',
-    'group:RJ|Niterói|stations',
-    `site:${idOf(station)}`,
-    `resource:${idOf(box)}`,
-    `resource:${idOf(secondaryCable)}`,
-  ]);
+      const box = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-ICARAI-01',
+          resourceSpecificationId: idOf(boxSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(box.statusCode, 201);
+      const splitter = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-ICARAI-01 · Splitter',
+          resourceSpecificationId: idOf(splitterSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(splitter.statusCode, 201);
+      const portaOut = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-ICARAI-01 · Splitter · FO.O.1',
+          resourceSpecificationId: idOf(portSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(portaOut.statusCode, 201);
+      const drop = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'Drop Cliente 01',
+          resourceSpecificationId: idOf(cableSpec),
+          placeId: idOf(place),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(drop.statusCode, 201);
 
-  const missingPathNode = await requestJson(port, 'GET', '/v1/geo/tree/path');
-  assert.equal(missingPathNode.statusCode, 400);
+      const boxSplitterLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
+        { id: idOf(splitter), relationshipType: 'containsAsChild' },
+      );
+      assert.equal(boxSplitterLink.statusCode, 201);
+      const splitterPortLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitter)}/relationships`,
+        { id: idOf(portaOut), relationshipType: 'containsAsChild' },
+      );
+      assert.equal(splitterPortLink.statusCode, 201);
+      const portDropLink = await requestJson(
+        port,
+        'POST',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(portaOut)}/relationships`,
+        { id: idOf(drop), relationshipType: 'connectedTo' },
+      );
+      assert.equal(portDropLink.statusCode, 201);
 
-  // Nó por id, hidratado — completa a seleção feita a partir de uma feature do InfraOverlay
-  // (canvas do mapa), que só carrega o essencial pra desenhar. A Estação vem completa (Site).
-  const stationNodeById = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/node?id=site:${idOf(station)}`,
-  );
-  assert.equal(stationNodeById.statusCode, 200);
-  assert.equal((stationNodeById.body as GeoTreeResponseNode).label, 'Icaraí (ICI)');
+      // scope 'tree' (default): Splitter e Porta somem, o drop pendurado na Porta escondida
+      // passa através dos dois saltos e aparece direto sob a caixa.
+      const boxChildrenTree = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
+      );
+      const boxTreePage = boxChildrenTree.body as { total: number; nodes: GeoTreeResponseNode[] };
+      assert.equal(boxTreePage.total, 1);
+      assert.deepEqual(
+        boxTreePage.nodes.map((item) => item.label),
+        ['Drop Cliente 01'],
+      );
 
-  // A caixa vem com a geometria de ponto e `hasChildren` real (o splitter tem 1 filho direto,
-  // mesma régua de pass-through que `children` já valida acima).
-  const boxNodeById = await requestJson(port, 'GET', `/v1/geo/tree/node?id=resource:${idOf(box)}`);
-  assert.equal(boxNodeById.statusCode, 200);
-  const boxHydrated = boxNodeById.body as GeoTreeResponseNode;
-  assert.equal(boxHydrated.label, 'CDOE-1108');
-  assert.equal(boxHydrated.hasChildren, true);
-  assert.deepEqual(boxHydrated.geometry?.coordinates, [-43.108, -22.907]);
+      // scope 'all' (painel de detalhe): Splitter aparece — é aqui que a aba Portas busca.
+      const boxChildrenAll = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=resource:${idOf(box)}&scope=all`,
+      );
+      const boxAllPage = boxChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
+      assert.deepEqual(boxAllPage.nodes.map((item) => item.label).sort(), [
+        'CDOE-ICARAI-01 · Splitter',
+      ]);
 
-  // O cabo secundário vem com a rota INTEIRA (2 vértices) — não um trecho recortado por tile,
-  // ao contrário do que uma feature do índice `geo_map_feature` traria.
-  const cableNodeById = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/node?id=resource:${idOf(secondaryCable)}`,
-  );
-  assert.equal(cableNodeById.statusCode, 200);
-  assert.deepEqual((cableNodeById.body as GeoTreeResponseNode).geometry?.coordinates, [
-    [-43.108, -22.907],
-    [-43.109, -22.908],
-  ]);
+      const splitterChildrenAll = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=resource:${idOf(splitter)}&scope=all`,
+      );
+      const splitterAllPage = splitterChildrenAll.body as {
+        total: number;
+        nodes: GeoTreeResponseNode[];
+      };
+      assert.deepEqual(
+        splitterAllPage.nodes.map((item) => item.label),
+        ['CDOE-ICARAI-01 · Splitter · FO.O.1'],
+      );
 
-  const missingIdParam = await requestJson(port, 'GET', '/v1/geo/tree/node');
-  assert.equal(missingIdParam.statusCode, 400);
+      // A busca continua sem devolver item interno, agora também para Porta.
+      const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icarai-01');
+      assert.equal(search.statusCode, 200);
+      const searchResults = search.body as GeoTreeResponseNode[];
+      assert.equal(
+        searchResults.some((item) => item.label === 'CDOE-ICARAI-01 · Splitter · FO.O.1'),
+        false,
+      );
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  const unknownNode = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/node?id=resource:00000000-0000-0000-0000-000000000000',
-  );
-  assert.equal(unknownNode.statusCode, 404);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+test.skipIf(!oracleConfigured)(
+  'Geo tree viewport serves passive infra by bounding box, independent of hierarchy state',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-test.skipIf(!oracleConfigured)('Geo tree pass-through skips a chain of hidden splitters to the first visible descendant', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      const resourceSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'CDOE 1:8',
+          resourceTypeId: 'rt-cto',
+        },
+      );
 
-  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+      // Caixa pontual e cabo (LineString) nunca expandidos na árvore — o viewport
+      // precisa achá-los só pela geometria, não por nó pai carregado.
+      const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+      });
+      const box = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-1108',
+          resourceSpecificationId: idOf(resourceSpec),
+          placeId: idOf(boxPlace),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(box.statusCode, 201);
 
-  const boxSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'CDOE 1:8', resourceTypeId: 'rt-cto' },
-  );
-  const splitterSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
-  );
-  const cableSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    {
-      name: 'Cabo secundário 6FO',
-      resourceTypeId: 'rt-distribution-cable',
-    },
-  );
-  const place = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
-  });
+      const cablePlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'LineString',
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [-43.109, -22.908],
+            [-43.107, -22.906],
+          ],
+        },
+      });
+      const cable = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'Cabo Primário 01',
+          resourceSpecificationId: idOf(resourceSpec),
+          placeId: idOf(cablePlace),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(cable.statusCode, 201);
 
-  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-2201',
-    resourceSpecificationId: idOf(boxSpec),
-    placeId: idOf(place),
-    placeType: 'GeographicLocation',
-  });
-  assert.equal(box.statusCode, 201);
-  // Caixa → splitter A (containsAsChild) → splitter B (connectedTo, cascata rara mas
-  // possível) → cabo (connectedTo). Dois saltos internos seguidos.
-  const splitterA = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE-2201 · S1',
-      resourceSpecificationId: idOf(splitterSpec),
-      placeId: idOf(place),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(splitterA.statusCode, 201);
-  const splitterB = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE-2201 · S1 · S1',
-      resourceSpecificationId: idOf(splitterSpec),
-      placeId: idOf(place),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(splitterB.statusCode, 201);
-  const cable = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'Cabo Secundário 02',
-      resourceSpecificationId: idOf(cableSpec),
-      placeId: idOf(place),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(cable.statusCode, 201);
+      // Splitter na mesma Location da caixa (reaproveita o ponto físico dela) — não deve
+      // ganhar pin próprio no mapa.
+      const splitterSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
+      );
+      const splitter = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE-1108 · S32_1',
+          resourceSpecificationId: idOf(splitterSpec),
+          placeId: idOf(boxPlace),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(splitter.statusCode, 201);
 
-  const boxSplitterLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
-    { id: idOf(splitterA), relationshipType: 'containsAsChild' },
-  );
-  assert.equal(boxSplitterLink.statusCode, 201);
-  const splitterSplitterLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitterA)}/relationships`,
-    { id: idOf(splitterB), relationshipType: 'connectedTo' },
-  );
-  assert.equal(splitterSplitterLink.statusCode, 201);
-  const splitterCableLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitterB)}/relationships`,
-    { id: idOf(cable), relationshipType: 'connectedTo' },
-  );
-  assert.equal(splitterCableLink.statusCode, 201);
+      // Ponto de Instalação (categoria Site, não-CO): só visível no mapa em escala de
+      // detalhe — pela mesma régua de um Recurso — então entra pelo viewport, não por
+      // roots() (ver GeoTreeService.sitesInViewport).
+      const piSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação',
+        category: 'Site',
+      });
+      const piPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.109, -22.909] },
+      });
+      const piAddress = await requestJson(port, 'POST', '/v1/geo/addresses', {
+        street: 'Rua do PI',
+        geographicLocationId: idOf(piPlace),
+      });
+      const pi = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'PI Icaraí Viewport',
+        siteSpecificationId: idOf(piSpec),
+        status: 'Active',
+        placeId: idOf(piPlace),
+        addressId: idOf(piAddress),
+      });
+      assert.equal(pi.statusCode, 201);
 
-  const boxChildren = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
-  );
-  const boxPage = boxChildren.body as { total: number; nodes: GeoTreeResponseNode[] };
-  // Os dois splitters somem; só o cabo do fim da cadeia sobe para este nível, uma
-  // única vez (sem duplicar por causa dos dois saltos internos).
-  assert.equal(boxPage.total, 1);
-  assert.deepEqual(
-    boxPage.nodes.map((item) => item.label),
-    ['Cabo Secundário 02'],
-  );
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // Bbox que cobre a região de Icaraí: caixa, cabo e o Ponto de Instalação voltam, sem
+      // expandir nada antes; o splitter fica de fora — não tem ponto próprio no mapa.
+      const insideBbox = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90',
+      );
+      assert.equal(insideBbox.statusCode, 200);
+      const insideNodes = insideBbox.body as GeoTreeResponseNode[];
+      assert.deepEqual(insideNodes.map((item) => item.label).sort(), [
+        'CDOE-1108',
+        'Cabo Primário 01',
+        'PI Icaraí Viewport',
+      ]);
+      const piNode = insideNodes.find((item) => item.label === 'PI Icaraí Viewport');
+      assert.equal(piNode?.kind, 'site');
 
-test.skipIf(!oracleConfigured)('Geo tree hides Port like Splitter (issue #171 Fase 3), but a drop hanging off a hidden Port still passes through', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      // `include` (RF-011, controle de camadas do mapa) restringe o que o servidor busca — com um
+      // grupo desligado no cliente, a requisição nem pede aquele shape.
+      const insideBboxUrl = (include: string) =>
+        `/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90&include=${include}`;
 
-  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+      const onlyResourcePoints = await requestJson(port, 'GET', insideBboxUrl('resource-points'));
+      assert.equal(onlyResourcePoints.statusCode, 200);
+      assert.deepEqual(
+        (onlyResourcePoints.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['CDOE-1108'],
+      );
 
-  const boxSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'CDOE 1:8', resourceTypeId: 'rt-cto' },
-  );
-  const splitterSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
-  );
-  const portSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Porta de Splitter', resourceTypeId: 'rt-port' },
-  );
-  const cableSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Cabo drop 1FO', resourceTypeId: 'rt-drop-cable' },
-  );
-  const place = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
-  });
+      const onlyResourceLines = await requestJson(port, 'GET', insideBboxUrl('resource-lines'));
+      assert.equal(onlyResourceLines.statusCode, 200);
+      assert.deepEqual(
+        (onlyResourceLines.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['Cabo Primário 01'],
+      );
 
-  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-ICARAI-01',
-    resourceSpecificationId: idOf(boxSpec),
-    placeId: idOf(place),
-    placeType: 'GeographicLocation',
-  });
-  assert.equal(box.statusCode, 201);
-  const splitter = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE-ICARAI-01 · Splitter',
-      resourceSpecificationId: idOf(splitterSpec),
-      placeId: idOf(place),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(splitter.statusCode, 201);
-  const portaOut = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE-ICARAI-01 · Splitter · FO.O.1',
-      resourceSpecificationId: idOf(portSpec),
-      placeId: idOf(place),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(portaOut.statusCode, 201);
-  const drop = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'Drop Cliente 01',
-    resourceSpecificationId: idOf(cableSpec),
-    placeId: idOf(place),
-    placeType: 'GeographicLocation',
-  });
-  assert.equal(drop.statusCode, 201);
+      const onlySites = await requestJson(port, 'GET', insideBboxUrl('sites'));
+      assert.equal(onlySites.statusCode, 200);
+      assert.deepEqual(
+        (onlySites.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['PI Icaraí Viewport'],
+      );
 
-  const boxSplitterLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(box)}/relationships`,
-    { id: idOf(splitter), relationshipType: 'containsAsChild' },
-  );
-  assert.equal(boxSplitterLink.statusCode, 201);
-  const splitterPortLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(splitter)}/relationships`,
-    { id: idOf(portaOut), relationshipType: 'containsAsChild' },
-  );
-  assert.equal(splitterPortLink.statusCode, 201);
-  const portDropLink = await requestJson(
-    port,
-    'POST',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${idOf(portaOut)}/relationships`,
-    { id: idOf(drop), relationshipType: 'connectedTo' },
-  );
-  assert.equal(portDropLink.statusCode, 201);
+      // Camadas de recurso combinadas (sem Sites): caixa + cabo, sem o Ponto de Instalação.
+      const resourcesOnly = await requestJson(
+        port,
+        'GET',
+        insideBboxUrl('resource-points,resource-lines'),
+      );
+      assert.equal(resourcesOnly.statusCode, 200);
+      assert.deepEqual(
+        (resourcesOnly.body as GeoTreeResponseNode[]).map((item) => item.label).sort(),
+        ['CDOE-1108', 'Cabo Primário 01'],
+      );
 
-  // scope 'tree' (default): Splitter e Porta somem, o drop pendurado na Porta escondida
-  // passa através dos dois saltos e aparece direto sob a caixa.
-  const boxChildrenTree = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}`,
-  );
-  const boxTreePage = boxChildrenTree.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.equal(boxTreePage.total, 1);
-  assert.deepEqual(
-    boxTreePage.nodes.map((item) => item.label),
-    ['Drop Cliente 01'],
-  );
+      // Token desconhecido é ignorado; nenhum token reconhecido não busca nada.
+      const unknownInclude = await requestJson(port, 'GET', insideBboxUrl('bogus'));
+      assert.equal(unknownInclude.statusCode, 200);
+      assert.deepEqual(unknownInclude.body, []);
 
-  // scope 'all' (painel de detalhe): Splitter aparece — é aqui que a aba Portas busca.
-  const boxChildrenAll = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=resource:${idOf(box)}&scope=all`,
-  );
-  const boxAllPage = boxChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.deepEqual(
-    boxAllPage.nodes.map((item) => item.label).sort(),
-    ['CDOE-ICARAI-01 · Splitter'],
-  );
+      // Bbox longe da região: nada volta.
+      const outsideBbox = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/viewport?minLng=-43.30&minLat=-23.00&maxLng=-43.25&maxLat=-22.95',
+      );
+      assert.equal(outsideBbox.statusCode, 200);
+      assert.deepEqual(outsideBbox.body, []);
 
-  const splitterChildrenAll = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=resource:${idOf(splitter)}&scope=all`,
-  );
-  const splitterAllPage = splitterChildrenAll.body as { total: number; nodes: GeoTreeResponseNode[] };
-  assert.deepEqual(
-    splitterAllPage.nodes.map((item) => item.label),
-    ['CDOE-ICARAI-01 · Splitter · FO.O.1'],
-  );
+      const missingBounds = await requestJson(port, 'GET', '/v1/geo/tree/viewport?minLng=-43.12');
+      assert.equal(missingBounds.statusCode, 400);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  // A busca continua sem devolver item interno, agora também para Porta.
-  const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icarai-01');
-  assert.equal(search.statusCode, 200);
-  const searchResults = search.body as GeoTreeResponseNode[];
-  assert.equal(
-    searchResults.some((item) => item.label === 'CDOE-ICARAI-01 · Splitter · FO.O.1'),
-    false,
-  );
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+test.skipIf(!oracleConfigured)(
+  'Geo coverage serves the GPON heat grid and neighborhood polygons by bounding box',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      // Mesma instância de banco que o app usa (getOracleTestClient() memoiza um único client por
+      // processo): a cobertura é semeada direto nas tabelas de projeção, como faz o build-gpon-coverage.
+      const db = await getOracleTestClient();
 
-test.skipIf(!oracleConfigured)('Geo tree viewport serves passive infra by bounding box, independent of hierarchy state', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      const coverageChars = (stat: {
+        key: string;
+        neighborhood: string;
+        city: string;
+        uf: string;
+        cdoTotal: number;
+        cdoAvailable: number;
+      }) =>
+        JSON.stringify([
+          { group: '_coverage', name: 'kind', value: 'GponCoverage', valueType: 'string' },
+          {
+            group: '_coverage',
+            name: 'neighborhood',
+            value: stat.neighborhood,
+            valueType: 'string',
+          },
+          { group: '_coverage', name: 'city', value: stat.city, valueType: 'string' },
+          { group: '_coverage', name: 'uf', value: stat.uf, valueType: 'string' },
+          { group: '_coverage', name: 'neighborhoodKey', value: stat.key, valueType: 'string' },
+          { group: '_coverage', name: 'cdoTotal', value: stat.cdoTotal, valueType: 'integer' },
+          {
+            group: '_coverage',
+            name: 'cdoAvailable',
+            value: stat.cdoAvailable,
+            valueType: 'integer',
+          },
+          {
+            group: '_coverage',
+            name: 'cdoUnavailable',
+            value: stat.cdoTotal - stat.cdoAvailable,
+            valueType: 'integer',
+          },
+          {
+            group: '_coverage',
+            name: 'availabilityRatio',
+            value: stat.cdoTotal > 0 ? stat.cdoAvailable / stat.cdoTotal : 0,
+            valueType: 'decimal',
+          },
+          { group: '_coverage', name: 'coveredAreaKm2', value: 0.25, valueType: 'decimal' },
+        ]);
 
-  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+      // Bbox fixo do polígono semeado (as duas áreas do teste compartilham o mesmo quadrado, por
+      // simplicidade) — geo_gpon_coverage_area guarda o bbox pronto, como build-gpon-coverage.mjs.
+      const AREA_BOUNDS = { minLng: -43.108, minLat: -22.908, maxLng: -43.1, maxLat: -22.902 };
 
-  const resourceSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    {
-      name: 'CDOE 1:8',
-      resourceTypeId: 'rt-cto',
-    },
-  );
-
-  // Caixa pontual e cabo (LineString) nunca expandidos na árvore — o viewport
-  // precisa achá-los só pela geometria, não por nó pai carregado.
-  const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
-  });
-  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE-1108',
-    resourceSpecificationId: idOf(resourceSpec),
-    placeId: idOf(boxPlace),
-    placeType: 'GeographicLocation',
-  });
-  assert.equal(box.statusCode, 201);
-
-  const cablePlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'LineString',
-    geometry: {
-      type: 'LineString',
-      coordinates: [
-        [-43.109, -22.908],
-        [-43.107, -22.906],
-      ],
-    },
-  });
-  const cable = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'Cabo Primário 01',
-      resourceSpecificationId: idOf(resourceSpec),
-      placeId: idOf(cablePlace),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(cable.statusCode, 201);
-
-  // Splitter na mesma Location da caixa (reaproveita o ponto físico dela) — não deve
-  // ganhar pin próprio no mapa.
-  const splitterSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
-  );
-  const splitter = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE-1108 · S32_1',
-      resourceSpecificationId: idOf(splitterSpec),
-      placeId: idOf(boxPlace),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(splitter.statusCode, 201);
-
-  // Ponto de Instalação (categoria Site, não-CO): só visível no mapa em escala de
-  // detalhe — pela mesma régua de um Recurso — então entra pelo viewport, não por
-  // roots() (ver GeoTreeService.sitesInViewport).
-  const piSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação',
-    category: 'Site',
-  });
-  const piPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.109, -22.909] },
-  });
-  const piAddress = await requestJson(port, 'POST', '/v1/geo/addresses', {
-    street: 'Rua do PI',
-    geographicLocationId: idOf(piPlace),
-  });
-  const pi = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'PI Icaraí Viewport',
-    siteSpecificationId: idOf(piSpec),
-    status: 'Active',
-    placeId: idOf(piPlace),
-    addressId: idOf(piAddress),
-  });
-  assert.equal(pi.statusCode, 201);
-
-  // Bbox que cobre a região de Icaraí: caixa, cabo e o Ponto de Instalação voltam, sem
-  // expandir nada antes; o splitter fica de fora — não tem ponto próprio no mapa.
-  const insideBbox = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90',
-  );
-  assert.equal(insideBbox.statusCode, 200);
-  const insideNodes = insideBbox.body as GeoTreeResponseNode[];
-  assert.deepEqual(insideNodes.map((item) => item.label).sort(), [
-    'CDOE-1108',
-    'Cabo Primário 01',
-    'PI Icaraí Viewport',
-  ]);
-  const piNode = insideNodes.find((item) => item.label === 'PI Icaraí Viewport');
-  assert.equal(piNode?.kind, 'site');
-
-  // `include` (RF-011, controle de camadas do mapa) restringe o que o servidor busca — com um
-  // grupo desligado no cliente, a requisição nem pede aquele shape.
-  const insideBboxUrl = (include: string) =>
-    `/v1/geo/tree/viewport?minLng=-43.12&minLat=-22.92&maxLng=-43.10&maxLat=-22.90&include=${include}`;
-
-  const onlyResourcePoints = await requestJson(port, 'GET', insideBboxUrl('resource-points'));
-  assert.equal(onlyResourcePoints.statusCode, 200);
-  assert.deepEqual(
-    (onlyResourcePoints.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['CDOE-1108'],
-  );
-
-  const onlyResourceLines = await requestJson(port, 'GET', insideBboxUrl('resource-lines'));
-  assert.equal(onlyResourceLines.statusCode, 200);
-  assert.deepEqual(
-    (onlyResourceLines.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['Cabo Primário 01'],
-  );
-
-  const onlySites = await requestJson(port, 'GET', insideBboxUrl('sites'));
-  assert.equal(onlySites.statusCode, 200);
-  assert.deepEqual(
-    (onlySites.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['PI Icaraí Viewport'],
-  );
-
-  // Camadas de recurso combinadas (sem Sites): caixa + cabo, sem o Ponto de Instalação.
-  const resourcesOnly = await requestJson(
-    port,
-    'GET',
-    insideBboxUrl('resource-points,resource-lines'),
-  );
-  assert.equal(resourcesOnly.statusCode, 200);
-  assert.deepEqual((resourcesOnly.body as GeoTreeResponseNode[]).map((item) => item.label).sort(), [
-    'CDOE-1108',
-    'Cabo Primário 01',
-  ]);
-
-  // Token desconhecido é ignorado; nenhum token reconhecido não busca nada.
-  const unknownInclude = await requestJson(port, 'GET', insideBboxUrl('bogus'));
-  assert.equal(unknownInclude.statusCode, 200);
-  assert.deepEqual(unknownInclude.body, []);
-
-  // Bbox longe da região: nada volta.
-  const outsideBbox = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/viewport?minLng=-43.30&minLat=-23.00&maxLng=-43.25&maxLat=-22.95',
-  );
-  assert.equal(outsideBbox.statusCode, 200);
-  assert.deepEqual(outsideBbox.body, []);
-
-  const missingBounds = await requestJson(port, 'GET', '/v1/geo/tree/viewport?minLng=-43.12');
-  assert.equal(missingBounds.statusCode, 400);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
-
-test.skipIf(!oracleConfigured)('Geo coverage serves the GPON heat grid and neighborhood polygons by bounding box', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  // Mesma instância de banco que o app usa (getOracleTestClient() memoiza um único client por
-  // processo): a cobertura é semeada direto nas tabelas de projeção, como faz o build-gpon-coverage.
-  const db = await getOracleTestClient();
-
-  const coverageChars = (stat: {
-    key: string;
-    neighborhood: string;
-    city: string;
-    uf: string;
-    cdoTotal: number;
-    cdoAvailable: number;
-  }) =>
-    JSON.stringify([
-      { group: '_coverage', name: 'kind', value: 'GponCoverage', valueType: 'string' },
-      { group: '_coverage', name: 'neighborhood', value: stat.neighborhood, valueType: 'string' },
-      { group: '_coverage', name: 'city', value: stat.city, valueType: 'string' },
-      { group: '_coverage', name: 'uf', value: stat.uf, valueType: 'string' },
-      { group: '_coverage', name: 'neighborhoodKey', value: stat.key, valueType: 'string' },
-      { group: '_coverage', name: 'cdoTotal', value: stat.cdoTotal, valueType: 'integer' },
-      { group: '_coverage', name: 'cdoAvailable', value: stat.cdoAvailable, valueType: 'integer' },
-      {
-        group: '_coverage',
-        name: 'cdoUnavailable',
-        value: stat.cdoTotal - stat.cdoAvailable,
-        valueType: 'integer',
-      },
-      {
-        group: '_coverage',
-        name: 'availabilityRatio',
-        value: stat.cdoTotal > 0 ? stat.cdoAvailable / stat.cdoTotal : 0,
-        valueType: 'decimal',
-      },
-      { group: '_coverage', name: 'coveredAreaKm2', value: 0.25, valueType: 'decimal' },
-    ]);
-
-  // Bbox fixo do polígono semeado (as duas áreas do teste compartilham o mesmo quadrado, por
-  // simplicidade) — geo_gpon_coverage_area guarda o bbox pronto, como build-gpon-coverage.mjs.
-  const AREA_BOUNDS = { minLng: -43.108, minLat: -22.908, maxLng: -43.1, maxLat: -22.902 };
-
-  const seedArea = async (
-    locId: string,
-    stat: {
-      key: string;
-      neighborhood: string;
-      city: string;
-      uf: string;
-      cdoTotal: number;
-      cdoAvailable: number;
-    },
-    cells: Array<{ gx: number; gy: number; total: number; avail: number }>,
-  ) => {
-    await db.run(
-      `INSERT INTO tmf_geographic_location
+      const seedArea = async (
+        locId: string,
+        stat: {
+          key: string;
+          neighborhood: string;
+          city: string;
+          uf: string;
+          cdoTotal: number;
+          cdoAvailable: number;
+        },
+        cells: Array<{ gx: number; gy: number; total: number; avail: number }>,
+      ) => {
+        await db.run(
+          `INSERT INTO tmf_geographic_location
          (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
        VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
-      [
-        locId,
-        JSON.stringify({
-          type: 'Polygon',
-          coordinates: [
-            [
-              [-43.108, -22.908],
-              [-43.1, -22.908],
-              [-43.1, -22.902],
-              [-43.108, -22.902],
-              [-43.108, -22.908],
-            ],
+          [
+            locId,
+            JSON.stringify({
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [-43.108, -22.908],
+                  [-43.1, -22.908],
+                  [-43.1, -22.902],
+                  [-43.108, -22.902],
+                  [-43.108, -22.908],
+                ],
+              ],
+            }),
+            `GPON:${stat.key}`,
+            coverageChars(stat),
           ],
-        }),
-        `GPON:${stat.key}`,
-        coverageChars(stat),
-      ],
-    );
-    for (const cell of cells) {
-      await db.run(
-        `INSERT INTO geo_gpon_coverage_cell
+        );
+        for (const cell of cells) {
+          await db.run(
+            `INSERT INTO geo_gpon_coverage_cell
            (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, cdo_total, cdo_available)
          VALUES ('default', ?, ?, ?, ?, ?, ?)`,
-        [COVERAGE_CELL_METERS, cell.gx, cell.gy, locId, cell.total, cell.avail],
-      );
-    }
-    // Índice de leitura por polígono (ver GeoCoverageService.areaIndexLevel) — o que o loader
-    // grava em geo_gpon_coverage_area para o nível neighborhood.
-    await db.run(
-      `INSERT INTO geo_gpon_coverage_area
+            [COVERAGE_CELL_METERS, cell.gx, cell.gy, locId, cell.total, cell.avail],
+          );
+        }
+        // Índice de leitura por polígono (ver GeoCoverageService.areaIndexLevel) — o que o loader
+        // grava em geo_gpon_coverage_area para o nível neighborhood.
+        await db.run(
+          `INSERT INTO geo_gpon_coverage_area
          (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
           area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
        VALUES ('default', ?, 'neighborhood', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.25)`,
-      [
-        locId,
-        COVERAGE_CELL_METERS,
-        AREA_BOUNDS.minLng,
-        AREA_BOUNDS.minLat,
-        AREA_BOUNDS.maxLng,
-        AREA_BOUNDS.maxLat,
-        stat.key,
-        stat.neighborhood,
-        stat.city,
-        stat.uf,
-        stat.cdoTotal,
-        stat.cdoAvailable,
-      ],
-    );
-  };
+          [
+            locId,
+            COVERAGE_CELL_METERS,
+            AREA_BOUNDS.minLng,
+            AREA_BOUNDS.minLat,
+            AREA_BOUNDS.maxLng,
+            AREA_BOUNDS.maxLat,
+            stat.key,
+            stat.neighborhood,
+            stat.city,
+            stat.uf,
+            stat.cdoTotal,
+            stat.cdoAvailable,
+          ],
+        );
+      };
 
-  // Alinha as células ao mesmo mapeamento bbox→grade do serviço, ancorando em Icaraí.
-  const [x0, y0] = lngLatToMercator(-43.106, -22.906);
-  const gx = Math.floor(x0 / COVERAGE_CELL_METERS);
-  const gy = Math.floor(y0 / COVERAGE_CELL_METERS);
+      // Alinha as células ao mesmo mapeamento bbox→grade do serviço, ancorando em Icaraí.
+      const [x0, y0] = lngLatToMercator(-43.106, -22.906);
+      const gx = Math.floor(x0 / COVERAGE_CELL_METERS);
+      const gy = Math.floor(y0 / COVERAGE_CELL_METERS);
 
-  // cdoTotal nas characteristics (5 e 4) é a contagem REAL do bairro, de propósito diferente
-  // da soma das células — é o que o balão exibe.
-  await seedArea(
-    '11111111-1111-7111-8111-111111111111',
-    {
-      key: 'RJ|Niterói|Icaraí',
-      neighborhood: 'Icaraí',
-      city: 'Niterói',
-      uf: 'RJ',
-      cdoTotal: 5,
-      cdoAvailable: 3,
-    },
-    [
-      { gx, gy, total: 3, avail: 2 },
-      { gx: gx + 1, gy, total: 2, avail: 1 },
-    ],
-  );
-  await seedArea(
-    '22222222-2222-7222-8222-222222222222',
-    {
-      key: 'RJ|Niterói|Santa Rosa',
-      neighborhood: 'Santa Rosa',
-      city: 'Niterói',
-      uf: 'RJ',
-      cdoTotal: 4,
-      cdoAvailable: 0,
-    },
-    [{ gx: gx + 2, gy, total: 4, avail: 0 }],
-  );
+      // cdoTotal nas characteristics (5 e 4) é a contagem REAL do bairro, de propósito diferente
+      // da soma das células — é o que o balão exibe.
+      await seedArea(
+        '11111111-1111-7111-8111-111111111111',
+        {
+          key: 'RJ|Niterói|Icaraí',
+          neighborhood: 'Icaraí',
+          city: 'Niterói',
+          uf: 'RJ',
+          cdoTotal: 5,
+          cdoAvailable: 3,
+        },
+        [
+          { gx, gy, total: 3, avail: 2 },
+          { gx: gx + 1, gy, total: 2, avail: 1 },
+        ],
+      );
+      await seedArea(
+        '22222222-2222-7222-8222-222222222222',
+        {
+          key: 'RJ|Niterói|Santa Rosa',
+          neighborhood: 'Santa Rosa',
+          city: 'Niterói',
+          uf: 'RJ',
+          cdoTotal: 4,
+          cdoAvailable: 0,
+        },
+        [{ gx: gx + 2, gy, total: 4, avail: 0 }],
+      );
 
-  const bbox = 'minLng=-43.108&minLat=-22.910&maxLng=-43.100&maxLat=-22.902';
+      const bbox = 'minLng=-43.108&minLat=-22.910&maxLng=-43.100&maxLat=-22.902';
 
-  // fine: 3 células, cada uma com o índice do seu bairro; estatística vem das characteristics.
-  const fine = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=fine`);
-  assert.equal(fine.statusCode, 200);
-  const fineBody = fine.body as {
-    level: string;
-    grid: { sizeMeters: number };
-    cells: number[][];
-    neighborhoods: Array<{
-      id: number;
-      neighborhood: string;
-      cdoTotal: number;
-      cdoAvailable: number;
-    }>;
-    truncated: boolean;
-  };
-  assert.equal(fineBody.level, 'fine');
-  assert.equal(fineBody.grid.sizeMeters, COVERAGE_CELL_METERS);
-  assert.equal(fineBody.cells.length, 3);
-  assert.equal(fineBody.neighborhoods.length, 2);
-  const icarai = fineBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
-  assert.ok(icarai);
-  assert.equal(
-    icarai!.cdoTotal,
-    5,
-    'estatística do balão é a contagem real, não a soma das células',
-  );
-  assert.equal(icarai!.cdoAvailable, 3);
-  // Toda célula referencia um índice de bairro válido.
-  for (const cell of fineBody.cells) {
-    assert.ok(cell[4]! >= 0 && cell[4]! < fineBody.neighborhoods.length);
-  }
+      // fine: 3 células, cada uma com o índice do seu bairro; estatística vem das characteristics.
+      const fine = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=fine`);
+      assert.equal(fine.statusCode, 200);
+      const fineBody = fine.body as {
+        level: string;
+        grid: { sizeMeters: number };
+        cells: number[][];
+        neighborhoods: Array<{
+          id: number;
+          neighborhood: string;
+          cdoTotal: number;
+          cdoAvailable: number;
+        }>;
+        truncated: boolean;
+      };
+      assert.equal(fineBody.level, 'fine');
+      assert.equal(fineBody.grid.sizeMeters, COVERAGE_CELL_METERS);
+      assert.equal(fineBody.cells.length, 3);
+      assert.equal(fineBody.neighborhoods.length, 2);
+      const icarai = fineBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
+      assert.ok(icarai);
+      assert.equal(
+        icarai!.cdoTotal,
+        5,
+        'estatística do balão é a contagem real, não a soma das células',
+      );
+      assert.equal(icarai!.cdoAvailable, 3);
+      // Toda célula referencia um índice de bairro válido.
+      for (const cell of fineBody.cells) {
+        assert.ok(cell[4]! >= 0 && cell[4]! < fineBody.neighborhoods.length);
+      }
 
-  // coarse: campo de densidade agregado; a soma bate com a das células finas.
-  const coarse = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=coarse`);
-  assert.equal(coarse.statusCode, 200);
-  const coarseBody = coarse.body as {
-    level: string;
-    grid: { sizeMeters: number };
-    cells: number[][];
-  };
-  assert.equal(coarseBody.level, 'coarse');
-  assert.equal(coarseBody.grid.sizeMeters, COVERAGE_CELL_METERS * 5);
-  const totalCdo = coarseBody.cells.reduce((sum, cell) => sum + cell[2]!, 0);
-  const totalAvail = coarseBody.cells.reduce((sum, cell) => sum + cell[3]!, 0);
-  assert.equal(totalCdo, 9);
-  assert.equal(totalAvail, 3);
+      // coarse: campo de densidade agregado; a soma bate com a das células finas.
+      const coarse = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=coarse`);
+      assert.equal(coarse.statusCode, 200);
+      const coarseBody = coarse.body as {
+        level: string;
+        grid: { sizeMeters: number };
+        cells: number[][];
+      };
+      assert.equal(coarseBody.level, 'coarse');
+      assert.equal(coarseBody.grid.sizeMeters, COVERAGE_CELL_METERS * 5);
+      const totalCdo = coarseBody.cells.reduce((sum, cell) => sum + cell[2]!, 0);
+      const totalAvail = coarseBody.cells.reduce((sum, cell) => sum + cell[3]!, 0);
+      assert.equal(totalCdo, 9);
+      assert.equal(totalAvail, 3);
 
-  // neighborhood: polígonos de bairro com geometria e estatística, lidos do índice
-  // geo_gpon_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
-  const neighborhoodLevel = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/coverage?${bbox}&level=neighborhood`,
-  );
-  assert.equal(neighborhoodLevel.statusCode, 200);
-  const neighborhoodBody = neighborhoodLevel.body as {
-    level: string;
-    areas: Array<{
-      id: string;
-      neighborhoodIndex: number;
-      geometry: { type: string };
-      bounds: [number, number, number, number];
-    }>;
-    neighborhoods: Array<{ neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
-  };
-  assert.equal(neighborhoodBody.level, 'neighborhood');
-  assert.equal(neighborhoodBody.areas.length, 2);
-  assert.equal(neighborhoodBody.neighborhoods.length, 2);
-  for (const polygon of neighborhoodBody.areas) {
-    assert.equal(polygon.geometry.type, 'Polygon');
-    assert.ok(polygon.neighborhoodIndex >= 0);
-    assert.deepEqual(polygon.bounds, [
-      AREA_BOUNDS.minLng,
-      AREA_BOUNDS.minLat,
-      AREA_BOUNDS.maxLng,
-      AREA_BOUNDS.maxLat,
-    ]);
-  }
-  const icaraiArea = neighborhoodBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
-  assert.ok(icaraiArea);
-  assert.equal(icaraiArea!.cdoTotal, 5);
-  assert.equal(icaraiArea!.cdoAvailable, 3);
+      // neighborhood: polígonos de bairro com geometria e estatística, lidos do índice
+      // geo_gpon_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
+      const neighborhoodLevel = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/coverage?${bbox}&level=neighborhood`,
+      );
+      assert.equal(neighborhoodLevel.statusCode, 200);
+      const neighborhoodBody = neighborhoodLevel.body as {
+        level: string;
+        areas: Array<{
+          id: string;
+          neighborhoodIndex: number;
+          geometry: { type: string };
+          bounds: [number, number, number, number];
+        }>;
+        neighborhoods: Array<{ neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
+      };
+      assert.equal(neighborhoodBody.level, 'neighborhood');
+      assert.equal(neighborhoodBody.areas.length, 2);
+      assert.equal(neighborhoodBody.neighborhoods.length, 2);
+      for (const polygon of neighborhoodBody.areas) {
+        assert.equal(polygon.geometry.type, 'Polygon');
+        assert.ok(polygon.neighborhoodIndex >= 0);
+        assert.deepEqual(polygon.bounds, [
+          AREA_BOUNDS.minLng,
+          AREA_BOUNDS.minLat,
+          AREA_BOUNDS.maxLng,
+          AREA_BOUNDS.maxLat,
+        ]);
+      }
+      const icaraiArea = neighborhoodBody.neighborhoods.find(
+        (item) => item.neighborhood === 'Icaraí',
+      );
+      assert.ok(icaraiArea);
+      assert.equal(icaraiArea!.cdoTotal, 5);
+      assert.equal(icaraiArea!.cdoAvailable, 3);
 
-  // `area` é aceito como alias de `neighborhood` (nome do nível antes da LOD por
-  // município/estado) — mesma resposta.
-  const areaAlias = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=area`);
-  assert.equal(areaAlias.statusCode, 200);
-  assert.equal((areaAlias.body as { level: string }).level, 'neighborhood');
-  assert.equal((areaAlias.body as { areas: unknown[] }).areas.length, 2);
+      // `area` é aceito como alias de `neighborhood` (nome do nível antes da LOD por
+      // município/estado) — mesma resposta.
+      const areaAlias = await requestJson(port, 'GET', `/v1/geo/coverage?${bbox}&level=area`);
+      assert.equal(areaAlias.statusCode, 200);
+      assert.equal((areaAlias.body as { level: string }).level, 'neighborhood');
+      assert.equal((areaAlias.body as { areas: unknown[] }).areas.length, 2);
 
-  // bbox distante: nada volta.
-  const empty = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/coverage?minLng=-43.30&minLat=-23.00&maxLng=-43.25&maxLat=-22.95&level=fine',
-  );
-  assert.equal(empty.statusCode, 200);
-  const emptyBody = empty.body as { cells: number[][]; neighborhoods: unknown[] };
-  assert.deepEqual(emptyBody.cells, []);
-  assert.deepEqual(emptyBody.neighborhoods, []);
+      // bbox distante: nada volta.
+      const empty = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/coverage?minLng=-43.30&minLat=-23.00&maxLng=-43.25&maxLat=-22.95&level=fine',
+      );
+      assert.equal(empty.statusCode, 200);
+      const emptyBody = empty.body as { cells: number[][]; neighborhoods: unknown[] };
+      assert.deepEqual(emptyBody.cells, []);
+      assert.deepEqual(emptyBody.neighborhoods, []);
 
-  const missingBounds = await requestJson(port, 'GET', '/v1/geo/coverage?minLng=-43.12&level=fine');
-  assert.equal(missingBounds.statusCode, 400);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      const missingBounds = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/coverage?minLng=-43.12&level=fine',
+      );
+      assert.equal(missingBounds.statusCode, 400);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-test.skipIf(!oracleConfigured)('Geo coverage resolves by-resource id to the cell/areas that contain it (issue #171 Fase 4)', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+test.skipIf(!oracleConfigured)(
+  'Geo coverage resolves by-resource id to the cell/areas that contain it (issue #171 Fase 4)',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const db = await getOracleTestClient();
 
-  const db = await getOracleTestClient();
+      // Ponto de uma CTO fictícia em Icaraí, com sua própria célula de 50 m e um bairro que a
+      // contém — mesmo layout mínimo de `seedArea` do teste de bbox acima, sem polígono (a
+      // consulta inversa não lê geometria de área, só a estatística).
+      const [x0, y0] = lngLatToMercator(-43.106, -22.906);
+      const gx = Math.floor(x0 / COVERAGE_CELL_METERS);
+      const gy = Math.floor(y0 / COVERAGE_CELL_METERS);
 
-  // Ponto de uma CTO fictícia em Icaraí, com sua própria célula de 50 m e um bairro que a
-  // contém — mesmo layout mínimo de `seedArea` do teste de bbox acima, sem polígono (a
-  // consulta inversa não lê geometria de área, só a estatística).
-  const [x0, y0] = lngLatToMercator(-43.106, -22.906);
-  const gx = Math.floor(x0 / COVERAGE_CELL_METERS);
-  const gy = Math.floor(y0 / COVERAGE_CELL_METERS);
-
-  const locationId = '33333333-3333-7333-8333-333333333333';
-  await db.run(
-    `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref)
+      const locationId = '33333333-3333-7333-8333-333333333333';
+      await db.run(
+        `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref)
      VALUES (?, 'Point', ?, 'EPSG:4326')`,
-    [locationId, JSON.stringify({ type: 'Point', coordinates: [-43.106, -22.906] })],
-  );
+        [locationId, JSON.stringify({ type: 'Point', coordinates: [-43.106, -22.906] })],
+      );
 
-  const specId = '44444444-4444-7444-8444-444444444444';
-  await db.run(
-    `INSERT INTO tmf_resource_specification
+      const specId = '44444444-4444-7444-8444-444444444444';
+      await db.run(
+        `INSERT INTO tmf_resource_specification
        (id, tenant_id, name, resource_type_id, related_party, characteristics)
      VALUES (?, 'default', 'CTO', 'rt-cto', '[]', '[]')`,
-    [specId],
-  );
+        [specId],
+      );
 
-  const resourceId = '55555555-5555-7555-8555-555555555555';
-  await db.run(
-    `INSERT INTO tmf_physical_resource
+      const resourceId = '55555555-5555-7555-8555-555555555555';
+      await db.run(
+        `INSERT INTO tmf_physical_resource
        (id, name, resource_specification_id, status, place_id, place_type)
      VALUES (?, 'CDOE-INV-01', ?, 'active', ?, 'GeographicLocation')`,
-    [resourceId, specId, locationId],
-  );
+        [resourceId, specId, locationId],
+      );
 
-  await db.run(
-    `INSERT INTO geo_gpon_coverage_cell
+      await db.run(
+        `INSERT INTO geo_gpon_coverage_cell
        (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, cdo_total, cdo_available)
      VALUES ('default', ?, ?, ?, NULL, ?, ?)`,
-    [COVERAGE_CELL_METERS, gx, gy, 3, 2],
-  );
+        [COVERAGE_CELL_METERS, gx, gy, 3, 2],
+      );
 
-  const areaLocationId = '66666666-6666-7666-8666-666666666666';
-  await db.run(
-    `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref, reference_point)
+      const areaLocationId = '66666666-6666-7666-8666-666666666666';
+      await db.run(
+        `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref, reference_point)
      VALUES (?, 'Polygon', ?, 'EPSG:4326', 'GPON:RJ|Niterói|Icaraí')`,
-    [
-      areaLocationId,
-      JSON.stringify({
-        type: 'Polygon',
-        coordinates: [
-          [
-            [-43.108, -22.908],
-            [-43.1, -22.908],
-            [-43.1, -22.902],
-            [-43.108, -22.902],
-            [-43.108, -22.908],
-          ],
+        [
+          areaLocationId,
+          JSON.stringify({
+            type: 'Polygon',
+            coordinates: [
+              [
+                [-43.108, -22.908],
+                [-43.1, -22.908],
+                [-43.1, -22.902],
+                [-43.108, -22.902],
+                [-43.108, -22.908],
+              ],
+            ],
+          }),
         ],
-      }),
-    ],
-  );
-  await db.run(
-    `INSERT INTO geo_gpon_coverage_area
+      );
+      await db.run(
+        `INSERT INTO geo_gpon_coverage_area
        (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
         area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
      VALUES ('default', ?, 'neighborhood', ?, -43.108, -22.908, -43.1, -22.902,
              'RJ|Niterói|Icaraí', 'Icaraí', 'Niterói', 'RJ', 5, 3, 0.25)`,
-    [areaLocationId, COVERAGE_CELL_METERS],
-  );
+        [areaLocationId, COVERAGE_CELL_METERS],
+      );
 
-  const found = await requestJson(port, 'GET', `/v1/geo/coverage/by-resource/${resourceId}`);
-  assert.equal(found.statusCode, 200);
-  const foundBody = found.body as {
-    point: { lng: number; lat: number };
-    cell: { gridX: number; gridY: number; cdoTotal: number; cdoAvailable: number } | null;
-    areas: Array<{ level: string; neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
-  };
-  assert.ok(foundBody.cell);
-  assert.equal(foundBody.cell!.cdoTotal, 3);
-  assert.equal(foundBody.cell!.cdoAvailable, 2);
-  assert.equal(foundBody.areas.length, 1);
-  assert.equal(foundBody.areas[0]!.level, 'neighborhood');
-  assert.equal(foundBody.areas[0]!.neighborhood, 'Icaraí');
-  assert.equal(foundBody.areas[0]!.cdoTotal, 5);
+      const found = await requestJson(port, 'GET', `/v1/geo/coverage/by-resource/${resourceId}`);
+      assert.equal(found.statusCode, 200);
+      const foundBody = found.body as {
+        point: { lng: number; lat: number };
+        cell: { gridX: number; gridY: number; cdoTotal: number; cdoAvailable: number } | null;
+        areas: Array<{
+          level: string;
+          neighborhood: string;
+          cdoTotal: number;
+          cdoAvailable: number;
+        }>;
+      };
+      assert.ok(foundBody.cell);
+      assert.equal(foundBody.cell!.cdoTotal, 3);
+      assert.equal(foundBody.cell!.cdoAvailable, 2);
+      assert.equal(foundBody.areas.length, 1);
+      assert.equal(foundBody.areas[0]!.level, 'neighborhood');
+      assert.equal(foundBody.areas[0]!.neighborhood, 'Icaraí');
+      assert.equal(foundBody.areas[0]!.cdoTotal, 5);
 
-  // Recurso sem geometria de ponto (place_id nulo) — 404, não erro genérico.
-  const orphanResourceId = '77777777-7777-7777-8777-777777777777';
-  await db.run(
-    `INSERT INTO tmf_physical_resource (id, name, resource_specification_id, status)
+      // Recurso sem geometria de ponto (place_id nulo) — 404, não erro genérico.
+      const orphanResourceId = '77777777-7777-7777-8777-777777777777';
+      await db.run(
+        `INSERT INTO tmf_physical_resource (id, name, resource_specification_id, status)
      VALUES (?, 'CDOE-SEM-LOCAL', ?, 'active')`,
-    [orphanResourceId, specId],
-  );
-  const orphan = await requestJson(port, 'GET', `/v1/geo/coverage/by-resource/${orphanResourceId}`);
-  assert.equal(orphan.statusCode, 404);
-  assert.equal((orphan.body as { error: string }).error, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+        [orphanResourceId, specId],
+      );
+      const orphan = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/coverage/by-resource/${orphanResourceId}`,
+      );
+      assert.equal(orphan.statusCode, 404);
+      assert.equal((orphan.body as { error: string }).error, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
 
-  // Id inexistente — mesma resposta 404.
-  const missing = await requestJson(port, 'GET', '/v1/geo/coverage/by-resource/does-not-exist');
-  assert.equal(missing.statusCode, 404);
-  assert.equal((missing.body as { error: string }).error, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // Id inexistente — mesma resposta 404.
+      const missing = await requestJson(port, 'GET', '/v1/geo/coverage/by-resource/does-not-exist');
+      assert.equal(missing.statusCode, 404);
+      assert.equal((missing.body as { error: string }).error, 'GEO_COVERAGE_RESOURCE_NOT_FOUND');
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-test.skipIf(!oracleConfigured)('Geo tree search finds stations and resources by name, but never sub-sites', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+test.skipIf(!oracleConfigured)(
+  'Geo tree search finds stations and resources by name, but never sub-sites',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
 
-  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+      const siteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Central de Icaraí',
+        category: 'Site',
+      });
+      // A contenção precisa ser declarada nos dois lados do catálogo (ver 'Geo tree serves one
+      // level per call').
+      const subSiteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Sala Técnica',
+        category: 'SubSite',
+        allowedParentSpecIds: [idOf(siteSpec)],
+      });
+      await requestJson(port, 'PATCH', `/v1/geo/site-specifications/${idOf(siteSpec)}`, {
+        allowedChildSpecIds: [idOf(subSiteSpec)],
+      });
+      const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
+        street: 'Rua Belisário Augusto',
+        city: 'Niterói',
+        stateOrProvince: 'RJ',
+        country: 'BR',
+      });
+      const location = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.107, -22.906] },
+      });
+      const station = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Estação Icaraí Central',
+        siteSpecificationId: idOf(siteSpec),
+        addressId: idOf(address),
+        placeId: idOf(location),
+        status: 'active',
+      });
+      assert.equal(station.statusCode, 201);
 
-  const siteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Central de Icaraí',
-    category: 'Site',
-  });
-  // A contenção precisa ser declarada nos dois lados do catálogo (ver 'Geo tree serves one
-  // level per call').
-  const subSiteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Sala Técnica',
-    category: 'SubSite',
-    allowedParentSpecIds: [idOf(siteSpec)],
-  });
-  await requestJson(port, 'PATCH', `/v1/geo/site-specifications/${idOf(siteSpec)}`, {
-    allowedChildSpecIds: [idOf(subSiteSpec)],
-  });
-  const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
-    street: 'Rua Belisário Augusto',
-    city: 'Niterói',
-    stateOrProvince: 'RJ',
-    country: 'BR',
-  });
-  const location = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.107, -22.906] },
-  });
-  const station = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'Estação Icaraí Central',
-    siteSpecificationId: idOf(siteSpec),
-    addressId: idOf(address),
-    placeId: idOf(location),
-    status: 'active',
-  });
-  assert.equal(station.statusCode, 201);
+      // Sala é SubSite (interior da estação) — nunca deve voltar na busca (C2/§9 do
+      // AGENTS.md: o usuário só pesquisa locais e recursos, não salas/andares).
+      const room = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Sala Icaraí Técnica',
+        siteSpecificationId: idOf(subSiteSpec),
+        parentSiteId: idOf(station),
+        status: 'active',
+      });
+      assert.equal(room.statusCode, 201);
 
-  // Sala é SubSite (interior da estação) — nunca deve voltar na busca (C2/§9 do
-  // AGENTS.md: o usuário só pesquisa locais e recursos, não salas/andares).
-  const room = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'Sala Icaraí Técnica',
-    siteSpecificationId: idOf(subSiteSpec),
-    parentSiteId: idOf(station),
-    status: 'active',
-  });
-  assert.equal(room.statusCode, 201);
-
-  const resourceSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    {
-      name: 'CDOE 1:8',
-      resourceTypeId: 'rt-cto',
-    },
-  );
-  const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
-    geometryType: 'Point',
-    geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
-  });
-  const box = await requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
-    '@type': 'PhysicalResource',
-    name: 'CDOE Icaraí 08',
-    resourceSpecificationId: idOf(resourceSpec),
-    placeId: idOf(boxPlace),
-    placeType: 'GeographicLocation',
-  });
-  assert.equal(box.statusCode, 201);
-
-  // Splitter dentro da caixa: some do mapa, da árvore E da busca (não tem ponto próprio
-  // no mapa para a seleção pousar — mesma regra dos dois primeiros).
-  const splitterSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
-  );
-  const splitter = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'CDOE Icaraí 08 · Splitter',
-      resourceSpecificationId: idOf(splitterSpec),
-      placeId: idOf(boxPlace),
-      placeType: 'GeographicLocation',
-    },
-  );
-  assert.equal(splitter.statusCode, 201);
-
-  const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');
-  assert.equal(search.statusCode, 200);
-  const results = search.body as GeoTreeResponseNode[];
-  assert.deepEqual(results.map((item) => item.label).sort(), [
-    'CDOE Icaraí 08',
-    'Estação Icaraí Central',
-  ]);
-  assert.equal(
-    results.some((item) => item.label === 'Sala Icaraí Técnica'),
-    false,
-  );
-  assert.equal(
-    results.some((item) => item.label === 'CDOE Icaraí 08 · Splitter'),
-    false,
-  );
-
-  // Caminho de prefixo (searchResourceCandidates): "CDOE" casa direto no início do nome,
-  // sem precisar da varredura por substring.
-  const prefixSearch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=CDOE');
-  assert.equal(prefixSearch.statusCode, 200);
-  assert.deepEqual(
-    (prefixSearch.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['CDOE Icaraí 08'],
-  );
-
-  const noMatch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=zzz-nao-existe');
-  assert.deepEqual(noMatch.body, []);
-
-  const emptyTerm = await requestJson(port, 'GET', '/v1/geo/tree/search?q=');
-  assert.deepEqual(emptyTerm.body, []);
-
-  // Filtro de escopo da barra de pesquisa (RF-013): `kinds=site` restringe a busca só a
-  // Estações — o mesmo termo "icara" que antes trazia Estação + CDOE agora só traz a
-  // Estação.
-  const onlySites = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara&kinds=site');
-  assert.deepEqual(
-    (onlySites.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['Estação Icaraí Central'],
-  );
-
-  // `kinds=resource` restringe a Recursos — a Estação some, o CDOE (CTO) permanece.
-  const onlyResources = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/search?q=icara&kinds=resource',
-  );
-  assert.deepEqual(
-    (onlyResources.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['CDOE Icaraí 08'],
-  );
-
-  // `types=CTO` restringe ainda mais, dentro de Recurso — o mesmo resultado aqui porque só
-  // há um recurso no acervo de teste, mas comprova que o parâmetro chega ao SQL.
-  const onlyCto = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/search?q=icara&kinds=resource&types=CTO',
-  );
-  assert.deepEqual(
-    (onlyCto.body as GeoTreeResponseNode[]).map((item) => item.label),
-    ['CDOE Icaraí 08'],
-  );
-
-  // `types=Pole` (tipo que não existe no acervo de teste) não casa com o CDOE — o filtro de
-  // tipo é aplicado de verdade, não só o de kind.
-  const wrongType = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/search?q=icara&kinds=resource&types=Pole',
-  );
-  assert.deepEqual(wrongType.body, []);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
-
-test.skipIf(!oracleConfigured)('App exposes health without auth and protected routes reject missing token', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  const health = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
-    const req = http.request(
-      { hostname: '127.0.0.1', port, path: '/health', method: 'GET' },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-        res.on('end', () =>
-          resolve({
-            statusCode: res.statusCode ?? 0,
-            body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
-          }),
-        );
-      },
-    );
-    req.on('error', reject);
-    req.end();
-  });
-
-  assert.equal(health.statusCode, 200);
-  assert.equal((health.body as { status: string }).status, 'ok');
-
-  const protectedRoute = await new Promise<{ statusCode: number; body: unknown }>(
-    (resolve, reject) => {
-      const req = http.request(
-        { hostname: '127.0.0.1', port, path: '/v1/bootstrap', method: 'GET' },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-          res.on('end', () =>
-            resolve({
-              statusCode: res.statusCode ?? 0,
-              body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
-            }),
-          );
+      const resourceSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        {
+          name: 'CDOE 1:8',
+          resourceTypeId: 'rt-cto',
         },
       );
-      req.on('error', reject);
-      req.end();
-    },
-  );
+      const boxPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.108, -22.907] },
+      });
+      const box = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE Icaraí 08',
+          resourceSpecificationId: idOf(resourceSpec),
+          placeId: idOf(boxPlace),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(box.statusCode, 201);
 
-  assert.equal(protectedRoute.statusCode, 401);
-  assert.equal((protectedRoute.body as { error: string }).error, 'AUTH_REQUIRED');
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // Splitter dentro da caixa: some do mapa, da árvore E da busca (não tem ponto próprio
+      // no mapa para a seleção pousar — mesma regra dos dois primeiros).
+      const splitterSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'Splitter óptico 1:8', resourceTypeId: 'rt-splitter' },
+      );
+      const splitter = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'CDOE Icaraí 08 · Splitter',
+          resourceSpecificationId: idOf(splitterSpec),
+          placeId: idOf(boxPlace),
+          placeType: 'GeographicLocation',
+        },
+      );
+      assert.equal(splitter.statusCode, 201);
 
-test.skipIf(!oracleConfigured)('Projetos de trabalho: local exige GEONET, herda status do projeto, e a cascata de status do PATCH funciona', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      const search = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara');
+      assert.equal(search.statusCode, 200);
+      const results = search.body as GeoTreeResponseNode[];
+      assert.deepEqual(results.map((item) => item.label).sort(), [
+        'CDOE Icaraí 08',
+        'Estação Icaraí Central',
+      ]);
+      assert.equal(
+        results.some((item) => item.label === 'Sala Icaraí Técnica'),
+        false,
+      );
+      assert.equal(
+        results.some((item) => item.label === 'CDOE Icaraí 08 · Splitter'),
+        false,
+      );
 
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação',
-    category: 'Site',
-  });
-  assert.equal(spec.statusCode, 201);
-  const specId = (spec.body as { id: string }).id;
+      // Caminho de prefixo (searchResourceCandidates): "CDOE" casa direto no início do nome,
+      // sem precisar da varredura por substring.
+      const prefixSearch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=CDOE');
+      assert.equal(prefixSearch.statusCode, 200);
+      assert.deepEqual(
+        (prefixSearch.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['CDOE Icaraí 08'],
+      );
 
-  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto de teste' });
-  assert.equal(project.statusCode, 201);
-  const projectId = (project.body as { id: string; status: string }).id;
-  assert.equal((project.body as { status: string }).status, 'planned');
+      const noMatch = await requestJson(port, 'GET', '/v1/geo/tree/search?q=zzz-nao-existe');
+      assert.deepEqual(noMatch.body, []);
 
-  // RN-008: sem geonetAddressId, a criação de local é recusada.
-  const rejected = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.1, -22.9] } },
-    address: { street: 'Rua Teste' },
-    site: { name: 'Local sem Geonet', siteSpecificationId: specId },
-  });
-  assert.equal(rejected.statusCode, 400);
-  assert.equal(
-    (rejected.body as { error: string }).error,
-    'GEO_PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
-  );
+      const emptyTerm = await requestJson(port, 'GET', '/v1/geo/tree/search?q=');
+      assert.deepEqual(emptyTerm.body, []);
 
-  // RN-007: com geonetAddressId, cria — e ignora o status enviado pelo cliente (herda do
-  // projeto, que nasce 'planned').
-  const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.1, -22.9] } },
-    address: { street: 'Rua Teste' },
-    site: { name: 'Local A', siteSpecificationId: specId, status: 'Active' },
-    geonetAddressId: 'geonet-123',
-    note: 'observação de campo',
-  });
-  assert.equal(created.statusCode, 201);
-  const siteId = (created.body as { site: { id: string; status: string } }).site.id;
-  assert.equal((created.body as { site: { status: string } }).site.status, 'Planned');
+      // Filtro de escopo da barra de pesquisa (RF-013): `kinds=site` restringe a busca só a
+      // Estações — o mesmo termo "icara" que antes trazia Estação + CDOE agora só traz a
+      // Estação.
+      const onlySites = await requestJson(port, 'GET', '/v1/geo/tree/search?q=icara&kinds=site');
+      assert.deepEqual(
+        (onlySites.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['Estação Icaraí Central'],
+      );
 
-  // GET /sites devolve a observação e o id do Geonet junto do nó de árvore — sem bbox, a
-  // resposta é paginada (issue #72, PROJECT_PANEL_SITE_LIMIT): { items, offset, limit, hasMore }.
-  const sites = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  assert.equal(sites.statusCode, 200);
-  const siteNode = (
-    sites.body as { items: Array<{ refId: string; note: string; geonetAddressId: string }> }
-  ).items.find((node) => node.refId === siteId);
-  assert.equal(siteNode?.note, 'observação de campo');
-  assert.equal(siteNode?.geonetAddressId, 'geonet-123');
+      // `kinds=resource` restringe a Recursos — a Estação some, o CDOE (CTO) permanece.
+      const onlyResources = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=icara&kinds=resource',
+      );
+      assert.deepEqual(
+        (onlyResources.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['CDOE Icaraí 08'],
+      );
 
-  // PATCH de nome/tipo/observação do local, pela nova rota dedicada.
-  const patchedSite = await requestJson(
-    port,
-    'PATCH',
-    `/v1/geo/projects/${projectId}/sites/${siteId}`,
-    { name: 'Local A renomeado', note: 'nova observação' },
-  );
-  assert.equal(patchedSite.statusCode, 200);
-  assert.equal((patchedSite.body as { site: { name: string } }).site.name, 'Local A renomeado');
-  assert.equal((patchedSite.body as { note: string }).note, 'nova observação');
+      // `types=CTO` restringe ainda mais, dentro de Recurso — o mesmo resultado aqui porque só
+      // há um recurso no acervo de teste, mas comprova que o parâmetro chega ao SQL.
+      const onlyCto = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=icara&kinds=resource&types=CTO',
+      );
+      assert.deepEqual(
+        (onlyCto.body as GeoTreeResponseNode[]).map((item) => item.label),
+        ['CDOE Icaraí 08'],
+      );
 
-  // RF-010: PATCH do projeto para 'active' cascateia (best-effort) para o Site vinculado.
-  const patchedProject = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
-    status: 'active',
-  });
-  assert.equal(patchedProject.statusCode, 200);
-  assert.equal((patchedProject.body as { status: string }).status, 'active');
-  assert.equal(
-    (patchedProject.body as { siteCascade?: { updated: number; skipped: number } }).siteCascade
-      ?.updated,
-    1,
-  );
+      // `types=Pole` (tipo que não existe no acervo de teste) não casa com o CDOE — o filtro de
+      // tipo é aplicado de verdade, não só o de kind.
+      const wrongType = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=icara&kinds=resource&types=Pole',
+      );
+      assert.deepEqual(wrongType.body, []);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  const siteAfterCascade = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
-  assert.equal((siteAfterCascade.body as { status: string }).status, 'Active');
+test.skipIf(!oracleConfigured)(
+  'App exposes health without auth and protected routes reject missing token',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const health = await new Promise<{ statusCode: number; body: unknown }>((resolve, reject) => {
+        const req = http.request(
+          { hostname: '127.0.0.1', port, path: '/health', method: 'GET' },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+            res.on('end', () =>
+              resolve({
+                statusCode: res.statusCode ?? 0,
+                body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+              }),
+            );
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
 
-  // RN-009: "Remover do projeto" desvincula o local (soft-terminate + unlink), C6.
-  const removed = await requestJson(
-    port,
-    'DELETE',
-    `/v1/geo/projects/${projectId}/sites/${siteId}`,
-  );
-  assert.equal(removed.statusCode, 204);
-  const sitesAfterRemove = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  assert.deepEqual((sitesAfterRemove.body as { items: unknown[] }).items, []);
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      assert.equal(health.statusCode, 200);
+      assert.equal((health.body as { status: string }).status, 'ok');
 
-test.skipIf(!oracleConfigured)('Projetos de trabalho: terminar o projeto libera os locais (viram Active, não Retired) e não volta', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
+      const protectedRoute = await new Promise<{ statusCode: number; body: unknown }>(
+        (resolve, reject) => {
+          const req = http.request(
+            { hostname: '127.0.0.1', port, path: '/v1/bootstrap', method: 'GET' },
+            (res) => {
+              const chunks: Buffer[] = [];
+              res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+              res.on('end', () =>
+                resolve({
+                  statusCode: res.statusCode ?? 0,
+                  body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+                }),
+              );
+            },
+          );
+          req.on('error', reject);
+          req.end();
+        },
+      );
 
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação Término',
-    category: 'Site',
-  });
-  const specId = (spec.body as { id: string }).id;
+      assert.equal(protectedRoute.statusCode, 401);
+      assert.equal((protectedRoute.body as { error: string }).error, 'AUTH_REQUIRED');
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
-  const project = await requestJson(port, 'POST', '/v1/geo/projects', {
-    name: 'Projeto a terminar',
-  });
-  const projectId = (project.body as { id: string }).id;
+test.skipIf(!oracleConfigured)(
+  'Projetos de trabalho: local exige GEONET, herda status do projeto, e a cascata de status do PATCH funciona',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação',
+        category: 'Site',
+      });
+      assert.equal(spec.statusCode, 201);
+      const specId = (spec.body as { id: string }).id;
 
-  const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.2, -22.95] } },
-    address: { street: 'Rua do Término' },
-    site: { name: 'Local Liberado Pelo Termino', siteSpecificationId: specId },
-    geonetAddressId: 'geonet-terminado-1',
-  });
-  const siteId = (created.body as { site: { id: string } }).site.id;
+      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto de teste',
+      });
+      assert.equal(project.statusCode, 201);
+      const projectId = (project.body as { id: string; status: string }).id;
+      assert.equal((project.body as { status: string }).status, 'planned');
 
-  // Enquanto o projeto está em curso, o local fica escondido da navegação geral (RN-003).
-  const hiddenSearch = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/search?q=Local%20Liberado%20Pelo%20Termino',
-  );
-  assert.deepEqual(hiddenSearch.body, []);
+      // RN-008: sem geonetAddressId, a criação de local é recusada.
+      const rejected = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+        },
+        address: { street: 'Rua Teste' },
+        site: { name: 'Local sem Geonet', siteSpecificationId: specId },
+      });
+      assert.equal(rejected.statusCode, 400);
+      assert.equal(
+        (rejected.body as { error: string }).error,
+        'GEO_PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
+      );
 
-  // RF-010: terminar cascateia para Active (liberação), não Retired (o antigo comportamento).
-  const terminated = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
-    status: 'terminated',
-  });
-  assert.equal(terminated.statusCode, 200);
-  assert.equal((terminated.body as { status: string }).status, 'terminated');
-  assert.equal((terminated.body as { siteCascade?: { updated: number } }).siteCascade?.updated, 1);
+      // RN-007: com geonetAddressId, cria — e ignora o status enviado pelo cliente (herda do
+      // projeto, que nasce 'planned').
+      const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.1, -22.9] },
+        },
+        address: { street: 'Rua Teste' },
+        site: { name: 'Local A', siteSpecificationId: specId, status: 'Active' },
+        geonetAddressId: 'geonet-123',
+        note: 'observação de campo',
+      });
+      assert.equal(created.statusCode, 201);
+      const siteId = (created.body as { site: { id: string; status: string } }).site.id;
+      assert.equal((created.body as { site: { status: string } }).site.status, 'Planned');
 
-  const siteAfterTermination = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
-  assert.equal((siteAfterTermination.body as { status: string }).status, 'Active');
+      // GET /sites devolve a observação e o id do Geonet junto do nó de árvore — sem bbox, a
+      // resposta é paginada (issue #72, PROJECT_PANEL_SITE_LIMIT): { items, offset, limit, hasMore }.
+      const sites = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+      assert.equal(sites.statusCode, 200);
+      const siteNode = (
+        sites.body as { items: Array<{ refId: string; note: string; geonetAddressId: string }> }
+      ).items.find((node) => node.refId === siteId);
+      assert.equal(siteNode?.note, 'observação de campo');
+      assert.equal(siteNode?.geonetAddressId, 'geonet-123');
 
-  // O local volta a existir na navegação geral (busca) uma vez que o projeto terminou.
-  const visibleSearch = await requestJson(
-    port,
-    'GET',
-    '/v1/geo/tree/search?q=Local%20Liberado%20Pelo%20Termino',
-  );
-  assert.equal((visibleSearch.body as Array<{ label: string }>).length, 1);
+      // PATCH de nome/tipo/observação do local, pela nova rota dedicada.
+      const patchedSite = await requestJson(
+        port,
+        'PATCH',
+        `/v1/geo/projects/${projectId}/sites/${siteId}`,
+        { name: 'Local A renomeado', note: 'nova observação' },
+      );
+      assert.equal(patchedSite.statusCode, 200);
+      assert.equal((patchedSite.body as { site: { name: string } }).site.name, 'Local A renomeado');
+      assert.equal((patchedSite.body as { note: string }).note, 'nova observação');
 
-  // Projeto terminado não volta: qualquer tentativa de mudar o status é rejeitada.
-  const reopen = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
-    status: 'active',
-  });
-  assert.equal(reopen.statusCode, 409);
-  assert.equal((reopen.body as { error: string }).error, 'GEO_PROJECT_TERMINATED_IMMUTABLE');
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // RF-010: PATCH do projeto para 'active' cascateia (best-effort) para o Site vinculado.
+      const patchedProject = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
+        status: 'active',
+      });
+      assert.equal(patchedProject.statusCode, 200);
+      assert.equal((patchedProject.body as { status: string }).status, 'active');
+      assert.equal(
+        (patchedProject.body as { siteCascade?: { updated: number; skipped: number } }).siteCascade
+          ?.updated,
+        1,
+      );
+
+      const siteAfterCascade = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
+      assert.equal((siteAfterCascade.body as { status: string }).status, 'Active');
+
+      // RN-009: "Remover do projeto" desvincula o local (soft-terminate + unlink), C6.
+      const removed = await requestJson(
+        port,
+        'DELETE',
+        `/v1/geo/projects/${projectId}/sites/${siteId}`,
+      );
+      assert.equal(removed.statusCode, 204);
+      const sitesAfterRemove = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/projects/${projectId}/sites`,
+      );
+      assert.deepEqual((sitesAfterRemove.body as { items: unknown[] }).items, []);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Projetos de trabalho: terminar o projeto libera os locais (viram Active, não Retired) e não volta',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação Término',
+        category: 'Site',
+      });
+      const specId = (spec.body as { id: string }).id;
+
+      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto a terminar',
+      });
+      const projectId = (project.body as { id: string }).id;
+
+      const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.2, -22.95] },
+        },
+        address: { street: 'Rua do Término' },
+        site: { name: 'Local Liberado Pelo Termino', siteSpecificationId: specId },
+        geonetAddressId: 'geonet-terminado-1',
+      });
+      const siteId = (created.body as { site: { id: string } }).site.id;
+
+      // Enquanto o projeto está em curso, o local fica escondido da navegação geral (RN-003).
+      const hiddenSearch = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=Local%20Liberado%20Pelo%20Termino',
+      );
+      assert.deepEqual(hiddenSearch.body, []);
+
+      // RF-010: terminar cascateia para Active (liberação), não Retired (o antigo comportamento).
+      const terminated = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
+        status: 'terminated',
+      });
+      assert.equal(terminated.statusCode, 200);
+      assert.equal((terminated.body as { status: string }).status, 'terminated');
+      assert.equal(
+        (terminated.body as { siteCascade?: { updated: number } }).siteCascade?.updated,
+        1,
+      );
+
+      const siteAfterTermination = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
+      assert.equal((siteAfterTermination.body as { status: string }).status, 'Active');
+
+      // O local volta a existir na navegação geral (busca) uma vez que o projeto terminou.
+      const visibleSearch = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=Local%20Liberado%20Pelo%20Termino',
+      );
+      assert.equal((visibleSearch.body as Array<{ label: string }>).length, 1);
+
+      // Projeto terminado não volta: qualquer tentativa de mudar o status é rejeitada.
+      const reopen = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
+        status: 'active',
+      });
+      assert.equal(reopen.statusCode, 409);
+      assert.equal((reopen.body as { error: string }).error, 'GEO_PROJECT_TERMINATED_IMMUTABLE');
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
 // issue #58: DELETE /v1/geo/projects/:id operava em massa (GeoService.transitionProjectSites),
 // devolvendo 200 com um resumo em vez de 204 silencioso. A REQ-MOD01-017 v1.17 (commit
 // c41a0e5) substituiu esse comportamento por arquivamento administrativo: DELETE só é aceito
 // depois que o projeto já chegou a um estado terminal via PATCH (terminated/cancelled) — a
 // cascata de Site (ver "cascata de status do PATCH funciona") já roda ali, não mais no DELETE.
-test.skipIf(!oracleConfigured)('DELETE /v1/geo/projects/:id: arquiva projeto terminado e devolve o resumo; 404 para id inexistente', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  const missing = await requestJson(port, 'DELETE', '/v1/geo/projects/does-not-exist');
-  assert.equal(missing.statusCode, 404);
-  assert.equal((missing.body as { error: string }).error, 'GEO_PROJECT_NOT_FOUND');
-
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação Delete',
-    category: 'Site',
-  });
-  const specId = (spec.body as { id: string }).id;
-
-  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto a apagar' });
-  const projectId = (project.body as { id: string }).id;
-
-  const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.3, -22.8] } },
-    address: { street: 'Rua a Apagar' },
-    site: { name: 'Local a Apagar', siteSpecificationId: specId },
-    geonetAddressId: 'geonet-delete-1',
-  });
-  const siteId = (created.body as { site: { id: string } }).site.id;
-
-  // Arquivar um projeto ainda em curso é recusado — só terminal (terminated/cancelled) arquiva.
-  const premature = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
-  assert.equal(premature.statusCode, 409);
-  assert.equal(
-    (premature.body as { error: string }).error,
-    'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
-  );
-
-  // Terminar libera o local (vira Active — RF-010) antes do projeto poder ser arquivado.
-  const terminated = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
-    status: 'terminated',
-  });
-  assert.equal(terminated.statusCode, 200);
-
-  const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
-  assert.equal(deleted.statusCode, 200);
-  const summary = deleted.body as { archived: boolean; project: { id: string } };
-  assert.equal(summary.archived, true);
-  assert.equal(summary.project.id, projectId);
-
-  // Não há GET /v1/geo/projects/:id — confirma pela lista que o projeto sumiu (archived_at).
-  const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
-  assert.ok(!(projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
-  const siteAfter = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
-  assert.equal((siteAfter.body as { status: string }).status, 'Active');
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
-
-test.skipIf(!oracleConfigured)('DELETE /v1/geo/projects/:id: projeto não-terminado é recusado e mantém vínculos íntegros', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação Bloqueio',
-    category: 'Site',
-  });
-  const specId = (spec.body as { id: string }).id;
-
-  const project = await requestJson(port, 'POST', '/v1/geo/projects', {
-    name: 'Projeto com local bloqueado',
-  });
-  const projectId = (project.body as { id: string }).id;
-
-  const freeSite = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.4, -22.7] } },
-    address: { street: 'Rua Livre' },
-    site: { name: 'Local Livre', siteSpecificationId: specId },
-    geonetAddressId: 'geonet-bloqueio-1',
-  });
-  const freeSiteId = (freeSite.body as { site: { id: string } }).site.id;
-
-  const blockedSite = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-    location: { geometryType: 'Point', geometry: { type: 'Point', coordinates: [-43.5, -22.6] } },
-    address: { street: 'Rua Bloqueada' },
-    site: { name: 'Local Bloqueado', siteSpecificationId: specId },
-    geonetAddressId: 'geonet-bloqueio-2',
-  });
-  const blockedSiteId = (blockedSite.body as { site: { id: string } }).site.id;
-
-  const feederSite = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'Alimentador do Bloqueado',
-    siteSpecificationId: specId,
-  });
-  const feederSiteId = (feederSite.body as { id: string }).id;
-
-  const relationship = await requestJson(
-    port,
-    'POST',
-    `/v1/geo/sites/${blockedSiteId}/relationships`,
-    { relatedSiteId: feederSiteId, relationshipType: 'fedBy' },
-  );
-  assert.equal(relationship.statusCode, 201);
-
-  // Projeto ainda 'planned' (não terminal): arquivar é recusado, nada muda.
-  const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
-  assert.equal(deleted.statusCode, 409);
-  assert.equal(
-    (deleted.body as { error: string }).error,
-    'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
-  );
-
-  // Projeto continua existindo, com os dois vínculos intactos e nenhum local tocado.
-  const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
-  assert.ok((projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
-  const sitesAfter = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  assert.equal((sitesAfter.body as { items: unknown[] }).items.length, 2);
-
-  assert.equal(
-    ((await requestJson(port, 'GET', `/v1/geo/sites/${freeSiteId}`)).body as { status: string })
-      .status,
-    'Planned',
-  );
-  assert.equal(
-    ((await requestJson(port, 'GET', `/v1/geo/sites/${blockedSiteId}`)).body as { status: string })
-      .status,
-    'Planned',
-  );
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
-
-test.skipIf(!oracleConfigured)('Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
-
-  // Origem 'manual': Site criado direto por /v1/geo/sites, sem projeto e sem _origin.system.
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação Origem',
-    category: 'Site',
-  });
-  const site = await requestJson(port, 'POST', '/v1/geo/sites', {
-    name: 'Site Cadastro Livre',
-    siteSpecificationId: idOf(spec),
-  });
-  assert.equal(site.statusCode, 201);
-  const siteId = idOf(site);
-
-  const manualOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/origin`);
-  assert.equal(manualOrigin.statusCode, 200);
-  assert.equal((manualOrigin.body as { kind: string }).kind, 'manual');
-
-  // Origem 'project': Site nascido dentro de um Projeto de trabalho.
-  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto Origem' });
-  const projectSite = await requestJson(port, 'POST', `/v1/geo/projects/${idOf(project)}/sites`, {
-    location: {
-      geometryType: 'Point',
-      geometry: { type: 'Point', coordinates: [-43.15, -22.91] },
-    },
-    address: { street: 'Rua Origem Projeto' },
-    site: { name: 'Site do Projeto Origem', siteSpecificationId: idOf(spec) },
-    geonetAddressId: 'geonet-origem-1',
-  });
-  const projectSiteId = (projectSite.body as { site: { id: string } }).site.id;
-  const projectOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${projectSiteId}/origin`);
-  assert.equal(projectOrigin.statusCode, 200);
-  assert.deepEqual(projectOrigin.body, {
-    kind: 'project',
-    projectId: idOf(project),
-    projectName: 'Projeto Origem',
-  });
-
-  // Vínculo/desvínculo de Recurso (aba Recursos): linkar, desvincular (o recurso continua
-  // existindo, só perde o place) e terminar (soft-terminate, C6).
-  const resourceSpec = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-    { name: 'OLT Origem', resourceTypeId: 'rt-olt' },
-  );
-  const resource = await requestJson(
-    port,
-    'POST',
-    '/tmf-api/resourceInventoryManagement/v4/resource',
-    {
-      '@type': 'PhysicalResource',
-      name: 'OLT Painel Unificado',
-      resourceSpecificationId: idOf(resourceSpec),
-    },
-  );
-  assert.equal(resource.statusCode, 201);
-  const resourceId = idOf(resource);
-
-  const linked = await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, {
-    resourceId,
-  });
-  assert.equal(linked.statusCode, 200);
-  assert.equal((linked.body as { place?: { id: string } }).place?.id, siteId);
-
-  const siteResources = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/tree/children?nodeId=site:${siteId}&scope=all`,
-  );
-  assert.equal(siteResources.statusCode, 200);
-  assert.deepEqual(
-    (siteResources.body as { nodes: Array<{ label: string }> }).nodes.map((n) => n.label),
-    ['OLT Painel Unificado'],
-  );
-
-  const unlinked = await requestJson(
-    port,
-    'DELETE',
-    `/v1/geo/sites/${siteId}/resources/${resourceId}?mode=unlink`,
-  );
-  assert.equal(unlinked.statusCode, 204);
-  const resourceAfterUnlink = await requestJson(
-    port,
-    'GET',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
-  );
-  assert.equal((resourceAfterUnlink.body as { place?: unknown }).place, undefined);
-  assert.notEqual((resourceAfterUnlink.body as { status: string }).status, 'terminated');
-
-  // Relinka e agora termina (mode=terminate) — soft-terminate, não DELETE físico.
-  await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, { resourceId });
-  const terminated = await requestJson(
-    port,
-    'DELETE',
-    `/v1/geo/sites/${siteId}/resources/${resourceId}?mode=terminate`,
-  );
-  assert.equal(terminated.statusCode, 204);
-  const resourceAfterTerminate = await requestJson(
-    port,
-    'GET',
-    `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
-  );
-  assert.equal((resourceAfterTerminate.body as { status: string }).status, 'terminated');
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
-
-test.skipIf(!oracleConfigured)('Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e GET /sites filtra por bbox e limita a página', async () => {
-  const server = createApp({
-    config: createTestConfig(0),
-    logger: createTestLogger(),
-  });
-  const port = await server.start();
-  try {
-
-  // Mesma instância que o app usa — a mancha é semeada direto nas tabelas de projeção, como
-  // faz scripts/build-project-areas.mjs (INSERT em tmf_geographic_location + geo_project_area).
-  const db = await getOracleTestClient();
-
-  const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
-    name: 'Ponto de Instalação Mancha',
-    category: 'Site',
-  });
-  const specId = (spec.body as { id: string }).id;
-
-  const project = await requestJson(port, 'POST', '/v1/geo/projects', { name: 'Projeto Manchas' });
-  const projectId = (project.body as { id: string }).id;
-
-  // Dois locais dentro de uma mesma mancha (Icaraí), um fora dela (bem distante).
-  const createSite = async (name: string, coordinates: [number, number]) => {
-    const response = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
-      location: { geometryType: 'Point', geometry: { type: 'Point', coordinates } },
-      address: { street: 'Rua Teste' },
-      site: { name, siteSpecificationId: specId },
-      geonetAddressId: `geonet-${name}`,
+test.skipIf(!oracleConfigured)(
+  'DELETE /v1/geo/projects/:id: arquiva projeto terminado e devolve o resumo; 404 para id inexistente',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
     });
-    assert.equal(response.statusCode, 201);
-    return (response.body as { site: { id: string } }).site.id;
-  };
-  const nearSiteId = await createSite('Local Icaraí', [-43.106, -22.906]);
-  const farSiteId = await createSite('Local Distante', [10, 10]);
+    const port = await server.start();
+    try {
+      const missing = await requestJson(port, 'DELETE', '/v1/geo/projects/does-not-exist');
+      assert.equal(missing.statusCode, 404);
+      assert.equal((missing.body as { error: string }).error, 'GEO_PROJECT_NOT_FOUND');
 
-  // Semeia a mancha de concentração cobrindo só o local de Icaraí — mesma forma que o script
-  // grava (Polygon em tmf_geographic_location + vínculo em geo_project_area).
-  const locationId = '33333333-3333-7333-8333-333333333333';
-  await db.run(
-    `INSERT INTO tmf_geographic_location
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação Delete',
+        category: 'Site',
+      });
+      const specId = (spec.body as { id: string }).id;
+
+      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto a apagar',
+      });
+      const projectId = (project.body as { id: string }).id;
+
+      const created = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.3, -22.8] },
+        },
+        address: { street: 'Rua a Apagar' },
+        site: { name: 'Local a Apagar', siteSpecificationId: specId },
+        geonetAddressId: 'geonet-delete-1',
+      });
+      const siteId = (created.body as { site: { id: string } }).site.id;
+
+      // Arquivar um projeto ainda em curso é recusado — só terminal (terminated/cancelled) arquiva.
+      const premature = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
+      assert.equal(premature.statusCode, 409);
+      assert.equal(
+        (premature.body as { error: string }).error,
+        'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
+      );
+
+      // Terminar libera o local (vira Active — RF-010) antes do projeto poder ser arquivado.
+      const terminated = await requestJson(port, 'PATCH', `/v1/geo/projects/${projectId}`, {
+        status: 'terminated',
+      });
+      assert.equal(terminated.statusCode, 200);
+
+      const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
+      assert.equal(deleted.statusCode, 200);
+      const summary = deleted.body as { archived: boolean; project: { id: string } };
+      assert.equal(summary.archived, true);
+      assert.equal(summary.project.id, projectId);
+
+      // Não há GET /v1/geo/projects/:id — confirma pela lista que o projeto sumiu (archived_at).
+      const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
+      assert.ok(!(projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
+      const siteAfter = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}`);
+      assert.equal((siteAfter.body as { status: string }).status, 'Active');
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'DELETE /v1/geo/projects/:id: projeto não-terminado é recusado e mantém vínculos íntegros',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação Bloqueio',
+        category: 'Site',
+      });
+      const specId = (spec.body as { id: string }).id;
+
+      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto com local bloqueado',
+      });
+      const projectId = (project.body as { id: string }).id;
+
+      const freeSite = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.4, -22.7] },
+        },
+        address: { street: 'Rua Livre' },
+        site: { name: 'Local Livre', siteSpecificationId: specId },
+        geonetAddressId: 'geonet-bloqueio-1',
+      });
+      const freeSiteId = (freeSite.body as { site: { id: string } }).site.id;
+
+      const blockedSite = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+        location: {
+          geometryType: 'Point',
+          geometry: { type: 'Point', coordinates: [-43.5, -22.6] },
+        },
+        address: { street: 'Rua Bloqueada' },
+        site: { name: 'Local Bloqueado', siteSpecificationId: specId },
+        geonetAddressId: 'geonet-bloqueio-2',
+      });
+      const blockedSiteId = (blockedSite.body as { site: { id: string } }).site.id;
+
+      const feederSite = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Alimentador do Bloqueado',
+        siteSpecificationId: specId,
+      });
+      const feederSiteId = (feederSite.body as { id: string }).id;
+
+      const relationship = await requestJson(
+        port,
+        'POST',
+        `/v1/geo/sites/${blockedSiteId}/relationships`,
+        { relatedSiteId: feederSiteId, relationshipType: 'fedBy' },
+      );
+      assert.equal(relationship.statusCode, 201);
+
+      // Projeto ainda 'planned' (não terminal): arquivar é recusado, nada muda.
+      const deleted = await requestJson(port, 'DELETE', `/v1/geo/projects/${projectId}`);
+      assert.equal(deleted.statusCode, 409);
+      assert.equal(
+        (deleted.body as { error: string }).error,
+        'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
+      );
+
+      // Projeto continua existindo, com os dois vínculos intactos e nenhum local tocado.
+      const projectsAfter = await requestJson(port, 'GET', '/v1/geo/projects');
+      assert.ok((projectsAfter.body as Array<{ id: string }>).some((p) => p.id === projectId));
+      const sitesAfter = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+      assert.equal((sitesAfter.body as { items: unknown[] }).items.length, 2);
+
+      assert.equal(
+        ((await requestJson(port, 'GET', `/v1/geo/sites/${freeSiteId}`)).body as { status: string })
+          .status,
+        'Planned',
+      );
+      assert.equal(
+        (
+          (await requestJson(port, 'GET', `/v1/geo/sites/${blockedSiteId}`)).body as {
+            status: string;
+          }
+        ).status,
+        'Planned',
+      );
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Painel unificado de Local: Origem do Site e vínculo/desvínculo de Recurso',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+      // Origem 'manual': Site criado direto por /v1/geo/sites, sem projeto e sem _origin.system.
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação Origem',
+        category: 'Site',
+      });
+      const site = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'Site Cadastro Livre',
+        siteSpecificationId: idOf(spec),
+      });
+      assert.equal(site.statusCode, 201);
+      const siteId = idOf(site);
+
+      const manualOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${siteId}/origin`);
+      assert.equal(manualOrigin.statusCode, 200);
+      assert.equal((manualOrigin.body as { kind: string }).kind, 'manual');
+
+      // Origem 'project': Site nascido dentro de um Projeto de trabalho.
+      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto Origem',
+      });
+      const projectSite = await requestJson(
+        port,
+        'POST',
+        `/v1/geo/projects/${idOf(project)}/sites`,
+        {
+          location: {
+            geometryType: 'Point',
+            geometry: { type: 'Point', coordinates: [-43.15, -22.91] },
+          },
+          address: { street: 'Rua Origem Projeto' },
+          site: { name: 'Site do Projeto Origem', siteSpecificationId: idOf(spec) },
+          geonetAddressId: 'geonet-origem-1',
+        },
+      );
+      const projectSiteId = (projectSite.body as { site: { id: string } }).site.id;
+      const projectOrigin = await requestJson(port, 'GET', `/v1/geo/sites/${projectSiteId}/origin`);
+      assert.equal(projectOrigin.statusCode, 200);
+      assert.deepEqual(projectOrigin.body, {
+        kind: 'project',
+        projectId: idOf(project),
+        projectName: 'Projeto Origem',
+      });
+
+      // Vínculo/desvínculo de Recurso (aba Recursos): linkar, desvincular (o recurso continua
+      // existindo, só perde o place) e terminar (soft-terminate, C6).
+      const resourceSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'OLT Origem', resourceTypeId: 'rt-olt' },
+      );
+      const resource = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        {
+          '@type': 'PhysicalResource',
+          name: 'OLT Painel Unificado',
+          resourceSpecificationId: idOf(resourceSpec),
+        },
+      );
+      assert.equal(resource.statusCode, 201);
+      const resourceId = idOf(resource);
+
+      const linked = await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, {
+        resourceId,
+      });
+      assert.equal(linked.statusCode, 200);
+      assert.equal((linked.body as { place?: { id: string } }).place?.id, siteId);
+
+      const siteResources = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/tree/children?nodeId=site:${siteId}&scope=all`,
+      );
+      assert.equal(siteResources.statusCode, 200);
+      assert.deepEqual(
+        (siteResources.body as { nodes: Array<{ label: string }> }).nodes.map((n) => n.label),
+        ['OLT Painel Unificado'],
+      );
+
+      const unlinked = await requestJson(
+        port,
+        'DELETE',
+        `/v1/geo/sites/${siteId}/resources/${resourceId}?mode=unlink`,
+      );
+      assert.equal(unlinked.statusCode, 204);
+      const resourceAfterUnlink = await requestJson(
+        port,
+        'GET',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
+      );
+      assert.equal((resourceAfterUnlink.body as { place?: unknown }).place, undefined);
+      assert.notEqual((resourceAfterUnlink.body as { status: string }).status, 'terminated');
+
+      // Relinka e agora termina (mode=terminate) — soft-terminate, não DELETE físico.
+      await requestJson(port, 'POST', `/v1/geo/sites/${siteId}/resources`, { resourceId });
+      const terminated = await requestJson(
+        port,
+        'DELETE',
+        `/v1/geo/sites/${siteId}/resources/${resourceId}?mode=terminate`,
+      );
+      assert.equal(terminated.statusCode, 204);
+      const resourceAfterTerminate = await requestJson(
+        port,
+        'GET',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}`,
+      );
+      assert.equal((resourceAfterTerminate.body as { status: string }).status, 'terminated');
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'Manchas de Projeto (REQ-MOD01-017): GET /areas lê o que o script grava, e GET /sites filtra por bbox e limita a página',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      // Mesma instância que o app usa — a mancha é semeada direto nas tabelas de projeção, como
+      // faz scripts/build-project-areas.mjs (INSERT em tmf_geographic_location + geo_project_area).
+      const db = await getOracleTestClient();
+
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Ponto de Instalação Mancha',
+        category: 'Site',
+      });
+      const specId = (spec.body as { id: string }).id;
+
+      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto Manchas',
+      });
+      const projectId = (project.body as { id: string }).id;
+
+      // Dois locais dentro de uma mesma mancha (Icaraí), um fora dela (bem distante).
+      const createSite = async (name: string, coordinates: [number, number]) => {
+        const response = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
+          location: { geometryType: 'Point', geometry: { type: 'Point', coordinates } },
+          address: { street: 'Rua Teste' },
+          site: { name, siteSpecificationId: specId },
+          geonetAddressId: `geonet-${name}`,
+        });
+        assert.equal(response.statusCode, 201);
+        return (response.body as { site: { id: string } }).site.id;
+      };
+      const nearSiteId = await createSite('Local Icaraí', [-43.106, -22.906]);
+      const farSiteId = await createSite('Local Distante', [10, 10]);
+
+      // Semeia a mancha de concentração cobrindo só o local de Icaraí — mesma forma que o script
+      // grava (Polygon em tmf_geographic_location + vínculo em geo_project_area).
+      const locationId = '33333333-3333-7333-8333-333333333333';
+      await db.run(
+        `INSERT INTO tmf_geographic_location
        (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
      VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, '[]')`,
-    [
-      locationId,
-      JSON.stringify({
-        type: 'Polygon',
-        coordinates: [
-          [
-            [-43.108, -22.908],
-            [-43.1, -22.908],
-            [-43.1, -22.902],
-            [-43.108, -22.902],
-            [-43.108, -22.908],
-          ],
+        [
+          locationId,
+          JSON.stringify({
+            type: 'Polygon',
+            coordinates: [
+              [
+                [-43.108, -22.908],
+                [-43.1, -22.908],
+                [-43.1, -22.902],
+                [-43.108, -22.902],
+                [-43.108, -22.908],
+              ],
+            ],
+          }),
+          `PROJECT:${projectId}`,
         ],
-      }),
-      `PROJECT:${projectId}`,
-    ],
-  );
-  await db.run(
-    `INSERT INTO geo_project_area
+      );
+      await db.run(
+        `INSERT INTO geo_project_area
        (project_id, location_id, kind, site_count, site_ids, centroid_lng, centroid_lat, area_km2, position)
      VALUES (?, ?, 'concentration', 1, ?, -43.106, -22.906, 0.25, 0)`,
-    [projectId, locationId, JSON.stringify([nearSiteId])],
-  );
+        [projectId, locationId, JSON.stringify([nearSiteId])],
+      );
 
-  const areas = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/areas`);
-  assert.equal(areas.statusCode, 200);
-  const areaList = (areas.body as { areas: Array<Record<string, unknown>> }).areas;
-  assert.equal(areaList.length, 1);
-  assert.equal(areaList[0]?.kind, 'concentration');
-  assert.equal(areaList[0]?.siteCount, 1);
-  assert.deepEqual(areaList[0]?.siteIds, [nearSiteId]);
-  assert.deepEqual(areaList[0]?.centroid, [-43.106, -22.906]);
-  assert.equal((areaList[0]?.geometry as { type: string })?.type, 'Polygon');
+      const areas = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/areas`);
+      assert.equal(areas.statusCode, 200);
+      const areaList = (areas.body as { areas: Array<Record<string, unknown>> }).areas;
+      assert.equal(areaList.length, 1);
+      assert.equal(areaList[0]?.kind, 'concentration');
+      assert.equal(areaList[0]?.siteCount, 1);
+      assert.deepEqual(areaList[0]?.siteIds, [nearSiteId]);
+      assert.deepEqual(areaList[0]?.centroid, [-43.106, -22.906]);
+      assert.equal((areaList[0]?.geometry as { type: string })?.type, 'Polygon');
 
-  // GET /sites com bbox devolve só o local dentro da caixa (Icaraí), não o distante.
-  const bboxSites = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/projects/${projectId}/sites?minLng=-43.2&minLat=-23&maxLng=-43&maxLat=-22.8`,
-  );
-  assert.equal(bboxSites.statusCode, 200);
-  const bboxRefIds = (bboxSites.body as Array<{ refId: string }>).map((node) => node.refId);
-  assert.deepEqual(bboxRefIds, [nearSiteId]);
+      // GET /sites com bbox devolve só o local dentro da caixa (Icaraí), não o distante.
+      const bboxSites = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/projects/${projectId}/sites?minLng=-43.2&minLat=-23&maxLng=-43&maxLat=-22.8`,
+      );
+      assert.equal(bboxSites.statusCode, 200);
+      const bboxRefIds = (bboxSites.body as Array<{ refId: string }>).map((node) => node.refId);
+      assert.deepEqual(bboxRefIds, [nearSiteId]);
 
-  // bbox longe de ambos os locais devolve lista vazia.
-  const emptyBbox = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/projects/${projectId}/sites?minLng=0&minLat=0&maxLng=1&maxLat=1`,
-  );
-  assert.deepEqual(emptyBbox.body, []);
+      // bbox longe de ambos os locais devolve lista vazia.
+      const emptyBbox = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/projects/${projectId}/sites?minLng=0&minLat=0&maxLng=1&maxLat=1`,
+      );
+      assert.deepEqual(emptyBbox.body, []);
 
-  // Sem bbox, a resposta é paginada (issue #72, PROJECT_PANEL_SITE_LIMIT): { items, offset,
-  // limit, hasMore } — `limit` pagina a lista completa (2 locais).
-  const limited = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites?limit=1`);
-  assert.equal((limited.body as { items: unknown[] }).items.length, 1);
-  const full = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
-  const fullRefIds = (full.body as { items: Array<{ refId: string }> }).items.map(
-    (node) => node.refId,
-  );
-  assert.deepEqual(new Set(fullRefIds), new Set([nearSiteId, farSiteId]));
+      // Sem bbox, a resposta é paginada (issue #72, PROJECT_PANEL_SITE_LIMIT): { items, offset,
+      // limit, hasMore } — `limit` pagina a lista completa (2 locais).
+      const limited = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites?limit=1`);
+      assert.equal((limited.body as { items: unknown[] }).items.length, 1);
+      const full = await requestJson(port, 'GET', `/v1/geo/projects/${projectId}/sites`);
+      const fullRefIds = (full.body as { items: Array<{ refId: string }> }).items.map(
+        (node) => node.refId,
+      );
+      assert.deepEqual(new Set(fullRefIds), new Set([nearSiteId, farSiteId]));
 
-  // Projeto sem manchas geradas: GET /areas devolve lista vazia.
-  const otherProject = await requestJson(port, 'POST', '/v1/geo/projects', {
-    name: 'Projeto Sem Manchas',
-  });
-  const otherAreas = await requestJson(
-    port,
-    'GET',
-    `/v1/geo/projects/${(otherProject.body as { id: string }).id}/areas`,
-  );
-  assert.deepEqual(otherAreas.body, { areas: [] });
-  } finally {
-    await server.stop();
-    const client = await getOracleTestClient();
-    await cleanupOracleTables(client);
-  }
-});
+      // Projeto sem manchas geradas: GET /areas devolve lista vazia.
+      const otherProject = await requestJson(port, 'POST', '/v1/geo/projects', {
+        name: 'Projeto Sem Manchas',
+      });
+      const otherAreas = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/projects/${(otherProject.body as { id: string }).id}/areas`,
+      );
+      assert.deepEqual(otherAreas.body, { areas: [] });
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
 
 test.skipIf(!oracleConfigured)('App root returns Nexus shell html', async () => {
   const server = createApp({
@@ -2227,22 +2376,24 @@ test.skipIf(!oracleConfigured)('App root returns Nexus shell html', async () => 
   });
   const port = await server.start();
   try {
-
-  const html = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
-    const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET' }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-      res.on('end', () =>
-        resolve({ statusCode: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }),
-      );
+    const html = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port, path: '/', method: 'GET' }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on('end', () =>
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString('utf8'),
+          }),
+        );
+      });
+      req.on('error', reject);
+      req.end();
     });
-    req.on('error', reject);
-    req.end();
-  });
 
-  assert.equal(html.statusCode, 200);
-  assert.match(html.body, /<title>v-tal-nexus - Nexus<\/title>/);
-  assert.match(html.body, /Interface migrada para Vite/);
+    assert.equal(html.statusCode, 200);
+    assert.match(html.body, /<title>v-tal-nexus - Nexus<\/title>/);
+    assert.match(html.body, /Interface migrada para Vite/);
   } finally {
     await server.stop();
     const client = await getOracleTestClient();

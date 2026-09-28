@@ -12,7 +12,11 @@ import {
   fetchGeonetDetail,
   type GeonetAddressCandidate,
 } from '../../services/geonetAddressApi';
-import { fetchAddressPredictions, fetchPlaceDetails, type AddressPrediction } from '../../utils/googleMaps';
+import {
+  fetchAddressPredictions,
+  fetchPlaceDetails,
+  type AddressPrediction,
+} from '../../utils/googleMaps';
 import { accuracyLevelOf } from './addressLocationResolution';
 import { GeonetPrecisionBadge } from './AddressSourceCard';
 import { PrecisionBadge } from './PrecisionBadge';
@@ -194,13 +198,41 @@ export function SiteAddressModal({
         accuracyLevel,
       };
       const subAddress: GeoSubAddress[] = [
-        ...(tower.trim() ? [{ '@type': 'GeographicSubAddress' as const, type: 'tower' as const, name: tower.trim() }] : []),
-        ...(block.trim() ? [{ '@type': 'GeographicSubAddress' as const, type: 'block' as const, name: block.trim() }] : []),
+        ...(tower.trim()
+          ? [
+              {
+                '@type': 'GeographicSubAddress' as const,
+                type: 'tower' as const,
+                name: tower.trim(),
+              },
+            ]
+          : []),
+        ...(block.trim()
+          ? [
+              {
+                '@type': 'GeographicSubAddress' as const,
+                type: 'block' as const,
+                name: block.trim(),
+              },
+            ]
+          : []),
         ...(floor.trim()
-          ? [{ '@type': 'GeographicSubAddress' as const, type: 'floor' as const, levelNumber: floor.trim() }]
+          ? [
+              {
+                '@type': 'GeographicSubAddress' as const,
+                type: 'floor' as const,
+                levelNumber: floor.trim(),
+              },
+            ]
           : []),
         ...(unit.trim()
-          ? [{ '@type': 'GeographicSubAddress' as const, type: 'unit' as const, subUnitNumber: unit.trim() }]
+          ? [
+              {
+                '@type': 'GeographicSubAddress' as const,
+                type: 'unit' as const,
+                subUnitNumber: unit.trim(),
+              },
+            ]
           : []),
       ];
       const addressPayload = {
@@ -244,7 +276,8 @@ export function SiteAddressModal({
   };
 
   const predictionsVisible =
-    predictionsOpen && (base === 'geonet' ? geonetPredictions.length > 0 : googlePredictions.length > 0);
+    predictionsOpen &&
+    (base === 'geonet' ? geonetPredictions.length > 0 : googlePredictions.length > 0);
 
   return (
     <Modal onClose={onClose} title="Editar endereço" eyebrow="Local">
@@ -294,7 +327,9 @@ export function SiteAddressModal({
                 }}
                 onFocus={() => setPredictionsOpen(true)}
                 placeholder={
-                  base === 'geonet' ? 'Buscar endereço no Geonet…' : 'Buscar endereço no Google Maps…'
+                  base === 'geonet'
+                    ? 'Buscar endereço no Geonet…'
+                    : 'Buscar endereço no Google Maps…'
                 }
                 className="h-10 w-full bg-transparent text-[0.86rem] text-app-text outline-none placeholder:text-app-muted"
               />
@@ -316,7 +351,9 @@ export function SiteAddressModal({
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.82rem] text-app-text transition hover:bg-app-accent-soft disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <MapPin className="h-3.5 w-3.5 shrink-0 text-app-muted" />
-                          <span className="min-w-0 flex-1 truncate">{candidate.formattedAddress}</span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {candidate.formattedAddress}
+                          </span>
                         </button>
                       ))
                     : googlePredictions.map((prediction) => (

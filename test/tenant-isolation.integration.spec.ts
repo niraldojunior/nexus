@@ -76,69 +76,72 @@ const startApp = async () => {
   };
 };
 
-test.skipIf(!oracleConfigured)('V-04: Resource — instância e catálogo isolados por tenant', async () => {
-  const app = await startApp();
-  try {
-    const specA = await requestJson(
-      app.port,
-      'POST',
-      '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
-      TENANT_A,
-      { name: 'OLT tenant A', resourceTypeId: 'rt-olt' },
-    );
-    assert.equal(specA.statusCode, 201);
-    const specAId = (specA.body as { id: string }).id;
+test.skipIf(!oracleConfigured)(
+  'V-04: Resource — instância e catálogo isolados por tenant',
+  async () => {
+    const app = await startApp();
+    try {
+      const specA = await requestJson(
+        app.port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        TENANT_A,
+        { name: 'OLT tenant A', resourceTypeId: 'rt-olt' },
+      );
+      assert.equal(specA.statusCode, 201);
+      const specAId = (specA.body as { id: string }).id;
 
-    const resourceA = await requestJson(
-      app.port,
-      'POST',
-      '/tmf-api/resourceInventoryManagement/v4/resource',
-      TENANT_A,
-      { '@type': 'PhysicalResource', name: 'OLT-A-0001', resourceSpecificationId: specAId },
-    );
-    assert.equal(resourceA.statusCode, 201);
-    const resourceAId = (resourceA.body as { id: string }).id;
+      const resourceA = await requestJson(
+        app.port,
+        'POST',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        TENANT_A,
+        { '@type': 'PhysicalResource', name: 'OLT-A-0001', resourceSpecificationId: specAId },
+      );
+      assert.equal(resourceA.statusCode, 201);
+      const resourceAId = (resourceA.body as { id: string }).id;
 
-    // Tenant B não enxerga o catálogo nem o recurso do tenant A.
-    const specFromB = await requestJson(
-      app.port,
-      'GET',
-      `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${specAId}`,
-      TENANT_B,
-    );
-    assert.equal(specFromB.statusCode, 404);
+      // Tenant B não enxerga o catálogo nem o recurso do tenant A.
+      const specFromB = await requestJson(
+        app.port,
+        'GET',
+        `/tmf-api/resourceCatalogManagement/v4/resourceSpecification/${specAId}`,
+        TENANT_B,
+      );
+      assert.equal(specFromB.statusCode, 404);
 
-    const resourceFromB = await requestJson(
-      app.port,
-      'GET',
-      `/tmf-api/resourceInventoryManagement/v4/resource/${resourceAId}`,
-      TENANT_B,
-    );
-    assert.equal(resourceFromB.statusCode, 404);
+      const resourceFromB = await requestJson(
+        app.port,
+        'GET',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${resourceAId}`,
+        TENANT_B,
+      );
+      assert.equal(resourceFromB.statusCode, 404);
 
-    // Tenant A continua enxergando o próprio dado.
-    const resourceFromA = await requestJson(
-      app.port,
-      'GET',
-      `/tmf-api/resourceInventoryManagement/v4/resource/${resourceAId}`,
-      TENANT_A,
-    );
-    assert.equal(resourceFromA.statusCode, 200);
+      // Tenant A continua enxergando o próprio dado.
+      const resourceFromA = await requestJson(
+        app.port,
+        'GET',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${resourceAId}`,
+        TENANT_A,
+      );
+      assert.equal(resourceFromA.statusCode, 200);
 
-    // Listagem do tenant B não inclui o recurso do tenant A.
-    const listFromB = await requestJson(
-      app.port,
-      'GET',
-      '/tmf-api/resourceInventoryManagement/v4/resource',
-      TENANT_B,
-    );
-    assert.equal(listFromB.statusCode, 200);
-    const idsFromB = (listFromB.body as Array<{ id: string }>).map((item) => item.id);
-    assert.ok(!idsFromB.includes(resourceAId));
-  } finally {
-    await app.cleanup();
-  }
-});
+      // Listagem do tenant B não inclui o recurso do tenant A.
+      const listFromB = await requestJson(
+        app.port,
+        'GET',
+        '/tmf-api/resourceInventoryManagement/v4/resource',
+        TENANT_B,
+      );
+      assert.equal(listFromB.statusCode, 200);
+      const idsFromB = (listFromB.body as Array<{ id: string }>).map((item) => item.id);
+      assert.ok(!idsFromB.includes(resourceAId));
+    } finally {
+      await app.cleanup();
+    }
+  },
+);
 
 test.skipIf(!oracleConfigured)('V-04: Service — catálogo isolado por tenant', async () => {
   const app = await startApp();
@@ -252,16 +255,27 @@ test.skipIf(!oracleConfigured)(
   async () => {
     const app = await startApp();
     try {
-      const partyA = await requestJson(app.port, 'POST', '/tmf-api/partyManagement/v4/party', TENANT_A, {
-        name: 'ISP A cliente',
-        partyType: 'Organization',
-      });
+      const partyA = await requestJson(
+        app.port,
+        'POST',
+        '/tmf-api/partyManagement/v4/party',
+        TENANT_A,
+        {
+          name: 'ISP A cliente',
+          partyType: 'Organization',
+        },
+      );
       assert.equal(partyA.statusCode, 201);
       const partyAId = (partyA.body as { id: string }).id;
 
       // Listagem do tenant B não inclui o Party criado pelo tenant A — evita vazar a carteira de
       // clientes de um ISP para outro.
-      const listFromB = await requestJson(app.port, 'GET', '/tmf-api/partyManagement/v4/party', TENANT_B);
+      const listFromB = await requestJson(
+        app.port,
+        'GET',
+        '/tmf-api/partyManagement/v4/party',
+        TENANT_B,
+      );
       assert.equal(listFromB.statusCode, 200);
       const idsFromB = (listFromB.body as Array<{ id: string }>).map((item) => item.id);
       assert.ok(!idsFromB.includes(partyAId));

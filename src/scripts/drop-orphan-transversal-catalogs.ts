@@ -15,7 +15,10 @@ import { createDatabaseClient } from '../shared/persistence/database-factory.js'
 
 loadEnv();
 
-const ORPHAN_TABLES = ['tmf_relationship_type_catalog', 'tmf_characteristic_group_catalog'] as const;
+const ORPHAN_TABLES = [
+  'tmf_relationship_type_catalog',
+  'tmf_characteristic_group_catalog',
+] as const;
 
 const hasFlag = (flag: string): boolean => process.argv.includes(flag);
 const apply = hasFlag('--apply');
@@ -42,7 +45,9 @@ const tableExists = async (table: string): Promise<boolean> => {
 };
 
 const countRows = async (table: string): Promise<number> => {
-  const row = await client.queryOne<{ count: number | string }>(`SELECT COUNT(*) AS count FROM ${table}`);
+  const row = await client.queryOne<{ count: number | string }>(
+    `SELECT COUNT(*) AS count FROM ${table}`,
+  );
   return toNumber(row?.count ?? 0);
 };
 

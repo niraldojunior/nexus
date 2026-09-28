@@ -10,7 +10,10 @@ import {
   Search,
   GripVertical,
 } from 'lucide-react';
-import type { ResourceCatalogTreeNode, ResourceCatalogNode } from '../../../services/resourceCatalogApi';
+import type {
+  ResourceCatalogTreeNode,
+  ResourceCatalogNode,
+} from '../../../services/resourceCatalogApi';
 import { isLogicalResourceNode } from '../../../utils/resourceNodeNature';
 import { resolveNodeIcon } from './catalogNodeIcons';
 import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPreviewUrl';
@@ -34,7 +37,9 @@ function ResourceTypeTreeIcon({
   return previewUrl ? (
     <img src={previewUrl} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />
   ) : (
-    <FallbackIcon className={`h-4 w-4 shrink-0 ${isLogical ? 'text-purple-600' : 'text-sky-600'}`} />
+    <FallbackIcon
+      className={`h-4 w-4 shrink-0 ${isLogical ? 'text-purple-600' : 'text-sky-600'}`}
+    />
   );
 }
 
@@ -297,7 +302,11 @@ export function ResourceCatalogTree({
 
     const isLogical = isLogicalResourceNode(node);
     const customIconName = node.metadata?.icon as string | undefined;
-    const hasCustomIcon = Boolean(customIconName && customIconName !== 'Folder' && customIconName !== (isLogical ? 'Cpu' : 'Box'));
+    const hasCustomIcon = Boolean(
+      customIconName &&
+      customIconName !== 'Folder' &&
+      customIconName !== (isLogical ? 'Cpu' : 'Box'),
+    );
     const CustomGroupIcon = resolveNodeIcon(customIconName, 'GROUP', false);
     const CustomResourceIcon = resolveNodeIcon(customIconName, 'RESOURCE_TYPE', isLogical);
 

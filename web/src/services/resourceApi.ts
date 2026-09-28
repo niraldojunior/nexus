@@ -710,7 +710,11 @@ export type PhysicalResourceDetail = {
 };
 
 export type ResourcePortConnection = {
-  resource: ResourceDetailReference & { name: string; '@referredType': 'PhysicalResource'; resourceType: string };
+  resource: ResourceDetailReference & {
+    name: string;
+    '@referredType': 'PhysicalResource';
+    resourceType: string;
+  };
   active: boolean;
   validFor?: TimePeriod;
   /** ONT alimentada por este drop (via grafo físico), presente só na conexão ativa. */
@@ -796,7 +800,9 @@ export type ResourceComponentsView = {
   truncated: boolean;
 };
 
-export async function fetchResourceConnections(resourceId: string): Promise<ResourceConnectionsView> {
+export async function fetchResourceConnections(
+  resourceId: string,
+): Promise<ResourceConnectionsView> {
   return await requestJson<ResourceConnectionsView>(
     `/v1/resources/${encodeURIComponent(resourceId)}/connections`,
   );
@@ -813,22 +819,30 @@ export async function fetchResourceComponents(
 }
 
 export async function fetchResourcePortDetail(portId: string): Promise<ResourcePortDetail> {
-  return await requestJson<ResourcePortDetail>(`/v1/resources/${encodeURIComponent(portId)}/port-detail`);
+  return await requestJson<ResourcePortDetail>(
+    `/v1/resources/${encodeURIComponent(portId)}/port-detail`,
+  );
 }
 
 export async function fetchPhysicalResourceDetail(id: string): Promise<PhysicalResourceDetail> {
-  return await requestJson<PhysicalResourceDetail>(`/v1/resources/${encodeURIComponent(id)}/detail`);
+  return await requestJson<PhysicalResourceDetail>(
+    `/v1/resources/${encodeURIComponent(id)}/detail`,
+  );
 }
 
 export async function fetchPhysicalResourceAudit(id: string): Promise<ResourceAuditEntry[]> {
   return await requestJson<ResourceAuditEntry[]>(`/v1/resources/${encodeURIComponent(id)}/audit`);
 }
 
-export async function listResourceStatusCatalog(resourceType?: string): Promise<ResourceStatusCatalogEntry[]> {
+export async function listResourceStatusCatalog(
+  resourceType?: string,
+): Promise<ResourceStatusCatalogEntry[]> {
   const searchParams = new URLSearchParams();
   if (resourceType) searchParams.set('resourceType', resourceType);
   const query = searchParams.toString();
-  return await requestJson<ResourceStatusCatalogEntry[]>(`/v1/resource-statuses${query ? `?${query}` : ''}`);
+  return await requestJson<ResourceStatusCatalogEntry[]>(
+    `/v1/resource-statuses${query ? `?${query}` : ''}`,
+  );
 }
 
 export type ResourceRelationshipPayload = {

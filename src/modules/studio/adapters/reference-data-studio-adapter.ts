@@ -5,7 +5,11 @@
 // (C6), reativação restabelece a baseline ao republicar.
 
 import { AppError } from '../../../shared/errors/app-error.js';
-import type { StudioDomainAdapter, StudioValidationIssue, StudioValidationResult } from '../domain.js';
+import type {
+  StudioDomainAdapter,
+  StudioValidationIssue,
+  StudioValidationResult,
+} from '../domain.js';
 import type { IReferenceDataRepository } from '../../reference-data/repository.js';
 
 export type ReferenceDataValueSnapshot = {
@@ -117,7 +121,10 @@ export class ReferenceDataStudioAdapter implements StudioDomainAdapter {
     return { valid: issues.length === 0, issues, validatedAt: new Date().toISOString() };
   }
 
-  public async materialize(snapshot: Record<string, unknown>, context: { tenantId: string }): Promise<void> {
+  public async materialize(
+    snapshot: Record<string, unknown>,
+    context: { tenantId: string },
+  ): Promise<void> {
     const validation = await this.validate(snapshot);
     if (!validation.valid) {
       throw new AppError(validation.issues.map((issue) => issue.message).join('; '), {
@@ -136,10 +143,13 @@ export class ReferenceDataStudioAdapter implements StudioDomainAdapter {
     for (const set of typed.sets) {
       const current = set.id ? existingSetsById.get(set.id) : existingSetsByKey.get(set.key.trim());
       if (set.id && !current) {
-        throw new AppError(`O conjunto ${set.id} não pertence ao domínio Dados de Referência do Studio.`, {
-          code: 'STUDIO_MATERIALIZE_INVALID',
-          statusCode: 422,
-        });
+        throw new AppError(
+          `O conjunto ${set.id} não pertence ao domínio Dados de Referência do Studio.`,
+          {
+            code: 'STUDIO_MATERIALIZE_INVALID',
+            statusCode: 422,
+          },
+        );
       }
 
       let materialized = current

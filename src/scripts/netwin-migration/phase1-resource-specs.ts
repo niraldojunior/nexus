@@ -12,37 +12,194 @@ export type ResourceTypeItem = {
   geometryKind?: 'POINT' | 'LINE' | 'POLYGON';
 };
 
+export type ResourceCatalogLoadSummary = {
+  catalogCode: string;
+  catalogName: string;
+  groupCount: number;
+  resourceTypeNodeCount: number;
+  referencedResourceTypeCount: number;
+  resourceSpecificationCount: number;
+};
+
+export const formatResourceCatalogLoadSummary = (
+  tenantId: string,
+  summary: ResourceCatalogLoadSummary,
+): string =>
+  [
+    'Modelagem de Recursos disponível no Studio:',
+    `tenant=${tenantId}`,
+    `catalogo=${summary.catalogCode} (${summary.catalogName})`,
+    `grupos=${summary.groupCount}`,
+    `folhas=${summary.resourceTypeNodeCount}`,
+    `tiposReferenciados=${summary.referencedResourceTypeCount}`,
+    `especificacoes=${summary.resourceSpecificationCount}`,
+    'Acesse o Studio com uma sessão do mesmo tenant para visualizar esta árvore.',
+  ].join(' | ');
+
 export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
   // Equipamentos Ópticos de Acesso / Planta Externa
-  { code: 'category:CDOE', name: 'CDOE', description: 'Caixa de Distribuição Óptica Externa', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'category:CDOI', name: 'CDOI', description: 'Caixa de Distribuição Óptica Interna', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'SpliceClosure', name: 'Caixa de Emenda Óptica', description: 'CEO / CEOS de fusão óptica', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'OpticalNode', name: 'Nó Óptico', description: 'Nó óptico de transição ou terminação', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'Splitter', name: 'Splitter Óptico', description: 'Divisor óptico passivo (1xN ou 2xN)', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'DIO', name: 'Distribuidor Interno Óptico', description: 'Bastidor ou bandeja óptica (ODF)', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'CTO', name: 'Caixa de Terminação Óptica', description: 'Terminação óptica de cliente / rede', mapPresence: true, geometryKind: 'POINT' },
+  {
+    code: 'category:CDOE',
+    name: 'CDOE',
+    description: 'Caixa de Distribuição Óptica Externa',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'category:CDOI',
+    name: 'CDOI',
+    description: 'Caixa de Distribuição Óptica Interna',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'SpliceClosure',
+    name: 'Caixa de Emenda Óptica',
+    description: 'CEO / CEOS de fusão óptica',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'OpticalNode',
+    name: 'Nó Óptico',
+    description: 'Nó óptico de transição ou terminação',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'Splitter',
+    name: 'Splitter Óptico',
+    description: 'Divisor óptico passivo (1xN ou 2xN)',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'DIO',
+    name: 'Distribuidor Interno Óptico',
+    description: 'Bastidor ou bandeja óptica (ODF)',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'CTO',
+    name: 'Caixa de Terminação Óptica',
+    description: 'Terminação óptica de cliente / rede',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
   { code: 'OLT', name: 'OLT', description: 'Terminal de Linha Óptica' },
   { code: 'ONT', name: 'ONT', description: 'Terminal de Rede Óptica' },
+  { code: 'Card', name: 'Card / Module', description: 'Placa ou módulo de equipamento' },
+  { code: 'Port', name: 'Port', description: 'Porta física de equipamento ou caixa óptica' },
+  { code: 'PONPort', name: 'Porta PON', description: 'Porta PON de equipamento de acesso' },
+  { code: 'ONTPort', name: 'Porta ONT', description: 'Porta da ONT de cliente' },
+  { code: 'Frame', name: 'Frame', description: 'Bastidor de planta interna' },
+  { code: 'Shelf', name: 'Shelf', description: 'Prateleira ou chassi de equipamento' },
+  { code: 'Slot', name: 'Slot', description: 'Posição física de módulo ou placa' },
 
   // Cabos Ópticos
-  { code: 'BackboneCable', name: 'Cabo Backbone', description: 'Cabo tronco / transporte (>= 96 FO)', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'DistributionCable', name: 'Cabo de Distribuição', description: 'Cabo de distribuição (12 a 72 FO)', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'DropCable', name: 'Cabo Drop', description: 'Cabo drop de atendimento ao assinante (< 12 FO)', mapPresence: true, geometryKind: 'LINE' },
+  {
+    code: 'BackboneCable',
+    name: 'Cabo Backbone',
+    description: 'Cabo tronco / transporte (>= 96 FO)',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'DistributionCable',
+    name: 'Cabo de Distribuição',
+    description: 'Cabo de distribuição (12 a 72 FO)',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'DropCable',
+    name: 'Cabo Drop',
+    description: 'Cabo drop de atendimento ao assinante (< 12 FO)',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
 
   // Infraestrutura Civil e Vias
-  { code: 'Pole', name: 'Poste', description: 'Poste da rede aérea', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'Manhole', name: 'Caixa Subterrânea', description: 'Caixa de passagem ou câmara subterrânea', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'Duct', name: 'Duto Subterrâneo', description: 'Duto ou duto canalizado para cabos', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'AerialSpan', name: 'Lance Aéreo', description: 'Trecho aéreo de sustentação de cabos', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'BuriedSpan', name: 'Lance Enterrado', description: 'Trecho diretamente enterrado de cabos', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'InnerSpan', name: 'Lance Interno', description: 'Trecho interno em esteiramento ou tubulação', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'OtherSpan', name: 'Lance (Outro)', description: 'Outro tipo de via de infraestrutura', mapPresence: true, geometryKind: 'LINE' },
-  { code: 'Tower', name: 'Torre', description: 'Torre de telecomunicações', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'Pedestal', name: 'Pedestal', description: 'Armário baixo de calçada para distribuição', mapPresence: true, geometryKind: 'POINT' },
-  { code: 'RisingTube', name: 'Tubo de Subida', description: 'Tubo de subida lateral de poste ou parede' },
-  { code: 'CableTunnel', name: 'Túnel de Cabos', description: 'Galeria ou túnel de cabos de central' },
+  {
+    code: 'Pole',
+    name: 'Poste',
+    description: 'Poste da rede aérea',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'Manhole',
+    name: 'Caixa Subterrânea',
+    description: 'Caixa de passagem ou câmara subterrânea',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'Duct',
+    name: 'Duto Subterrâneo',
+    description: 'Duto ou duto canalizado para cabos',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'AerialSpan',
+    name: 'Lance Aéreo',
+    description: 'Trecho aéreo de sustentação de cabos',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'BuriedSpan',
+    name: 'Lance Enterrado',
+    description: 'Trecho diretamente enterrado de cabos',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'InnerSpan',
+    name: 'Lance Interno',
+    description: 'Trecho interno em esteiramento ou tubulação',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'OtherSpan',
+    name: 'Lance (Outro)',
+    description: 'Outro tipo de via de infraestrutura',
+    mapPresence: true,
+    geometryKind: 'LINE',
+  },
+  {
+    code: 'Tower',
+    name: 'Torre',
+    description: 'Torre de telecomunicações',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'Pedestal',
+    name: 'Pedestal',
+    description: 'Armário baixo de calçada para distribuição',
+    mapPresence: true,
+    geometryKind: 'POINT',
+  },
+  {
+    code: 'RisingTube',
+    name: 'Tubo de Subida',
+    description: 'Tubo de subida lateral de poste ou parede',
+  },
+  {
+    code: 'CableTunnel',
+    name: 'Túnel de Cabos',
+    description: 'Galeria ou túnel de cabos de central',
+  },
   { code: 'IronPipe', name: 'Tubo de Ferro', description: 'Tubulação metálica de proteção' },
-  { code: 'SupportBracket', name: 'Suporte / Braço', description: 'Braço ou suporte de fixação em poste' },
+  {
+    code: 'SupportBracket',
+    name: 'Suporte / Braço',
+    description: 'Braço ou suporte de fixação em poste',
+  },
 
   // Equipamentos de Transporte e Core
   { code: 'Router', name: 'Router', description: 'Roteador de borda ou core' },
@@ -52,7 +209,9 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
 
 export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<PhaseStats> {
   const stats: PhaseStats = { loaded: 0, updated: 0, skipped: 0, rejected: 0, errors: 0 };
-  console.log('\n=== Fase 1.D: Tipos e Especificações de Recursos (Studio / Resource Management) ===');
+  console.log(
+    '\n=== Fase 1.D: Tipos e Especificações de Recursos (Studio / Resource Management) ===',
+  );
 
   const source = await ctx.getSourceConnection();
   const target = await ctx.getTargetConnection();
@@ -62,20 +221,38 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
 
     // 1. Carrega ResourceTypes pré-existentes do tenant para reutilizar IDs
     if (target) {
-      const existingTypes = await target.execute<{ ID: string; CODE: string }>(
-        `SELECT id, code FROM ${ctx.t('tmf_resource_type')} WHERE tenant_id = :1`,
+      const existingTypes = await target.execute<{ ID: string; CODE: string; TENANT_ID: string }>(
+        `SELECT id, code, tenant_id
+           FROM ${ctx.t('tmf_resource_type')}
+          WHERE tenant_id IN (:1, 'default')
+          ORDER BY CASE WHEN tenant_id = 'default' THEN 0 ELSE 1 END, id`,
         [ctx.options.tenantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
+      const sharedTypeCodes = new Set<string>();
       for (const row of existingTypes.rows ?? []) {
-        resourceTypeIdByCode.set(row.CODE, row.ID);
+        // ResourceType é vocabulário canônico compartilhado. Quando o bootstrap já
+        // oferece um tipo em `default` (Port/Splitter inclusive), a specification e
+        // o nó Studio do tenant devem referenciar exatamente esse ID, nunca um clone.
+        if (!resourceTypeIdByCode.has(row.CODE) || row.TENANT_ID === 'default') {
+          resourceTypeIdByCode.set(row.CODE, row.ID);
+        }
+        if (row.TENANT_ID === 'default') sharedTypeCodes.add(row.CODE);
       }
 
-      // Cadastra/atualiza todos os ResourceTypes canônicos
+      // Só materializa um tipo tenant-local quando ainda não existe vocabulário
+      // canônico compartilhado para o code. Specifications e catálogo seguem tenant-scoped.
       for (const rt of CANONICAL_RESOURCE_TYPES) {
         let typeId = resourceTypeIdByCode.get(rt.code);
+        if (sharedTypeCodes.has(rt.code)) {
+          stats.loaded++;
+          continue;
+        }
         if (!typeId) {
-          typeId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_TYPE:${ctx.options.tenantId}:${rt.code}`);
+          typeId = deterministicUuid(
+            NEXUS_NETWIN_NAMESPACE,
+            `RESOURCE_TYPE:${ctx.options.tenantId}:${rt.code}`,
+          );
           resourceTypeIdByCode.set(rt.code, typeId);
         }
 
@@ -134,6 +311,14 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       { name: 'Netwin Buried Span', typeCode: 'BuriedSpan' },
       { name: 'Netwin Inner Span', typeCode: 'InnerSpan' },
       { name: 'Netwin Optical Frame', typeCode: 'DIO' },
+      { name: 'Netwin Rack', typeCode: 'Rack' },
+      { name: 'Netwin Frame', typeCode: 'Frame' },
+      { name: 'Netwin Shelf', typeCode: 'Shelf' },
+      { name: 'Netwin Slot', typeCode: 'Slot' },
+      { name: 'Netwin OLT', typeCode: 'OLT' },
+      { name: 'Netwin Card', typeCode: 'Card' },
+      { name: 'Netwin Port', typeCode: 'Port' },
+      { name: 'Netwin PON Port', typeCode: 'PONPort' },
       { name: 'Netwin Tower', typeCode: 'Tower' },
       { name: 'Netwin Pedestal', typeCode: 'Pedestal' },
     ];
@@ -178,7 +363,10 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       const cap = Number(cm.CAPACIDADE ?? 0);
       const typeCode = cap >= 96 ? 'BackboneCable' : cap >= 12 ? 'DistributionCable' : 'DropCable';
       const typeId = resourceTypeIdByCode.get(typeCode)!;
-      const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:CABLE_MODEL:${cm.ID}`);
+      const specId = deterministicUuid(
+        NEXUS_NETWIN_NAMESPACE,
+        `RESOURCE_SPEC:CABLE_MODEL:${cm.ID}`,
+      );
 
       if (target) {
         await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
@@ -234,7 +422,11 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       }
 
       // Mapeamento de nós ativos existentes para não violar a constraint única
-      const existingNodes = await target.execute<{ ID: string; CODE: string; RESOURCE_TYPE_ID: string | null }>(
+      const existingNodes = await target.execute<{
+        ID: string;
+        CODE: string;
+        RESOURCE_TYPE_ID: string | null;
+      }>(
         `SELECT id, code, resource_type_id FROM ${ctx.t('tmf_resource_catalog_node')} WHERE tenant_id = :1 AND catalog_id = :2`,
         [ctx.options.tenantId, catalogId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -257,7 +449,21 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           groupCode: 'grp-equipamentos-opticos',
           groupName: 'Equipamentos Ópticos e Acesso',
           sortOrder: 10,
-          types: ['category:CDOE', 'category:CDOI', 'SpliceClosure', 'OpticalNode', 'Splitter', 'DIO', 'CTO', 'OLT', 'ONT'],
+          types: [
+            'category:CDOE',
+            'category:CDOI',
+            'SpliceClosure',
+            'OpticalNode',
+            'Splitter',
+            'DIO',
+            'CTO',
+            'OLT',
+            'ONT',
+            'Card',
+            'Port',
+            'PONPort',
+            'ONTPort',
+          ],
         },
         {
           groupCode: 'grp-cabos-opticos',
@@ -270,22 +476,36 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           groupName: 'Infraestrutura Civil e Vias',
           sortOrder: 30,
           types: [
-            'Pole', 'Manhole', 'Duct', 'AerialSpan', 'BuriedSpan', 'InnerSpan', 'OtherSpan',
-            'Tower', 'Pedestal', 'RisingTube', 'CableTunnel', 'IronPipe', 'SupportBracket',
+            'Pole',
+            'Manhole',
+            'Duct',
+            'AerialSpan',
+            'BuriedSpan',
+            'InnerSpan',
+            'OtherSpan',
+            'Tower',
+            'Pedestal',
+            'RisingTube',
+            'CableTunnel',
+            'IronPipe',
+            'SupportBracket',
           ],
         },
         {
           groupCode: 'grp-equipamentos-core',
           groupName: 'Equipamentos de Transporte e Core',
           sortOrder: 40,
-          types: ['Router', 'Switch', 'Rack'],
+          types: ['Router', 'Switch', 'Rack', 'Frame', 'Shelf', 'Slot'],
         },
       ];
 
       for (const grp of catalogHierarchy) {
         const grpNodeId =
           existingNodeIdByCode.get(grp.groupCode) ??
-          deterministicUuid(NEXUS_NETWIN_NAMESPACE, `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${grp.groupCode}`);
+          deterministicUuid(
+            NEXUS_NETWIN_NAMESPACE,
+            `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${grp.groupCode}`,
+          );
 
         await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
           id: grpNodeId,
@@ -312,7 +532,10 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           const leafNodeId =
             existingNodeIdByTypeId.get(typeId) ??
             existingNodeIdByCode.get(typeCode) ??
-            deterministicUuid(NEXUS_NETWIN_NAMESPACE, `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${typeCode}`);
+            deterministicUuid(
+              NEXUS_NETWIN_NAMESPACE,
+              `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${typeCode}`,
+            );
 
           await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
             id: leafNodeId,
@@ -331,9 +554,51 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       }
 
       await target.execute('COMMIT');
+
+      const catalogSummary = await target.execute<{
+        CATALOG_CODE: string;
+        CATALOG_NAME: string;
+        GROUP_COUNT: number;
+        RESOURCE_TYPE_NODE_COUNT: number;
+        REFERENCED_RESOURCE_TYPE_COUNT: number;
+        RESOURCE_SPECIFICATION_COUNT: number;
+      }>(
+        `SELECT c.code AS catalog_code,
+                c.name AS catalog_name,
+                COUNT(CASE WHEN n.kind = 'GROUP' AND n.status = 'active' THEN 1 END) AS group_count,
+                COUNT(CASE WHEN n.kind = 'RESOURCE_TYPE' AND n.status = 'active' THEN 1 END) AS resource_type_node_count,
+                COUNT(DISTINCT CASE WHEN n.kind = 'RESOURCE_TYPE' AND n.status = 'active' THEN n.resource_type_id END) AS referenced_resource_type_count,
+                (SELECT COUNT(*)
+                   FROM ${ctx.t('tmf_resource_specification')} s
+                  WHERE s.tenant_id = :tenantId) AS resource_specification_count
+           FROM ${ctx.t('tmf_resource_catalog')} c
+           LEFT JOIN ${ctx.t('tmf_resource_catalog_node')} n
+             ON n.catalog_id = c.id
+            AND n.tenant_id = c.tenant_id
+          WHERE c.id = :catalogId
+            AND c.tenant_id = :tenantId
+          GROUP BY c.code, c.name`,
+        { catalogId, tenantId: ctx.options.tenantId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const row = catalogSummary.rows?.[0];
+      if (row) {
+        console.log(
+          formatResourceCatalogLoadSummary(ctx.options.tenantId, {
+            catalogCode: row.CATALOG_CODE,
+            catalogName: row.CATALOG_NAME,
+            groupCount: Number(row.GROUP_COUNT),
+            resourceTypeNodeCount: Number(row.RESOURCE_TYPE_NODE_COUNT),
+            referencedResourceTypeCount: Number(row.REFERENCED_RESOURCE_TYPE_COUNT),
+            resourceSpecificationCount: Number(row.RESOURCE_SPECIFICATION_COUNT),
+          }),
+        );
+      }
     }
 
-    console.log(`Fase 1.D concluída: ${stats.loaded} ResourceTypes e ResourceSpecifications cadastrados.`);
+    console.log(
+      `Fase 1.D concluída: ${stats.loaded} ResourceTypes e ResourceSpecifications cadastrados.`,
+    );
     return stats;
   } finally {
     await source.close();

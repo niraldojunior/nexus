@@ -133,9 +133,7 @@ describe('GeoSearchBar', () => {
     expect(
       screen.getByRole('button', { name: 'Editar seleção Estação Icaraí' }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByPlaceholderText('Pesquise no Nexus'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Pesquise no Nexus')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Estação' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Editar seleção Estação Icaraí' }));
@@ -1047,9 +1045,7 @@ describe('GeoSearchBar histórico', () => {
       />,
     );
 
-    expect(
-      screen.queryByPlaceholderText('Pesquise no Nexus'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Pesquise no Nexus')).not.toBeInTheDocument();
     expect(screen.queryByText('Recentes')).not.toBeInTheDocument();
   });
 

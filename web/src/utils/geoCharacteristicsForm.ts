@@ -5,14 +5,7 @@
 import type { GeoCharacteristicLevel, GeoSpecCharacteristic } from '../services/geoApi';
 
 export type CharacteristicValueType =
-  | 'string'
-  | 'integer'
-  | 'decimal'
-  | 'boolean'
-  | 'date'
-  | 'list'
-  | 'organization'
-  | 'json';
+  'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'list' | 'organization' | 'json';
 
 /**
  * Linha editável de característica de local — `key` só existe no cliente (identidade de lista no
@@ -170,7 +163,8 @@ export function buildGeoCharacteristicPayload(
         row.valueType === 'list' && row.referenceDataSetKey ? row.referenceDataSetKey : undefined;
       let allowedValues: string[] | undefined;
       if (row.valueType === 'organization') {
-        allowedValues = row.allowedValues && row.allowedValues.length > 0 ? row.allowedValues : undefined;
+        allowedValues =
+          row.allowedValues && row.allowedValues.length > 0 ? row.allowedValues : undefined;
       } else if (row.valueType === 'list' && !referenceDataSetKey) {
         allowedValues = parseAllowedValues(row.allowedValuesText) ?? row.allowedValues;
       }
@@ -183,7 +177,9 @@ export function buildGeoCharacteristicPayload(
         ...(row.group?.trim() ? { group: row.group.trim() } : {}),
         ...(allowedValues && allowedValues.length > 0 ? { allowedValues } : {}),
         ...(referenceDataSetKey ? { referenceDataSetKey } : {}),
-        ...(row.characteristicLevel === 'instance' ? { characteristicLevel: 'instance' as const } : {}),
+        ...(row.characteristicLevel === 'instance'
+          ? { characteristicLevel: 'instance' as const }
+          : {}),
       };
     });
 }

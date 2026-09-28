@@ -15,7 +15,9 @@ export type PartyViewParams = {
   roleId?: string;
 };
 
-export function parsePartyViewParams(search: string = typeof window !== 'undefined' ? window.location.search : ''): PartyViewParams {
+export function parsePartyViewParams(
+  search: string = typeof window !== 'undefined' ? window.location.search : '',
+): PartyViewParams {
   const params = new URLSearchParams(search);
   const org = params.get(PARAM_ORG)?.trim();
   const role = params.get(PARAM_ROLE)?.trim();
@@ -25,7 +27,10 @@ export function parsePartyViewParams(search: string = typeof window !== 'undefin
   };
 }
 
-export function writePartyViewParams(section: 'organizations' | 'party-roles', selectedId?: string): void {
+export function writePartyViewParams(
+  section: 'organizations' | 'party-roles',
+  selectedId?: string,
+): void {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
 

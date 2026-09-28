@@ -343,30 +343,30 @@ export function ProjectDetailPanel({
         <ChevronLeft className="h-5 w-5" />
       </button>
       <div className="flex min-w-0 items-center justify-center gap-2">
-      <ProjectIcon
-        iconDataUrl={project.iconDataUrl}
-        size={44}
-        onChangeFile={canEdit ? handleIconFile : undefined}
-        label="Alterar ícone do projeto"
-      />
-      <div className="min-w-0 max-w-[220px] flex-1">
-        {canEdit ? (
-          <input
-            ref={titleInputRef}
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={handleTitleKeyDown}
-            aria-label="Nome do projeto"
-            className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
-          />
-        ) : (
-          <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
-            {project.name}
-          </p>
-        )}
-        {iconError ? <p className="mt-1 text-[0.72rem] text-status-red">{iconError}</p> : null}
-      </div>
+        <ProjectIcon
+          iconDataUrl={project.iconDataUrl}
+          size={44}
+          onChangeFile={canEdit ? handleIconFile : undefined}
+          label="Alterar ícone do projeto"
+        />
+        <div className="min-w-0 max-w-[220px] flex-1">
+          {canEdit ? (
+            <input
+              ref={titleInputRef}
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={handleTitleKeyDown}
+              aria-label="Nome do projeto"
+              className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
+            />
+          ) : (
+            <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
+              {project.name}
+            </p>
+          )}
+          {iconError ? <p className="mt-1 text-[0.72rem] text-status-red">{iconError}</p> : null}
+        </div>
       </div>
       {canEdit ? (
         <div className="relative shrink-0">
@@ -1042,7 +1042,7 @@ function ProjectResourceModal({
           <X className="h-4 w-4" />
         </button>
       </div>
-    <form onSubmit={submit} className="grid flex-1 content-start gap-3 overflow-y-auto p-4">
+      <form onSubmit={submit} className="grid flex-1 content-start gap-3 overflow-y-auto p-4">
         {mode === 'resources' ? (
           <label className="grid gap-1 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-app-muted">
             Classe
@@ -1138,7 +1138,7 @@ function ProjectResourceModal({
             {saving ? 'Criando…' : 'Criar'}
           </button>
         </div>
-    </form>
+      </form>
       {confirmDiscard ? (
         <Modal
           onClose={() => setConfirmDiscard(false)}

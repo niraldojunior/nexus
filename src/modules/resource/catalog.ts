@@ -37,7 +37,12 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-dio', 'DIO', 'Distribuidor Interno Óptico', 'Infrastructure.Passive'),
   // Caixa de emenda óptica (CEO/CEOS do Netwin) — junta trechos de cabo sem terminar fibra
   // (ao contrário da CTO, que termina em splitter/porta de cliente).
-  resourceType('rt-splice-closure', 'SpliceClosure', 'Caixa de Emenda Óptica', 'Infrastructure.Passive'),
+  resourceType(
+    'rt-splice-closure',
+    'SpliceClosure',
+    'Caixa de Emenda Óptica',
+    'Infrastructure.Passive',
+  ),
   // Nó óptico ativo intermediário (OSP_CAT_ENTITY.OPT do Netwin) — equipamento eletrônico na
   // planta externa, distinto das caixas passivas acima.
   resourceType('rt-optical-node', 'OpticalNode', 'Nó Óptico', 'Infrastructure.Passive'),
@@ -73,13 +78,23 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-tower', 'Tower', 'Torre', 'Infrastructure.Passive.Aerial'),
   resourceType('rt-mast', 'Mast', 'Mastro', 'Infrastructure.Passive.Aerial'),
   resourceType('rt-subduct', 'Subduct', 'Subduto', 'Infrastructure.Passive.Underground'),
-  resourceType('rt-underground-chamber', 'UndergroundChamber', 'Câmara Subterrânea', 'Infrastructure.Passive.Underground'),
+  resourceType(
+    'rt-underground-chamber',
+    'UndergroundChamber',
+    'Câmara Subterrânea',
+    'Infrastructure.Passive.Underground',
+  ),
   resourceType('rt-trench', 'Trench', 'Canaleta', 'Infrastructure.Passive.Underground'),
   resourceType('rt-frame', 'Frame', 'Bastidor', 'Infrastructure.Passive.Internal'),
   resourceType('rt-shelf', 'Shelf', 'Shelf', 'Infrastructure.Passive.Internal'),
   resourceType('rt-slot', 'Slot', 'Slot', 'Infrastructure.Passive.Internal'),
   resourceType('rt-optical-cable', 'OpticalCable', 'Cabo Óptico', 'Infrastructure.Passive.Optical'),
-  resourceType('rt-optical-connector', 'OpticalConnector', 'Conector Óptico', 'Infrastructure.Passive.Optical'),
+  resourceType(
+    'rt-optical-connector',
+    'OpticalConnector',
+    'Conector Óptico',
+    'Infrastructure.Passive.Optical',
+  ),
   resourceType('rt-onu', 'ONU', 'Optical Network Unit', 'Equipment.Access'),
   resourceType('rt-cdo', 'CDO', 'Caixa de Distribuição Óptica', 'Infrastructure.Passive'),
   resourceType('rt-pon-port', 'PONPort', 'Porta PON', 'Equipment.Access'),
@@ -91,7 +106,12 @@ export const RESOURCE_TYPES: ResourceType[] = [
   resourceType('rt-rectifier', 'Rectifier', 'Retificador', 'Equipment.EnergyFacilities'),
   resourceType('rt-battery-bank', 'BatteryBank', 'Banco de Baterias', 'Equipment.EnergyFacilities'),
   resourceType('rt-generator', 'Generator', 'Gerador', 'Equipment.EnergyFacilities'),
-  resourceType('rt-air-conditioning', 'AirConditioning', 'Ar-condicionado', 'Equipment.EnergyFacilities'),
+  resourceType(
+    'rt-air-conditioning',
+    'AirConditioning',
+    'Ar-condicionado',
+    'Equipment.EnergyFacilities',
+  ),
 ];
 
 export const getResourceTypeByCode = (code: string): ResourceType | undefined =>

@@ -27,11 +27,8 @@ export async function authenticateRegressionPage(
   const session = (await response.json()) as LoginPayload;
   expect(session.token).toBeTruthy();
 
-  await page.addInitScript(
-    ({ token, user }) => {
-      localStorage.setItem('authToken', token);
-      localStorage.setItem('authUser', JSON.stringify(user));
-    },
-    session,
-  );
+  await page.addInitScript(({ token, user }) => {
+    localStorage.setItem('authToken', token);
+    localStorage.setItem('authUser', JSON.stringify(user));
+  }, session);
 }

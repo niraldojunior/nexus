@@ -7,7 +7,14 @@ import { resolveLifecycleStatus } from '../src/scripts/netwin-migration-kit.js';
 // default 'suspended'.
 describe('resolveLifecycleStatus', () => {
   it('reconhece os designations ativos reais da origem, com e sem acento', () => {
-    for (const designation of ['Em Serviço', 'EM SERVICO', 'Disponível', 'Ativo', 'Operacional', 'Instalado']) {
+    for (const designation of [
+      'Em Serviço',
+      'EM SERVICO',
+      'Disponível',
+      'Ativo',
+      'Operacional',
+      'Instalado',
+    ]) {
       expect(resolveLifecycleStatus(designation)).toEqual({
         status: 'active',
         substatus: '',
@@ -36,7 +43,11 @@ describe('resolveLifecycleStatus', () => {
   });
 
   it('assume ativo (não suspenso) quando a designation está ausente, e marca assumed', () => {
-    expect(resolveLifecycleStatus(undefined)).toEqual({ status: 'active', substatus: '', assumed: true });
+    expect(resolveLifecycleStatus(undefined)).toEqual({
+      status: 'active',
+      substatus: '',
+      assumed: true,
+    });
     expect(resolveLifecycleStatus('')).toEqual({ status: 'active', substatus: '', assumed: true });
   });
 

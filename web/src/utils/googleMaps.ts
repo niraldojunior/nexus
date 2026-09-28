@@ -137,9 +137,13 @@ export type GoogleMapsApi = {
     SymbolPath: { CIRCLE: unknown };
     event: {
       clearInstanceListeners: (instance: object) => void;
-          // Dispara uma única vez e se auto-remove — usado pela câmera para encadear os
+      // Dispara uma única vez e se auto-remove — usado pela câmera para encadear os
       // estágios de um voo longo no `idle` (fim de cada animação nativa), ver mapCamera.
-      addListenerOnce: (instance: object, eventName: string, handler: () => void) => GoogleMapsListener;
+      addListenerOnce: (
+        instance: object,
+        eventName: string,
+        handler: () => void,
+      ) => GoogleMapsListener;
       // Dispara um evento sintético na instância — usado para avisar o mapa que seu
       // contêiner mudou de tamanho (ver ResizeObserver em GeoPage), já que redimensionar
       // o `<div>` por CSS não é suficiente para o Maps recalcular a projeção sozinho.

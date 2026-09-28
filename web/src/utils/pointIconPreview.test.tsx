@@ -68,9 +68,7 @@ describe('canonicalPointIconPreviewUrl', () => {
       expect(canonicalPointIconPreviewUrl(stationNode, code, 32)).toMatch(/^data:image\/svg\+xml/);
     }
     for (const code of ['OLT', 'Splitter', 'DIO', 'Pole', 'Tower', 'cdoe', 'cdoi', 'ceo']) {
-      expect(canonicalPointIconPreviewUrl(resourceNode, code, 32)).toMatch(
-        /^data:image\/svg\+xml/,
-      );
+      expect(canonicalPointIconPreviewUrl(resourceNode, code, 32)).toMatch(/^data:image\/svg\+xml/);
     }
   });
 
@@ -115,11 +113,15 @@ describe('resolveOperationalIcon', () => {
       sublabel: 'Central Office',
     };
     const mapIcon = resolveOperationalIcon(facts, { kind: 'system', iconCode: 'CO' }, { size: 32 });
-    const glyph = resolveOperationalIcon(facts, { kind: 'system', iconCode: 'CO' }, {
-      size: 20,
-      context: 'glyph',
-      color: '#0284c7',
-    });
+    const glyph = resolveOperationalIcon(
+      facts,
+      { kind: 'system', iconCode: 'CO' },
+      {
+        size: 20,
+        context: 'glyph',
+        color: '#0284c7',
+      },
+    );
 
     expect(mapIcon.shape).toBe('squircle');
     expect(decodeURIComponent(mapIcon.url ?? '')).toContain('<rect');
@@ -129,7 +131,11 @@ describe('resolveOperationalIcon', () => {
   });
 
   it('mantém o asset do modelo separado do fallback síncrono', () => {
-    const result = resolveOperationalIcon(cdoi, { kind: 'asset', assetId: 'asset-cdoi' }, { size: 32 });
+    const result = resolveOperationalIcon(
+      cdoi,
+      { kind: 'asset', assetId: 'asset-cdoi' },
+      { size: 32 },
+    );
 
     expect(result.assetId).toBe('asset-cdoi');
     expect(result.url).toMatch(/^data:image\/svg\+xml/);

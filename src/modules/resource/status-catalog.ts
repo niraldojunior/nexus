@@ -421,10 +421,7 @@ export const SUBSTATUS_TO_STATUS_CODE: Record<string, string> = Object.fromEntri
       ['OBRA DESCARTADA - OBSTRUÇÃO EXTERNA', 'work_discarded_external_obstruction'],
       ['OBRA DESCARTADA - AUTORIZAÇÃO NEGADA P/ CONSTRUÇÃO', 'work_discarded_auth_denied'],
       ['OBRA DESCARTADA - SEM AUTORIZAÇÃO', 'work_discarded_no_authorization'],
-      [
-        'OBRA DESCARTADA - EDIFICAÇÃO EM CONSTRUÇÃO',
-        'work_discarded_building_under_construction',
-      ],
+      ['OBRA DESCARTADA - EDIFICAÇÃO EM CONSTRUÇÃO', 'work_discarded_building_under_construction'],
       ['OBRA DESCARTADA - NÃO COMPORTA CDO', 'work_discarded_no_room_for_cdo'],
       ['INSTALAÇÃO IMPEDIDA - ÁREA DE RISCO', 'blocked_risk_area'],
       ['INSTALAÇÃO IMPEDIDA - ACESSO OBSTRUÍDO OU INVIÁVEL', 'install_blocked_access_obstructed'],
@@ -453,14 +450,8 @@ const CORRUPTED_STATUS_ALIASES: Readonly<Record<string, string>> = Object.fromEn
   (
     [
       ['AS-BUILT CONCLU¿¿¿¿DO', 'as_built_completed'],
-      [
-        'INSTALA¿¿ÃO IMPEDIDA - ACESSO OBSTRUÍDO OU INVIÁVEL',
-        'install_blocked_access_obstructed',
-      ],
-      [
-        'INSTALAÇÃO IMPEDIDA - ACESSO OBSTRUÃ DO OU INVIÃ VEL',
-        'install_blocked_access_obstructed',
-      ],
+      ['INSTALA¿¿ÃO IMPEDIDA - ACESSO OBSTRUÍDO OU INVIÁVEL', 'install_blocked_access_obstructed'],
+      ['INSTALAÇÃO IMPEDIDA - ACESSO OBSTRUÃ DO OU INVIÃ VEL', 'install_blocked_access_obstructed'],
       ['AUTORIZAÇÃO NEGADA PARA CONSTRU¿¿¿¿ÃO', 'auth_denied_construction'],
     ] as const
   ).map(([text, code]) => [foldStatusText(text), code]),

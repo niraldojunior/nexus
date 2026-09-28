@@ -1,10 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { Modal, Button } from '../../../components/ui';
-import {
-  getIconsForNodeType,
-  type CatalogNodeIconEntry,
-} from './catalogNodeIcons';
+import { getIconsForNodeType, type CatalogNodeIconEntry } from './catalogNodeIcons';
 
 export type IconPickerModalProps = {
   isOpen: boolean;
@@ -28,18 +25,14 @@ export function IconPickerModal({
     currentIcon || (nodeKind === 'GROUP' ? 'Folder' : isLogical ? 'Cpu' : 'Box'),
   );
 
-  const icons = useMemo(
-    () => getIconsForNodeType(nodeKind, isLogical),
-    [nodeKind, isLogical],
-  );
+  const icons = useMemo(() => getIconsForNodeType(nodeKind, isLogical), [nodeKind, isLogical]);
 
   const filteredIcons = useMemo(() => {
     if (!searchTerm.trim()) return icons;
     const term = searchTerm.toLowerCase().trim();
     return icons.filter(
       (entry) =>
-        entry.name.toLowerCase().includes(term) ||
-        entry.label.toLowerCase().includes(term),
+        entry.name.toLowerCase().includes(term) || entry.label.toLowerCase().includes(term),
     );
   }, [icons, searchTerm]);
 

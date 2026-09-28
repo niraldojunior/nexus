@@ -36,7 +36,9 @@ const operationalTone = (value?: string) =>
 // "Em Uso" (active/busy) é verde; ocioso e desconhecido são cinza — sem colidir com o
 // verde de "Desbloqueado" do farol administrativo, que é um eixo diferente do SID.
 const usageTone = (value?: string) =>
-  value === 'active' || value === 'busy' ? `bg-status-green ${DEFAULT_RING}` : `bg-app-muted ${DEFAULT_RING}`;
+  value === 'active' || value === 'busy'
+    ? `bg-status-green ${DEFAULT_RING}`
+    : `bg-app-muted ${DEFAULT_RING}`;
 
 /** Faróis compactos dos três eixos SID/X.731, com texto disponível a leitores de tela. */
 export function ResourceStateLights({
@@ -48,7 +50,7 @@ export function ResourceStateLights({
   const usageHighlight = dropDisabled === true;
   const usageValue = usageHighlight
     ? 'Drop desativado'
-    : USAGE_STATE_LABELS[usageState ?? ''] ?? usageState ?? 'Desconhecido';
+    : (USAGE_STATE_LABELS[usageState ?? ''] ?? usageState ?? 'Desconhecido');
 
   const lights: Light[] = [
     {

@@ -68,7 +68,10 @@ async function api(method, pathname, body) {
 
 /** Busca por nome é substring no repository — filtra o exato aqui. */
 async function findResourceByExactName(name) {
-  const results = await api('GET', `/tmf-api/resourceInventoryManagement/v4/resource?name=${encodeURIComponent(name)}`);
+  const results = await api(
+    'GET',
+    `/tmf-api/resourceInventoryManagement/v4/resource?name=${encodeURIComponent(name)}`,
+  );
   return (results ?? []).find((r) => r.name === name) ?? null;
 }
 
@@ -99,7 +102,14 @@ async function ensureResourceSpec(name, resourceTypeCode) {
   return spec.id;
 }
 
-async function ensureResource({ name, specId, placeId, placeType, serialNumber, characteristic = [] }) {
+async function ensureResource({
+  name,
+  specId,
+  placeId,
+  placeType,
+  serialNumber,
+  characteristic = [],
+}) {
   const found = await findResourceByExactName(name);
   if (found) {
     report.resourcesReused++;
@@ -127,11 +137,15 @@ async function link(fromRef, toRef, relationshipType) {
   if (!fromRef || !toRef) return;
   if (!APPLY) return; // dry-run: nada a ligar, os ids são placeholders
   if (fromRef.id.startsWith('dry-run:') || toRef.id.startsWith('dry-run:')) return;
-  await api('POST', `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`, {
-    id: toRef.id,
-    relationshipType,
-    '@referredType': 'Resource',
-  });
+  await api(
+    'POST',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${fromRef.id}/relationships`,
+    {
+      id: toRef.id,
+      relationshipType,
+      '@referredType': 'Resource',
+    },
+  );
   report.linksCreated++;
 }
 
@@ -222,10 +236,14 @@ async function main() {
   console.log('\n--- Relatório ---');
   console.log(`CDOEs no escopo com razão reconhecida: ${report.cdoesInScope}`);
   if (report.cdoesSkippedNotFound.length) {
-    console.log(`CDOEs não encontradas (rode seed-gpon-niteroi.mjs primeiro): ${report.cdoesSkippedNotFound.join(', ')}`);
+    console.log(
+      `CDOEs não encontradas (rode seed-gpon-niteroi.mjs primeiro): ${report.cdoesSkippedNotFound.join(', ')}`,
+    );
   }
   if (report.cdoesSkippedNoRatio.length) {
-    console.log(`CDOEs sem razão reconhecida (characteristic "capacidade" ausente/inválida), portas NÃO criadas: ${report.cdoesSkippedNoRatio.join(', ')}`);
+    console.log(
+      `CDOEs sem razão reconhecida (characteristic "capacidade" ausente/inválida), portas NÃO criadas: ${report.cdoesSkippedNoRatio.join(', ')}`,
+    );
   }
   if (!APPLY) {
     console.log(`Dry-run — recursos que seriam criados (${report.resourcesToCreate.length}):`);

@@ -3,7 +3,10 @@ import { useResourceTypeVisualIdentities } from '../hooks/useResourceTypeVisualI
 import { useVisualIdentityPreviewUrl } from '../hooks/useVisualIdentityPreviewUrl';
 import type { VisualIdentity } from '../services/studioGeoApi';
 import type { IconResourceLike } from '../utils/resourceIcon';
-import { resourceTypeFallbackColor, resourceTypeFallbackIcon } from '../utils/resourceTypePresentation';
+import {
+  resourceTypeFallbackColor,
+  resourceTypeFallbackIcon,
+} from '../utils/resourceTypePresentation';
 
 export type ResourceIconProps = {
   resource: IconResourceLike | string | undefined;
@@ -51,9 +54,7 @@ export function ResourceIcon({
     );
   }
 
-  const FallbackIcon = presentation
-    ? resourceTypeFallbackIcon(presentation.nature)
-    : Box;
+  const FallbackIcon = presentation ? resourceTypeFallbackIcon(presentation.nature) : Box;
   const fallbackColor = presentation ? resourceTypeFallbackColor(presentation.nature) : '#334155';
 
   if (variant === 'glyph') {

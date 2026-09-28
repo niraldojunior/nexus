@@ -2,8 +2,7 @@
 // Sem dependências externas (React/Node/DOM) para permitir compilação idêntica em ambos os lados.
 
 export type VisualIdentity =
-  | { kind: 'system'; iconCode: string }
-  | { kind: 'asset'; assetId: string };
+  { kind: 'system'; iconCode: string } | { kind: 'asset'; assetId: string };
 
 export const NATIVE_MAP_ICON_CODES = [
   // REAL_ESTATE
@@ -183,9 +182,7 @@ export const NATIVE_MAP_ICON_CODES = [
   'logistics.cross-docking',
 ] as const;
 
-const NATIVE_MAP_ICON_CODE_SET = new Set(
-  NATIVE_MAP_ICON_CODES.map((code) => code.toLowerCase()),
-);
+const NATIVE_MAP_ICON_CODE_SET = new Set(NATIVE_MAP_ICON_CODES.map((code) => code.toLowerCase()));
 
 export function isValidNativeMapIconCode(code: string | null | undefined): boolean {
   if (!code || typeof code !== 'string') return false;

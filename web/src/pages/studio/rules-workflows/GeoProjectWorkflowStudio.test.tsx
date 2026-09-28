@@ -54,7 +54,9 @@ describe('GeoProjectWorkflowStudio', () => {
     render(<GeoProjectWorkflowStudio canEdit isEditing />);
     await waitFor(() => expect(studioApi.getStudioStatus).toHaveBeenCalled());
 
-    expect(await screen.findByText('Nenhum estado configurado neste snapshot.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Nenhum estado configurado neste snapshot.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Workflow de Projetos \(GeoProject\)/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/Estados operacionais, matriz de transições permitidas/),
@@ -95,7 +97,9 @@ describe('GeoProjectWorkflowStudio', () => {
     await user.type(within(modal).getByLabelText('Nome'), 'Planejado');
     await user.click(within(modal).getByRole('button', { name: 'Criar' }));
 
-    expect(screen.queryByRole('dialog', { name: 'Criar estado de Projeto' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('dialog', { name: 'Criar estado de Projeto' }),
+    ).not.toBeInTheDocument();
     const row = screen.getByText('Planejado').closest('tr');
     expect(row).not.toBeNull();
     const initialRadio = within(row as HTMLElement).getByRole('radio', {
@@ -113,7 +117,15 @@ describe('GeoProjectWorkflowStudio', () => {
         schemaVersion: 1,
         workflowId: 'geo-project',
         initialStateCode: 'planned',
-        states: [{ code: 'planned', name: 'Planejado', sortOrder: 100, active: true, behavior: 'planning' }],
+        states: [
+          {
+            code: 'planned',
+            name: 'Planejado',
+            sortOrder: 100,
+            active: true,
+            behavior: 'planning',
+          },
+        ],
         transitions: [],
       }),
     );
@@ -138,8 +150,20 @@ describe('GeoProjectWorkflowStudio', () => {
         workflowId: 'geo-project',
         initialStateCode: 'planned',
         states: [
-          { code: 'planned', name: 'Planejado', sortOrder: 100, active: true, behavior: 'planning' },
-          { code: 'execution', name: 'Em execução', sortOrder: 200, active: true, behavior: 'execution' },
+          {
+            code: 'planned',
+            name: 'Planejado',
+            sortOrder: 100,
+            active: true,
+            behavior: 'planning',
+          },
+          {
+            code: 'execution',
+            name: 'Em execução',
+            sortOrder: 200,
+            active: true,
+            behavior: 'execution',
+          },
         ],
         transitions: [],
       }),
@@ -169,7 +193,15 @@ describe('GeoProjectWorkflowStudio', () => {
         schemaVersion: 1,
         workflowId: 'geo-project',
         initialStateCode: 'planned',
-        states: [{ code: 'planned', name: 'Planejado', sortOrder: 100, active: true, behavior: 'planning' }],
+        states: [
+          {
+            code: 'planned',
+            name: 'Planejado',
+            sortOrder: 100,
+            active: true,
+            behavior: 'planning',
+          },
+        ],
         transitions: [],
       }),
     );

@@ -26,7 +26,9 @@ export const orderedTablesForDestruction = (tables: readonly string[]): string[]
     return PREFIXABLE_TABLE_NAMES.indexOf(right) - PREFIXABLE_TABLE_NAMES.indexOf(left);
   });
 
-export const discoverOracleEnvironments = (physicalTableNames: readonly string[]): OracleEnvironment[] => {
+export const discoverOracleEnvironments = (
+  physicalTableNames: readonly string[],
+): OracleEnvironment[] => {
   const grouped = new Map<string, Set<string>>();
   for (const physicalTableName of physicalTableNames) {
     for (const table of PREFIXABLE_TABLE_NAMES) {
@@ -44,7 +46,8 @@ export const discoverOracleEnvironments = (physicalTableNames: readonly string[]
       prefix,
       tableCount: tables.size,
       managedTables: [...tables].sort(
-        (left, right) => PREFIXABLE_TABLE_NAMES.indexOf(left) - PREFIXABLE_TABLE_NAMES.indexOf(right),
+        (left, right) =>
+          PREFIXABLE_TABLE_NAMES.indexOf(left) - PREFIXABLE_TABLE_NAMES.indexOf(right),
       ),
       status: tables.size === PREFIXABLE_TABLE_NAMES.length ? 'complete' : 'partial',
     });
@@ -73,10 +76,10 @@ export type DestroyedOracleEnvironment = {
   remainingTables: string[];
 };
 
-
 type TableRow = { table_name: string };
 
-const physicalName = (prefix: string, table: string): string => prefixed(table, prefix).toUpperCase();
+const physicalName = (prefix: string, table: string): string =>
+  prefixed(table, prefix).toUpperCase();
 
 const tableOfPhysicalName = (name: string, prefix: string): string | undefined => {
   const upperName = name.toUpperCase();
@@ -108,13 +111,25 @@ export class OracleEnvironmentManager {
   public constructor(private readonly databaseConfig: Omit<OracleConfig, 'objectPrefix'>) {}
 
   public async discover(): Promise<OracleEnvironment[]> {
-    return await this.withConnection(async (connection) => await this.discoverWithConnection(connection));
+    return await this.withConnection(
+      async (connection) => await this.discoverWithConnection(connection),
+    );
   }
 
-  public async create(input: { prefix: string; tenantName: string }): Promise<CreatedOracleEnvironment> {
+  public async create(input: {
+    prefix: string;
+    tenantName: string;
+    tenantId?: string;
+  }): Promise<CreatedOracleEnvironment> {
     const prefix = normalizeOracleObjectPrefix(input.prefix);
     const tenantName = input.tenantName.trim();
     if (!tenantName) throw new Error('O nome do Tenant é obrigatório.');
+    const requestedTenantId = input.tenantId?.trim();
+    if (requestedTenantId !== undefined && !/^[a-z][a-z0-9_-]{0,63}$/iu.test(requestedTenantId)) {
+      throw new Error(
+        'O ID inicial do Tenant deve conter apenas letras, números, hífen ou sublinhado e começar por letra.',
+      );
+    }
 
     await this.withConnection(async (connection) => {
       const existing = await this.environmentForPrefix(connection, prefix);
@@ -125,10 +140,14 @@ export class OracleEnvironmentManager {
       }
     });
 
-    const config: OracleConfig = { ...this.databaseConfig, provider: 'oracle', objectPrefix: prefix };
+    const config: OracleConfig = {
+      ...this.databaseConfig,
+      provider: 'oracle',
+      objectPrefix: prefix,
+    };
     const client = createDatabaseClient(config);
     const temporaryPassword = generateTemporaryPassword();
-    const tenantId = createCanonicalId();
+    const tenantId = requestedTenantId ?? createCanonicalId();
     try {
       const priorAutoSchema = process.env.DATABASE_AUTO_SCHEMA;
       process.env.DATABASE_AUTO_SCHEMA = 'true';
@@ -157,12 +176,15 @@ export class OracleEnvironmentManager {
     const prefix = normalizeOracleObjectPrefix(prefixInput);
     return await this.withConnection(async (connection) => {
       const environment = await this.environmentForPrefix(connection, prefix);
-      if (!environment) throw new Error(`Nenhum ambiente Nexus foi encontrado sob o prefixo ${prefix}.`);
+      if (!environment)
+        throw new Error(`Nenhum ambiente Nexus foi encontrado sob o prefixo ${prefix}.`);
 
-      const physicalTables = orderedTablesForDestruction(environment.managedTables).map((table) => ({
-        table,
-        name: physicalName(prefix, table),
-      }));
+      const physicalTables = orderedTablesForDestruction(environment.managedTables).map(
+        (table) => ({
+          table,
+          name: physicalName(prefix, table),
+        }),
+      );
       const droppedTables: string[] = [];
       for (const table of physicalTables) {
         await connection.execute(`DROP TABLE ${table.name} CASCADE CONSTRAINTS PURGE`);
@@ -226,7 +248,9 @@ export class OracleEnvironmentManager {
   }
 
   private async assertCreated(prefix: string, tenantId: string, db: DatabaseClient): Promise<void> {
-    const environment = await this.discover().then((items) => items.find((item) => item.prefix === prefix));
+    const environment = await this.discover().then((items) =>
+      items.find((item) => item.prefix === prefix),
+    );
     if (!environment || environment.managedTables.length !== PREFIXABLE_TABLE_NAMES.length) {
       throw new Error(`O schema criado sob ${prefix} está incompleto.`);
     }
@@ -266,7 +290,8 @@ export class OracleEnvironmentManager {
       prefix,
       tableCount: managedTables.length,
       managedTables: managedTables.sort(
-        (left, right) => PREFIXABLE_TABLE_NAMES.indexOf(left) - PREFIXABLE_TABLE_NAMES.indexOf(right),
+        (left, right) =>
+          PREFIXABLE_TABLE_NAMES.indexOf(left) - PREFIXABLE_TABLE_NAMES.indexOf(right),
       ),
       status: managedTables.length === PREFIXABLE_TABLE_NAMES.length ? 'complete' : 'partial',
     };
@@ -298,4 +323,7 @@ export class OracleEnvironmentManager {
 }
 
 export const isTemporaryPasswordStrong = (password: string): boolean =>
-  password.length >= MIN_PASSWORD_LENGTH && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
+  password.length >= MIN_PASSWORD_LENGTH &&
+  /[A-Z]/.test(password) &&
+  /[a-z]/.test(password) &&
+  /\d/.test(password);

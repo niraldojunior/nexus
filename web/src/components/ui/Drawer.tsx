@@ -80,11 +80,7 @@ export default function Drawer({
                 {title}
               </h3>
             )}
-            {subtitle && (
-              <p className="mt-0.5 truncate text-xs text-app-muted">
-                {subtitle}
-              </p>
-            )}
+            {subtitle && <p className="mt-0.5 truncate text-xs text-app-muted">{subtitle}</p>}
           </div>
           <button
             type="button"

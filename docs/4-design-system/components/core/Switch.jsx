@@ -5,7 +5,15 @@ import React from 'react';
  * Layer / feature toggle. On = brand yellow with ink knob; off = neutral.
  * The default control for the map Layers panel.
  */
-export function Switch({ checked = false, onChange, disabled = false, size = 'md', label, style, ...rest }) {
+export function Switch({
+  checked = false,
+  onChange,
+  disabled = false,
+  size = 'md',
+  label,
+  style,
+  ...rest
+}) {
   const dims = size === 'sm' ? { w: 34, h: 20, k: 14 } : { w: 44, h: 26, k: 20 };
   const pad = (dims.h - dims.k) / 2;
   const toggle = (
@@ -48,8 +56,25 @@ export function Switch({ checked = false, onChange, disabled = false, size = 'md
   );
   if (!label) return toggle;
   return (
-    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: disabled ? 'not-allowed' : 'pointer', ...style }} {...rest}>
-      <span style={{ font: 'var(--fw-regular) var(--fs-body-relaxed)/1.3 var(--font-ui)', color: disabled ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{label}</span>
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        ...style,
+      }}
+      {...rest}
+    >
+      <span
+        style={{
+          font: 'var(--fw-regular) var(--fs-body-relaxed)/1.3 var(--font-ui)',
+          color: disabled ? 'var(--text-disabled)' : 'var(--text-primary)',
+        }}
+      >
+        {label}
+      </span>
       {toggle}
     </label>
   );

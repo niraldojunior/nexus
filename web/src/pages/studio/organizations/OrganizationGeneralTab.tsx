@@ -76,8 +76,7 @@ export function OrganizationGeneralTab({ item, canMutate, onChange }: Organizati
               {item.origin.system || '—'}
             </div>
             <div>
-              <span className="font-medium text-app-text">ID externo:</span>{' '}
-              {item.origin.id || '—'}
+              <span className="font-medium text-app-text">ID externo:</span> {item.origin.id || '—'}
             </div>
           </div>
         </div>

@@ -824,9 +824,13 @@ async function resetStations(client) {
     await client.query(`DELETE FROM tmf_geographic_site WHERE ${idsInJson('id')}`, [allIdsJson]);
   }
   if (addrIds.length)
-    await client.query(`DELETE FROM tmf_geographic_address WHERE ${idsInJson('id')}`, [JSON.stringify(addrIds)]);
+    await client.query(`DELETE FROM tmf_geographic_address WHERE ${idsInJson('id')}`, [
+      JSON.stringify(addrIds),
+    ]);
   if (locIds.length)
-    await client.query(`DELETE FROM tmf_geographic_location WHERE ${idsInJson('id')}`, [JSON.stringify(locIds)]);
+    await client.query(`DELETE FROM tmf_geographic_location WHERE ${idsInJson('id')}`, [
+      JSON.stringify(locIds),
+    ]);
 
   console.log(
     `  Removidos: ${stations.length} estações, ${salas.length} salas, ${addrIds.length} endereços, ${locIds.length} locations.`,

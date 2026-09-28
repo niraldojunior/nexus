@@ -1,14 +1,4 @@
-import {
-  Check,
-  KeyRound,
-  LayoutGrid,
-  Moon,
-  Palette,
-  Sun,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
+import { Check, KeyRound, LayoutGrid, Moon, Palette, Sun, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from '../hooks/useSession';
 import { changeOwnPassword, updateProfile } from '../services/authApi';

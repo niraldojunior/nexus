@@ -39,7 +39,10 @@ async function resourceById(id) {
 }
 
 async function relationships(resourceId) {
-  return await api('GET', `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}/relationships`);
+  return await api(
+    'GET',
+    `/tmf-api/resourceInventoryManagement/v4/resource/${resourceId}/relationships`,
+  );
 }
 
 const hasRelationship = (items, id, relationshipType) =>
@@ -87,11 +90,18 @@ const portIdsForOnt = (services, ontId) => {
     const resources = service.supportingResource ?? [];
     return resources.some((resource) => resource.id === ontId);
   });
-  return [...new Set(candidates.flatMap((service) =>
-    (service.supportingResource ?? [])
-      .filter((resource) => resource.role === 'access' && resource['@referredType'] === 'PhysicalResource')
-      .map((resource) => resource.id),
-  ))];
+  return [
+    ...new Set(
+      candidates.flatMap((service) =>
+        (service.supportingResource ?? [])
+          .filter(
+            (resource) =>
+              resource.role === 'access' && resource['@referredType'] === 'PhysicalResource',
+          )
+          .map((resource) => resource.id),
+      ),
+    ),
+  ];
 };
 
 async function main() {
@@ -107,7 +117,14 @@ async function main() {
   const legacy = (await relationships(cdoe.id)).filter(
     (relationship) => relationship.relationshipType === 'connectedTo',
   );
-  const report = { linked: 0, alreadyCorrect: 0, removed: 0, ambiguous: 0, notFound: 0, ignored: 0 };
+  const report = {
+    linked: 0,
+    alreadyCorrect: 0,
+    removed: 0,
+    ambiguous: 0,
+    notFound: 0,
+    ignored: 0,
+  };
 
   for (const relationship of legacy) {
     const drop = await resourceById(relationship.id);
@@ -116,11 +133,17 @@ async function main() {
       continue;
     }
     const onts = await connectedOntIds(drop.id);
-    const ports = [...new Set((await Promise.all(onts.map(async (ontId) => portIdsForOnt(services, ontId)))).flat())];
+    const ports = [
+      ...new Set(
+        (await Promise.all(onts.map(async (ontId) => portIdsForOnt(services, ontId)))).flat(),
+      ),
+    ];
     if (ports.length !== 1) {
       const kind = ports.length === 0 ? 'notFound' : 'ambiguous';
       report[kind]++;
-      console.log(`  ! ${drop.name}: ${ports.length === 0 ? 'nenhuma' : ports.length} porta(s) correlacionada(s); preservada.`);
+      console.log(
+        `  ! ${drop.name}: ${ports.length === 0 ? 'nenhuma' : ports.length} porta(s) correlacionada(s); preservada.`,
+      );
       continue;
     }
 
@@ -140,9 +163,14 @@ async function main() {
   }
 
   console.log('== Relatório ==');
-  console.log(`Criadas: ${report.linked}; já corretas: ${report.alreadyCorrect}; legadas removidas: ${report.removed}.`);
-  console.log(`Ambíguas: ${report.ambiguous}; não encontradas: ${report.notFound}; ignoradas: ${report.ignored}.`);
-  if (!APPLY) console.log('Nenhuma alteração foi feita. Revise o relatório e rode com --apply para gravar.');
+  console.log(
+    `Criadas: ${report.linked}; já corretas: ${report.alreadyCorrect}; legadas removidas: ${report.removed}.`,
+  );
+  console.log(
+    `Ambíguas: ${report.ambiguous}; não encontradas: ${report.notFound}; ignoradas: ${report.ignored}.`,
+  );
+  if (!APPLY)
+    console.log('Nenhuma alteração foi feita. Revise o relatório e rode com --apply para gravar.');
 }
 
 main().catch((error) => {

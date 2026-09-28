@@ -9,108 +9,108 @@
 
 :root {
   /* ---- Brand / Primary accent — V.tal Yellow ---------------- */
-  --vt-yellow: #FFD919;        /* core brand accent */
-  --vt-yellow-light: #FFE047;  /* hover / lift */
-  --vt-yellow-dim: rgba(255, 217, 25, 0.10); /* tint wash */
-  --vt-yellow-tint: #FEF7DC;   /* opaque wash — active nav, selected rows */
-  --vt-ink: #181919;           /* brand mark ink — text on SOLID saturated yellow (avatar, primary button). Stays dark in both themes: the yellow itself never dims. */
+  --vt-yellow: #ffd919; /* core brand accent */
+  --vt-yellow-light: #ffe047; /* hover / lift */
+  --vt-yellow-dim: rgba(255, 217, 25, 0.1); /* tint wash */
+  --vt-yellow-tint: #fef7dc; /* opaque wash — active nav, selected rows */
+  --vt-ink: #181919; /* brand mark ink — text on SOLID saturated yellow (avatar, primary button). Stays dark in both themes: the yellow itself never dims. */
   --vt-yellow-ink-soft: #9a7d00; /* text on SOFT/tinted yellow washes (ring badges, Badge brand tone) — unlike --vt-ink this one flips for dark mode */
 
   /* ---- Neutral ramp ---------------------------------------- */
-  --neutral-0: #FFFFFF;
-  --neutral-50: #FAFAFB;
-  --neutral-100: #F5F5F8;
-  --neutral-200: #EFEFF3;
-  --neutral-300: #E8E8EE;
-  --neutral-400: #DADAE3;
-  --neutral-500: #BCC1D6;      /* brand cinza médio */
-  --neutral-600: #8A8899;
-  --neutral-700: #514F66;      /* brand cinza escuro */
-  --neutral-900: #2E2D39;      /* brand cinza escuro 2 */
+  --neutral-0: #ffffff;
+  --neutral-50: #fafafb;
+  --neutral-100: #f5f5f8;
+  --neutral-200: #efeff3;
+  --neutral-300: #e8e8ee;
+  --neutral-400: #dadae3;
+  --neutral-500: #bcc1d6; /* brand cinza médio */
+  --neutral-600: #8a8899;
+  --neutral-700: #514f66; /* brand cinza escuro */
+  --neutral-900: #2e2d39; /* brand cinza escuro 2 */
 
   /* ---- Surfaces -------------------------------------------- */
-  --surface-app: #FFFFFF;        /* app canvas — flat white */
-  --surface-card: #FFFFFF;       /* cards, panels, sheets */
-  --surface-card-hover: #FAFAFB;
-  --surface-subtle: #FAFAFB;     /* page wells, secondary columns */
-  --surface-muted: #F5F5F8;      /* inputs, wells, code, table zebra */
-  --surface-muted-hover: #EFEFF3;
-  --surface-inset: #F5F5F8;      /* legacy alias of --surface-muted */
-  --surface-ink: #2E2D39;        /* the remaining dark surface: brand panels, dark buttons */
+  --surface-app: #ffffff; /* app canvas — flat white */
+  --surface-card: #ffffff; /* cards, panels, sheets */
+  --surface-card-hover: #fafafb;
+  --surface-subtle: #fafafb; /* page wells, secondary columns */
+  --surface-muted: #f5f5f8; /* inputs, wells, code, table zebra */
+  --surface-muted-hover: #efeff3;
+  --surface-inset: #f5f5f8; /* legacy alias of --surface-muted */
+  --surface-ink: #2e2d39; /* the remaining dark surface: brand panels, dark buttons */
 
   /* ---- Sidebar (light chrome) ------------------------------- */
-  --surface-sidebar: #FAFAFB;    /* near-white sidebar, one hairline off the canvas */
-  --sidebar-bg: #FAFAFB;
-  --sidebar-border: #E8E8EE;
-  --sidebar-fg: #514F66;         /* resting nav label */
-  --sidebar-fg-active: #2E2D39;  /* selected nav label */
-  --sidebar-item-hover: #EFEFF3;
-  --sidebar-item-active: #FEF7DC; /* yellow wash pill */
-  --sidebar-section: #8A8899;    /* group eyebrows */
+  --surface-sidebar: #fafafb; /* near-white sidebar, one hairline off the canvas */
+  --sidebar-bg: #fafafb;
+  --sidebar-border: #e8e8ee;
+  --sidebar-fg: #514f66; /* resting nav label */
+  --sidebar-fg-active: #2e2d39; /* selected nav label */
+  --sidebar-item-hover: #efeff3;
+  --sidebar-item-active: #fef7dc; /* yellow wash pill */
+  --sidebar-section: #8a8899; /* group eyebrows */
 
   /* ---- Borders --------------------------------------------- */
-  --border: #E8E8EE;           /* default hairline — carries the card, not a shadow */
-  --border-strong: #DADAE3;    /* emphasized / focus-adjacent */
+  --border: #e8e8ee; /* default hairline — carries the card, not a shadow */
+  --border-strong: #dadae3; /* emphasized / focus-adjacent */
 
   /* ---- Text ------------------------------------------------- */
-  --text-primary: #2E2D39;
-  --text-secondary: #514F66;
-  --text-tertiary: #8A8899;
-  --text-disabled: #BCC1D6;
-  --text-on-dark: #FFFFFF;
+  --text-primary: #2e2d39;
+  --text-secondary: #514f66;
+  --text-tertiary: #8a8899;
+  --text-disabled: #bcc1d6;
+  --text-on-dark: #ffffff;
   --text-on-dark-dim: rgba(255, 255, 255, 0.55);
 
   /* ---- Secondary accent — corporate slate ------------------- */
-  --slate: #514F66;
-  --slate-700: #514F66;
-  --slate-500: #8A8899;
+  --slate: #514f66;
+  --slate-700: #514f66;
+  --slate-500: #8a8899;
 
   /* ---- Status / Semantic ------------------------------------ */
-  --status-green: #10B981;     /* ok / online / viable */
-  --status-blue: #3B82F6;      /* in progress / info */
-  --status-amber: #F59E0B;     /* warning / partial viability */
-  --status-red: #EF4444;       /* error / down / unviable */
-  --status-purple: #8B5CF6;    /* planned / reserved */
+  --status-green: #10b981; /* ok / online / viable */
+  --status-blue: #3b82f6; /* in progress / info */
+  --status-amber: #f59e0b; /* warning / partial viability */
+  --status-red: #ef4444; /* error / down / unviable */
+  --status-purple: #8b5cf6; /* planned / reserved */
 
   /* tinted fills for badges/pills (status color @ ~12% over white) */
-  --status-green-soft: #E7F8F1;
-  --status-blue-soft: #EAF2FE;
-  --status-amber-soft: #FEF4E2;
-  --status-red-soft: #FDECEC;
-  --status-purple-soft: #F1ECFD;
+  --status-green-soft: #e7f8f1;
+  --status-blue-soft: #eaf2fe;
+  --status-amber-soft: #fef4e2;
+  --status-red-soft: #fdecec;
+  --status-purple-soft: #f1ecfd;
 
   /* ---- Conversation surfaces -------------------------------- */
   /* The canvas is white, so the user's turn takes the muted fill and the
      assistant writes straight onto the page. One surface, not two bubbles. */
-  --chat-user-bubble: #F5F5F8;   /* = --surface-muted */
+  --chat-user-bubble: #f5f5f8; /* = --surface-muted */
   --chat-assistant-bg: transparent;
-  --chat-meta: #8A8899;          /* timestamps */
-  --composer-bg: #FFFFFF;
+  --chat-meta: #8a8899; /* timestamps */
+  --composer-bg: #ffffff;
 
   /* ---- Map layer palette (Locais module) -------------------- */
   /* Marker fills are saturated + hold a white glyph; the surface
      around them is Google's basemap, so these are the only colors
      allowed to shout. One hue per semantic state, no gradients. */
-  --map-available: #12805C;    /* disponível / ativo */
-  --map-suspended: #E8615C;    /* suspenso / bloqueado */
-  --map-partial: #F0A32E;      /* parcial / atenção */
-  --map-station: #7C5CE0;      /* estação / site de rede */
-  --map-selected: #FFD919;     /* selected pin — brand yellow */
-  --map-route: #C8961E;        /* backbone / rota traçada */
-  --map-duct: #2E2D39;         /* duto / infra civil */
+  --map-available: #12805c; /* disponível / ativo */
+  --map-suspended: #e8615c; /* suspenso / bloqueado */
+  --map-partial: #f0a32e; /* parcial / atenção */
+  --map-station: #7c5ce0; /* estação / site de rede */
+  --map-selected: #ffd919; /* selected pin — brand yellow */
+  --map-route: #c8961e; /* backbone / rota traçada */
+  --map-duct: #2e2d39; /* duto / infra civil */
   --map-coverage-fill: rgba(217, 169, 74, 0.35);
-  --map-coverage-stroke: #C08A2A;
+  --map-coverage-stroke: #c08a2a;
   /* Legend ramp: suspenso → disponível */
-  --map-ramp: linear-gradient(90deg, #E8615C 0%, #F0A32E 45%, #12805C 100%); /* @kind other */
+  --map-ramp: linear-gradient(90deg, #e8615c 0%, #f0a32e 45%, #12805c 100%); /* @kind other */
 
   /* ---- Network-element taxonomy (V.tal Nexus domain) -------- */
   /* Used to color-code network element classes in inventory/topology. */
-  --net-olt: #3B82F6;          /* OLT / head-end */
-  --net-splitter: #8B5CF6;     /* splitter / CEO */
-  --net-cto: #10B981;          /* CTO / terminal box */
-  --net-poste: #F59E0B;        /* pole / infra */
-  --net-cabo: #514F66;         /* cable / span */
-  --net-site: #FFD919;         /* site / POP */
+  --net-olt: #3b82f6; /* OLT / head-end */
+  --net-splitter: #8b5cf6; /* splitter / CEO */
+  --net-cto: #10b981; /* CTO / terminal box */
+  --net-poste: #f59e0b; /* pole / infra */
+  --net-cabo: #514f66; /* cable / span */
+  --net-site: #ffd919; /* site / POP */
 
   /* ---- Semantic aliases (prefer these in components) -------- */
   --accent: var(--vt-yellow);
@@ -125,48 +125,48 @@
 [data-theme='dark'] {
   /* ---- Rampa neutra invertida ------------------------------ */
   --neutral-0: #181919;
-  --neutral-50: #1F2023;
-  --neutral-100: #26272B;
-  --neutral-200: #2E2F35;
-  --neutral-300: #3D3E46;
-  --neutral-400: #51525C;
-  --neutral-500: #8A8899;
-  --neutral-600: #BCC1D6;
-  --neutral-700: #DADAE3;
-  --neutral-900: #FAFAFB;
+  --neutral-50: #1f2023;
+  --neutral-100: #26272b;
+  --neutral-200: #2e2f35;
+  --neutral-300: #3d3e46;
+  --neutral-400: #51525c;
+  --neutral-500: #8a8899;
+  --neutral-600: #bcc1d6;
+  --neutral-700: #dadae3;
+  --neutral-900: #fafafb;
 
   /* ---- Surfaces -------------------------------------------- */
   --surface-app: #181919;
-  --surface-card: #1F2023;
-  --surface-card-hover: #26272B;
-  --surface-subtle: #1F2023;
-  --surface-muted: #26272B;
-  --surface-muted-hover: #2E2F35;
-  --surface-inset: #26272B;
+  --surface-card: #1f2023;
+  --surface-card-hover: #26272b;
+  --surface-subtle: #1f2023;
+  --surface-muted: #26272b;
+  --surface-muted-hover: #2e2f35;
+  --surface-inset: #26272b;
   --surface-ink: #121214;
 
   /* ---- Sidebar --------------------------------------------- */
   /* Um tom acima de --surface-app, aproximando de --surface-card — pedido
      explícito para o cinza não ficar "quase preto" no tema escuro. */
-  --surface-sidebar: #1E1F22;
-  --sidebar-bg: #1E1F22;
-  --sidebar-border: #2E2F35;
-  --sidebar-fg: #BCC1D6;
-  --sidebar-fg-active: #FAFAFB;
-  --sidebar-item-hover: #26272B;
+  --surface-sidebar: #1e1f22;
+  --sidebar-bg: #1e1f22;
+  --sidebar-border: #2e2f35;
+  --sidebar-fg: #bcc1d6;
+  --sidebar-fg-active: #fafafb;
+  --sidebar-item-hover: #26272b;
   --sidebar-item-active: rgba(255, 217, 25, 0.15);
-  --sidebar-section: #8A8899;
+  --sidebar-section: #8a8899;
 
   /* ---- Borders --------------------------------------------- */
-  --border: #2E2F35;
-  --border-strong: #3D3E46;
+  --border: #2e2f35;
+  --border-strong: #3d3e46;
 
   /* ---- Text ------------------------------------------------- */
-  --text-primary: #FAFAFB;
-  --text-secondary: #DADAE3;
-  --text-tertiary: #8A8899;
-  --text-disabled: #51525C;
-  --text-on-dark: #FAFAFB;
+  --text-primary: #fafafb;
+  --text-secondary: #dadae3;
+  --text-tertiary: #8a8899;
+  --text-disabled: #51525c;
+  --text-on-dark: #fafafb;
   --text-on-dark-dim: rgba(250, 250, 251, 0.55);
 
   /* ---- Brand / Accents in Dark Mode ------------------------- */
@@ -184,7 +184,7 @@
   --status-purple-soft: rgba(139, 92, 246, 0.15);
 
   /* ---- Conversa -------------------------------------------- */
-  --chat-user-bubble: #26272B;
+  --chat-user-bubble: #26272b;
   --chat-assistant-bg: transparent;
-  --composer-bg: #1F2023;
+  --composer-bg: #1f2023;
 }

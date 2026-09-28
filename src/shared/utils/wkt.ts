@@ -11,11 +11,13 @@ function parseCoordinates(text: string): [number, number][] {
     .trim()
     .split(',')
     .map((pair) => {
-      const [lng, lat] = pair
-        .trim()
-        .split(/\s+/)
-        .map(Number);
-      if (lng === undefined || lat === undefined || !Number.isFinite(lng) || !Number.isFinite(lat)) {
+      const [lng, lat] = pair.trim().split(/\s+/).map(Number);
+      if (
+        lng === undefined ||
+        lat === undefined ||
+        !Number.isFinite(lng) ||
+        !Number.isFinite(lat)
+      ) {
         throw new Error(`Coordenada WKT inválida: "${pair}"`);
       }
       return [lng, lat] as [number, number];

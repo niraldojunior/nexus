@@ -48,9 +48,7 @@ export default function PageHead({
         )}
       </div>
       {actions && (
-        <div
-          style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, height: 48 }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, height: 48 }}>
           {actions}
         </div>
       )}

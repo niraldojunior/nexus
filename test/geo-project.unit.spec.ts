@@ -54,9 +54,13 @@ test.skipIf(!oracleConfigured)(
       const list = await fixture.runtime.geoProjectRepository.list(TENANT_ID);
       assert.ok(list.some((project) => project.id === created.id));
 
-      const missing = await fixture.runtime.geoProjectRepository.update('outro-tenant', created.id, {
-        name: 'x',
-      });
+      const missing = await fixture.runtime.geoProjectRepository.update(
+        'outro-tenant',
+        created.id,
+        {
+          name: 'x',
+        },
+      );
       assert.equal(missing, null, 'update não deve enxergar projeto de outro tenant');
     } finally {
       await cleanup();

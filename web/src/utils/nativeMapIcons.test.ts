@@ -162,7 +162,9 @@ describe('nativeMapIconDataUrl', () => {
 
   it('gera glifo sem fundo quando a superfície não representa um marcador de mapa', () => {
     const entry = nativeMapIconForCode('CTO')!;
-    const svg = decodeURIComponent(nativeMapIconDataUrl(entry, { size: 20, shape: 'none', color: '#0284c7' }));
+    const svg = decodeURIComponent(
+      nativeMapIconDataUrl(entry, { size: 20, shape: 'none', color: '#0284c7' }),
+    );
 
     expect(svg).toContain('viewBox="0 0 24 24"');
     expect(svg).toContain('stroke="#0284c7"');

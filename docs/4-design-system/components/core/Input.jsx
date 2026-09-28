@@ -20,7 +20,14 @@ export function Input({
 }) {
   const [focus, setFocus] = React.useState(false);
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, width: fullWidth ? '100%' : 'auto' }}>
+    <label
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        width: fullWidth ? '100%' : 'auto',
+      }}
+    >
       {label && (
         <span style={{ font: 'var(--text-label)', color: 'var(--text-secondary)' }}>{label}</span>
       )}
@@ -40,7 +47,11 @@ export function Input({
         }}
       >
         {iconLeft && (
-          <span style={{ display: 'flex', color: focus ? 'var(--vt-ink)' : 'var(--text-tertiary)' }}>{iconLeft}</span>
+          <span
+            style={{ display: 'flex', color: focus ? 'var(--vt-ink)' : 'var(--text-tertiary)' }}
+          >
+            {iconLeft}
+          </span>
         )}
         <input
           type={type}

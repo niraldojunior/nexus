@@ -190,7 +190,8 @@ export class GeoProjectWorkflowService {
       }
     } else if (input.targetStateCode) {
       const candidates = workflow.transitions.filter(
-        (t) => t.fromStateCodes.includes(project.statusCode) && t.toStateCode === input.targetStateCode,
+        (t) =>
+          t.fromStateCodes.includes(project.statusCode) && t.toStateCode === input.targetStateCode,
       );
       if (candidates.length === 0) {
         throw new AppError('no workflow transition found for target state', {

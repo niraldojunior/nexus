@@ -546,7 +546,7 @@ export class GeoProjectRepository {
       scope === 'infrastructure' || scope === 'resources'
         ? []
         : await this.db.all<GeoProjectSearchItem>(
-      `SELECT s.id, 'site' AS kind, s.name AS label,
+            `SELECT s.id, 'site' AS kind, s.name AS label,
               CASE WHEN LOWER(s.name) LIKE LOWER(?) THEN 0 ELSE 1 END AS rank
          FROM geo_project_site ps
          JOIN geo_project p ON p.id = ps.project_id
@@ -554,14 +554,14 @@ export class GeoProjectRepository {
         WHERE p.tenant_id = ? AND ps.project_id = ? AND LOWER(s.name) LIKE LOWER(?)
         ORDER BY rank, s.name
         LIMIT ?`,
-      [prefix, tenantId, projectId, contains, cappedLimit],
-    );
+            [prefix, tenantId, projectId, contains, cappedLimit],
+          );
 
     const resources =
       scope === 'sites'
         ? []
         : await this.db.all<GeoProjectSearchItem>(
-      `SELECT * FROM (
+            `SELECT * FROM (
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
                      WHEN LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) THEN 1
@@ -597,7 +597,7 @@ export class GeoProjectRepository {
        ) AS matches
        ORDER BY rank, label
        LIMIT ?`,
-      [
+            [
               prefix,
               prefix,
               prefix,
@@ -609,9 +609,9 @@ export class GeoProjectRepository {
               ...(scope === 'infrastructure'
                 ? []
                 : [prefix, prefix, prefix, tenantId, projectId, contains, contains, contains]),
-        cappedLimit,
-      ],
-    );
+              cappedLimit,
+            ],
+          );
 
     return [...sites, ...resources]
       .sort((left, right) => left.rank - right.rank || left.label.localeCompare(right.label))
@@ -624,11 +624,11 @@ export class GeoProjectRepository {
   ): Promise<{ projectId: string; projectName: string } | null> {
     return (
       (await this.db.get<{ projectId: string; projectName: string }>(
-      `SELECT p.id AS projectId, p.name AS projectName
+        `SELECT p.id AS projectId, p.name AS projectName
          FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
         WHERE p.tenant_id = ? AND pr.resource_id = ? AND pr.detached_at IS NULL
           AND p.status NOT IN ('terminated', 'cancelled') AND p.archived_at IS NULL`,
-      [tenantId, resourceId],
+        [tenantId, resourceId],
       )) ?? null
     );
   }

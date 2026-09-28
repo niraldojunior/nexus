@@ -38,8 +38,24 @@ vi.mock('../../services/resourceCatalogApi', async (importOriginal) => {
 });
 
 const CASCADE_TYPES: ResourceType[] = [
-  { '@type': 'ResourceType', id: 'type-cto', href: '', code: 'CTO', name: 'CTO', categoryCode: 'Infrastructure.Passive', status: 'active' },
-  { '@type': 'ResourceType', id: 'type-splitter', href: '', code: 'Splitter', name: 'Splitter', categoryCode: 'Infrastructure.Passive', status: 'active' },
+  {
+    '@type': 'ResourceType',
+    id: 'type-cto',
+    href: '',
+    code: 'CTO',
+    name: 'CTO',
+    categoryCode: 'Infrastructure.Passive',
+    status: 'active',
+  },
+  {
+    '@type': 'ResourceType',
+    id: 'type-splitter',
+    href: '',
+    code: 'Splitter',
+    name: 'Splitter',
+    categoryCode: 'Infrastructure.Passive',
+    status: 'active',
+  },
 ];
 const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
   {
@@ -49,7 +65,14 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     resourceType: 'CTO',
     resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FDT 8' }],
-    relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      {
+        id: 'party-furukawa',
+        name: 'Furukawa',
+        '@referredType': 'Organization',
+        role: 'manufacturer',
+      },
+    ],
   },
   {
     id: 'spec-cto-16',
@@ -58,7 +81,14 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     resourceType: 'CTO',
     resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FDT 16' }],
-    relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      {
+        id: 'party-furukawa',
+        name: 'Furukawa',
+        '@referredType': 'Organization',
+        role: 'manufacturer',
+      },
+    ],
   },
   {
     id: 'spec-cto-nokia',
@@ -67,7 +97,9 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     resourceType: 'CTO',
     resourceTypeId: 'type-cto',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FlexBox' }],
-    relatedParty: [{ id: 'party-nokia', name: 'Nokia', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      { id: 'party-nokia', name: 'Nokia', '@referredType': 'Organization', role: 'manufacturer' },
+    ],
   },
   {
     id: 'spec-splitter',
@@ -76,7 +108,14 @@ const CASCADE_SPECIFICATIONS: ResourceSpecification[] = [
     resourceType: 'Splitter',
     resourceTypeId: 'type-splitter',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'SP1x8' }],
-    relatedParty: [{ id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' }],
+    relatedParty: [
+      {
+        id: 'party-furukawa',
+        name: 'Furukawa',
+        '@referredType': 'Organization',
+        role: 'manufacturer',
+      },
+    ],
   },
 ];
 
@@ -192,7 +231,12 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
     model: 'FDT 8',
     resourceSpecificationCharacteristic: [{ name: 'model', value: 'FDT 8' }],
     relatedParty: [
-      { id: 'party-furukawa', name: 'Furukawa', '@referredType': 'Organization', role: 'manufacturer' },
+      {
+        id: 'party-furukawa',
+        name: 'Furukawa',
+        '@referredType': 'Organization',
+        role: 'manufacturer',
+      },
     ],
   },
   statusCatalogEntry: {
@@ -227,17 +271,13 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
 
 describe('ResourceOverviewTab', () => {
   it('prioriza os atributos de catálogo e mostra os estados SID localizados', async () => {
-    render(
-      <ResourceOverviewTab
-        detail={detail()}
-        canEdit={false}
-        onPatch={vi.fn()}
-      />,
-    );
+    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
 
     expect(screen.getByText('Furukawa')).toBeInTheDocument();
     expect(screen.getByText('FDT 8')).toBeInTheDocument();
-    expect(await screen.findByText('Telecom \\ Rede de Acesso \\ GPON \\ Distribuição')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Telecom \\ Rede de Acesso \\ GPON \\ Distribuição'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Desbloqueado')).toBeInTheDocument();
     expect(screen.getByText('Habilitado')).toBeInTheDocument();
     expect(screen.getByText('Em Uso')).toBeInTheDocument();
@@ -270,13 +310,7 @@ describe('ResourceOverviewTab', () => {
   });
 
   it('quando há endereço, não mostra coordenadas em Localização (evita duplicidade com Endereço)', () => {
-    render(
-      <ResourceOverviewTab
-        detail={detail()}
-        canEdit={false}
-        onPatch={vi.fn()}
-      />,
-    );
+    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
 
     expect(screen.queryByText('[-43.10944, -22.90278]')).not.toBeInTheDocument();
   });
@@ -374,13 +408,7 @@ describe('ResourceOverviewTab', () => {
   });
 
   it('sem canEdit, não mostra nenhum alvo de edição no card e nas linhas', () => {
-    render(
-      <ResourceOverviewTab
-        detail={detail()}
-        canEdit={false}
-        onPatch={vi.fn()}
-      />,
-    );
+    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
 
     expect(screen.queryByLabelText(/^Editar /)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Editar definição do recurso')).not.toBeInTheDocument();

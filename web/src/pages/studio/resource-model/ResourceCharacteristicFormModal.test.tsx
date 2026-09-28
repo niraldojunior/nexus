@@ -69,7 +69,9 @@ describe('ResourceCharacteristicFormModal', () => {
     await user.click(instanceButton);
 
     expect(
-      screen.getByText('Cada recurso preenche o seu valor. O valor padrão abaixo é só a sugestão inicial.'),
+      screen.getByText(
+        'Cada recurso preenche o seu valor. O valor padrão abaixo é só a sugestão inicial.',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText('Valor padrão sugerido')).toBeInTheDocument();
 

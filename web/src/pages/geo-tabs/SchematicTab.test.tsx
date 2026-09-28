@@ -35,7 +35,9 @@ const equipmentNode = (
   resourceType,
   status,
   hasChildren: false,
-  geometry: line.length ? { type: 'LineString', coordinates: line } : { type: 'Point', coordinates: line[0] ?? [0, 0] },
+  geometry: line.length
+    ? { type: 'LineString', coordinates: line }
+    : { type: 'Point', coordinates: line[0] ?? [0, 0] },
 });
 
 const cableNode = (id: string, label: string, line: [number, number][]): GeoTreeNode => ({
@@ -273,7 +275,9 @@ describe('SchematicTab', () => {
     };
     useResourceSchematic.mockReturnValue(state('ready', path));
     const onSimulate = vi.fn();
-    const { unmount } = render(<SchematicTab nodeId="resource:cdoe-4" onSimulate={onSimulate} onPreview={vi.fn()} />);
+    const { unmount } = render(
+      <SchematicTab nodeId="resource:cdoe-4" onSimulate={onSimulate} onPreview={vi.fn()} />,
+    );
     unmount();
     expect(onSimulate).toHaveBeenCalledWith(null);
   });

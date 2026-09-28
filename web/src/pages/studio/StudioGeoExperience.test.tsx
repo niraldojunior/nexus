@@ -335,7 +335,9 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     await waitFor(() => {
       const preview = document.querySelector('img[alt=""]');
       expect(preview).not.toBeNull();
-      expect(decodeURIComponent(preview?.getAttribute('src') ?? '')).not.toContain('m7.5 4.27 9 5.15');
+      expect(decodeURIComponent(preview?.getAttribute('src') ?? '')).not.toContain(
+        'm7.5 4.27 9 5.15',
+      );
     });
   });
 
@@ -359,8 +361,22 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
   it('lixeira revelada no hover da linha remove o nó sem exigir seleção prévia', async () => {
     const user = userEvent.setup();
     const twoNodes: StudioGeoNode[] = [
-      { id: 'group-1', kind: 'GROUP', parentNodeId: null, label: 'Locais', sortOrder: 10, active: true },
-      { id: 'group-2', kind: 'GROUP', parentNodeId: null, label: 'Cobertura', sortOrder: 20, active: true },
+      {
+        id: 'group-1',
+        kind: 'GROUP',
+        parentNodeId: null,
+        label: 'Locais',
+        sortOrder: 10,
+        active: true,
+      },
+      {
+        id: 'group-2',
+        kind: 'GROUP',
+        parentNodeId: null,
+        label: 'Cobertura',
+        sortOrder: 20,
+        active: true,
+      },
     ];
     vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(twoNodes));
     render(<StudioGeoExperience canEdit isEditing />);

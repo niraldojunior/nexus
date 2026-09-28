@@ -50,12 +50,20 @@ export class ResourceRepository implements IResourceRepository {
 
   public async transaction<T>(fn: () => T | Promise<T>): Promise<T> {
     const snapshot = {
-      resourceTypes: new Map([...this.resourceTypes].map(([key, value]) => [key, cloneResourceType(value)])),
+      resourceTypes: new Map(
+        [...this.resourceTypes].map(([key, value]) => [key, cloneResourceType(value)]),
+      ),
       resourceSpecifications: new Map(
-        [...this.resourceSpecifications].map(([key, value]) => [key, cloneResourceSpecification(value)]),
+        [...this.resourceSpecifications].map(([key, value]) => [
+          key,
+          cloneResourceSpecification(value),
+        ]),
       ),
       resourceFunctionSpecifications: new Map(
-        [...this.resourceFunctionSpecifications].map(([key, value]) => [key, cloneResourceFunctionSpecification(value)]),
+        [...this.resourceFunctionSpecifications].map(([key, value]) => [
+          key,
+          cloneResourceFunctionSpecification(value),
+        ]),
       ),
       physicalResources: new Map(
         [...this.physicalResources].map(([key, value]) => [key, clonePhysicalResource(value)]),
@@ -66,15 +74,26 @@ export class ResourceRepository implements IResourceRepository {
       relationships: new Map(
         [...this.relationships].map(([key, value]) => [key, value.map(cloneRelationship)]),
       ),
-      resourceCatalogs: new Map([...this.resourceCatalogs].map(([key, value]) => [key, { ...value }])),
+      resourceCatalogs: new Map(
+        [...this.resourceCatalogs].map(([key, value]) => [key, { ...value }]),
+      ),
       resourceCatalogNodes: new Map(
-        [...this.resourceCatalogNodes].map(([key, value]) => [key, cloneResourceCatalogNode(value)]),
+        [...this.resourceCatalogNodes].map(([key, value]) => [
+          key,
+          cloneResourceCatalogNode(value),
+        ]),
       ),
       resourceRelationshipTypes: new Map(
-        [...this.resourceRelationshipTypes].map(([key, value]) => [key, cloneResourceRelationshipType(value)]),
+        [...this.resourceRelationshipTypes].map(([key, value]) => [
+          key,
+          cloneResourceRelationshipType(value),
+        ]),
       ),
       resourceTypeRelationshipRules: new Map(
-        [...this.resourceTypeRelationshipRules].map(([key, value]) => [key, cloneResourceTypeRelationshipRule(value)]),
+        [...this.resourceTypeRelationshipRules].map(([key, value]) => [
+          key,
+          cloneResourceTypeRelationshipRule(value),
+        ]),
       ),
     };
     try {
@@ -91,14 +110,16 @@ export class ResourceRepository implements IResourceRepository {
       this.resourceRelationshipTypes.clear();
       this.resourceTypeRelationshipRules.clear();
       for (const [key, value] of snapshot.resourceTypes) this.resourceTypes.set(key, value);
-      for (const [key, value] of snapshot.resourceSpecifications) this.resourceSpecifications.set(key, value);
+      for (const [key, value] of snapshot.resourceSpecifications)
+        this.resourceSpecifications.set(key, value);
       for (const [key, value] of snapshot.resourceFunctionSpecifications)
         this.resourceFunctionSpecifications.set(key, value);
       for (const [key, value] of snapshot.physicalResources) this.physicalResources.set(key, value);
       for (const [key, value] of snapshot.logicalResources) this.logicalResources.set(key, value);
       for (const [key, value] of snapshot.relationships) this.relationships.set(key, value);
       for (const [key, value] of snapshot.resourceCatalogs) this.resourceCatalogs.set(key, value);
-      for (const [key, value] of snapshot.resourceCatalogNodes) this.resourceCatalogNodes.set(key, value);
+      for (const [key, value] of snapshot.resourceCatalogNodes)
+        this.resourceCatalogNodes.set(key, value);
       for (const [key, value] of snapshot.resourceRelationshipTypes)
         this.resourceRelationshipTypes.set(key, value);
       for (const [key, value] of snapshot.resourceTypeRelationshipRules)
@@ -106,7 +127,6 @@ export class ResourceRepository implements IResourceRepository {
       throw error;
     }
   }
-
 
   public upsertResourceSpecification(spec: ResourceSpecification): ResourceSpecification {
     const stored = cloneResourceSpecification(spec);
@@ -160,7 +180,10 @@ export class ResourceRepository implements IResourceRepository {
     return resourceType ? cloneResourceType(resourceType) : undefined;
   }
 
-  public getResourceTypeByCode(code: string, scope?: ResourceTenantScope): ResourceType | undefined {
+  public getResourceTypeByCode(
+    code: string,
+    scope?: ResourceTenantScope,
+  ): ResourceType | undefined {
     const resourceType = [...this.resourceTypes.values()].find(
       (candidate) => candidate.code === code && sameTenant(candidate.tenantId, scope?.tenantId),
     );
@@ -168,7 +191,9 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public upsertResourceType(resourceType: ResourceType): ResourceType {
-    const existing = [...this.resourceTypes.entries()].find(([, value]) => value.id === resourceType.id);
+    const existing = [...this.resourceTypes.entries()].find(
+      ([, value]) => value.id === resourceType.id,
+    );
     if (existing && existing[0] !== resourceType.code) this.resourceTypes.delete(existing[0]);
     const stored = cloneResourceType(resourceType);
     this.resourceTypes.set(stored.code, stored);
@@ -274,8 +299,7 @@ export class ResourceRepository implements IResourceRepository {
       .filter((catalog) => sameTenant(catalog.tenantId, query.tenantId))
       .filter((catalog) => !query.status || catalog.status === query.status)
       .filter(
-        (catalog) =>
-          !query.name || catalog.name.toLowerCase().includes(query.name.toLowerCase()),
+        (catalog) => !query.name || catalog.name.toLowerCase().includes(query.name.toLowerCase()),
       )
       .sort(compareCatalogOrNode)
       .map((catalog) => ({ ...catalog }));
@@ -292,7 +316,9 @@ export class ResourceRepository implements IResourceRepository {
     scope: ResourceTenantScope,
   ): ResourceCatalogNode | undefined {
     const node = this.resourceCatalogNodes.get(id);
-    return node && sameTenant(node.tenantId, scope.tenantId) ? this.expandCatalogNode(node) : undefined;
+    return node && sameTenant(node.tenantId, scope.tenantId)
+      ? this.expandCatalogNode(node)
+      : undefined;
   }
 
   public getResourceCatalogNodeByCode(
@@ -481,14 +507,17 @@ export class ResourceRepository implements IResourceRepository {
     return this.listResourceRelationships(parentId)
       .filter((relationship) => relationship.relationshipType === 'containsAsChild')
       .map((relationship) => this.getPhysicalResource(relationship.id))
-      .filter((resource): resource is PhysicalResource => Boolean(resource && resource.resourceType === resourceType));
+      .filter((resource): resource is PhysicalResource =>
+        Boolean(resource && resource.resourceType === resourceType),
+      );
   }
 
   private parentsOf(childId: string): PhysicalResource[] {
     return [...this.relationships.entries()]
       .filter(([, relationships]) =>
         relationships.some(
-          (relationship) => relationship.id === childId && relationship.relationshipType === 'containsAsChild',
+          (relationship) =>
+            relationship.id === childId && relationship.relationshipType === 'containsAsChild',
         ),
       )
       .map(([id]) => this.getPhysicalResource(id))
@@ -502,10 +531,12 @@ export class ResourceRepository implements IResourceRepository {
   ): ResourcePortDetail {
     const drops = this.listIncidentResourceRelationships(port.id)
       .filter((relationship) => relationship.relationshipType === 'connectedTo')
-      .map((relationship) => ({ relationship, resource: this.getPhysicalResource(relationship.id) }))
-      .filter(
-        (item): item is { relationship: ResourceRelationship; resource: PhysicalResource } =>
-          Boolean(item.resource && item.resource.resourceType === 'DropCable'),
+      .map((relationship) => ({
+        relationship,
+        resource: this.getPhysicalResource(relationship.id),
+      }))
+      .filter((item): item is { relationship: ResourceRelationship; resource: PhysicalResource } =>
+        Boolean(item.resource && item.resource.resourceType === 'DropCable'),
       )
       .map(({ relationship, resource }) => {
         const active = relationshipIsActive(relationship);
@@ -529,7 +560,8 @@ export class ResourceRepository implements IResourceRepository {
       '@type': 'ResourcePortDetail',
       resource: {
         ...port,
-        usageState: role === 'FO.O' && drops.some((drop) => drop.active) ? 'active' : port.usageState,
+        usageState:
+          role === 'FO.O' && drops.some((drop) => drop.active) ? 'active' : port.usageState,
       },
       ...(role ? { role } : {}),
       ...(index !== undefined ? { index } : {}),
@@ -722,13 +754,24 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   /** ONT alimentada por um drop, via `connectedTo` — mesmo grafo físico do Postgres. */
-  private resolveDropOnt(dropId: string): { id: string; name: string; '@referredType': 'PhysicalResource'; resourceType: string } | undefined {
+  private resolveDropOnt(
+    dropId: string,
+  ):
+    | { id: string; name: string; '@referredType': 'PhysicalResource'; resourceType: string }
+    | undefined {
     const ont = this.listIncidentResourceRelationships(dropId)
       .filter((relationship) => relationship.relationshipType === 'connectedTo')
       .map((relationship) => this.getPhysicalResource(relationship.id))
-      .find((resource): resource is PhysicalResource => Boolean(resource && resource.resourceType === 'ONT'));
+      .find((resource): resource is PhysicalResource =>
+        Boolean(resource && resource.resourceType === 'ONT'),
+      );
     if (!ont) return undefined;
-    return { id: ont.id, name: ont.name, '@referredType': 'PhysicalResource', resourceType: ont.resourceType };
+    return {
+      id: ont.id,
+      name: ont.name,
+      '@referredType': 'PhysicalResource',
+      resourceType: ont.resourceType,
+    };
   }
 
   public upsertPhysicalResource(resource: PhysicalResource): PhysicalResource {
@@ -782,9 +825,8 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public countLogicalResources(query?: ResourceQuery): number {
-    return [...this.logicalResources.values()].filter((resource) =>
-      filterResource(resource, query),
-    ).length;
+    return [...this.logicalResources.values()].filter((resource) => filterResource(resource, query))
+      .length;
   }
 
   public upsertResourceRelationship(
@@ -934,7 +976,11 @@ const compareCatalogOrNode = (
 const cloneResourceType = (type: ResourceType): ResourceType => ({
   ...type,
   ...(type.resourceTypeCharacteristic
-    ? { resourceTypeCharacteristic: type.resourceTypeCharacteristic.map((characteristic) => ({ ...characteristic })) }
+    ? {
+        resourceTypeCharacteristic: type.resourceTypeCharacteristic.map((characteristic) => ({
+          ...characteristic,
+        })),
+      }
     : {}),
 });
 

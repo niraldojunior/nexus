@@ -18,7 +18,13 @@ export type ScrollFadeTabBarProps = {
  * — o mesmo padrão das abas de detalhe do Google Maps. Promovido de `geo-tabs/PanelTabBar.tsx`
  * (que agora é um re-export) para reuso em `RoleTypeFilterChips.tsx`.
  */
-export function ScrollFadeTabBar({ children, activeTab, className, role, ariaLabel }: ScrollFadeTabBarProps) {
+export function ScrollFadeTabBar({
+  children,
+  activeTab,
+  className,
+  role,
+  ariaLabel,
+}: ScrollFadeTabBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
 

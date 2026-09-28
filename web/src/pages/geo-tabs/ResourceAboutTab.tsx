@@ -35,7 +35,9 @@ export function ResourceAboutTab({ detail, canEdit, onPatch }: ResourceAboutTabP
   // Definições de nível instância (issue #273) — o backend já devolve o `ResourceType` completo
   // neste endpoint; buscamos aqui (e não em ResourceOverviewTab) porque só esta aba precisa delas
   // agora. Mesmo padrão de guarda `cancelled` do efeito que existia em ResourceOverviewTab.
-  const [instanceCharacteristicDefs, setInstanceCharacteristicDefs] = useState<ResourceCharacteristic[]>([]);
+  const [instanceCharacteristicDefs, setInstanceCharacteristicDefs] = useState<
+    ResourceCharacteristic[]
+  >([]);
   useEffect(() => {
     const resourceTypeId = specification.resourceTypeId;
     if (!resourceTypeId) {

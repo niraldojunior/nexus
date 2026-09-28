@@ -63,7 +63,9 @@ const STATUS_BADGE_META: Record<string, { label: string; tone: StatusTone }> = {
 };
 
 export function statusBadgeMeta(status: string | undefined): { label: string; tone: StatusTone } {
-  return (status ? STATUS_BADGE_META[status] : undefined) ?? { label: status ?? '—', tone: 'neutral' };
+  return (
+    (status ? STATUS_BADGE_META[status] : undefined) ?? { label: status ?? '—', tone: 'neutral' }
+  );
 }
 
 // --- Categoria TMF de GeographicSiteSpecification -------------------------------------
@@ -115,10 +117,7 @@ export function siteSpecLabel(spec?: Pick<GeoSpec, 'code' | 'name'> | null): str
 // para os dois lugares que precisam dele: o combo de criação de sub-local (SiteSubSitesTab)
 // e o combo de tipo no cabeçalho do painel ao visualizar um sub-local já existente
 // (SitePanel/ViewHeader) — os dois usavam a mesma regra, um copiado do outro.
-export function allowedChildSpecsOf(
-  parentSpec: GeoSpec | undefined,
-  specs: GeoSpec[],
-): GeoSpec[] {
+export function allowedChildSpecsOf(parentSpec: GeoSpec | undefined, specs: GeoSpec[]): GeoSpec[] {
   if (!parentSpec) return [];
   return specs.filter(
     (spec) =>

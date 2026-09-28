@@ -113,8 +113,8 @@ export function ResourceNodeImpactModal({
               {isGroup && hasActiveDescendants && (
                 <div className="rounded-[16px] border border-red-200 bg-red-50/70 p-4 text-red-800 text-[0.84rem]">
                   <strong className="font-semibold block mb-1">Atenção: subordinados ativos</strong>
-                  Este grupo possui {activeDescendantCount} nó(s) subordinado(s) ativo(s). Inative ou
-                  mova todos os subordinados ativos antes de inativar este grupo.
+                  Este grupo possui {activeDescendantCount} nó(s) subordinado(s) ativo(s). Inative
+                  ou mova todos os subordinados ativos antes de inativar este grupo.
                 </div>
               )}
 
@@ -128,19 +128,25 @@ export function ResourceNodeImpactModal({
                   </p>
                 </div>
                 <div className="rounded-[10px] border border-app-border p-3">
-                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Specs</span>
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Specs
+                  </span>
                   <p className="text-[1.1rem] font-semibold text-app-text mt-0.5">
                     {impact?.specificationCount ?? 0}
                   </p>
                 </div>
                 <div className="rounded-[10px] border border-app-border p-3">
-                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Rec. físicos</span>
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Rec. físicos
+                  </span>
                   <p className="text-[1.1rem] font-semibold text-app-text mt-0.5">
                     {impact?.activePhysicalResourceCount ?? 0}
                   </p>
                 </div>
                 <div className="rounded-[10px] border border-app-border p-3">
-                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>Rec. lógicos</span>
+                  <span style={{ font: 'var(--text-label)', color: 'var(--text-tertiary)' }}>
+                    Rec. lógicos
+                  </span>
                   <p className="text-[1.1rem] font-semibold text-app-text mt-0.5">
                     {impact?.activeLogicalResourceCount ?? 0}
                   </p>

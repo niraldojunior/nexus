@@ -73,17 +73,12 @@ function formatPlaceAddress(place: PhysicalResourceDetail['place']): string | nu
 // Perfil e ordem alinhados ao padrão Netwin/CDOE usado pelo time de negócio (ver plano
 // da issue #184) — os 19 campos "padrão" + os 2 characteristics são sempre renderizados,
 // mesmo vazios (`—`), em vez de somem quando não há valor.
-export function ResourceOverviewTab({
-  detail,
-  canEdit,
-  onPatch,
-}: ResourceOverviewTabProps) {
+export function ResourceOverviewTab({ detail, canEdit, onPatch }: ResourceOverviewTabProps) {
   const { resource, specification, statusCatalogEntry, place, location, servingSite, project } =
     detail;
 
-  const notes =
-    resource.characteristic?.find((c) => c.name === 'notes' || c.name === 'observacao')
-      ?.value as string | undefined;
+  const notes = resource.characteristic?.find((c) => c.name === 'notes' || c.name === 'observacao')
+    ?.value as string | undefined;
 
   const [editingAdmin, setEditingAdmin] = useState(false);
   const [editingOp, setEditingOp] = useState(false);
@@ -244,13 +239,12 @@ export function ResourceOverviewTab({
       ? formatCoordinatePoint(location.geometry.coordinates)
       : null;
 
-  const originSystem =
-    resource.characteristic?.find(
-      (c) => c.name === '_origin.system' || c.name === 'sourceSystem',
-    )?.value as string | undefined;
+  const originSystem = resource.characteristic?.find(
+    (c) => c.name === '_origin.system' || c.name === 'sourceSystem',
+  )?.value as string | undefined;
 
-  const legacySubstatus =
-    resource.characteristic?.find((c) => c.name === 'substatus')?.value as string | undefined;
+  const legacySubstatus = resource.characteristic?.find((c) => c.name === 'substatus')?.value as
+    string | undefined;
   const hasValue = (value: unknown): boolean =>
     value !== undefined && value !== null && value !== '';
   const statusValue = statusCatalogEntry ?? legacySubstatus;
@@ -271,7 +265,7 @@ export function ResourceOverviewTab({
                 tone={STATUS_BEHAVIOR_TONE[statusCatalogEntry.behavior] ?? 'neutral'}
               />
             ) : (
-              legacySubstatus ?? '—'
+              (legacySubstatus ?? '—')
             )
           }
         >
@@ -323,7 +317,9 @@ export function ResourceOverviewTab({
           value={
             resource.administrativeState ? (
               <TonePill
-                label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
+                label={
+                  ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState
+                }
                 tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
               />
             ) : (
@@ -352,7 +348,9 @@ export function ResourceOverviewTab({
           hint="Estado administrativo"
           value={
             <TonePill
-              label={ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState}
+              label={
+                ADMIN_STATE_LABELS[resource.administrativeState] ?? resource.administrativeState
+              }
               tone={ADMIN_STATE_TONE[resource.administrativeState] ?? 'neutral'}
             />
           }
@@ -540,7 +538,12 @@ export function ResourceOverviewTab({
           />
         </InlineEditRow>
       ) : resource.assetReference ? (
-        <IconInfoRow icon={Fingerprint} hint="Imobilizado (SAP)" value={resource.assetReference} mono />
+        <IconInfoRow
+          icon={Fingerprint}
+          hint="Imobilizado (SAP)"
+          value={resource.assetReference}
+          mono
+        />
       ) : null}
 
       {canEdit ? (
@@ -600,38 +603,47 @@ export function ResourceOverviewTab({
       ) : null}
 
       {formatDateBR(resource.updatedAt) ? (
-        <IconInfoRow icon={CalendarClock} hint="Atualizado em" value={formatDateBR(resource.updatedAt)} />
+        <IconInfoRow
+          icon={CalendarClock}
+          hint="Atualizado em"
+          value={formatDateBR(resource.updatedAt)}
+        />
       ) : null}
 
       {originSystem || canEdit || notes ? (
         <div className="mt-1 border-t border-app-border pt-1">
-          {originSystem ? <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem} /> : null}
+          {originSystem ? (
+            <IconInfoRow icon={Database} hint="Sistema de origem" value={originSystem} />
+          ) : null}
 
-        {canEdit ? (
-          <div className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1" title="Observações">
-            <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
-              aria-hidden="true"
+          {canEdit ? (
+            <div
+              className="flex min-h-[var(--geo-row-content-h,32px)] min-w-0 items-center gap-2.5 py-1"
+              title="Observações"
             >
-              <FileText className="h-[18px] w-[18px]" />
-            </span>
-            <span className="sr-only">Observações</span>
-            <div className="min-w-0 flex-1">
-              <textarea
-                ref={notesRef}
-                value={notesDraft}
-                onChange={(event) => setNotesDraft(event.target.value)}
-                onBlur={commitNotes}
-                placeholder="Adicione uma observação para este recurso…"
-                rows={1}
-                aria-label="Observações do recurso"
-                className="w-full resize-none rounded-[8px] border border-transparent bg-transparent px-1.5 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
-              />
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center text-app-muted"
+                aria-hidden="true"
+              >
+                <FileText className="h-[18px] w-[18px]" />
+              </span>
+              <span className="sr-only">Observações</span>
+              <div className="min-w-0 flex-1">
+                <textarea
+                  ref={notesRef}
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
+                  onBlur={commitNotes}
+                  placeholder="Adicione uma observação para este recurso…"
+                  rows={1}
+                  aria-label="Observações do recurso"
+                  className="w-full resize-none rounded-[8px] border border-transparent bg-transparent px-1.5 py-1 text-[0.84rem] leading-snug text-app-text outline-none transition placeholder:text-app-muted hover:border-app-border focus:border-app-accent-border focus:bg-white"
+                />
+              </div>
             </div>
-          </div>
-        ) : notes ? (
-          <IconInfoRow icon={FileText} hint="Observações" value={notes} />
-        ) : null}
+          ) : notes ? (
+            <IconInfoRow icon={FileText} hint="Observações" value={notes} />
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -30,9 +30,7 @@ describe('OrganizationsStudioAdapter', () => {
   it('materializes snapshot in upsert-only fashion without deactivating absent items', async () => {
     await adapter.materialize(
       {
-        organizations: [
-          { name: 'Huawei', partyType: 'Organization', status: 'active' },
-        ],
+        organizations: [{ name: 'Huawei', partyType: 'Organization', status: 'active' }],
       },
       { tenantId: 'tenant-1' },
     );

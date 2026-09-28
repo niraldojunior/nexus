@@ -164,9 +164,7 @@ function CatalogTreePicker({
         </div>
 
         {isGroup && isExpanded && node.children && node.children.length > 0 && (
-          <div>
-            {node.children.map((child) => renderNode(child, level + 1, currentPath))}
-          </div>
+          <div>{node.children.map((child) => renderNode(child, level + 1, currentPath))}</div>
         )}
       </div>
     );
@@ -252,7 +250,9 @@ export function ResourceDefinitionModal({
   // Seleção guiada: Caminho → Tipo de Recurso → Especificação. Fabricante não é escolha do
   // usuário aqui — é atributo interno da especificação (issue nova, ver título simplificado).
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [selectedResourceType, setSelectedResourceType] = useState<CatalogResourceTypeRef | null>(null);
+  const [selectedResourceType, setSelectedResourceType] = useState<CatalogResourceTypeRef | null>(
+    null,
+  );
   const [selectedSpecificationId, setSelectedSpecificationId] = useState<string>(
     currentSpecification.id,
   );
@@ -280,9 +280,15 @@ export function ResourceDefinitionModal({
         // Inicializa com o tipo atual da spec procurando na árvore
         const currentTypeId = currentSpecification.resourceTypeId;
         if (currentTypeId) {
-          const findTypeNode = (items: ResourceCatalogTreeNode[]): CatalogResourceTypeRef | null => {
+          const findTypeNode = (
+            items: ResourceCatalogTreeNode[],
+          ): CatalogResourceTypeRef | null => {
             for (const item of items) {
-              if (item.kind === 'RESOURCE_TYPE' && item.resourceTypeId === currentTypeId && item.resourceType) {
+              if (
+                item.kind === 'RESOURCE_TYPE' &&
+                item.resourceTypeId === currentTypeId &&
+                item.resourceType
+              ) {
                 return item.resourceType;
               }
               if (item.children) {
@@ -445,12 +451,15 @@ export function ResourceDefinitionModal({
                 </label>
                 <CatalogTreePicker
                   nodes={treeNodes}
-                  selectedTypeId={selectedResourceType?.id ?? currentSpecification.resourceTypeId ?? null}
+                  selectedTypeId={
+                    selectedResourceType?.id ?? currentSpecification.resourceTypeId ?? null
+                  }
                   onSelectType={handleSelectTypeFromTree}
                 />
                 {selectedPath ? (
                   <p className="px-1 text-[0.75rem] text-app-muted">
-                    Caminho selecionado: <span className="font-medium text-app-text">{selectedPath}</span>
+                    Caminho selecionado:{' '}
+                    <span className="font-medium text-app-text">{selectedPath}</span>
                   </p>
                 ) : null}
               </div>

@@ -1,6 +1,11 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import { buildHref, type EventService, type RelatedParty, type EntityRef } from '../../shared/tmf/index.js';
+import {
+  buildHref,
+  type EventService,
+  type RelatedParty,
+  type EntityRef,
+} from '../../shared/tmf/index.js';
 import type { GeoService } from '../geo/service.js';
 import type { ResourceService } from '../resource/service.js';
 import type { PartyService } from '../party/service.js';

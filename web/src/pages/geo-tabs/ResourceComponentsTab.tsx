@@ -1,11 +1,5 @@
 import { useState } from 'react';
-import {
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Info,
-  Loader2,
-} from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronRight, Info, Loader2 } from 'lucide-react';
 import type { ResourceComponentNode } from '../../services/resourceApi';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { ResourceStateLights } from './ResourceStateLights';
@@ -198,7 +192,7 @@ export function ResourceComponentsTab({
                   <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
                     {node.portInfo.role === 'FO.O' && node.portInfo.index !== undefined
                       ? `FO.O.${node.portInfo.index}`
-                      : node.portInfo.role ?? node.name}
+                      : (node.portInfo.role ?? node.name)}
                   </span>
                   <span className="mt-0.5 block text-[0.75rem] leading-snug text-app-muted">
                     {dropState.label ??
@@ -271,9 +265,7 @@ export function ResourceComponentsTab({
                   {[typeInfo.label, node.model, node.serialNumber].filter(Boolean).join(' · ')}
                 </span>
               </span>
-              <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">
-                Abrir
-              </span>
+              <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
             </button>
           </div>
         );

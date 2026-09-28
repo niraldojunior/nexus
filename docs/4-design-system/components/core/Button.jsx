@@ -41,7 +41,8 @@ export function Button({
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     width: fullWidth ? '100%' : 'auto',
-    transition: 'background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)',
+    transition:
+      'background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)',
     whiteSpace: 'nowrap',
   };
 
@@ -81,7 +82,7 @@ export function Button({
     dark: { background: 'var(--neutral-700)', borderColor: 'var(--neutral-700)' },
     danger: { background: '#DC3F3F', borderColor: '#DC3F3F' },
   };
-  const hoverStyle = !disabled && hover ? (hovers[variant] || {}) : {};
+  const hoverStyle = !disabled && hover ? hovers[variant] || {} : {};
 
   return (
     <button

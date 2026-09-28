@@ -13,7 +13,10 @@ import {
 import { useResourceDetail } from '../../hooks/useResourceDetail';
 import { usePortDetail } from '../../hooks/usePortDetail';
 import { usePortService } from '../../hooks/usePortService';
-import { useResourceComponents } from '../../hooks/useResourceComponents';
+import {
+  invalidateResourceComponents,
+  useResourceComponents,
+} from '../../hooks/useResourceComponents';
 import { useResourceConnections } from '../../hooks/useResourceConnections';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
 import { updateResource, type PhysicalResourcePayload } from '../../services/resourceApi';
@@ -83,7 +86,12 @@ export function ResourcePanel({
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const { isClosing, requestExit } = usePanelExit(isMobile);
   const resourceId = node.refId ?? node.id.replace(/^resource:/, '');
-  const { detail, loading: detailLoading, error: detailError, reload } = useResourceDetail(resourceId);
+  const {
+    detail,
+    loading: detailLoading,
+    error: detailError,
+    reload,
+  } = useResourceDetail(resourceId);
   // Diferente do Site (SitePanel.tsx patchCurrentSite), o backend recusa conflitos como
   // RESOURCE_PORT_DROP_OCCUPIED (409) — em vez de reverter em silêncio, o erro fica visível
   // acima da aba Visão geral até a próxima tentativa.
@@ -92,38 +100,48 @@ export function ResourcePanel({
     setPatchError(null);
     try {
       await updateResource(resourceId, { '@type': 'PhysicalResource', ...patch });
+      invalidateResourceComponents(resourceId);
       await reload();
     } catch (err) {
       setPatchError(err instanceof Error ? err.message : 'Não foi possível salvar a alteração.');
     }
   };
   const isPort = node.resourceType === 'Port';
-  const { detail: portDetail, loading: portDetailLoading, error: portDetailError } = usePortDetail(resourceId, isPort);
-  const { service: portService, hasActiveService, loading: portServiceLoading, error: portServiceError } = usePortService(resourceId, isPort);
-  // Carregados aqui (não dentro das abas) para o badge do "Componentes"/"Conexões" e o
-  // conteúdo da aba usarem o mesmo fetch — evita duplicar chamada ao backend, que atende
-  // em série (AGENTS §3). Porta não tem árvore de componentes própria (usa "Recursos
-  // atendidos", derivado de usePortDetail).
+  const {
+    detail: portDetail,
+    loading: portDetailLoading,
+    error: portDetailError,
+  } = usePortDetail(resourceId, isPort);
+  const {
+    service: portService,
+    hasActiveService,
+    loading: portServiceLoading,
+    error: portServiceError,
+  } = usePortService(resourceId, isPort);
+  const [tab, setTab] = useState<
+    'overview' | 'about' | 'components' | 'connections' | 'service' | 'history'
+  >('overview');
+  // A árvore recursiva pode conter milhares de nós e o backend atende requisições em série
+  // (AGENTS §3). Portanto, só a buscamos quando a pessoa abre Componentes. O hook retém o
+  // resultado por recurso, para que navegar entre abas não refaça a mesma consulta.
+  // Porta não tem árvore própria (usa "Recursos atendidos", derivado de usePortDetail).
   const {
     components,
     truncated: componentsTruncated,
     loading: componentsLoading,
     error: componentsError,
     reload: reloadComponents,
-  } = useResourceComponents(resourceId, { enabled: !isPort });
+  } = useResourceComponents(resourceId, { enabled: !isPort && tab === 'components' });
   const {
     connections,
     loading: connectionsLoading,
     error: connectionsError,
     reload: reloadConnections,
-  } = useResourceConnections(resourceId);
+  } = useResourceConnections(resourceId, { enabled: tab === 'connections' });
   // Conta direto+indireto (toda a árvore recursiva já vem em `components`, ver
   // useResourceComponents) e deduplica `connectedTo` simétrico — mesma regra do contador
   // e da lista da aba "Conexões" (ResourceConnectionsTab.tsx).
   const connectionsCount = dedupeResourceConnections(connections).length;
-  const [tab, setTab] = useState<
-    'overview' | 'about' | 'components' | 'connections' | 'service' | 'history'
-  >('overview');
   // ONT alimentada pelo drop ativo — só existe quando a fiação física segue conectada,
   // mesmo em churn (sem RFS/CFS ativos). Entra na lista de "Recursos atendidos" da Porta.
   const activeDropOnt = portDetail?.drops.find((drop) => drop.active)?.ont;
@@ -305,7 +323,10 @@ export function ResourcePanel({
             {streetViewTargets.length > 1 ? (
               <div className="border-t border-app-border pt-2">
                 {streetViewTargets.map((target) => (
-                  <div key={`${target.label ?? 'ponto'}:${target.point.join(',')}`} className="py-1">
+                  <div
+                    key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
+                    className="py-1"
+                  >
                     <CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />
                   </div>
                 ))}
@@ -356,10 +377,21 @@ export function ResourcePanel({
                     onClick={() => onOpenResource(drop.resource.id)}
                     className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                   >
-                    <ResourceIcon resource={{ resourceType: drop.resource.resourceType, name: drop.resource.name }} variant="glyph" size={26} />
+                    <ResourceIcon
+                      resource={{
+                        resourceType: drop.resource.resourceType,
+                        name: drop.resource.name,
+                      }}
+                      variant="glyph"
+                      size={26}
+                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{drop.resource.name}</span>
-                      <span className="mt-0.5 block text-[0.75rem] text-app-muted">{drop.active ? 'Conexão atual' : 'Conexão histórica'}</span>
+                      <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
+                        {drop.resource.name}
+                      </span>
+                      <span className="mt-0.5 block text-[0.75rem] text-app-muted">
+                        {drop.active ? 'Conexão atual' : 'Conexão histórica'}
+                      </span>
                     </span>
                   </button>
                 ))}
@@ -370,10 +402,21 @@ export function ResourcePanel({
                     onClick={() => onOpenResource(activeDropOnt.id)}
                     className="flex w-full min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
                   >
-                    <ResourceIcon resource={{ resourceType: activeDropOnt.resourceType ?? '', name: activeDropOnt.name }} variant="glyph" size={26} />
+                    <ResourceIcon
+                      resource={{
+                        resourceType: activeDropOnt.resourceType ?? '',
+                        name: activeDropOnt.name,
+                      }}
+                      variant="glyph"
+                      size={26}
+                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">{activeDropOnt.name}</span>
-                      <span className="mt-0.5 block text-[0.75rem] text-app-muted">ONT alimentada</span>
+                      <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
+                        {activeDropOnt.name}
+                      </span>
+                      <span className="mt-0.5 block text-[0.75rem] text-app-muted">
+                        ONT alimentada
+                      </span>
                     </span>
                   </button>
                 ) : null}
@@ -418,7 +461,9 @@ export function ResourcePanel({
             Carregando serviço…
           </div>
         ) : portServiceError ? (
-          <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">{portServiceError}</div>
+          <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
+            {portServiceError}
+          </div>
         ) : null
       ) : null}
 

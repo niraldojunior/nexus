@@ -19,15 +19,31 @@ import {
   parseAddressString,
 } from '../src/scripts/netwin-migration/phase2-locations.js';
 import {
+  chunksOf,
+  fullTableIdQuery,
+  namedInBinds,
+  resourceIdsByInfranodesQuery,
+  resourceIdsByStructuredInfranodeQuery,
+  scopedInfranodeIdQuery,
+} from '../src/scripts/netwin-migration/source-batches.js';
+import {
   isCompatiblePortSpecification,
   parseSplitterRatio,
   resolveCanonicalCdoParents,
 } from '../src/scripts/netwin-migration/phase2-internal-plant.js';
+import { isStationPlantDiscoveryBlocked } from '../src/scripts/netwin-migration/phase2-station-internal-plant.js';
 import { CANONICAL_SITE_SPECS } from '../src/scripts/netwin-migration/phase1-site-specs.js';
 import {
   CANONICAL_RESOURCE_TYPES,
   formatResourceCatalogLoadSummary,
 } from '../src/scripts/netwin-migration/phase1-resource-specs.js';
+import {
+  enqueueNativeRelationships,
+  NATIVE_MAPPING_VERSION,
+  nativeScopeKey,
+  reconcileNativeRelationships,
+  summarizeNativeRelationships,
+} from '../src/scripts/netwin-migration/checkpoint.js';
 import { assertReadOnlySourceSql } from '../src/scripts/netwin-migration/context.js';
 import { bulkMergeRows, mergeSql } from '../src/scripts/netwin-migration-kit.js';
 import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
@@ -167,6 +183,55 @@ describe('netwin-migration: Fase 2.A por bairro', () => {
   });
 });
 
+describe('netwin-migration: seleção e hidratação em lote', () => {
+  it('descobre IDs estruturados sem JOIN, endereço, WKT ou agregação', () => {
+    const query = scopedInfranodeIdQuery([
+      'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
+    ]);
+
+    expect(query).toContain('SELECT DISTINCT infranode.PI_ID');
+    expect(query).toContain('ORDER BY infranode.PI_ID');
+    expect(query).not.toMatch(/NETWIN\.LOCATION|ADDRESS|WKT|GROUP BY|LIKE/i);
+  });
+
+  it('pagina a carga full somente pela chave da tabela', () => {
+    const query = fullTableIdQuery('NETWIN.OSP_EQUIPMENT');
+    expect(query).toContain('FROM NETWIN.OSP_EQUIPMENT');
+    expect(query).toContain('WHERE ID > :lastId');
+    expect(query).toContain('ORDER BY ID');
+    expect(query).not.toMatch(/WKT|ADDRESS|GROUP BY/i);
+  });
+
+  it('seleciona equipamentos de bairro pelo índice estruturado antes da hidratação', () => {
+    const query = resourceIdsByStructuredInfranodeQuery('NETWIN.OSP_EQUIPMENT', 'INFRANODE_ID', [
+      'NETWIN.LIMPASTRING(infranode.BAIRRO) = :bairro',
+    ]);
+    expect(query).toContain('JOIN NETWINOI.DL_INFRANODE infranode');
+    expect(query).toContain('resource.INFRANODE_ID');
+    expect(query).toContain('SELECT resource.ID');
+    expect(query).not.toMatch(/WKT|ADDRESS|GROUP BY|LIKE/i);
+  });
+
+  it('pagina recursos por âncoras EXCHANGE em blocos sem hidratar geometria', () => {
+    const query = resourceIdsByInfranodesQuery('NETWIN.OSP_CABLE', 'EXCHANGE_ID');
+    expect(query).toContain('FROM NETWIN.OSP_CABLE source_resource');
+    expect(query).toContain('source_resource.EXCHANGE_ID IN (__INFRANODE_IDS__)');
+    expect(query).toContain('source_resource.ID > :lastId');
+    expect(query).toContain('ORDER BY source_resource.ID');
+    expect(query).not.toMatch(/WKT|ADDRESS|GROUP BY|LIKE/i);
+  });
+
+  it('mantém binds nomeados e chunks abaixo do limite Oracle', () => {
+    const ids = Array.from({ length: 1_801 }, (_, index) => index + 1);
+    const chunks = chunksOf(ids);
+    expect(chunks.map((chunk) => chunk.length)).toEqual([900, 900, 1]);
+    expect(namedInBinds([12, 34], 'location')).toEqual({
+      clause: ':location0, :location1',
+      binds: { location0: 12, location1: 34 },
+    });
+  });
+});
+
 describe('netwin-migration: address parsing', () => {
   it('faz o parse correto de endereço padrão Netwin', () => {
     const raw = 'RUA ATAULPHO COUTINHO, 80, BLOCO 1, BARRA DA TIJUCA, RIO DE JANEIRO - RJ 22793520';
@@ -184,6 +249,15 @@ describe('netwin-migration: address parsing', () => {
   it('retorna null para endereço vazio', () => {
     expect(parseAddressString('')).toBeNull();
     expect(parseAddressString(null)).toBeNull();
+  });
+});
+
+describe('netwin-migration: gate da Fase 2.D', () => {
+  it('bloqueia a finalização enquanto restarem contratos de planta interna', () => {
+    expect(
+      isStationPlantDiscoveryBlocked({ unresolvedContracts: ['Contrato ISP pendente'] } as never),
+    ).toBe(true);
+    expect(isStationPlantDiscoveryBlocked({ unresolvedContracts: [] } as never)).toBe(false);
   });
 });
 
@@ -210,6 +284,182 @@ describe('netwin-migration: CLI', () => {
   it('mantém default até que o contexto exija tenant explícito em APPLY', () => {
     expect(parseCliArgs(['--phase', '1']).tenantId).toBe('default');
     expect(parseCliArgs(['--phase', '1', '--tenant-id', 'vtal', '--apply']).tenantId).toBe('vtal');
+  });
+
+  it('exige APPLY e identificador para retomar job persistido', () => {
+    expect(() => parseCliArgs(['--phase', '2', '--full', '--resume'])).toThrow(/--apply/i);
+    expect(() => parseCliArgs(['--phase', '2', '--full', '--apply', '--resume'])).toThrow(
+      /--job-id/i,
+    );
+    expect(() => parseCliArgs(['--phase', '2', '--full', '--job-id', 'job-1'])).toThrow(/--apply/i);
+    expect(
+      parseCliArgs(['--phase', '2', '--full', '--apply', '--resume', '--job-id', 'job-1']),
+    ).toMatchObject({ apply: true, resume: true, jobId: 'job-1' });
+  });
+});
+
+describe('netwin-migration: checkpoint nativo', () => {
+  it('normaliza a chave de escopo persistida e mantém versão explícita', () => {
+    expect(NATIVE_MAPPING_VERSION).toMatch(/^netwin-native-phase2-v\d+$/);
+    expect(
+      nativeScopeKey({
+        options: {
+          scope: { full: false, uf: 'rj', municipio: 'Niterói', bairro: 'Icaraí' },
+        },
+      } as never),
+    ).toBe('uf:RJ|municipio:NITEROI|bairro:ICARAI');
+    expect(nativeScopeKey({ options: { scope: { full: true } } } as never)).toBe('full');
+  });
+});
+
+describe('netwin-migration: relações topológicas pendentes', () => {
+  const t = (table: string) => `NX_TEST_${table.toUpperCase()}`;
+  const ctx = {
+    options: { jobId: 'job-1', tenantId: 'vtal' },
+    t,
+  } as never;
+
+  it('enfileira relações por INSERT estrito em chunks, sem reconciliar o lote', async () => {
+    const calls: Array<{ sql: string; binds: unknown[][]; options: unknown }> = [];
+    const target = {
+      executeMany: async (sql: string, binds: unknown[][], options: unknown) => {
+        calls.push({ sql, binds, options });
+        return { rowsAffected: binds.length };
+      },
+      execute: async () => {
+        throw new Error('não deveria reconciliar durante o lote');
+      },
+    };
+    const relationships = [
+      {
+        resource_from_id: 'equipment-a',
+        resource_to_id: 'cable-a',
+        relationship_type: 'connectedTo',
+      },
+      {
+        resource_from_id: 'cable-a',
+        resource_to_id: 'route-a',
+        relationship_type: 'supportedBy',
+      },
+      {
+        resource_from_id: 'cable-b',
+        resource_to_id: 'route-b',
+        relationship_type: 'supportedBy',
+      },
+    ];
+
+    await expect(enqueueNativeRelationships(target as never, ctx, relationships, 2)).resolves.toBe(
+      3,
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.sql).toContain('INSERT INTO NX_TEST_NETWIN_MIG_NATIVE_RELATIONSHIP');
+    expect(calls[0]?.sql).not.toContain('MERGE');
+    expect(calls[0]?.sql).toContain('created_at');
+    expect(calls[0]?.binds).toHaveLength(2);
+    expect(calls[1]?.binds).toHaveLength(1);
+    expect(calls[0]?.binds[0]?.slice(0, 4)).toEqual([
+      'job-1',
+      'equipment-a',
+      'cable-a',
+      'connectedTo',
+    ]);
+    expect(calls[0]?.binds[0]?.[4]).toBeInstanceOf(Date);
+    expect(calls[0]?.binds[0]?.[4]).toBe(calls[1]?.binds[0]?.[4]);
+    expect(calls[0]?.options).toEqual({ autoCommit: false });
+  });
+
+  it('propaga falha da fila sem tolerar duplicidade silenciosamente', async () => {
+    const duplicate = new Error('ORA-00001: unique constraint violated');
+    const target = {
+      executeMany: async () => {
+        throw duplicate;
+      },
+    };
+
+    await expect(
+      enqueueNativeRelationships(
+        target as never,
+        ctx,
+        [
+          {
+            resource_from_id: 'equipment-a',
+            resource_to_id: 'cable-a',
+            relationship_type: 'connectedTo',
+          },
+        ],
+        1000,
+      ),
+    ).rejects.toBe(duplicate);
+  });
+
+  it('não tenta enfileirar relação sem job persistido', async () => {
+    const target = {
+      executeMany: async () => {
+        throw new Error('não deveria persistir');
+      },
+    };
+    await expect(
+      enqueueNativeRelationships(
+        target as never,
+        { options: { tenantId: 'vtal' }, t } as never,
+        [
+          {
+            resource_from_id: 'equipment-a',
+            resource_to_id: 'cable-a',
+            relationship_type: 'connectedTo',
+          },
+        ],
+        1000,
+      ),
+    ).resolves.toBe(0);
+  });
+
+  it('reconcilia somente os extremos físicos existentes no tenant do job', async () => {
+    let sql = '';
+    const target = {
+      execute: async (value: string) => {
+        sql = value;
+        return { rowsAffected: 2 };
+      },
+    };
+    await expect(reconcileNativeRelationships(target as never, ctx)).resolves.toBe(2);
+    expect(sql).toContain('pending.job_id = :jobId');
+    expect(sql).toContain('source_resource.tenant_id = :tenantId');
+    expect(sql).toContain('target_resource.tenant_id = :tenantId');
+  });
+
+  it('resume filas preexistentes e resume pendências por extremo ausente', async () => {
+    let sql = '';
+    const target = {
+      execute: async (value: string) => {
+        sql = value;
+        return {
+          rows: [
+            {
+              TOTAL: 12,
+              ELIGIBLE: 7,
+              MISSING_SOURCE: 2,
+              MISSING_TARGET: 1,
+              MISSING_BOTH: 2,
+            },
+          ],
+        };
+      },
+    };
+
+    await expect(summarizeNativeRelationships(target as never, ctx)).resolves.toEqual({
+      total: 12,
+      eligible: 7,
+      missingSource: 2,
+      missingTarget: 1,
+      missingBoth: 2,
+    });
+    expect(sql).toContain('pending.job_id = :jobId');
+    expect(sql).toContain('LEFT JOIN NX_TEST_TMF_PHYSICAL_RESOURCE source_resource');
+    expect(sql).toContain('LEFT JOIN NX_TEST_TMF_PHYSICAL_RESOURCE target_resource');
+    expect(sql).toContain('source_resource.tenant_id = :tenantId');
+    expect(sql).toContain('target_resource.tenant_id = :tenantId');
   });
 });
 

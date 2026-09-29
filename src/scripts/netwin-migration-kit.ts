@@ -238,19 +238,28 @@ export async function merge(
   await target.execute(mergeSql(t, table, keys, columns), Object.values(record));
 }
 
+// Maior payload que ainda cabe num bind VARCHAR2 de `executeMany`. Acima disso o bind precisa
+// mesmo ser CLOB; abaixo, CLOB é só custo.
+const MAX_VARCHAR2_BIND_BYTES = 4000;
+
 // `executeMany` infere tipo/tamanho de cada bind a partir da PRIMEIRA linha do lote. Se uma linha
 // posterior tiver um valor bem maior naquela coluna (ex.: geometria de polígono agregado em nível
 // cidade/UF, muito maior que a geometria de bairro que calhou de abrir o lote), o driver excede o
 // espaço reservado e o Oracle rejeita com ORA-01461 — mesmo a coluna de destino sendo CLOB.
 // Calcular o `bindDef` a partir do lote inteiro (não só da primeira linha) evita esse falso
-// negativo; colunas conhecidas como CLOB (característica/geometria/relatedParty) sempre usam bind
-// explícito `type: oracledb.CLOB`, que aceita qualquer tamanho.
+// negativo.
+//
+// Para colunas CLOB a escolha é por TAMANHO MEDIDO no lote, não pelo nome da coluna. Bind CLOB
+// materializa um LOB temporário por valor no servidor, com round-trips próprios: medido no Oracle
+// dev, 2.000 linhas de `tmf_geographic_site` (related_party 46B, characteristics 221B) levaram
+// 77.970ms com bind CLOB contra 196ms com bind VARCHAR2 — ~400x. Na Fase 2.A do Netwin isso era
+// ~105s dos ~109s de cada lote. Quando o lote realmente passa de VARCHAR2 (geometria grande, o
+// caso do ORA-01461 acima), o bind volta a ser CLOB automaticamente.
 export function bulkMergeBindDefs(
   columns: string[],
   rows: Array<Record<string, unknown>>,
 ): BindDefinition[] {
   return columns.map((column) => {
-    if (CLOB_COLUMNS.has(column)) return { type: oracledb.CLOB };
     let sawNumber = false;
     let maxSize = 1;
     for (const row of rows) {
@@ -261,6 +270,10 @@ export function bulkMergeBindDefs(
         continue;
       }
       maxSize = Math.max(maxSize, Buffer.byteLength(String(value), 'utf8'));
+    }
+    if (CLOB_COLUMNS.has(column)) {
+      if (maxSize > MAX_VARCHAR2_BIND_BYTES) return { type: oracledb.CLOB };
+      return { type: oracledb.STRING, maxSize };
     }
     return sawNumber ? { type: oracledb.NUMBER } : { type: oracledb.STRING, maxSize };
   });

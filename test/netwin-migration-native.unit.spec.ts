@@ -875,7 +875,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
     ).resolves.toBe(0);
   });
 
-  it('força bind CLOB em colunas conhecidas, mesmo quando a primeira linha do lote é curta', () => {
+  it('força bind CLOB em coluna CLOB quando o lote estoura VARCHAR2, mesmo com primeira linha curta', () => {
     // Reproduz a Fase 3.B: o polígono de bairro (primeira linha) é pequeno, mas o polígono
     // agregado de cidade/UF (linha posterior) é muito maior. Sem bindDef explícito, o
     // node-oracledb dimensiona o bind pela primeira linha e o Oracle rejeita a linha maior com
@@ -889,7 +889,32 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
     );
     expect(bindDefs[0]).toMatchObject({ type: oracledb.STRING });
     expect(bindDefs[1]).toEqual({ type: oracledb.CLOB });
-    expect(bindDefs[2]).toEqual({ type: oracledb.CLOB });
+    // `characteristics` é coluna CLOB no destino, mas neste lote cabe em VARCHAR2 — o bind CLOB
+    // seria só custo.
+    expect(bindDefs[2]).toMatchObject({ type: oracledb.STRING });
+  });
+
+  it('não usa bind CLOB quando o lote inteiro cabe em VARCHAR2: o LOB temporário custa ~400x', () => {
+    // Medido no Oracle dev: 2.000 linhas de tmf_geographic_site com related_party (46B) e
+    // characteristics (221B) levaram 77.970ms com bind CLOB contra 196ms com bind VARCHAR2.
+    const bindDefs = bulkMergeBindDefs(
+      ['related_party', 'characteristics'],
+      [
+        { related_party: '[{"id":"vtal"}]', characteristics: '[]' },
+        { related_party: '[]', characteristics: '[{"name":"system","value":"Netwin"}]' },
+      ],
+    );
+    expect(bindDefs[0]).toMatchObject({ type: oracledb.STRING });
+    expect(bindDefs[1]).toMatchObject({ type: oracledb.STRING });
+  });
+
+  it('volta ao bind CLOB assim que um único valor do lote passa de 4000 bytes', () => {
+    expect(
+      bulkMergeBindDefs(['characteristics'], [{ characteristics: 'x'.repeat(4000) }])[0],
+    ).toMatchObject({ type: oracledb.STRING });
+    expect(
+      bulkMergeBindDefs(['characteristics'], [{ characteristics: 'x'.repeat(4001) }])[0],
+    ).toEqual({ type: oracledb.CLOB });
   });
 
   it('reconhece colunas numéricas mistas com NULL sem forçar bind STRING', () => {

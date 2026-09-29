@@ -24,9 +24,13 @@ describe('netwin-migration: bairro scope', () => {
     expect(municipalityInfranodePredicate('infranode')).toBe(
       'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
     );
-    expect(ufInfranodePredicate('infranode')).toBe(
-      'NETWIN.LIMPASTRING(infranode.BADDR_UF_ABRV) = :uf',
-    );
+    expect(ufInfranodePredicate('infranode')).toBe('infranode.BADDR_UF_ABRV = :uf');
+  });
+
+  it('compara a UF diretamente, sem LIMPASTRING, para preservar o caminho indexado', () => {
+    // A sigla já é maiúscula e sem acento na origem, e não existe índice funcional sobre
+    // LIMPASTRING(BADDR_UF_ABRV) — envolver a coluna só custaria uma chamada PL/SQL por linha.
+    expect(ufInfranodePredicate('infranode')).not.toContain('LIMPASTRING');
   });
 
   it('mantém os binds do recorte de bairro isolados da consulta sem escopo', () => {

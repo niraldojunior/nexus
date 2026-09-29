@@ -199,7 +199,7 @@ describe('netwin-migration: Fase 2.A por bairro', () => {
       'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
     ]);
 
-    expect(query).toContain('SELECT DISTINCT infranode.PI_ID');
+    expect(query).toContain('SELECT infranode.PI_ID');
     expect(query).toContain('FROM NETWINOI.DL_INFRANODE infranode');
     expect(query).toContain('infranode.PI_ID > :lastId');
     expect(query).toContain('ORDER BY infranode.PI_ID');
@@ -214,9 +214,18 @@ describe('netwin-migration: seleção e hidratação em lote', () => {
       'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
     ]);
 
-    expect(query).toContain('SELECT DISTINCT infranode.PI_ID');
+    expect(query).toContain('SELECT infranode.PI_ID');
     expect(query).toContain('ORDER BY infranode.PI_ID');
     expect(query).not.toMatch(/NETWIN\.LOCATION|ADDRESS|WKT|GROUP BY|LIKE/i);
+  });
+
+  it('não usa DISTINCT na paginação de escopo: ele é inócuo e bloqueia o stop-key', () => {
+    // PI_ID já é único por linha dentro de um recorte geográfico (medido no DR para RJ:
+    // 2.102.724 linhas para 2.102.724 PI_IDs). O DISTINCT não removia nada e impedia o Oracle
+    // de parar nas primeiras `batchSize` linhas, materializando a UF inteira a cada página —
+    // ~52s por página contra ~0,7s sem ele.
+    const query = scopedInfranodeIdQuery(['infranode.BADDR_UF_ABRV = :uf']);
+    expect(query).not.toMatch(/DISTINCT/i);
   });
 
   it('pagina a carga full somente pela chave da tabela', () => {

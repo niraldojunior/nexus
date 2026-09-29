@@ -46,11 +46,21 @@ export function structuredInfranodePredicates(
 /**
  * Descobre apenas PI_ID do índice geográfico estruturado. Não use esta query para hidratar
  * LOCATION: o recorte é propositalmente separado para evitar JOIN/LIKE/GROUP BY por página.
+ *
+ * Sem DISTINCT: PI_ID já é único por linha em DL_INFRANODE dentro de um recorte geográfico
+ * (medido no DR para `--uf RJ`: 2.102.724 linhas para 2.102.724 PI_IDs distintos). O DISTINCT
+ * não eliminava nenhuma linha e custava caríssimo — SORT/HASH UNIQUE é bloqueante, então o
+ * Oracle não conseguia empurrar o stop-key do ROWNUM através dele e materializava a UF inteira
+ * a cada página. Medido: ~52s por página com DISTINCT contra ~0,7s sem, o que projeta 15h
+ * contra 12min só na seleção de IDs do RJ.
+ *
+ * Sem o DISTINCT a paginação percorre DL_INFRANODE_IDX1 (PI_ID) em ordem e para nas primeiras
+ * `batchSize` linhas que casam com o predicado, sem precisar de índice sobre a coluna de escopo.
  */
 export const scopedInfranodeIdQuery = (predicates: string[]): string => `
   SELECT PI_ID
   FROM (
-    SELECT DISTINCT infranode.PI_ID
+    SELECT infranode.PI_ID
     FROM NETWINOI.DL_INFRANODE infranode
     WHERE infranode.PI_ID > :lastId
       AND ${predicates.join(' AND ')}

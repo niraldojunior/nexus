@@ -357,14 +357,23 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           );
           timing.siteMergeMs = elapsed(startedAt);
           startedAt = Date.now();
+          // Binds nomeados, não posicionais: node-oracledb liga binds por ordem de aparição e
+          // ignora o número em `:n`, então `:1` repetido consumia um terceiro valor inexistente
+          // no array de dois elementos. Com nome, a repetição de :parentId resolve corretamente.
           if (associations.length > 0)
             await target.executeMany(
-              `UPDATE ${ctx.t('tmf_geographic_site')} child SET child.parent_site_id=:1 WHERE child.id=:2 AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} parent WHERE parent.id=:1)`,
-              associations.map((association) => [
-                netwinLocationId(association.ID_PARENT),
-                netwinLocationId(association.ID_CHILD),
-              ]),
-              { autoCommit: false },
+              `UPDATE ${ctx.t('tmf_geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} parent WHERE parent.id=:parentId)`,
+              associations.map((association) => ({
+                parentId: netwinLocationId(association.ID_PARENT),
+                childId: netwinLocationId(association.ID_CHILD),
+              })),
+              {
+                autoCommit: false,
+                bindDefs: {
+                  parentId: { type: oracledb.STRING, maxSize: 36 },
+                  childId: { type: oracledb.STRING, maxSize: 36 },
+                },
+              },
             );
           timing.hierarchyUpdateMs = elapsed(startedAt);
           await saveNativeCheckpoint(target, ctx, '2A', {

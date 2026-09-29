@@ -196,9 +196,13 @@ export async function hydrateByIds<T extends Record<string, unknown>>(
  * try/catch do lado do Node nunca chega a rodar. Foi o que derrubou a Fase 2.B em OSP_ROUTE.
  *
  * A conversão em lote continua sendo o caminho rápido — dado limpo custa um round-trip por chunk.
- * Só quando o chunk estoura é que caímos para uma consulta por id, isolando a linha defeituosa:
- * ela perde a geometria em vez de levar as outras junto. O custo por linha fica restrito aos
- * chunks realmente contaminados.
+ * Quando o chunk estoura, **bissecta**: parte ao meio e tenta cada metade. A linha ruim é
+ * isolada em ~2·log2(n) consultas em vez de n, e todo id são numa metade limpa volta em lote.
+ *
+ * A bisseção importa porque a corrupção não é rara. Medido no RJ, `OSP_ROUTE` traz ~25 rotas
+ * ruins por lote de 2.000 (~1,3%) — espalhadas o bastante para contaminar quase todo chunk de
+ * 900. Com fallback linear isso era ~2.000 consultas por lote e derrubava a vazão de 852/s
+ * (equipamentos) para 58/s.
  *
  * Devolve um mapa só com os ids que converteram; os ausentes são os corrompidos.
  */
@@ -215,33 +219,30 @@ export async function hydrateWktByIds(
                          SDO_UTIL.TO_WKTGEOMETRY(source_row.${geometryColumn}) AS WKT
                     FROM ${table} source_row`;
 
-  for (const chunk of chunksOf(ids)) {
-    const { clause, binds } = namedInBinds(chunk, 'id');
+  const convert = async (batch: readonly number[]): Promise<void> => {
+    if (batch.length === 0) return;
+    const { clause, binds } = namedInBinds(batch, 'id');
     try {
       const result = await source.execute<{ ID: number; WKT: string | null }>(
         `${select} WHERE source_row.${idColumn} IN (${clause})`,
         binds,
-        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: chunk.length },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: batch.length },
       );
       for (const row of result.rows ?? []) if (row.WKT) wktById.set(row.ID, row.WKT);
-      continue;
+      return;
     } catch {
-      // Chunk contaminado: repete linha a linha para descobrir quais ids são os ruins.
+      // Lote contaminado: isola abaixo.
     }
-    for (const id of chunk) {
-      try {
-        const result = await source.execute<{ ID: number; WKT: string | null }>(
-          `${select} WHERE source_row.${idColumn} = :id`,
-          { id },
-          { outFormat: oracledb.OUT_FORMAT_OBJECT },
-        );
-        const wkt = result.rows?.[0]?.WKT;
-        if (wkt) wktById.set(id, wkt);
-      } catch {
-        failedIds.push(id);
-      }
+    if (batch.length === 1) {
+      failedIds.push(batch[0]!);
+      return;
     }
-  }
+    const middle = Math.floor(batch.length / 2);
+    await convert(batch.slice(0, middle));
+    await convert(batch.slice(middle));
+  };
+
+  for (const chunk of chunksOf(ids)) await convert(chunk);
   return { wktById, failedIds };
 }
 

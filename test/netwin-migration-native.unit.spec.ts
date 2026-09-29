@@ -311,9 +311,25 @@ describe('netwin-migration: geometria corrompida na origem', () => {
       [1, 2, 3],
     );
     expect(failedIds).toEqual([2]);
-    expect([...wktById.keys()]).toEqual([1, 3]);
-    // 1 tentativa em lote (falha) + 3 individuais.
-    expect(connection.calls).toHaveLength(4);
+    expect([...wktById.keys()].sort()).toEqual([1, 3]);
+    // Bisseção: [1,2,3] falha → [1] ok → [2,3] falha → [2] falha → [3] ok. 5 consultas.
+    expect(connection.calls).toHaveLength(5);
+  });
+
+  it('bissecta em vez de varrer linha a linha, mantendo o fallback sublinear', async () => {
+    // O caso real: ~1,3% de corrupção espalhada o bastante para contaminar o chunk inteiro.
+    // Com fallback linear eram 900 consultas por chunk; a bisseção isola cada linha ruim em
+    // ~2·log2(n) e devolve em lote toda metade limpa.
+    const ids = Array.from({ length: 128 }, (_, index) => index + 1);
+    const connection = fakeConnection(new Set([7, 64]));
+    const { wktById, failedIds } = await hydrateWktByIds(
+      connection as never,
+      'NETWIN.OSP_ROUTE',
+      ids,
+    );
+    expect(failedIds.sort((left, right) => left - right)).toEqual([7, 64]);
+    expect(wktById.size).toBe(126);
+    expect(connection.calls.length).toBeLessThan(40);
   });
 });
 

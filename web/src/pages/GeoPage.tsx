@@ -34,7 +34,7 @@ import {
   resourceIconSizeForScale,
   type CoverageLevel,
 } from '../utils/mapScale';
-import { useGponCoverage } from '../hooks/useGponCoverage';
+import { useCoverage } from '../hooks/useCoverage';
 import { useMapTiles } from '../hooks/useMapTiles';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
@@ -42,7 +42,7 @@ import { useMapLayers } from '../hooks/useMapLayers';
 import { useMapLayerCatalog } from '../hooks/useMapLayerCatalog';
 import { useGeoViewState } from '../hooks/useGeoViewState';
 import {
-  hasVisibleGponAggregate,
+  visibleCoverageLayer,
   mapLayerEntities,
   mapLayerVisualRank,
   viewportInclude,
@@ -173,16 +173,20 @@ type MapBalloon = {
   rows: Array<[string, string]>;
 };
 
-// Balão de hover da cobertura GPON: a área sob o cursor, com os números da rede. Não é um item
-// pontual (não tem ícone de local/recurso), então usa um swatch da cor de disponibilidade. O
-// título e a linha de localização mudam com o nível (LOD): bairro mostra município/UF; município
-// mostra só o UF; estado não repete o próprio nome.
+// Balão de hover de uma camada de cobertura (qualquer uma — GPON é hoje a única, mas o balão não
+// sabe disso): a área sob o cursor, com os números da rede. Não é um item pontual (não tem ícone
+// de local/recurso), então usa um swatch da cor de disponibilidade. O título e a linha de
+// localização mudam com o nível (LOD): bairro mostra município/UF; município mostra só o UF;
+// estado não repete o próprio nome. `layerLabel`/`unitLabel` vêm da camada publicada no Studio —
+// sem eles, cai num rótulo neutro em vez de inventar "CDO" para uma camada que não é GPON.
 function coverageBalloonOf(
   hover: { point: [number, number]; neighborhood: CoverageNeighborhood } | null,
   level: CoverageLevel | undefined,
+  layerLabel: string | undefined,
 ): MapBalloon | null {
   if (!hover) return null;
   const { neighborhood, point } = hover;
+  const unitLabel = neighborhood.unitLabel ?? 'Unidades';
   const pct = Math.round(neighborhood.availabilityRatio * 100);
   const title =
     level === 'uf'
@@ -194,9 +198,9 @@ function coverageBalloonOf(
   if (level === 'city') rows.push(['Estado', neighborhood.uf]);
   else if (level !== 'uf') rows.push(['Município', `${neighborhood.city}/${neighborhood.uf}`]);
   rows.push(
-    ['CDOs', String(neighborhood.cdoTotal)],
-    ['Disponíveis', `${neighborhood.cdoAvailable} (${pct}%)`],
-    ['Indisponíveis', String(neighborhood.cdoUnavailable)],
+    [unitLabel, String(neighborhood.unitTotal)],
+    ['Disponíveis', `${neighborhood.unitAvailable} (${pct}%)`],
+    ['Indisponíveis', String(neighborhood.unitUnavailable)],
     ['Área coberta', `${neighborhood.coveredAreaKm2.toFixed(2)} km²`],
   );
   // Takeup (portas ocupadas / totais) entra quando a carga trouxer o dado — hoje é null.
@@ -210,7 +214,7 @@ function coverageBalloonOf(
     point,
     offset: [0, -12],
     iconUrl: coverageSwatchDataUrl(neighborhood.availabilityRatio),
-    eyebrow: 'Cobertura GPON',
+    eyebrow: layerLabel ?? 'Cobertura',
     title,
     rows,
   };
@@ -618,7 +622,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [hoverNode, setHoverNode] = useState<GeoTreeNode | null>(null);
 
   const [scaleMeters, setScaleMeters] = useState<number | null>(null);
-  // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura GPON,
+  // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura,
   // que roda acima de 100 m, não na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
 
@@ -738,28 +742,30 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     return mapNodes.some((node) => node.id === selectedNode.id) ? null : selectedNode;
   }, [selectedNode, passiveInfraVisible, mapNodes]);
 
-  // Cobertura GPON da viewport (mapa de calor por bairro), só acima de 100 m.
-  // Camada "Cobertura GPON" desligada corta a busca inteira: bounds nulo já limpa `coverage` e
-  // zera o dedupe interno do hook, então religar refaz o fetch sem precisar mexer no mapa.
-  const gponAggregateVisible = hasVisibleGponAggregate(
-    mapLayers.layers,
-    mapLayerCatalog.catalog,
-    scaleMeters,
-  );
-  const { data: coverage, loading: coverageLoading } = useGponCoverage(
-    gponAggregateVisible ? viewportBounds : null,
-    scaleMeters,
-    gponAggregateVisible,
-  );
-  const coverageLayer = useMemo(
+  // Cobertura da viewport (mapa de calor por bairro), só acima de 100 m. `visibleCoverageLayer`
+  // resolve visibilidade e identidade da camada de uma vez, por `entity.category === 'COVERAGE'`
+  // — GPON é hoje o único gerador de dados, mas a página não sabe disso. Camada de cobertura
+  // desligada corta a busca inteira: bounds nulo já limpa `coverage` e zera o dedupe interno do
+  // hook, então religar refaz o fetch sem precisar mexer no mapa. Com duas camadas COVERAGE
+  // ligadas ao mesmo tempo, ganha a primeira em ordem de desenho — só uma mancha por vez.
+  const coverageLayer = visibleCoverageLayer(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters);
+  const coverageVisible = Boolean(coverageLayer);
+  const coverageLayerRef = useMemo(
     () =>
-      mapLayerEntities(mapLayerCatalog.catalog).find(
-        (node) => node.entity.sourceType === 'GPON_AGGREGATE',
-      ),
-    [mapLayerCatalog.catalog],
+      coverageLayer
+        ? { sourceType: coverageLayer.entity.sourceType, sourceId: coverageLayer.entity.sourceId }
+        : null,
+    [coverageLayer],
   );
-  // O agregado GPON não expõe status por área em runtime — a cor resolvida cai sempre no
-  // `defaultColor` da regra publicada, sem inventar um estado que a fonte não fornece.
+  const { data: coverage, loading: coverageLoading } = useCoverage(
+    coverageVisible ? viewportBounds : null,
+    scaleMeters,
+    coverageVisible,
+    coverageLayerRef,
+  );
+  // Nem toda camada de cobertura expõe status por área em runtime — a cor resolvida cai sempre
+  // no `defaultColor` da regra publicada quando não há, sem inventar um estado que a fonte não
+  // fornece.
   const coverageStyle = useMemo(() => {
     if (!coverageLayer?.visualConfig) return undefined;
     const config = normalizeStudioGeoVisualConfig(
@@ -776,7 +782,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     );
     return resolved.geometryKind === 'POLYGON' ? resolved : undefined;
   }, [coverageLayer, scaleMeters]);
-  const coverageVisible = gponAggregateVisible;
   // Bairro sob o cursor sobre a mancha — vira o balão de hover (ver coverageBalloon).
   const [coverageHover, setCoverageHover] = useState<{
     point: [number, number];
@@ -1712,7 +1717,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     const node = hoverNode;
     if (!node) {
       return (
-        projectAreaBalloonOf(projectAreaHover) ?? coverageBalloonOf(coverageHover, coverage?.level)
+        projectAreaBalloonOf(projectAreaHover) ??
+        coverageBalloonOf(coverageHover, coverage?.level, coverageLayer?.label)
       );
     }
     // O painel de detalhe já mostra tipo/endereço/status do mesmo item — o
@@ -1805,6 +1811,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     selectedNode?.id,
     coverageHover,
     coverage?.level,
+    coverageLayer?.label,
     projectAreaHover,
     mapLayerCatalog.catalog,
     scaleMeters,
@@ -2066,6 +2073,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 onViewportChange={handleViewportChange}
                 coverage={coverageVisible ? coverage : null}
                 coverageStyle={coverageStyle}
+                coverageLayerLabel={coverageLayer?.label}
                 siteMarkerSize={siteMarkerSize}
                 stationMarkerSize={stationMarkerSize}
                 resourceMarkerSize={resourceMarkerSize}
@@ -2214,6 +2222,7 @@ export function GoogleMapPanel({
   onViewportChange,
   coverage,
   coverageStyle,
+  coverageLayerLabel,
   siteMarkerSize,
   stationMarkerSize = siteMarkerSize,
   resourceMarkerSize,
@@ -2300,11 +2309,14 @@ export function GoogleMapPanel({
   // handleViewportChange/useGeoViewState em GeoPage) — distinto de `bounds`/`scaleMeters`, que
   // já existiam para infra passiva/cobertura e não bastam para recriar a câmera exata.
   onViewportChange: (bounds: MapBounds, scaleMeters: number, camera: MapCamera) => void;
-  // Cobertura GPON da viewport (mapa de calor por bairro), ou null quando fora de escala. O
-  // painel só a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
+  // Cobertura da viewport (mapa de calor por bairro), ou null quando fora de escala. O painel só
+  // a desenha na camada de canvas (ver CoverageOverlay); a busca é do chamador.
   coverage: CoverageResponse | null;
   // Estilo da mancha já resolvido pelo catálogo publicado do Studio GEO para a escala atual.
   coverageStyle?: ResolvedStudioGeoPolygonStyle;
+  // Rótulo da camada publicada no Studio GEO (ex.: "Cobertura GPON") — vira o texto da legenda
+  // em vez de um nome de tecnologia fixo (ver CoverageLegend).
+  coverageLayerLabel?: string;
   // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts).
   siteMarkerSize: number;
   // Tamanho da Central Office publicado pelo Studio para a faixa de escala atual.
@@ -2367,14 +2379,14 @@ export function GoogleMapPanel({
   // marcadores normais, para clicar em pin não reprocessar tudo (issue #72).
   const pinnedMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const cableRoutesRef = useRef<Map<string, GooglePolylineInstance>>(new Map());
-  // Camada de calor da cobertura GPON (canvas em OverlayView, abaixo dos marcadores).
+  // Camada de calor da cobertura (canvas em OverlayView, abaixo dos marcadores).
   const coverageOverlayRef = useRef<CoverageOverlayHandle | null>(null);
   const onCoverageHoverRef = useRef(onCoverageHover);
   const coverageHitTestRef = useRef<
     ((lng: number, lat: number) => CoverageNeighborhood | null) | null
   >(null);
   // Camada das manchas de concentração/dispersão do Projeto (REQ-MOD01-017), mesma técnica
-  // de canvas da cobertura GPON.
+  // de canvas da cobertura.
   const projectAreaOverlayRef = useRef<ProjectAreaOverlayHandle | null>(null);
   const onProjectAreaHoverRef = useRef(onProjectAreaHover);
   const projectAreaHitTestRef = useRef<((lng: number, lat: number) => ProjectArea | null) | null>(
@@ -2787,7 +2799,7 @@ export function GoogleMapPanel({
           reportViewport();
         });
 
-        // Camada de calor da cobertura GPON (canvas), abaixo dos marcadores. O hover sobre a
+        // Camada de calor da cobertura (canvas), abaixo dos marcadores. O hover sobre a
         // mancha vira o balão do bairro.
         coverageOverlayRef.current = createCoverageOverlay(maps, mapRef.current);
         coverageHitTestRef.current = coverageOverlayRef.current.hitTest;
@@ -3097,7 +3109,7 @@ export function GoogleMapPanel({
     }
 
     // Cada ponto é um ícone individual no mapa — sem agrupamento. De 50 m para cima a leitura
-    // da rede fica por conta da camada de cobertura GPON (ver CoverageOverlay), não de clusters.
+    // da rede fica por conta da camada de cobertura (ver CoverageOverlay), não de clusters.
     for (const marker of activeMarkers) marker.setMap(mapRef.current);
   }, [
     mapsReady,
@@ -3932,19 +3944,21 @@ export function GoogleMapPanel({
         allVisible={mapLayersAllVisible}
         scaleMeters={mapLayersScaleMeters}
       />
-      {coverage ? <CoverageLegend /> : null}
+      {coverage ? <CoverageLegend layerLabel={coverageLayerLabel} /> : null}
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>
   );
 }
 
-// Legenda da cobertura GPON: a rampa de disponibilidade (vermelho → verde). Aparece só quando
-// a camada está visível. Cor via coverageSwatch (mesma rampa do canvas), não token hardcoded.
-function CoverageLegend() {
+// Legenda da cobertura: a rampa de disponibilidade (vermelho → verde). Aparece só quando a
+// camada está visível. Cor via coverageSwatch (mesma rampa do canvas), não token hardcoded.
+// `layerLabel` vem da camada publicada no Studio GEO — GPON é hoje o único caso, mas o texto
+// não é fixo nele.
+function CoverageLegend({ layerLabel }: { layerLabel?: string }) {
   return (
     <div
       role="group"
-      aria-label="Legenda da cobertura GPON"
+      aria-label={`Legenda da ${layerLabel ? layerLabel.toLowerCase() : 'cobertura'}`}
       className="pointer-events-none absolute bottom-8 left-1/2 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-white/90 px-2 py-2 text-[0.66rem] shadow-map-control backdrop-blur sm:px-3 sm:text-[0.72rem]"
     >
       <div className="flex items-center gap-1.5 sm:gap-2">

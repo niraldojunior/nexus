@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * Geração do mapa de calor de cobertura GPON, em três níveis de detalhe (REQ-MOD01-014).
+ * Geração do mapa de calor de cobertura, em três níveis de detalhe (REQ-MOD01-014). Agnóstico à
+ * indústria/tecnologia de recurso: a camada gravada é identificada por --source-type/--source-id
+ * (default GEOGRAPHIC_SITE_SPECIFICATION / GPON_COVERAGE — o único gerador hoje é GPON, mas o
+ * schema e a API não sabem disso; outra tecnologia grava com o mesmo formato e source_id próprio).
  *
  * A partir da posição das CDOs (caixas de distribuição óptica) já inventariadas, calcula a
  * cobertura consolidando o disco de cobertura de cada CDO numa grade de células — e grava o
@@ -16,10 +19,10 @@
  *
  * Cada polígono (qualquer nível) vira uma Location (TMF675) em tmf_geographic_location, com a
  * estatística do grupo `_coverage` em characteristics — igual a antes. O que muda é que cada
- * polígono TAMBÉM grava uma linha em geo_gpon_coverage_area (bbox + estatística desnormalizados,
+ * polígono TAMBÉM grava uma linha em geo_coverage_area (bbox + estatística desnormalizados,
  * ver src/modules/geo/coverage-service.ts), o índice que a API lê por viewport sem precisar
  * reparsear characteristics nem varrer a grade de células. A grade fina em si
- * (geo_gpon_coverage_cell) só é gravada para o nível `neighborhood` — city/uf não têm grade,
+ * (geo_coverage_cell) só é gravada para o nível `neighborhood` — city/uf não têm grade,
  * só o polígono e a linha de índice; o frontend escolhe o nível pela escala (mapScale.ts).
  *
  * A grade é estampada UMA VEZ, na resolução real (--cell/--radius, raio físico de uma CDO) — o
@@ -51,13 +54,14 @@
  * Requer o dist compilado (npm run build) — importa o algoritmo de coverage-grid.
  *
  * Uso:
- *   node scripts/build-gpon-coverage.mjs                        # dry-run, base inteira, 3 níveis
- *   node scripts/build-gpon-coverage.mjs --apply                # base inteira, 3 níveis
- *   node scripts/build-gpon-coverage.mjs --city "Niterói" --apply   # neighborhood + city só
- *   node scripts/build-gpon-coverage.mjs --uf RJ --apply
- *   node scripts/build-gpon-coverage.mjs --levels neighborhood --apply   # só o nível de bairro
- *   node scripts/build-gpon-coverage.mjs --cell 50 --radius 200 --apply  # a estampagem, base de todos os níveis
- *   node scripts/build-gpon-coverage.mjs --smooth 2 --apply        # corner-cutting do contorno
+ *   node scripts/build-coverage.mjs                        # dry-run, base inteira, 3 níveis
+ *   node scripts/build-coverage.mjs --apply                # base inteira, 3 níveis
+ *   node scripts/build-coverage.mjs --city "Niterói" --apply   # neighborhood + city só
+ *   node scripts/build-coverage.mjs --uf RJ --apply
+ *   node scripts/build-coverage.mjs --levels neighborhood --apply   # só o nível de bairro
+ *   node scripts/build-coverage.mjs --cell 50 --radius 200 --apply  # a estampagem, base de todos os níveis
+ *   node scripts/build-coverage.mjs --smooth 2 --apply        # corner-cutting do contorno
+ *   node scripts/build-coverage.mjs --source-id GPON_COVERAGE --apply  # camada explícita (default)
  */
 
 import { randomUUID } from 'node:crypto';
@@ -90,6 +94,13 @@ const CITY = argOf('--city', null);
 const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
 
+// Identidade da camada do Studio GEO dona desta geração — é o que permite duas camadas de
+// cobertura (tecnologias diferentes) coexistirem em geo_coverage_area sem misturar polígonos de
+// uma na consulta da outra (ver GeoCoverageService). Default é a spec GPON já em uso.
+const SOURCE_TYPE = argOf('--source-type', 'GEOGRAPHIC_SITE_SPECIFICATION');
+const SOURCE_ID = argOf('--source-id', 'GPON_COVERAGE');
+const UNIT_LABEL = argOf('--unit-label', 'CDOs');
+
 // A estampagem real (raio físico de uma CDO) — base de TODOS os níveis, inclusive city/uf, que
 // agregam esta grade fina em vez de re-estampar com uma célula/raio maior (ver cabeçalho).
 const CELL_METERS = Number(argOf('--cell', String(COVERAGE_CELL_METERS)));
@@ -108,11 +119,11 @@ const SMOOTH_ITERATIONS = Number(argOf('--smooth', String(COVERAGE_SMOOTH_ITERAT
 // município inteiro do mapa).
 const MIN_COMPONENT_CELLS = Number(argOf('--min-cells', String(COVERAGE_MIN_COMPONENT_CELLS)));
 
-// Resolução do ÍNDICE de células gravado (geo_gpon_coverage_cell), que serve só para achar
+// Resolução do ÍNDICE de células gravado (geo_coverage_cell), que serve só para achar
 // polígonos por bbox — o polígono em si continua traçado em `--cell` (suave). Com `--index-cell`
 // maior que `--cell`, agrega o índice (célula grossa → polígono dominante), reduzindo MUITO as
 // linhas gravadas. Default: igual a --cell. Só se aplica ao nível `neighborhood` (o único que
-// grava geo_gpon_coverage_cell).
+// grava geo_coverage_cell).
 const INDEX_CELL_METERS = Number(argOf('--index-cell', String(CELL_METERS)));
 
 // Quais níveis (re)gerar nesta execução — default os três. Útil para iterar rápido num nível só
@@ -123,7 +134,7 @@ const LEVELS_ARG = argOf('--levels', 'neighborhood,city,uf')
   .filter(Boolean);
 
 const GENERATED_AT = new Date().toISOString();
-const GENERATOR = 'build-gpon-coverage';
+const GENERATOR = 'build-coverage';
 
 // Só caixa de distribuição (CDO) entra: mesmo recorte da aba de Viabilidade.
 const CDO_NAME = /^\s*CDO/i;
@@ -174,19 +185,19 @@ const LEVELS = [
 ];
 const KNOWN_LEVELS = new Set(LEVELS.map((entry) => entry.level));
 
-// Garante a tabela de projeção geo_gpon_coverage_cell — o loader é dono dela, então a cria
+// Garante a tabela de projeção geo_coverage_cell — o loader é dono dela, então a cria
 // se faltar em vez de depender de um restart do backend (schema init). O translator do loader-db
 // prefixa a tabela no CREATE TABLE, mas NÃO o objeto após ON em um CREATE INDEX — por isso o
 // índice fica a cargo do schema init do app. Idempotente: ORA-00955 = tabela já existe.
 async function ensureCoverageTable(client) {
-  const ddl = `CREATE TABLE geo_gpon_coverage_cell (
+  const ddl = `CREATE TABLE geo_coverage_cell (
     tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
     grid_size_m NUMBER(10) NOT NULL,
     grid_x NUMBER(10) NOT NULL,
     grid_y NUMBER(10) NOT NULL,
     coverage_area_id VARCHAR2(36 CHAR),
-    cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
-    cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
+    unit_total NUMBER(10) DEFAULT 0 NOT NULL,
+    unit_available NUMBER(10) DEFAULT 0 NOT NULL,
     ports_total NUMBER(10),
     ports_used NUMBER(10),
     generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -194,19 +205,21 @@ async function ensureCoverageTable(client) {
   )`;
   try {
     await client.query(ddl);
-    console.log('Tabela geo_gpon_coverage_cell criada no Oracle.');
+    console.log('Tabela geo_coverage_cell criada no Oracle.');
   } catch (error) {
     if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }
 }
 
-// Garante geo_gpon_coverage_area — mesmo espírito/motivo de ensureCoverageTable acima. Os
-// índices por bbox (idx_geo_gpon_coverage_area_bbox/_rank) ficam a cargo do schema init do app,
-// igual a geo_gpon_coverage_cell.
+// Garante geo_coverage_area — mesmo espírito/motivo de ensureCoverageTable acima. Os
+// índices por bbox (idx_geo_coverage_area_bbox/_rank) ficam a cargo do schema init do app,
+// igual a geo_coverage_cell.
 async function ensureCoverageAreaTable(client) {
-  const ddl = `CREATE TABLE geo_gpon_coverage_area (
+  const ddl = `CREATE TABLE geo_coverage_area (
     tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
     location_id VARCHAR2(36 CHAR) NOT NULL,
+    source_type VARCHAR2(64 CHAR) NOT NULL,
+    source_id VARCHAR2(255 CHAR) NOT NULL,
     lod_level VARCHAR2(255 CHAR) NOT NULL,
     cell_size_m NUMBER(10) NOT NULL,
     min_lng BINARY_DOUBLE NOT NULL,
@@ -217,8 +230,9 @@ async function ensureCoverageAreaTable(client) {
     neighborhood VARCHAR2(255 CHAR),
     city VARCHAR2(255 CHAR),
     uf VARCHAR2(255 CHAR),
-    cdo_total NUMBER(10) DEFAULT 0 NOT NULL,
-    cdo_available NUMBER(10) DEFAULT 0 NOT NULL,
+    unit_total NUMBER(10) DEFAULT 0 NOT NULL,
+    unit_available NUMBER(10) DEFAULT 0 NOT NULL,
+    unit_label VARCHAR2(255 CHAR),
     covered_area_km2 BINARY_DOUBLE DEFAULT 0 NOT NULL,
     ports_total NUMBER(10),
     ports_used NUMBER(10),
@@ -227,7 +241,7 @@ async function ensureCoverageAreaTable(client) {
   )`;
   try {
     await client.query(ddl);
-    console.log('Tabela geo_gpon_coverage_area criada no Oracle.');
+    console.log('Tabela geo_coverage_area criada no Oracle.');
   } catch (error) {
     if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }
@@ -249,7 +263,7 @@ async function deleteByIds(client, table, column, ids) {
 }
 
 // Bbox [minLng, minLat, maxLng, maxLat] do anel externo do polígono — vai para
-// geo_gpon_coverage_area, é o que a API usa pra recortar por viewport sem tocar na geometria.
+// geo_coverage_area, é o que a API usa pra recortar por viewport sem tocar na geometria.
 function polygonBounds(geometry) {
   const ring = geometry.coordinates[0] ?? [];
   let minLng = Infinity;
@@ -471,6 +485,8 @@ async function main() {
         areaRows.push({
           tenant_id: TENANT,
           location_id: locId,
+          source_type: SOURCE_TYPE,
+          source_id: SOURCE_ID,
           lod_level: levelConfig.level,
           cell_size_m: levelConfig.cellMeters,
           min_lng: bounds.minLng,
@@ -481,8 +497,9 @@ async function main() {
           neighborhood: levelConfig.level === 'neighborhood' ? stat.neighborhood : null,
           city: levelConfig.level === 'uf' ? null : stat.city,
           uf: stat.uf,
-          cdo_total: stat.cdoTotal,
-          cdo_available: stat.cdoAvailable,
+          unit_total: stat.cdoTotal,
+          unit_available: stat.cdoAvailable,
+          unit_label: UNIT_LABEL,
           covered_area_km2: stat.coveredAreaKm2,
           ports_total: null,
           ports_used: null,
@@ -495,8 +512,8 @@ async function main() {
               grid_x: cell.gridX,
               grid_y: cell.gridY,
               coverage_area_id: locId,
-              cdo_total: cell.cdoTotal,
-              cdo_available: cell.cdoAvailable,
+              unit_total: cell.cdoTotal,
+              unit_available: cell.cdoAvailable,
             });
           }
         }
@@ -542,14 +559,14 @@ async function main() {
         if (levelConfig.level === 'neighborhood') {
           removedCellsTotal += await deleteByIds(
             client,
-            'geo_gpon_coverage_cell',
+            'geo_coverage_cell',
             'coverage_area_id',
             staleIds,
           );
         }
         removedIndexTotal += await deleteByIds(
           client,
-          'geo_gpon_coverage_area',
+          'geo_coverage_area',
           'location_id',
           staleIds,
         );
@@ -561,10 +578,12 @@ async function main() {
           locations,
         );
         insertedIndexTotal += await client.bulkInsert(
-          'geo_gpon_coverage_area',
+          'geo_coverage_area',
           [
             'tenant_id',
             'location_id',
+            'source_type',
+            'source_id',
             'lod_level',
             'cell_size_m',
             'min_lng',
@@ -575,8 +594,9 @@ async function main() {
             'neighborhood',
             'city',
             'uf',
-            'cdo_total',
-            'cdo_available',
+            'unit_total',
+            'unit_available',
+            'unit_label',
             'covered_area_km2',
             'ports_total',
             'ports_used',
@@ -590,15 +610,15 @@ async function main() {
           // já gravada por outro município (não apagada por este escopo) é preservada (chave
           // tenant_id, grid_size_m, grid_x, grid_y).
           insertedCellsTotal += await client.bulkInsert(
-            'geo_gpon_coverage_cell',
+            'geo_coverage_cell',
             [
               'tenant_id',
               'grid_size_m',
               'grid_x',
               'grid_y',
               'coverage_area_id',
-              'cdo_total',
-              'cdo_available',
+              'unit_total',
+              'unit_available',
             ],
             indexCells,
             { ignoreDuplicates: true },
@@ -652,8 +672,8 @@ function aggregateIndex(cells) {
       bucket = { cx, cy, total: 0, avail: 0, tally: new Map() };
       agg.set(key, bucket);
     }
-    bucket.total += cell.cdo_total;
-    bucket.avail += cell.cdo_available;
+    bucket.total += cell.unit_total;
+    bucket.avail += cell.unit_available;
     bucket.tally.set(cell.coverage_area_id, (bucket.tally.get(cell.coverage_area_id) ?? 0) + 1);
   }
   const out = [];
@@ -672,8 +692,8 @@ function aggregateIndex(cells) {
       grid_x: bucket.cx,
       grid_y: bucket.cy,
       coverage_area_id: dominant,
-      cdo_total: bucket.total,
-      cdo_available: bucket.avail,
+      unit_total: bucket.total,
+      unit_available: bucket.avail,
     });
   }
   return out;

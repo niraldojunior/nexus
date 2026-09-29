@@ -75,7 +75,7 @@ export const MAP_LAYER_CATALOG_FALLBACK: StudioGeoCatalog = {
   fallback: true,
   nodes: [
     group('locations', 'Locais', 10),
-    group('coverage', 'Cobertura', 20, 'Manchas agregadas por tema — hoje só GPON'),
+    group('coverage', 'Cobertura', 20, 'Manchas agregadas por tema'),
     group('netwinInfrastructure', 'Infraestrutura Civil', 30),
     group('resources', 'Recursos de Rede', 40),
     entity(
@@ -375,15 +375,19 @@ export function viewportInclude(
   return result.length === 3 ? undefined : result;
 }
 
-export const hasVisibleGponAggregate = (
+// Resolve a camada de cobertura visível por `category`, não por tecnologia — GPON é hoje o único
+// caso publicado, mas qualquer entidade COVERAGE (GEOGRAPHIC_SITE_SPECIFICATION, SPATIAL_COVERAGE
+// ou o fallback canônico GPON_AGGREGATE) é elegível. Resolve visibilidade e identidade da camada
+// numa função só — com duas COVERAGE ligadas ao mesmo tempo, vence a primeira em ordem de desenho
+// (mesma semântica de mapLayerEntitiesForDraw): só uma camada de cobertura desenha por vez.
+export const visibleCoverageLayer = (
   visibility: MapLayerVisibility,
   catalog: StudioGeoCatalog,
   scaleMeters?: number | null,
-): boolean =>
-  mapLayerEntities(catalog).some(
+): StudioGeoEntityNode | undefined =>
+  mapLayerEntitiesForDraw(catalog).find(
     (node) =>
-      node.entity.sourceType === 'GPON_AGGREGATE' &&
-      isStudioGeoEntityVisible(node, visibility, scaleMeters),
+      node.entity.category === 'COVERAGE' && isStudioGeoEntityVisible(node, visibility, scaleMeters),
   );
 
 const STORAGE_KEY_BASE = 'nexus.geo.mapLayers';

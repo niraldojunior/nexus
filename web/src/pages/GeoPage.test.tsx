@@ -340,7 +340,7 @@ describe('GoogleMapPanel', () => {
     );
   });
 
-  it('mostra a legenda de cobertura GPON quando a camada está visível', async () => {
+  it('mostra a legenda de cobertura quando a camada está visível', async () => {
     const coverage = {
       level: 'neighborhood' as const,
       grid: { sizeMeters: 50, projection: 'EPSG:3857' as const },
@@ -368,7 +368,7 @@ describe('GoogleMapPanel', () => {
       />,
     );
 
-    const legend = await screen.findByRole('group', { name: 'Legenda da cobertura GPON' });
+    const legend = await screen.findByRole('group', { name: 'Legenda da cobertura' });
     expect(legend).toHaveClass('bottom-8', 'left-1/2', '-translate-x-1/2');
     expect(screen.getByText('Suspenso')).toBeInTheDocument();
     expect(screen.getByText('Disponível')).toBeInTheDocument();

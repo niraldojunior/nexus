@@ -2,16 +2,17 @@
 /**
  * Migrador Nativo Netwin -> V.tal Nexus
  *
- * Arquitetura em duas fases com suporte a alto volume:
+ * Arquitetura em três fases com suporte a alto volume:
  * - Fase 1: Carga do Studio (Papéis, Organizações, Tipos de Locais, Tipos de Recursos)
  * - Fase 2: Carga de Dados (Locais, Hierarquias, Recursos, Topologia e Conectividade)
+ * - Fase 3: Projeções geoespaciais derivadas no destino (mapa, densidade e cobertura GPON)
  *
  * Suporte a escopos:
  *   --uf <UF>             (ex: --uf RJ)
  *   --municipio <NOME>    (ex: --municipio "Niterói")
  *   --bairro <NOME>       (ex: --municipio "Niterói" --bairro "Icaraí")
  *   --full                (varredura nacional)
- *   --phase 1|2|2c|2d|all (default: all)
+ *   --phase 1|2|2c|2d|3|all (default: all)
  *   --target-prefix       (default: NX_DEV1_ ou variável de ambiente)
  *   --tenant-id <ID>      (obrigatório em APPLY; NX_DEV1_ aceita apenas vtal)
  *   --batch-size <N>      (default: 2000; regula lotes e cadência-base dos relatórios)
@@ -36,7 +37,15 @@ import { runPhase2Locations } from './phase2-locations.js';
 import { runPhase2Resources } from './phase2-resources.js';
 import { runPhase2InternalPlant } from './phase2-internal-plant.js';
 import { runPhase2StationInternalPlantDiscovery } from './phase2-station-internal-plant.js';
+import { runPhase3Coverage } from './phase3-coverage.js';
+import { runPhase3MapFeatures } from './phase3-map-features.js';
 import type { CliOptions, MigrationPhase } from './types.js';
+
+async function runPhase3(ctx: Awaited<ReturnType<typeof createMigrationContext>>): Promise<void> {
+  console.log('\n>>> INICIANDO FASE 3: PROJEÇÕES GEOESPACIAIS DERIVADAS <<<');
+  await runPhase3MapFeatures(ctx);
+  await runPhase3Coverage(ctx);
+}
 
 loadEnv({ override: true });
 
@@ -48,8 +57,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const has = (flag: string) => argv.includes(flag);
 
   const phaseRaw = get('--phase') ?? 'all';
-  if (!['1', '2', '2c', '2d', 'all'].includes(phaseRaw)) {
-    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d ou all.`);
+  if (!['1', '2', '2c', '2d', '3', 'all'].includes(phaseRaw)) {
+    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3 ou all.`);
   }
   const phase = phaseRaw as MigrationPhase;
 
@@ -66,7 +75,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
       '--bairro exige --municipio <NOME> ou --uf <UF> para evitar escopo nacional ambíguo.',
     );
   }
-  if (!full && !uf && !municipio && phase !== '1') {
+  if (phase === '3' && (uf || municipio || bairro)) {
+    throw new Error('A Fase 3 reconstrói o tenant inteiro; não combine com --uf, --municipio ou --bairro.');
+  }
+  if (!full && !uf && !municipio && phase !== '1' && phase !== '3') {
     throw new Error(
       'Para as Fases 2, 2c, 2d ou All, informe um escopo: --uf <UF>, --municipio <NOME> ou --full.',
     );
@@ -94,6 +106,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
   }
   if (jobId && !resume) {
     throw new Error('--job-id só pode ser usado com --resume.');
+  }
+  if (phase === '3' && (resume || jobId || maxRecords)) {
+    throw new Error('A Fase 3 não aceita --resume, --job-id ou --max-records; ela reconstrói o tenant integralmente.');
   }
 
   return {
@@ -127,9 +142,16 @@ async function main() {
   );
   console.log(`Instância Destino: Prefixo "${options.targetPrefix}"`);
   console.log(`Fase Selecionada : ${options.phase}`);
-  console.log(
-    `Escopo           : ${options.scope.full ? 'FULL (NACIONAL)' : [options.scope.uf ? `UF: ${options.scope.uf}` : undefined, options.scope.municipio ? `Município: ${options.scope.municipio}` : undefined, options.scope.bairro ? `Bairro: ${options.scope.bairro}` : undefined].filter(Boolean).join(' | ')}`,
-  );
+  const scopeLabel = options.scope.full
+    ? 'FULL (NACIONAL)'
+    : [
+        options.scope.uf ? `UF: ${options.scope.uf}` : undefined,
+        options.scope.municipio ? `Município: ${options.scope.municipio}` : undefined,
+        options.scope.bairro ? `Bairro: ${options.scope.bairro}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(' | ') || (options.phase === '3' ? 'TENANT INTEGRAL (Fase 3)' : 'NÃO INFORMADO');
+  console.log(`Escopo           : ${scopeLabel}`);
   console.log(`Lote (batchSize) : ${options.batchSize}`);
   console.log(`Tenant Destino  : ${options.tenantId}`);
   if (options.maxRecords) console.log(`Limite Registros : ${options.maxRecords}`);
@@ -171,8 +193,11 @@ async function main() {
           );
         } else {
           await completeNativeMigrationJob(ctx);
+          if (options.phase === 'all') await runPhase3(ctx);
         }
       }
+    } else if (options.phase === '3') {
+      await runPhase3(ctx);
     } else if (options.phase === '2c') {
       console.log('\n>>> INICIANDO FASE 2.C: CDOs E PORTAS FÍSICAS <<<');
       await runPhase2InternalPlant(ctx);

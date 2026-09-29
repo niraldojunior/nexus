@@ -4,7 +4,7 @@
 // a distância importa, então esta consulta pula LineString, LogicalResource e a contagem de
 // filhos que toResourceNodes dispara — metade das idas ao banco por linha.
 //
-// Mesma definição canônica de CDO usada em build-gpon-coverage.mjs e useAddressViability.ts:
+// Mesma definição canônica de CDO usada em build-coverage.mjs e useAddressViability.ts:
 // PhysicalResource com ResourceType 'CTO' e nome começando em "CDO" (o tipo sozinho também
 // pegaria CEO/CEOS, caixas de emenda onde não se puxa drop).
 
@@ -25,10 +25,10 @@ type CdoRow = {
   geometry: string | null;
 };
 
-// Mesmo recorte de scripts/build-gpon-coverage.mjs: só PhysicalResource CTO com nome
+// Mesmo recorte de scripts/build-coverage.mjs: só PhysicalResource CTO com nome
 // começando em CDO (verificado de novo em JS após o LIKE — LIKE 'CDO%' já filtra o grosso
 // no banco, mas o regex é quem decide de fato, para não depender de espaço/caixa da
-// coluna). Diferente do build-gpon-coverage (que mapeia active/demais como
+// coluna). Diferente do build-coverage.mjs (que mapeia active/demais como
 // disponível/indisponível para o mapa de calor), aqui só entra CDO com status = 'active'
 // ("Ativa" na UI, ver ViabilityTab.tsx) — uma CDO suspensa/bloqueada não é candidata
 // viável para um drop novo.

@@ -27,6 +27,7 @@ const eventService = {
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z"/></svg>';
 const noResourceTypes = async () => [];
+const noRegionSpecs = async () => [];
 
 test('Studio SVG sanitizer accepts a self-contained SVG and rejects active content', () => {
   assert.equal(sanitizeStudioSvg(svg), svg);
@@ -58,7 +59,7 @@ test('Studio assets are tenant-scoped and soft-retired', async () => {
 });
 
 test('Studio GEO adapter validates canonical hierarchy and rejects duplicate entity references', async () => {
-  const adapter = new StudioGeoAdapter(noResourceTypes);
+  const adapter = new StudioGeoAdapter(noResourceTypes, noRegionSpecs);
   const valid = await adapter.validate(CANONICAL_STUDIO_GEO_SNAPSHOT);
   assert.equal(valid.valid, true);
 
@@ -79,7 +80,7 @@ test('Studio GEO adapter validates canonical hierarchy and rejects duplicate ent
 });
 
 test('Studio GEO normalizes v2 point identity away while preserving contextual style', async () => {
-  const adapter = new StudioGeoAdapter(noResourceTypes);
+  const adapter = new StudioGeoAdapter(noResourceTypes, noRegionSpecs);
   const base = CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.find((node) => node.kind === 'ENTITY');
   assert.ok(base);
   const snapshot = {
@@ -150,7 +151,7 @@ test('Studio GEO normalizes v2 point identity away while preserving contextual s
 
 test('Studio GEO bootstrap publishes only once and keeps the published snapshot isolated from draft', async () => {
   const studio = new StudioService(new StudioRepository(), eventService as never);
-  studio.registerAdapter(new StudioGeoAdapter(noResourceTypes));
+  studio.registerAdapter(new StudioGeoAdapter(noResourceTypes, noRegionSpecs));
   const first = await studio.ensurePublishedBootstrap(
     'studio-geo',
     CANONICAL_STUDIO_GEO_SNAPSHOT,
@@ -168,4 +169,44 @@ test('Studio GEO bootstrap publishes only once and keeps the published snapshot 
   assert.equal(draft.status, 'draft');
   assert.deepEqual(draft.snapshot, { schemaVersion: 3, nodes: [] });
   assert.deepEqual(draft.baselineSnapshot, { schemaVersion: 3, nodes: [] });
+});
+
+test('Studio GEO materialize rejects a COVERAGE node whose sourceId is not a Region spec', async () => {
+  const regionSpec = { id: 'spec-region-1', code: 'GPON_COVERAGE', category: 'Region' } as never;
+  const adapterWithRegion = new StudioGeoAdapter(noResourceTypes, async () => [regionSpec]);
+  const adapterWithoutRegion = new StudioGeoAdapter(noResourceTypes, noRegionSpecs);
+
+  const coverageNode = {
+    id: 'coverage-region',
+    kind: 'ENTITY' as const,
+    parentNodeId: 'coverage',
+    label: 'Cobertura por Região',
+    sortOrder: 20,
+    active: true,
+    defaultVisible: true,
+    entity: {
+      category: 'COVERAGE' as const,
+      sourceDomain: 'location-model' as const,
+      sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION' as const,
+      sourceId: 'GPON_COVERAGE',
+    },
+  };
+  const snapshot = {
+    ...CANONICAL_STUDIO_GEO_SNAPSHOT,
+    nodes: [...CANONICAL_STUDIO_GEO_SNAPSHOT.nodes, coverageNode],
+  };
+
+  // Spec existe no catálogo: materializa sem erro.
+  await adapterWithRegion.materialize(snapshot, { tenantId: context.tenantId });
+
+  // Spec não existe: rejeitado com o código dedicado, não publica silenciosamente.
+  await assert.rejects(
+    adapterWithoutRegion.materialize(snapshot, { tenantId: context.tenantId }),
+    (error: { code?: string }) => error.code === 'STUDIO_GEO_COVERAGE_SOURCE_INVALID',
+  );
+
+  // O nó canônico GPON_AGGREGATE do bootstrap não referencia spec — segue sem checagem.
+  await adapterWithoutRegion.materialize(CANONICAL_STUDIO_GEO_SNAPSHOT, {
+    tenantId: context.tenantId,
+  });
 });

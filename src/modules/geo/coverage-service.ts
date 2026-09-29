@@ -1,21 +1,26 @@
-// Read-model da cobertura GPON por bairro/município/estado (REQ-MOD01-014) — a fonte do mapa em
-// escala de cidade/estado, no lugar dos recursos individuais e dos clusters.
+// Read-model da cobertura por bairro/município/estado (REQ-MOD01-014) — a fonte do mapa em
+// escala de cidade/estado, no lugar dos recursos individuais e dos clusters. Agnóstico à
+// indústria/tecnologia de recurso: cada camada é identificada por `source_type`/`source_id` (a
+// identidade da entidade COVERAGE no catálogo Studio GEO) — GPON é hoje o único gerador
+// (scripts/build-coverage.mjs), mas nem o schema nem este serviço sabem disso.
 //
-// Lê os artefatos que `scripts/build-gpon-coverage.mjs` gravou:
-//   · a grade fina de 50 m (geo_gpon_coverage_cell), usada pelos níveis `fine`/`coarse`
-//     (grade de calor; hoje sem uso no frontend, mantidos pela API/testes);
-//   · o ÍNDICE por polígono (geo_gpon_coverage_area), usado pelos níveis `neighborhood`/`city`/
+// Lê os artefatos que `scripts/build-coverage.mjs` gravou:
+//   · a grade fina de 50 m (geo_coverage_cell), usada pelos níveis `fine`/`coarse`
+//     (grade de calor; hoje sem uso no frontend, mantidos pela API/testes) — sem coluna de
+//     camada: hoje só existe uma geração ativa por vez nesta grade;
+//   · o ÍNDICE por polígono (geo_coverage_area), usado pelos níveis `neighborhood`/`city`/
 //     `uf` — 1 linha por polígono de cobertura, com bbox e estatística já desnormalizados, para o
-//     recorte por viewport não precisar varrer a grade nem reparsear `characteristics`;
+//     recorte por viewport não precisar varrer a grade nem reparsear `characteristics`. Tem
+//     `source_type`/`source_id` para escopar por camada quando várias coexistem;
 //   · os POLÍGONOS em si (tmf_geographic_location, `reference_point` "GPON:"/"GPON-CITY:"/
-//     "GPON-UF:"), sempre buscados pelo id.
+//     "GPON-UF:" ou o prefixo equivalente de outra camada), sempre buscados pelo id.
 // Existe separado de `GeoService`/`GeoTreeService` pelo mesmo motivo da árvore: é projeção de
 // leitura que cruza módulos, fora do contrato TMF, então fala direto com o `DatabaseClient`.
 //
 // O recorte dos níveis fine/coarse reusa o índice inteiro da grade: o bbox em lng/lat é
 // convertido para coordenadas de célula (Web Mercator) e a consulta filtra por `grid_x/grid_y
 // BETWEEN`. Os níveis neighborhood/city/uf recortam por um simples teste de sobreposição de bbox
-// (lng/lat) contra geo_gpon_coverage_area — nada de teste de interseção de polígono em SQL, em
+// (lng/lat) contra geo_coverage_area — nada de teste de interseção de polígono em SQL, em
 // nenhum dos dois caminhos.
 
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
@@ -38,8 +43,21 @@ export type CoverageBounds = {
   maxLat: number;
 };
 
+// Identidade da camada de cobertura do catálogo Studio GEO. `GPON_AGGREGATE` é o nó canônico de
+// fallback do bootstrap ([mapLayers.ts] hint) — quando é ele, não filtramos por origem, para não
+// quebrar ambientes `legacy` sem publicação própria (dado gerado antes de source_type/source_id
+// existirem, ou por uma execução sem --source-id explícito).
+export type CoverageLayer = { sourceType: string; sourceId: string };
+
+function isLegacyLayer(layer?: CoverageLayer | null): boolean {
+  return !layer || layer.sourceType === 'GPON_AGGREGATE';
+}
+
 // Estatística do bairro exposta ao mapa (balão de hover). `portsTotal`/`portsUsed` ficam
-// null até o takeup existir; `areaIds` liga o bairro aos polígonos que o desenham.
+// null até o takeup existir; `areaIds` liga o bairro aos polígonos que o desenham. `unitLabel` é
+// o que está sendo contado ("CDOs", "Amplificadores"...) — vem de `geo_coverage_area.unit_label`;
+// fica `null` quando a estatística veio das characteristics (níveis fine/coarse), que não
+// carregam o rótulo.
 export type CoverageNeighborhood = {
   id: number;
   areaIds: string[];
@@ -47,9 +65,10 @@ export type CoverageNeighborhood = {
   neighborhood: string;
   city: string;
   uf: string;
-  cdoTotal: number;
-  cdoAvailable: number;
-  cdoUnavailable: number;
+  unitTotal: number;
+  unitAvailable: number;
+  unitUnavailable: number;
+  unitLabel: string | null;
   availabilityRatio: number;
   coveredAreaKm2: number;
   portsTotal: number | null;
@@ -60,7 +79,7 @@ export type CoverageArea = {
   id: string;
   neighborhoodIndex: number;
   geometry: GeoJSONPolygon;
-  // [minLng, minLat, maxLng, maxLat] — vem pronto de geo_gpon_coverage_area (níveis
+  // [minLng, minLat, maxLng, maxLat] — vem pronto de geo_coverage_area (níveis
   // neighborhood/city/uf); ausente nos níveis fine/coarse. O canvas usa para culling sem
   // reprocessar a geometria a cada frame (ver CoverageOverlay.draw).
   bounds?: [number, number, number, number];
@@ -69,7 +88,7 @@ export type CoverageArea = {
 export type CoverageResponse = {
   level: CoverageLevel;
   grid: { sizeMeters: number; projection: 'EPSG:3857' };
-  // fine e coarse: [gridX, gridY, cdoTotal, cdoAvailable, neighborhoodIndex]
+  // fine e coarse: [gridX, gridY, unitTotal, unitAvailable, neighborhoodIndex]
   cells: number[][];
   areas: CoverageArea[];
   neighborhoods: CoverageNeighborhood[];
@@ -86,8 +105,9 @@ export type CoveragePointArea = {
   neighborhood: string;
   city: string;
   uf: string;
-  cdoTotal: number;
-  cdoAvailable: number;
+  unitTotal: number;
+  unitAvailable: number;
+  unitLabel: string | null;
   availabilityRatio: number;
   coveredAreaKm2: number;
   portsTotal: number | null;
@@ -97,8 +117,8 @@ export type CoveragePointArea = {
 export type CoveragePointCell = {
   gridX: number;
   gridY: number;
-  cdoTotal: number;
-  cdoAvailable: number;
+  unitTotal: number;
+  unitAvailable: number;
   sizeMeters: number;
 };
 
@@ -108,16 +128,17 @@ export type CoveragePointResult = {
   areas: CoveragePointArea[];
 };
 
-// Teto de linhas devolvidas por nível. A cobertura só existe onde há CDO (bairro denso), então
-// a própria área visível limita o volume; estes tetos são a válvula contra bbox anômalo.
+// Teto de linhas devolvidas por nível. A cobertura só existe onde há unidade contada (bairro
+// denso), então a própria área visível limita o volume; estes tetos são a válvula contra bbox
+// anômalo.
 const MAX_FINE_CELLS = 20000;
 const MAX_AREAS = 4000;
 
 type CoverageCellRow = {
   grid_x: number;
   grid_y: number;
-  cdo_total: number;
-  cdo_available: number;
+  unit_total: number;
+  unit_available: number;
   coverage_area_id: string | null;
 };
 
@@ -126,7 +147,7 @@ type CoverageAreaRow = {
   characteristics: string | null;
 };
 
-// Linha do índice geo_gpon_coverage_area já com a geometria trazida via JOIN — 1 round-trip por
+// Linha do índice geo_coverage_area já com a geometria trazida via JOIN — 1 round-trip por
 // requisição de nível neighborhood/city/uf, sem precisar de uma segunda consulta por id.
 type CoverageAreaIndexRow = {
   location_id: string;
@@ -134,8 +155,9 @@ type CoverageAreaIndexRow = {
   neighborhood: string | null;
   city: string | null;
   uf: string | null;
-  cdo_total: number;
-  cdo_available: number;
+  unit_total: number;
+  unit_available: number;
+  unit_label: string | null;
   covered_area_km2: number;
   ports_total: number | null;
   ports_used: number | null;
@@ -158,8 +180,9 @@ type CoveragePointAreaRow = {
   neighborhood: string | null;
   city: string | null;
   uf: string | null;
-  cdo_total: number;
-  cdo_available: number;
+  unit_total: number;
+  unit_available: number;
+  unit_label: string | null;
   covered_area_km2: number;
   ports_total: number | null;
   ports_used: number | null;
@@ -168,50 +191,61 @@ type CoveragePointAreaRow = {
 
 export class GeoCoverageService {
   // Resolução REAL da grade fina gravada (usada só pelos níveis fine/coarse) — consultada uma vez
-  // por processo: a grade não muda em runtime, só quando scripts/build-gpon-coverage.mjs roda de
+  // por processo: a grade não muda em runtime, só quando scripts/build-coverage.mjs roda de
   // novo (que implica reiniciar o backend). Sem o cache, toda requisição de fine/coarse pagava um
-  // GROUP BY varrendo geo_gpon_coverage_cell inteira (~0,7 s medido com 1,8 M linhas) só para
+  // GROUP BY varrendo geo_coverage_cell inteira (~0,7 s medido com 1,8 M linhas) só para
   // redescobrir o mesmo número.
-  private cellMetersCache: number | undefined;
+  private readonly cellMetersCache = new Map<string, number>();
 
   public constructor(private readonly db: DatabaseClient) {}
 
-  public async coverage(bounds: CoverageBounds, level: CoverageLevel): Promise<CoverageResponse> {
+  public async coverage(
+    bounds: CoverageBounds,
+    level: CoverageLevel,
+    tenantId: string,
+    layer?: CoverageLayer | null,
+  ): Promise<CoverageResponse> {
     if (level === 'neighborhood' || level === 'city' || level === 'uf') {
-      return this.areaIndexLevel(bounds, level);
+      return this.areaIndexLevel(bounds, level, tenantId, layer);
     }
-    const cellMeters = await this.resolveCellSize();
+    const cellMeters = await this.resolveCellSize(tenantId);
     const range = gridRange(bounds, cellMeters);
-    if (level === 'coarse') return this.coarseLevel(range, cellMeters);
-    return this.fineLevel(range, cellMeters);
+    if (level === 'coarse') return this.coarseLevel(range, cellMeters, tenantId);
+    return this.fineLevel(range, cellMeters, tenantId);
   }
 
   // Consulta inversa (REQ-MOD01-014, issue #171 Fase 4): dado o ponto de um recurso, devolve
   // a célula fina que o contém (se existir cobertura ali) e as áreas de bairro/cidade/UF cujo
   // bbox o contém — sem `LIMIT`/truncamento, porque um único ponto cai em poucas áreas por nível
   // (nunca nas milhares de um bbox de viewport, ver `areaIndexLevel`). Usado por
-  // `GET /v1/geo/coverage/by-resource/:id`, que já resolveu o `id` de recurso para este ponto.
-  public async coverageForPoint(lng: number, lat: number): Promise<CoveragePointResult> {
-    const cellMeters = await this.resolveCellSize();
+  // `GET /v1/geo/coverage/by-resource/:id`, que já resolveu o `id` de recurso para este ponto. Sem
+  // filtro de camada: é consulta de ponto, não de viewport — devolve o que existir ali.
+  public async coverageForPoint(
+    lng: number,
+    lat: number,
+    tenantId: string,
+  ): Promise<CoveragePointResult> {
+    const cellMeters = await this.resolveCellSize(tenantId);
     const [x, y] = lngLatToMercator(lng, lat);
     const gridX = Math.floor(x / cellMeters);
     const gridY = Math.floor(y / cellMeters);
 
     const [cellRow, areaRows] = await Promise.all([
       this.db.get<CoverageCellRow>(
-        `SELECT grid_x, grid_y, cdo_total, cdo_available, coverage_area_id
-           FROM geo_gpon_coverage_cell
-          WHERE grid_size_m = ? AND grid_x = ? AND grid_y = ?`,
-        [cellMeters, gridX, gridY],
+        `SELECT grid_x, grid_y, unit_total, unit_available, coverage_area_id
+           FROM geo_coverage_cell
+          WHERE tenant_id = ? AND grid_size_m = ? AND grid_x = ? AND grid_y = ?`,
+        [tenantId, cellMeters, gridX, gridY],
       ),
       this.db.all<CoveragePointAreaRow>(
         `SELECT a.location_id, a.area_key, a.lod_level, a.neighborhood, a.city, a.uf,
-                a.cdo_total, a.cdo_available, a.covered_area_km2,
+                a.unit_total, a.unit_available, a.unit_label, a.covered_area_km2,
                 a.ports_total, a.ports_used, a.cell_size_m
-           FROM geo_gpon_coverage_area a
-          WHERE a.min_lng <= ? AND a.max_lng >= ?
+           FROM geo_coverage_area a
+          WHERE a.tenant_id = ?
+            AND a.min_lng <= ? AND a.max_lng >= ?
             AND a.min_lat <= ? AND a.max_lat >= ?`,
-        [lng, lng, lat, lat],
+        [tenantId, lng, lng, lat, lat],
       ),
     ]);
 
@@ -219,8 +253,8 @@ export class GeoCoverageService {
       ? {
           gridX: cellRow.grid_x,
           gridY: cellRow.grid_y,
-          cdoTotal: cellRow.cdo_total,
-          cdoAvailable: cellRow.cdo_available,
+          unitTotal: cellRow.unit_total,
+          unitAvailable: cellRow.unit_available,
           sizeMeters: cellMeters,
         }
       : null;
@@ -232,9 +266,10 @@ export class GeoCoverageService {
       neighborhood: row.neighborhood ?? row.city ?? row.uf ?? 'Sem bairro',
       city: row.city ?? row.uf ?? 'Sem município',
       uf: row.uf ?? 'ZZ',
-      cdoTotal: row.cdo_total,
-      cdoAvailable: row.cdo_available,
-      availabilityRatio: row.cdo_total > 0 ? row.cdo_available / row.cdo_total : 0,
+      unitTotal: row.unit_total,
+      unitAvailable: row.unit_available,
+      unitLabel: row.unit_label,
+      availabilityRatio: row.unit_total > 0 ? row.unit_available / row.unit_total : 0,
       coveredAreaKm2: row.covered_area_km2,
       portsTotal: row.ports_total,
       portsUsed: row.ports_used,
@@ -243,39 +278,52 @@ export class GeoCoverageService {
     return { point: { lng, lat }, cell, areas };
   }
 
-  // Resolução dominante presente em geo_gpon_coverage_cell (a mais frequente, para ignorar
+  // Resolução dominante presente em geo_coverage_cell (a mais frequente, para ignorar
   // sobras de uma geração anterior em outra resolução). Cai no default se a tabela estiver vazia.
-  private async resolveCellSize(): Promise<number> {
-    if (this.cellMetersCache !== undefined) return this.cellMetersCache;
+  private async resolveCellSize(tenantId: string): Promise<number> {
+    const cached = this.cellMetersCache.get(tenantId);
+    if (cached !== undefined) return cached;
     const row = await this.db.get<{ grid_size_m: number }>(
-      `SELECT grid_size_m FROM geo_gpon_coverage_cell GROUP BY grid_size_m ORDER BY COUNT(*) DESC`,
+      `SELECT grid_size_m FROM geo_coverage_cell
+        WHERE tenant_id = ?
+        GROUP BY grid_size_m ORDER BY COUNT(*) DESC`,
+      [tenantId],
     );
-    this.cellMetersCache = row?.grid_size_m ?? COVERAGE_CELL_METERS;
-    return this.cellMetersCache;
+    const resolved = row?.grid_size_m ?? COVERAGE_CELL_METERS;
+    this.cellMetersCache.set(tenantId, resolved);
+    return resolved;
   }
 
-  // Escala de município/estado (REQ-MOD01-014, LOD): 1 query indexada por bbox contra
-  // geo_gpon_coverage_area, já com a estatística desnormalizada e a geometria trazida via JOIN —
-  // substitui o antigo caminho (DISTINCT na grade de 1,8 M células + 8 blocos sequenciais de
-  // characteristics) por um único round-trip. `ORDER BY cdo_total DESC` faz o truncamento por
-  // MAX_AREAS priorizar as áreas mais relevantes em vez de um corte arbitrário.
+  // Escala de município/estado (REQ-MOD01-014, LOD): 1 query indexada por bbox (e, quando a
+  // camada não é o fallback canônico, por source_type/source_id) contra geo_coverage_area, já
+  // com a estatística desnormalizada e a geometria trazida via JOIN — substitui o antigo caminho
+  // (DISTINCT na grade de 1,8 M células + 8 blocos sequenciais de characteristics) por um único
+  // round-trip. `ORDER BY unit_total DESC` faz o truncamento por MAX_AREAS priorizar as áreas
+  // mais relevantes em vez de um corte arbitrário.
   private async areaIndexLevel(
     bounds: CoverageBounds,
     level: CoverageAreaIndexLevel,
+    tenantId: string,
+    layer?: CoverageLayer | null,
   ): Promise<CoverageResponse> {
+    const legacy = isLegacyLayer(layer);
+    const params: Array<string | number> = legacy
+      ? [tenantId, level]
+      : [tenantId, level, layer!.sourceType, layer!.sourceId];
     const rows = await this.db.all<CoverageAreaIndexRow>(
       `SELECT a.location_id, a.area_key, a.neighborhood, a.city, a.uf,
-              a.cdo_total, a.cdo_available, a.covered_area_km2,
+              a.unit_total, a.unit_available, a.unit_label, a.covered_area_km2,
               a.ports_total, a.ports_used, a.cell_size_m,
               a.min_lng, a.min_lat, a.max_lng, a.max_lat, l.geometry
-         FROM geo_gpon_coverage_area a
-         JOIN tmf_geographic_location l ON l.id = a.location_id
-        WHERE a.lod_level = ?
+         FROM geo_coverage_area a
+         JOIN tmf_geographic_location l ON l.id = a.location_id AND l.tenant_id = a.tenant_id
+        WHERE a.tenant_id = ? AND a.lod_level = ?
+          ${legacy ? '' : 'AND a.source_type = ? AND a.source_id = ?'}
           AND a.min_lng <= ? AND a.max_lng >= ?
           AND a.min_lat <= ? AND a.max_lat >= ?
-        ORDER BY a.cdo_total DESC
+        ORDER BY a.unit_total DESC
         LIMIT ?`,
-      [level, bounds.maxLng, bounds.minLng, bounds.maxLat, bounds.minLat, MAX_AREAS + 1],
+      [...params, bounds.maxLng, bounds.minLng, bounds.maxLat, bounds.minLat, MAX_AREAS + 1],
     );
     const truncated = rows.length > MAX_AREAS;
     const scoped = truncated ? rows.slice(0, MAX_AREAS) : rows;
@@ -298,10 +346,11 @@ export class GeoCoverageService {
           neighborhood: row.neighborhood ?? row.city ?? row.uf ?? 'Sem bairro',
           city: row.city ?? row.uf ?? 'Sem município',
           uf: row.uf ?? 'ZZ',
-          cdoTotal: row.cdo_total,
-          cdoAvailable: row.cdo_available,
-          cdoUnavailable: row.cdo_total - row.cdo_available,
-          availabilityRatio: row.cdo_total > 0 ? row.cdo_available / row.cdo_total : 0,
+          unitTotal: row.unit_total,
+          unitAvailable: row.unit_available,
+          unitUnavailable: row.unit_total - row.unit_available,
+          unitLabel: row.unit_label,
+          availabilityRatio: row.unit_total > 0 ? row.unit_available / row.unit_total : 0,
           coveredAreaKm2: row.covered_area_km2,
           portsTotal: row.ports_total,
           portsUsed: row.ports_used,
@@ -330,19 +379,23 @@ export class GeoCoverageService {
   }
 
   // Escala de detalhe (100–500 m): células de 150 m cruas, cada uma com o índice do seu bairro.
-  private async fineLevel(range: GridRange, cellMeters: number): Promise<CoverageResponse> {
-    const rows = await this.fetchCells(range, cellMeters, MAX_FINE_CELLS + 1);
+  private async fineLevel(
+    range: GridRange,
+    cellMeters: number,
+    tenantId: string,
+  ): Promise<CoverageResponse> {
+    const rows = await this.fetchCells(range, cellMeters, MAX_FINE_CELLS + 1, tenantId);
     const truncated = rows.length > MAX_FINE_CELLS;
     const cellRows = truncated ? rows.slice(0, MAX_FINE_CELLS) : rows;
 
     const areaIds = distinct(cellRows.map((row) => row.coverage_area_id));
-    const { neighborhoods, indexByAreaId } = await this.loadNeighborhoods(areaIds);
+    const { neighborhoods, indexByAreaId } = await this.loadNeighborhoods(areaIds, tenantId);
 
     const cells = cellRows.map((row) => [
       row.grid_x,
       row.grid_y,
-      row.cdo_total,
-      row.cdo_available,
+      row.unit_total,
+      row.unit_available,
       row.coverage_area_id ? (indexByAreaId.get(row.coverage_area_id) ?? -1) : -1,
     ]);
 
@@ -357,16 +410,20 @@ export class GeoCoverageService {
   }
 
   // Escala intermediária (500 m–10 km): agrega 5×5 células finas num campo de densidade mais
-  // grosso, carimbando cada célula grossa com o bairro dominante (o que mais CDOs contribuiu)
+  // grosso, carimbando cada célula grossa com o bairro dominante (o que mais unidades contribuiu)
   // para o balão de hover continuar funcionando. A agregação é em JS por `floor(gx/5)`, para não
   // depender da semântica de divisão inteira de negativos, que difere entre Postgres e Oracle.
-  private async coarseLevel(range: GridRange, cellMeters: number): Promise<CoverageResponse> {
-    const rows = await this.fetchCells(range, cellMeters, MAX_FINE_CELLS + 1);
+  private async coarseLevel(
+    range: GridRange,
+    cellMeters: number,
+    tenantId: string,
+  ): Promise<CoverageResponse> {
+    const rows = await this.fetchCells(range, cellMeters, MAX_FINE_CELLS + 1, tenantId);
     const truncated = rows.length > MAX_FINE_CELLS;
     const cellRows = truncated ? rows.slice(0, MAX_FINE_CELLS) : rows;
 
     const areaIds = distinct(cellRows.map((row) => row.coverage_area_id));
-    const { neighborhoods, indexByAreaId } = await this.loadNeighborhoods(areaIds);
+    const { neighborhoods, indexByAreaId } = await this.loadNeighborhoods(areaIds, tenantId);
 
     const buckets = new Map<
       string,
@@ -381,11 +438,11 @@ export class GeoCoverageService {
         bucket = { cx, cy, total: 0, available: 0, tally: new Map() };
         buckets.set(key, bucket);
       }
-      bucket.total += row.cdo_total;
-      bucket.available += row.cdo_available;
+      bucket.total += row.unit_total;
+      bucket.available += row.unit_available;
       const index = row.coverage_area_id ? indexByAreaId.get(row.coverage_area_id) : undefined;
       if (index !== undefined)
-        bucket.tally.set(index, (bucket.tally.get(index) ?? 0) + row.cdo_total);
+        bucket.tally.set(index, (bucket.tally.get(index) ?? 0) + row.unit_total);
     }
 
     const cells = [...buckets.values()].map((bucket) => {
@@ -414,23 +471,25 @@ export class GeoCoverageService {
     range: GridRange,
     cellMeters: number,
     limit: number,
+    tenantId: string,
   ): Promise<CoverageCellRow[]> {
     return this.db.all<CoverageCellRow>(
-      `SELECT grid_x, grid_y, cdo_total, cdo_available, coverage_area_id
-         FROM geo_gpon_coverage_cell
-        WHERE grid_size_m = ?
+      `SELECT grid_x, grid_y, unit_total, unit_available, coverage_area_id
+         FROM geo_coverage_cell
+        WHERE tenant_id = ? AND grid_size_m = ?
           AND grid_x BETWEEN ? AND ?
           AND grid_y BETWEEN ? AND ?
         LIMIT ?`,
-      [cellMeters, range.gxMin, range.gxMax, range.gyMin, range.gyMax, limit],
+      [tenantId, cellMeters, range.gxMin, range.gxMax, range.gyMin, range.gyMax, limit],
     );
   }
 
   // Carrega os polígonos de cobertura pelos ids, parseia o grupo `_coverage` das characteristics
   // e dedupe por bairro (vários componentes/áreas de um bairro compartilham a mesma estatística).
   // Só usado pelos níveis fine/coarse (grade de calor); neighborhood/city/uf lêem a estatística
-  // já desnormalizada de geo_gpon_coverage_area (ver areaIndexLevel), sem tocar em characteristics.
-  private async loadNeighborhoods(areaIds: string[]): Promise<{
+  // já desnormalizada de geo_coverage_area (ver areaIndexLevel), sem tocar em characteristics.
+  // `unitLabel` fica `null` aqui: characteristics não carregam o rótulo, só o índice de área tem.
+  private async loadNeighborhoods(areaIds: string[], tenantId: string): Promise<{
     neighborhoods: CoverageNeighborhood[];
     indexByAreaId: Map<string, number>;
   }> {
@@ -438,7 +497,7 @@ export class GeoCoverageService {
     const byKey = new Map<string, CoverageNeighborhood>();
     if (areaIds.length === 0) return { neighborhoods: [], indexByAreaId };
 
-    const rows = await this.fetchAreaRows(areaIds);
+    const rows = await this.fetchAreaRows(areaIds, tenantId);
     for (const row of rows) {
       const coverage = parseCoverage(row.characteristics);
       if (!coverage) continue;
@@ -452,9 +511,10 @@ export class GeoCoverageService {
           neighborhood: coverage.neighborhood,
           city: coverage.city,
           uf: coverage.uf,
-          cdoTotal: coverage.cdoTotal,
-          cdoAvailable: coverage.cdoAvailable,
-          cdoUnavailable: coverage.cdoUnavailable,
+          unitTotal: coverage.cdoTotal,
+          unitAvailable: coverage.cdoAvailable,
+          unitUnavailable: coverage.cdoUnavailable,
+          unitLabel: null,
           availabilityRatio: coverage.availabilityRatio,
           coveredAreaKm2: coverage.coveredAreaKm2,
           portsTotal: null,
@@ -469,7 +529,7 @@ export class GeoCoverageService {
     return { neighborhoods: [...byKey.values()], indexByAreaId };
   }
 
-  private async fetchAreaRows(areaIds: string[]): Promise<CoverageAreaRow[]> {
+  private async fetchAreaRows(areaIds: string[], tenantId: string): Promise<CoverageAreaRow[]> {
     const rows: CoverageAreaRow[] = [];
     for (let i = 0; i < areaIds.length; i += 500) {
       const block = areaIds.slice(i, i + 500);
@@ -477,8 +537,8 @@ export class GeoCoverageService {
       const page = await this.db.all<CoverageAreaRow>(
         `SELECT id, characteristics
            FROM tmf_geographic_location
-          WHERE id IN (${placeholders})`,
-        block,
+          WHERE tenant_id = ? AND id IN (${placeholders})`,
+        [tenantId, ...block],
       );
       rows.push(...page);
     }
@@ -508,13 +568,16 @@ function distinct(values: Array<string | null>): string[] {
 }
 
 // Fallback de `grid.sizeMeters` quando o bbox não devolveu nenhuma linha (nada para ler
-// `cell_size_m` de) — mesma resolução que scripts/build-gpon-coverage.mjs usa por nível.
+// `cell_size_m` de) — mesma resolução que scripts/build-coverage.mjs usa por nível.
 function defaultCellFor(level: CoverageAreaIndexLevel): number {
   if (level === 'city') return COVERAGE_CITY_CELL_METERS;
   if (level === 'uf') return COVERAGE_UF_CELL_METERS;
   return COVERAGE_CELL_METERS;
 }
 
+// Nomes internos espelham as chaves gravadas no grupo `_coverage` das characteristics (ver
+// coverageChars em phase3-coverage.ts/build-coverage.mjs) — não os nomes de coluna/campo
+// renomeados do read model; só quem lê essas characteristics aqui.
 type ParsedCoverage = {
   neighborhoodKey: string;
   neighborhood: string;
@@ -540,7 +603,7 @@ function parseCoverage(raw: string | null): ParsedCoverage | null {
   const get = (name: string): unknown =>
     chars.find((entry) => entry?.group === '_coverage' && entry?.name === name)?.value;
 
-  const neighborhoodKey = asString(get('neighborhoodKey'));
+  const neighborhoodKey = asString(get('neighborhoodKey') ?? get('areaKey'));
   if (!neighborhoodKey) return null;
   return {
     neighborhoodKey,

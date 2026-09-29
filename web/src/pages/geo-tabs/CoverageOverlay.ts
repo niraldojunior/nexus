@@ -1,4 +1,5 @@
-// Camada de calor da cobertura GPON desenhada num <canvas> sobre o mapa (REQ-MOD01-014).
+// Camada de calor da cobertura desenhada num <canvas> sobre o mapa (REQ-MOD01-014). GPON é hoje
+// o único gerador de dados, mas o overlay é agnóstico à origem — desenha o que o backend manda.
 //
 // É um google.maps.OverlayView com um canvas no pane `overlayLayer` (abaixo dos marcadores,
 // então não rouba o clique/hover que consulta o endereço do ponto). Canvas — e não N objetos
@@ -230,7 +231,7 @@ export function createCoverageOverlay(maps: Maps, map: GoogleMapInstance): Cover
     ): void {
       for (const area of coverage.areas) {
         // Culling por bbox: pula área que não toca a viewport — dispensável quando o backend já
-        // recorta pelo bbox pedido, mas o bbox pedido tem folga (ver useGponCoverage), então
+        // recorta pelo bbox pedido, mas o bbox pedido tem folga (ver useCoverage), então
         // algumas áreas da resposta ficam fora da viewport exibida agora.
         if (area.bounds && !boundsOverlap(area.bounds, viewport)) continue;
 

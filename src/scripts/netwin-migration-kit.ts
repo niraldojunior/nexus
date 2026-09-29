@@ -6,9 +6,10 @@
  * prática, o mesmo protocolo de reconciliação por hash.
  */
 import { randomUUID } from 'node:crypto';
-import oracledb, { type Connection } from 'oracledb';
+import oracledb, { type Connection, type BindDefinition } from 'oracledb';
 import { createCanonicalId } from '../shared/utils/canonical-id.js';
 import { prefixed } from '../shared/persistence/oracle-object-names.js';
+import { CLOB_COLUMNS } from '../shared/persistence/oracle-schema.js';
 
 export function quote(value: string): string {
   return `"${value.toUpperCase()}"`;
@@ -147,6 +148,34 @@ export async function merge(
   await target.execute(mergeSql(t, table, keys, columns), Object.values(record));
 }
 
+// `executeMany` infere tipo/tamanho de cada bind a partir da PRIMEIRA linha do lote. Se uma linha
+// posterior tiver um valor bem maior naquela coluna (ex.: geometria de polígono agregado em nível
+// cidade/UF, muito maior que a geometria de bairro que calhou de abrir o lote), o driver excede o
+// espaço reservado e o Oracle rejeita com ORA-01461 — mesmo a coluna de destino sendo CLOB.
+// Calcular o `bindDef` a partir do lote inteiro (não só da primeira linha) evita esse falso
+// negativo; colunas conhecidas como CLOB (característica/geometria/relatedParty) sempre usam bind
+// explícito `type: oracledb.CLOB`, que aceita qualquer tamanho.
+export function bulkMergeBindDefs(
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+): BindDefinition[] {
+  return columns.map((column) => {
+    if (CLOB_COLUMNS.has(column)) return { type: oracledb.CLOB };
+    let sawNumber = false;
+    let maxSize = 1;
+    for (const row of rows) {
+      const value = row[column];
+      if (value === null || value === undefined) continue;
+      if (typeof value === 'number') {
+        sawNumber = true;
+        continue;
+      }
+      maxSize = Math.max(maxSize, Buffer.byteLength(String(value), 'utf8'));
+    }
+    return sawNumber ? { type: oracledb.NUMBER } : { type: oracledb.STRING, maxSize };
+  });
+}
+
 /**
  * Reconcilia registros Oracle por `MERGE` em lote. Ao contrário de `bulkInsertRows`, registros já
  * existentes são atualizados; relações compostas só recebem o ramo `WHEN NOT MATCHED`, sem usar
@@ -171,7 +200,7 @@ export async function bulkMergeRows(
     await target.executeMany(
       sql,
       chunk.map((row) => columns.map((column) => row[column] ?? null)),
-      { autoCommit: false },
+      { autoCommit: false, bindDefs: bulkMergeBindDefs(columns, chunk) },
     );
     executed += chunk.length;
   }

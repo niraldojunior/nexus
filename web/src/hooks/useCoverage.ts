@@ -1,4 +1,4 @@
-// Cobertura GPON da viewport, buscada por bbox + nível de escala (ver GeoCoverageService).
+// Cobertura da viewport, buscada por bbox + nível de escala (ver GeoCoverageService).
 //
 // Segue o padrão dos demais hooks de mapa (useGeoTree/useAddressViability): debounce de 250 ms,
 // dedupe da requisição em voo por chave (o backend de dev atende em série e o StrictMode monta
@@ -11,16 +11,25 @@
 // (~25 %) e é arredondado a uma grade por nível (paddedBounds), então um pan pequeno dentro da
 // área já carregada não reabre fetch — só quando a viewport sai da área com folga ou o nível
 // muda (ver `contains`).
+//
+// `layer` identifica a camada publicada no Studio GEO (sourceType/sourceId, ver CoverageLayer no
+// backend) — entra na chave de dedupe/cache para que duas camadas de cobertura não compartilhem
+// entrada (a viewport pode ser a mesma, os dados não).
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchCoverage, type CoverageResponse } from '../services/geoCoverageApi';
+import { fetchCoverage, type CoverageLayerRef, type CoverageResponse } from '../services/geoCoverageApi';
 import type { MapBounds } from '../services/geoTreeApi';
 import { coverageLevelForScale, type CoverageLevel } from '../utils/mapScale';
 
 const inFlight = new Map<string, Promise<CoverageResponse>>();
 
-const requestKey = (bounds: MapBounds, level: CoverageLevel): string =>
+const requestKey = (
+  bounds: MapBounds,
+  level: CoverageLevel,
+  layer: CoverageLayerRef | null,
+): string =>
   [
+    layer ? `${layer.sourceType}:${layer.sourceId}` : 'legacy',
     level,
     bounds.minLng.toFixed(3),
     bounds.minLat.toFixed(3),
@@ -61,10 +70,11 @@ function contains(outer: MapBounds, inner: MapBounds): boolean {
   );
 }
 
-export function useGponCoverage(
+export function useCoverage(
   bounds: MapBounds | null,
   scaleMeters: number | null,
   visible: boolean,
+  layer: CoverageLayerRef | null = null,
 ): { data: CoverageResponse | null; loading: boolean } {
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   // Só é `true` quando uma requisição de fato está em voo — vira a barra de carga do mapa
@@ -74,10 +84,13 @@ export function useGponCoverage(
   const debounceRef = useRef<number | undefined>(undefined);
   const tokenRef = useRef(0);
   const lastKeyRef = useRef<string | null>(null);
-  // Nível e bbox (com folga) da última busca concluída — usados para decidir se a nova
+  // Nível, bbox (com folga) e camada da última busca concluída — usados para decidir se a nova
   // viewport já está coberta, sem precisar refazer o fetch a cada `idle` do arrasto.
   const lastLevelRef = useRef<CoverageLevel | null>(null);
   const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
+  const lastLayerKeyRef = useRef<string | null>(null);
+
+  const layerKey = layer ? `${layer.sourceType}:${layer.sourceId}` : null;
 
   useEffect(() => {
     if (!visible || !bounds || scaleMeters === null) {
@@ -85,6 +98,7 @@ export function useGponCoverage(
       lastKeyRef.current = null;
       lastLevelRef.current = null;
       lastFetchedBoundsRef.current = null;
+      lastLayerKeyRef.current = null;
       setCoverage(null);
       setLoading(false);
       return;
@@ -93,6 +107,7 @@ export function useGponCoverage(
     const level = coverageLevelForScale(scaleMeters);
     if (
       level === lastLevelRef.current &&
+      layerKey === lastLayerKeyRef.current &&
       lastFetchedBoundsRef.current &&
       contains(lastFetchedBoundsRef.current, bounds)
     ) {
@@ -100,7 +115,7 @@ export function useGponCoverage(
     }
 
     const requestBounds = paddedBounds(bounds, level);
-    const key = requestKey(requestBounds, level);
+    const key = requestKey(requestBounds, level, layer);
     if (key === lastKeyRef.current) return;
 
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
@@ -108,7 +123,7 @@ export function useGponCoverage(
       lastKeyRef.current = key;
       const token = ++tokenRef.current;
       setLoading(true);
-      const pending = inFlight.get(key) ?? fetchCoverage(requestBounds, level);
+      const pending = inFlight.get(key) ?? fetchCoverage(requestBounds, level, layer);
       inFlight.set(key, pending);
       pending
         .then((result) => {
@@ -116,6 +131,7 @@ export function useGponCoverage(
           setCoverage(result);
           lastLevelRef.current = level;
           lastFetchedBoundsRef.current = requestBounds;
+          lastLayerKeyRef.current = layerKey;
         })
         .catch(() => {
           if (tokenRef.current === token) setCoverage(null);
@@ -129,7 +145,7 @@ export function useGponCoverage(
     return () => {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     };
-  }, [bounds, scaleMeters, visible]);
+  }, [bounds, scaleMeters, visible, layerKey, layer]);
 
   return { data: coverage, loading };
 }

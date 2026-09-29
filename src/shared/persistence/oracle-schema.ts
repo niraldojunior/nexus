@@ -1,7 +1,12 @@
 import { MIGRATION_BATCHES, MIGRATIONS_SQL, SCHEMA_SQL, type MigrationBatch } from './schema.js';
 import { quoteOracleReservedColumns } from './oracle-object-names.js';
 
-const CLOB_COLUMNS = new Set([
+// Exportado para que consumidores de executeMany fora deste módulo (ex.: bulkMergeRows do
+// migrador Netwin) possam forçar bind explícito `type: oracledb.CLOB` nessas colunas. Sem isso, o
+// driver infere tipo/tamanho do bind a partir da primeira linha do lote; uma linha posterior com
+// um valor bem maior (ex.: geometria de polígono agregado em nível cidade/UF) estoura esse limite
+// e o Oracle rejeita com ORA-01461 ("can bind a LONG value only for insert into a LONG column").
+export const CLOB_COLUMNS = new Set([
   'after_state',
   'allowed_characteristics',
   'allowed_child_spec_ids',

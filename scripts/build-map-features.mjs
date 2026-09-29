@@ -2,7 +2,7 @@
 /**
  * Gera o índice de exibição do mapa (`geo_map_feature` — Fase 2 do plano de reengenharia da
  * performance do mapa, issue #69). Artefato derivado e regenerável, mesmo espírito de
- * `build-gpon-coverage.mjs`: varre a planta outdoor + Sites e grava, por tile (z16 — ver
+ * `build-coverage.mjs`: varre a planta outdoor + Sites e grava, por tile (z16 — ver
  * `src/modules/geo/map-tile.js`), o que o endpoint `GET /v1/geo/map/tile` lê depois sem JOIN,
  * sem parse de JSON e sem grafo de relacionamentos — a PK da tabela É o índice de leitura.
  *
@@ -24,7 +24,7 @@
  * não mexe no resto do índice.
  *
  * ⚠️ --uf/--city filtram pelo endereço da PRÓPRIA Location do recurso (mesmo JOIN de
- * build-gpon-coverage.mjs), não pela geometria em si — um cabo cuja Location não tem endereço
+ * build-coverage.mjs), não pela geometria em si — um cabo cuja Location não tem endereço
  * associado (comum: endereço é conceito de ponto, uma rota geralmente não tem um) fica de fora
  * de um rebuild escopado, mesmo que passe fisicamente pela região. Rode sem --uf/--city (base
  * inteira) sempre que houver cabo no escopo tocado, ou depois de qualquer carga de cabos.

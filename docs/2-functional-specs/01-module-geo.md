@@ -9,7 +9,7 @@ TMFC014 · TMF673 / TMF674 / TMF675
 | Campo                   | Valor                          |
 | ----------------------- | ------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD01-GEO              |
-| **Versão**              | 1.24 — draft                   |
+| **Versão**              | 1.26 — draft                   |
 | **Data**                | Setembro 2026                  |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001           |
 | **TMFC coberto**        | TMFC014 — Geographic Site Mgmt |
@@ -75,7 +75,7 @@ O HLD descreve o contrato funcional alvo. A tabela abaixo registra o estado veri
 | **REQ-MOD01-011** | Parcial          | `GeoPage`, Google Maps, árvore sincronizada, camada de cobertura GPON por escala (REQ-MOD01-014), `/v1/geo/tree/viewport` exibem Sites e infraestrutura passiva por bbox/escala, e o controle de camadas (`MapLayerControl`, `useMapLayers`, `useViewportInfra`) liga/desliga fetch + render por grupo (`mapLayers.test.ts`, `MapLayerControl.test.tsx`, casos `include` em `geo.integration.spec.ts`).                                                                                                                                                                                                                   | Sync de coordenadas, camadas Geosite, proximidade e exportação PNG/GeoJSON.                                                                                                                                       | [#105](https://github.com/niraldojunior/nexus/issues/105), [#106](https://github.com/niraldojunior/nexus/issues/106) | [#134](https://github.com/niraldojunior/nexus/issues/134)                                                            |
 | **REQ-MOD01-012** | Parcial          | Mudanças Geo persistem eventos consultáveis e cobertos por testes unitários/integrados.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Outbox transacional, Schema Registry, catálogo público, DLQ e UUID v7.                                                                                                                                            | [#107](https://github.com/niraldojunior/nexus/issues/107)                                                            | [#158](https://github.com/niraldojunior/nexus/issues/158)                                                            |
 | **REQ-MOD01-013** | Não implementado | `GeoPage` e o mapa exibem e selecionam feições; nenhuma tela cria ou altera vértices.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Editor de geometria completo: desenho, vértices, snap, split/merge, rascunho, import e histórico.                                                                                                                 | [#109](https://github.com/niraldojunior/nexus/issues/109)                                                            | [#136](https://github.com/niraldojunior/nexus/issues/136), [#134](https://github.com/niraldojunior/nexus/issues/134) |
-| **REQ-MOD01-014** | Implementado     | `coverage-grid.ts`, `coverage-service.ts` (incl. `coverageForPoint`, consulta inversa ponto→célula/áreas), `/v1/geo/coverage`, `GET /v1/geo/coverage/by-resource/:id`, `scripts/build-gpon-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`.                                                                                                                                                                                                                                                                                 | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade.                                                                                                                        | —                                                                                                                    | [#137](https://github.com/niraldojunior/nexus/issues/137)                                                            |
+| **REQ-MOD01-014** | Implementado     | `coverage-grid.ts`, `coverage-service.ts` (incl. `coverageForPoint`, consulta inversa ponto→célula/áreas), `/v1/geo/coverage`, `GET /v1/geo/coverage/by-resource/:id`, `scripts/build-coverage.mjs` e a camada `CoverageOverlay` no `GeoPage`, com `geo.coverage.unit.spec.ts`, `geo.integration.spec.ts` e `coverageColor.test.ts`.                                                                                                                                                                                                                                                                                 | Takeup (portas ocupadas/totais) por bairro e regeneração incremental/orquestrada da grade.                                                                                                                        | —                                                                                                                    | [#137](https://github.com/niraldojunior/nexus/issues/137)                                                            |
 | **REQ-MOD01-015** | Implementado     | `GeoProjectRepository` (com `status` cascateado e `note`/`geonetAddressId` por local, e o vínculo `geo_project_site` preservado após o término — não mais apagado), rotas `/v1/geo/projects/*` em `app.ts` (terminar cascateia para `Active`, não `Retired`; projeto terminado é imutável), exclusão de locais de projeto em `GeoTreeService` restrita a projeto em curso (`PROJECT_SITE_EXCLUSION_SQL`), `HierarchySidebar`/`ProjectListView`/`ProjectDetailPanel`/`SitePanel` no frontend, com `geo-project.unit.spec.ts`, o novo caso "terminar libera os locais" em `geo.integration.spec.ts` e testes de componente. | Promoção explícita de um local de projeto para o inventário sem soft-terminar o Site (hoje só ocorre por exclusão).                                                                                               | —                                                                                                                    | [#138](https://github.com/niraldojunior/nexus/issues/138)                                                            |
 | **REQ-MOD01-016** | Implementado     | `SitePanel`/`SiteOverviewTab`/`SiteSubSitesTab`/`SiteResourcesTab`/`SiteHistoryTab`/`SiteAddressModal` no frontend, rotas `GET /v1/geo/sites/:id/origin` e `POST`/`DELETE /v1/geo/sites/:siteId/resources[/:resourceId]` em `app.ts`, `sourceSystem`/`sourceRef`/`accuracyLevel` em `GeographicLocation`/`GeographicAddress` e `note` em `GeographicSite`, com `resource.unit.spec.ts` (desvínculo `placeId: null`), `geo.integration.spec.ts` (Origem + vínculo/desvínculo de recurso) e testes de componente (`SitePanel`, `SiteOverviewTab`, `SiteAddressModal`).                                                      | Aba Sub-locais e Recursos sem teste de componente dedicado (cobertas por integração de rota); reconciliação de fontes divergentes de endereço (GEONET × Google) ainda não estendida de Endereço avulso para Site. | —                                                                                                                    | [#139](https://github.com/niraldojunior/nexus/issues/139)                                                            |
 | **REQ-MOD01-017** | Implementado     | `project-area-grid.ts`, `scripts/build-project-areas.mjs`, `GeoProjectRepository.listAreas`/`replaceAreas`, `GeoTreeService.projectSitesInViewport`, rotas `GET /v1/geo/projects/:id/areas` e `/sites` com bbox/limit em `app.ts`, e a camada `ProjectAreaOverlay` no `GeoPage`, com `geo-project-area.unit.spec.ts`, o novo caso em `geo.integration.spec.ts` e `projectAreaColor.test.ts`. Gerado e validado contra o projeto real "Onitel - Novo Gama" (3.514 locais).                                                                                                                                                 | Geração é só por script (sem botão na UI) e não recalcula sozinha ao criar/remover local do projeto depois de gerada.                                                                                             | —                                                                                                                    | [#140](https://github.com/niraldojunior/nexus/issues/140)                                                            |
@@ -1595,10 +1595,10 @@ O Kuwaiba oferece o `syncGeoPosition` (mover um nó atualiza a coordenada de for
 
 ## 19. REQ-MOD01-014 — Cobertura GPON por bairro (mapa de calor)
 
-> **Entidade TMF:** GeographicLocation (TMF675) — polígono de cobertura; não cria entidade nova  
-> **Open API TMF:** TMF675 — consulta geoespacial de áreas de cobertura  
+> **Entidade TMF:** GeographicSite (TMF674) `Cobertura GPON` com `GeographicLocation` (TMF675) Polygon vinculada  
+> **Open API TMF:** TMF674/TMF675 — Site derivado e consulta geoespacial de áreas de cobertura  
 > **Prioridade:** Média — leitura operacional agregada da planta  
-> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.23 — draft
+> **Status funcional:** Especificado · **Implementação:** ver §2.3 · **Versão:** 1.26 — draft
 
 ### 19.1 Descrição
 
@@ -1606,68 +1606,77 @@ Acima da escala de detalhe, o mapa (REQ-MOD01-011) deixa de desenhar recurso a r
 
 ### 19.2 Racional arquitetural
 
-A cobertura é uma **área geográfica**, não um serviço nem um recurso: é a projeção espacial de "até onde a planta alcança". Por isso o polígono do bairro é uma `GeographicLocation` (TMF675, `geometryType: Polygon`) — o mesmo caso de uso já previsto no REQ-MOD01-001 ("zona de cobertura, polígono de uma cidade"). Não é `Service` (C4: cobertura não é Home Connected) nem `Resource` (C3-a: serviço/área referencia recurso, não o contém). A geometria é **derivada** da posição das CDOs: um artefato regenerável, não um cadastro manual — mora ao lado do inventário, alimentado por um job de recomputação (`scripts/build-gpon-coverage.mjs`).
+A cobertura é uma **área geográfica**, não um serviço nem um recurso: é a projeção espacial de "até onde a planta alcança". Cada componente é um `GeographicSite` (TMF674) derivado, de Specification `GPON_COVERAGE`, `category: Region` e `siteRole: grouping`, que referencia uma `GeographicLocation` (TMF675, `geometryType: Polygon`). Não é `Service` (C4: cobertura não é Home Connected) nem `Resource` (C3-a: cobertura apenas referencia a geografia derivada, não contém recursos). A geometria é **derivada** da posição das CDOs: um artefato regenerável, não um cadastro manual — a Fase 3 do migrador Netwin a reconstrói no destino para todo o tenant, sem consultar a origem Netwin.
 
-O campo de calor fino (grade de 50 m em Web Mercator, EPSG:3857) fica numa **projeção de leitura** própria (`geo_gpon_coverage_cell`), agregável por zoom (50 m → 250 m → polígono de bairro) sem inflar a tabela de Locations nem exigir interseção de polígono em tempo de consulta. As estatísticas de cada bairro (contagem real de CDOs, disponibilidade, área coberta) viajam como `characteristic` tipada no grupo `_coverage` (C1 — extensão V.tal via característica, nunca campo hardcoded).
+O campo de calor fino (grade de 50 m em Web Mercator, EPSG:3857) fica numa **projeção de leitura** própria (`geo_coverage_cell`/`geo_coverage_area`, com `source_type`/`source_id` identificando a camada do Studio GEO — agnóstica à tecnologia de acesso, GPON é hoje o único gerador), agregável por zoom (50 m → 250 m → polígono de bairro) sem inflar a tabela de Locations nem exigir interseção de polígono em tempo de consulta. As estatísticas de cada bairro (contagem real de CDOs, disponibilidade, área coberta) viajam como `characteristic` tipada no grupo `_coverage` (C1 — extensão V.tal via característica, nunca campo hardcoded).
 
 ### 19.3 Mapeamento de atributos TMF
 
-| Atributo                                     | Tipo    | Obrigatório | Observação V.tal                                                                                                                            |
-| -------------------------------------------- | ------- | :---------: | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GeographicLocation.geometryType`            | enum    |     Sim     | `Polygon` — anel externo do bairro + buracos.                                                                                               |
-| `GeographicLocation.geometry`                | GeoJSON |     Sim     | Polígono do componente conexo da cobertura do bairro (RFC 7946).                                                                            |
-| `GeographicLocation.referencePoint`          | string  |     Não     | Token de escopo `GPON:<uf>\|<city>\|<bairro>` — idempotência da regeneração.                                                                |
-| `characteristic._coverage.neighborhood`      | string  |     Sim     | Nome do bairro (rótulo do balão).                                                                                                           |
-| `characteristic._coverage.cdoTotal`          | integer |     Sim     | Contagem **real** de CDOs do bairro (não a soma de células).                                                                                |
-| `characteristic._coverage.cdoAvailable`      | integer |     Sim     | CDOs ativas (disponíveis).                                                                                                                  |
-| `characteristic._coverage.availabilityRatio` | decimal |     Sim     | `cdoAvailable / cdoTotal`, base da cor.                                                                                                     |
-| `characteristic._coverage.coveredAreaKm2`    | decimal |     Não     | Área coberta pelo bairro, em km².                                                                                                           |
-| `characteristic._coverage.radiusMeters`      | integer |     Não     | Raio de cobertura por CDO (200 m).                                                                                                          |
-| `characteristic._coverage.smoothIterations`  | integer |     Não     | Iterações de corner-cutting (Chaikin) aplicadas ao contorno; 0 = escada crua.                                                               |
-| `characteristic._coverage.minComponentCells` | integer |     Não     | Piso de células (grade fina) abaixo do qual um componente conexo não vira polígono — descarta fragmentos de fronteira entre bairros densos. |
+| Atributo | Tipo | Obrigatório | Observação V.tal |
+| --- | --- | :---: | --- |
+| `GeographicSiteSpecification.code` | string | Sim | `GPON_COVERAGE`; `category: Region`, `siteRole: grouping` e ciclo `Active`. |
+| `GeographicSite.geographicLocation` | referência | Sim | Vincula cada Site `Cobertura GPON` à sua Location poligonal. |
+| `GeographicLocation.geometryType` | enum | Sim | `Polygon` — anel externo do componente + buracos. |
+| `GeographicLocation.geometry` | GeoJSON | Sim | Polígono de cobertura `neighborhood`, `city` ou `uf` (RFC 7946). |
+| `GeographicLocation.referencePoint` | string | Não | Token idempotente `GPON:`, `GPON-CITY:` ou `GPON-UF:` conforme o nível. |
+| `characteristic._coverage.areaKey` | string | Sim | Chave estável da área (`UF\|município\|bairro`, `UF\|município` ou `UF`). |
+| `characteristic._coverage.cdoTotal` | integer | Sim | Contagem **real** de CDOs da área, não a soma de células. |
+| `characteristic._coverage.cdoAvailable` | integer | Sim | CDOs ativas (disponíveis). |
+| `characteristic._coverage.availabilityRatio` | decimal | Sim | `cdoAvailable / cdoTotal`, base da cor. |
+| `characteristic._coverage.coveredAreaKm2` | decimal | Não | Área coberta pela mancha, em km². |
+| `characteristic._coverage.radiusMeters` | integer | Não | Raio de cobertura por CDO (200 m). |
+| `characteristic._coverage.cellMeters` | integer | Não | Resolução do nível: 50 m, 500 m ou 2.000 m. |
+| `characteristic._origin.*` | característica | Sim | Proveniência `Nexus Netwin Phase 3` do artefato derivado. |
 
 ### 19.4 Exemplo de payload
 
-Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato TMF675:
+Exemplo ilustrativo de um Site `Cobertura GPON` e sua Location Polygon conforme os contratos TMF674/TMF675:
 
 ```json
 {
-  "id": "loc-018f9c21-7a10-7b3e-9c44-2f7a1b9e0c31",
-  "href": "/tmf-api/geographicLocationManagement/v4/geographicLocation/loc-018f9c21",
-  "geometryType": "Polygon",
-  "geometry": {
-    "type": "Polygon",
-    "coordinates": [
-      [
-        [-43.1101, -22.9075],
-        [-43.1004, -22.9075],
-        [-43.1004, -22.9012],
-        [-43.1101, -22.9012],
-        [-43.1101, -22.9075]
-      ]
-    ]
+  "id": "site-018f9c21-7a10-7b3e-9c44-2f7a1b9e0c31",
+  "@type": "GeographicSite",
+  "name": "Cobertura GPON — Bairro RJ|Niteroi|Icarai",
+  "siteSpecification": {
+    "id": "spec-gpon-coverage",
+    "@referredType": "GeographicSiteSpecification"
   },
-  "spatialRef": "EPSG:4326",
-  "referencePoint": "GPON:RJ|Niteroi|Icarai",
+  "geographicLocation": {
+    "id": "loc-018f9c21-7a10-7b3e-9c44-2f7a1b9e0c31",
+    "@referredType": "GeographicLocation",
+    "geometryType": "Polygon"
+  },
+  "relatedParty": [
+    { "id": "party-vtal", "@referredType": "Organization" }
+  ],
   "characteristic": [
-    { "group": "_coverage", "name": "kind", "value": "GponCoverage", "valueType": "string" },
-    { "group": "_coverage", "name": "neighborhood", "value": "Icarai", "valueType": "string" },
-    { "group": "_coverage", "name": "city", "value": "Niteroi", "valueType": "string" },
-    { "group": "_coverage", "name": "uf", "value": "RJ", "valueType": "string" },
+    { "group": "_coverage", "name": "level", "value": "neighborhood", "valueType": "string" },
+    { "group": "_coverage", "name": "areaKey", "value": "RJ|Niteroi|Icarai", "valueType": "string" },
     { "group": "_coverage", "name": "cdoTotal", "value": 1904, "valueType": "integer" },
-    { "group": "_coverage", "name": "cdoAvailable", "value": 1421, "valueType": "integer" },
-    { "group": "_coverage", "name": "availabilityRatio", "value": 0.7464, "valueType": "decimal" },
-    { "group": "_coverage", "name": "coveredAreaKm2", "value": 3.67, "valueType": "decimal" },
-    { "group": "_coverage", "name": "radiusMeters", "value": 200, "valueType": "integer" },
-    { "group": "_coverage", "name": "smoothIterations", "value": 2, "valueType": "integer" },
-    { "group": "_coverage", "name": "minComponentCells", "value": 6, "valueType": "integer" }
-  ]
+    { "group": "_coverage", "name": "cdoAvailable", "value": 1421, "valueType": "integer" }
+  ],
+  "geographicLocationDetail": {
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-43.1101, -22.9075],
+          [-43.1004, -22.9075],
+          [-43.1004, -22.9012],
+          [-43.1101, -22.9012],
+          [-43.1101, -22.9075]
+        ]
+      ]
+    },
+    "spatialRef": "EPSG:4326",
+    "referencePoint": "GPON:RJ|Niteroi|Icarai"
+  }
 }
 ```
 
 ### 19.5 Pré-condições
 
-- As CDOs do município estão inventariadas como PhysicalResource `CTO` com `place` referenciando uma `GeographicLocation` do tipo Point (REQ-MOD01-001, REQ-MOD02-008).
+- As CDOs do município estão inventariadas como PhysicalResource (`CTO`, `category:CDOI` ou `category:CDOE`) com `place` referenciando uma `GeographicLocation` do tipo Point (REQ-MOD01-001, REQ-MOD02-008).
 - O endereço de cada CDO (REQ-MOD01-002) traz `locality` (bairro); na ausência, a CDO entra em "Sem bairro".
 - A base cartográfica do mapa (REQ-MOD01-011) está disponível para sobrepor a camada de calor.
 
@@ -1690,9 +1699,9 @@ Exemplo ilustrativo do polígono de cobertura de um bairro conforme o contrato T
 
 | ID         | Nome                            | Descrição                                                                                                                                                                                         |
 | ---------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **RN-001** | **Só CDO gera cobertura**       | Apenas PhysicalResource `CTO` com nome iniciado em "CDO" entra; CEO/CEOS (caixas de emenda) ficam de fora.                                                                                        |
+| **RN-001** | **Só CDO gera cobertura**       | Apenas PhysicalResource com `ResourceType` `category:CDOI`, `category:CDOE` ou `CTO` e nome iniciado em "CDO" entra; CEO/CEOS (caixas de emenda) ficam de fora.                                                                                    |
 | **RN-002** | **Disponível = ativo**          | `status = active` conta como disponível; `suspended`/Bloqueada como indisponível; `terminated` não entra (C6).                                                                                    |
-| **RN-003** | **Cobertura não é Service**     | A área de cobertura é `GeographicLocation` (TMF675); nunca `CustomerFacingService` (C4) nem `Resource` (C3-a).                                                                                    |
+| **RN-003** | **Cobertura não é Service**     | A área de cobertura é `GeographicSite` (TMF674) `Cobertura GPON` com `GeographicLocation` Polygon (TMF675); nunca `CustomerFacingService` (C4) nem `Resource` (C3-a). |
 | **RN-004** | **Estatística é contagem real** | Os números do balão vêm da contagem real de CDOs do bairro, não da soma de células (que multiplica de propósito no campo de densidade); o descarte de fragmento (RF-009) não afeta essa contagem. |
 | **RN-005** | **Artefato regenerável**        | O polígono e a grade são derivados: a regeneração por escopo pode apagá-los fisicamente e recriá-los — exceção consciente a C6, restrita a artefato de leitura.                                   |
 
@@ -2350,6 +2359,8 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.22   | Agosto 2026   | Engenharia — V.tal Nexus | Fase 4 do issue [#171](https://github.com/niraldojunior/nexus/issues/171): consulta inversa de cobertura GPON — novo `coverageForPoint` em `GeoCoverageService` e rota `GET /v1/geo/coverage/by-resource/:id` (REQ-MOD01-014/RF-010), resolvendo o ponto do recurso via `GeoTreeService` e devolvendo célula fina + áreas (`neighborhood`/`city`/`uf`) que o contêm; 404 para recurso sem geometria de ponto. "Setor Censitário" (IBGE) fica fora do escopo — sem geometria própria no modelo hoje.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 1.23   | Agosto 2026   | Engenharia — V.tal Nexus | Consolidação das Fases 3 e 4 do issue [#171](https://github.com/niraldojunior/nexus/issues/171): o painel de CTO incorpora a aba **Portas** com drill-down empilhado para portas de splitter materializadas; todo Resource com geometria `Point` incorpora a aba **Cobertura**, que consulta sob demanda a célula e as áreas da cobertura GPON. A UI preserva a fronteira canônica: cobertura continua Geographic read model (TMF675), não Resource ou Service.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 1.24   | Setembro 2026 | Engenharia — V.tal Nexus | Atualização de referências técnicas para Oracle-only / execução local (C10): o script de migração INSTALLATION_POINT para CUSTOMER_SITE (REQ-MOD01-018/RF-006) passa a rodar exclusivamente sobre Oracle, não mais Postgres+Oracle. Também descontinua `FunctionalGroup` como categoria estrutural: o domínio aceita somente `Region`, `Site` e `SubSite`; a spec legada `FUNCTIONAL_GROUP` recebe soft-retire (C6), e REQ-MOD01-005/D-GEO-003 registram a decisão superada.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 1.25   | Setembro 2026 | Engenharia — V.tal Nexus | Alinhamento do REQ-MOD01-014 (Cobertura GPON) ao modelo canônico TMF: cada mancha de cobertura passa a ser representada por um `GeographicSite` (TMF674) da spec governada `GPON_COVERAGE` (`category: Region`, `siteRole: grouping`), vinculado à sua `GeographicLocation` Polygon (TMF675) e às projeções de leitura (`geo_gpon_coverage_area`, `geo_gpon_coverage_cell`). O migrador nativo Netwin incorpora a **Fase 3** (projeções geoespaciais derivadas: 3.A rebuild de mapa/densidade e 3.B manchas GPON). RN-001 estendido para incluir `category:CDOI`, `category:CDOE` e `CTO`; RN-003 atualizado para Site + Location Polygon.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 1.26   | Setembro 2026 | Engenharia — V.tal Nexus | REQ-MOD01-014 deixa de ser GPON-específico: detecção e renderização de cobertura no mapa passam a se basear em `entity.category === 'COVERAGE'` (Studio GEO), não mais em `sourceType === 'GPON_AGGREGATE'`. Read model renomeado (`geo_gpon_coverage_area`/`geo_gpon_coverage_cell` → `geo_coverage_area`/`geo_coverage_cell`; `cdo_total`/`cdo_available` → `unit_total`/`unit_available`), com `source_type`/`source_id` identificando a camada publicada e `unit_label` tornando o rótulo data-driven. GPON permanece o único gerador de dados hoje, mas nem página nem read model conhecem a tecnologia por nome. `materialize` do adaptador Studio GEO passa a validar que todo `sourceId` de COVERAGE resolve a uma `GeographicSiteSpecification` de `category: Region`, fechando a lacuna que permitia publicar uma camada que nunca desenha. |
 
 ---
 

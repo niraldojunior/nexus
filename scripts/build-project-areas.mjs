@@ -20,7 +20,7 @@
  *
  * Idempotente por projeto: cada execução SUBSTITUI a geração anterior DAQUELE projeto (apaga as
  * Locations "PROJECT:<id>" e os vínculos, e regrava) — artefato derivado e regenerável, exceção
- * consciente a C6 (mesmo trade-off de geo_gpon_coverage_cell/build-gpon-coverage.mjs).
+ * consciente a C6 (mesmo trade-off de geo_coverage_cell/build-coverage.mjs).
  *
  * Requer o dist compilado (npm run build) — importa o algoritmo de project-area-grid.
  *
@@ -301,7 +301,7 @@ function areaChars(area) {
   ];
 }
 
-// Insere ids em blocos e apaga por bloco — mesmo padrão de build-gpon-coverage.mjs (evita
+// Insere ids em blocos e apaga por bloco — mesmo padrão de build-coverage.mjs (evita
 // estourar o limite de parâmetros de uma única query com milhares de ids).
 async function deleteByIds(client, table, column, ids) {
   for (let i = 0; i < ids.length; i += 500) {

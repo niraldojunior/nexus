@@ -1,3 +1,4 @@
+import oracledb from 'oracledb';
 import { describe, expect, it } from 'vitest';
 import {
   deterministicUuid,
@@ -45,8 +46,29 @@ import {
   summarizeNativeRelationships,
 } from '../src/scripts/netwin-migration/checkpoint.js';
 import { assertReadOnlySourceSql } from '../src/scripts/netwin-migration/context.js';
-import { bulkMergeRows, mergeSql } from '../src/scripts/netwin-migration-kit.js';
+import {
+  bulkMergeBindDefs,
+  bulkMergeRows,
+  makeTablePrefixer,
+  mergeSql,
+} from '../src/scripts/netwin-migration-kit.js';
+import { MIGRATION_BATCHES } from '../src/shared/persistence/schema.js';
 import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
+import {
+  hasPhase3ResourceScanIndex,
+  oracleDictionaryObjectName,
+  phase3MapCandidatePageSql,
+  phase3MapCandidatesSql,
+  phase3MapFeaturesForCandidate,
+  phase3MapResourcePageSql,
+  phase3MapSitePageSql,
+  phase3VisibleMapSpecificationsSql,
+  stalePhase3Statistics,
+} from '../src/scripts/netwin-migration/phase3-map-features.js';
+import {
+  phase3CdoPageSql,
+  phase3CdoSourceSql,
+} from '../src/scripts/netwin-migration/phase3-coverage.js';
 import {
   assertReconciliationInvocation,
   parseReconciliationOptions,
@@ -262,9 +284,28 @@ describe('netwin-migration: gate da Fase 2.D', () => {
 });
 
 describe('netwin-migration: CLI', () => {
-  it('aceita a execução independente das Fases 2.C e 2.D', () => {
+  it('aceita a execução independente das Fases 2.C, 2.D e 3', () => {
     expect(parseCliArgs(['--phase', '2c', '--municipio', 'Niterói']).phase).toBe('2c');
     expect(parseCliArgs(['--phase', '2d', '--municipio', 'Niterói']).phase).toBe('2d');
+    expect(parseCliArgs(['--phase', '3', '--tenant-id', 'vtal'])).toMatchObject({
+      phase: '3',
+      tenantId: 'vtal',
+      scope: { full: false },
+    });
+  });
+
+  it('rejeita filtros e execução parcial na Fase 3 tenant-integral', () => {
+    expect(() => parseCliArgs(['--phase', '3', '--uf', 'RJ'])).toThrow(/tenant inteiro/i);
+    expect(() => parseCliArgs(['--phase', '3', '--municipio', 'Niterói'])).toThrow(
+      /tenant inteiro/i,
+    );
+    expect(() =>
+      parseCliArgs(['--phase', '3', '--bairro', 'Icaraí', '--municipio', 'Niterói']),
+    ).toThrow(/tenant inteiro/i);
+    expect(() => parseCliArgs(['--phase', '3', '--max-records', '1'])).toThrow(/não aceita/i);
+    expect(() =>
+      parseCliArgs(['--phase', '3', '--apply', '--resume', '--job-id', 'job-1']),
+    ).toThrow(/não aceita/i);
   });
 
   it('aceita bairro somente quando associado a município ou UF', () => {
@@ -295,6 +336,134 @@ describe('netwin-migration: CLI', () => {
     expect(
       parseCliArgs(['--phase', '2', '--full', '--apply', '--resume', '--job-id', 'job-1']),
     ).toMatchObject({ apply: true, resume: true, jobId: 'job-1' });
+  });
+});
+
+describe('netwin-migration: Fase 3 geoespacial derivada', () => {
+  const t = (table: string) => `NX_TEST_${table.toUpperCase()}`;
+
+  it('seleciona primeiro as specifications visíveis e pagina recursos dentro de cada specification', () => {
+    const source = phase3MapCandidatesSql(t);
+    const specifications = phase3VisibleMapSpecificationsSql(t);
+    const resourcePage = phase3MapResourcePageSql(t);
+    const sitePage = phase3MapSitePageSql(t);
+    const compatibilityPage = phase3MapCandidatePageSql(t);
+    expect(specifications).toContain('rs.tenant_id = :tenantId');
+    expect(specifications).toContain("rt.code NOT IN ('Splitter', 'Port')");
+    expect(specifications).toContain('COALESCE(rt.map_presence, 1) = 1');
+    expect(specifications).not.toContain('rt.tenant_id');
+    expect(resourcePage).toContain('WITH resource_page AS');
+    expect(resourcePage).toContain('r.resource_specification_id = :specificationId');
+    expect(resourcePage).toContain('(:lastId IS NULL OR r.id > :lastId)');
+    expect(resourcePage).toContain("r.status <> 'terminated'");
+    expect(resourcePage).toContain('FETCH FIRST :batchSize ROWS ONLY');
+    expect(resourcePage).toContain('FROM resource_page r');
+    expect(resourcePage).toContain('place_site.geographic_location_id');
+    expect(sitePage).toContain("spec.category = 'Site'");
+    expect(sitePage).toContain('(:lastId IS NULL OR s.id > :lastId)');
+    expect(source).toContain('resource pages');
+    expect(compatibilityPage).toBe(resourcePage);
+  });
+
+  it('reconhece o índice de cursor da Fase 3 e estatísticas que exigem atualização', () => {
+    expect(
+      hasPhase3ResourceScanIndex([
+        { INDEX_NAME: 'IDX_OTHER', COLUMN_NAME: 'TENANT_ID', COLUMN_POSITION: 1 },
+        { INDEX_NAME: 'IDX_SCAN', COLUMN_NAME: 'TENANT_ID', COLUMN_POSITION: 1 },
+        { INDEX_NAME: 'IDX_SCAN', COLUMN_NAME: 'RESOURCE_SPECIFICATION_ID', COLUMN_POSITION: 2 },
+        { INDEX_NAME: 'IDX_SCAN', COLUMN_NAME: 'ID', COLUMN_POSITION: 3 },
+      ]),
+    ).toBe('IDX_SCAN');
+    expect(
+      hasPhase3ResourceScanIndex([
+        { INDEX_NAME: 'IDX_WRONG', COLUMN_NAME: 'RESOURCE_SPECIFICATION_ID', COLUMN_POSITION: 1 },
+      ]),
+    ).toBeNull();
+    expect(
+      stalePhase3Statistics([
+        {
+          TABLE_NAME: 'NX_TEST_TMF_PHYSICAL_RESOURCE',
+          NUM_ROWS: 1,
+          LAST_ANALYZED: null,
+          STALE_STATS: 'NO',
+        },
+        {
+          TABLE_NAME: 'NX_TEST_TMF_RESOURCE_SPECIFICATION',
+          NUM_ROWS: 1,
+          LAST_ANALYZED: new Date(),
+          STALE_STATS: 'YES',
+        },
+        {
+          TABLE_NAME: 'NX_TEST_TMF_RESOURCE_TYPE',
+          NUM_ROWS: 1,
+          LAST_ANALYZED: new Date(),
+          STALE_STATS: 'NO',
+        },
+      ]),
+    ).toEqual(['NX_TEST_TMF_PHYSICAL_RESOURCE', 'NX_TEST_TMF_RESOURCE_SPECIFICATION']);
+  });
+
+  it('consulta as views USER_* pelo nome físico, sem as aspas do identificador', () => {
+    // `makeTablePrefixer` devolve o identificador quoted, que é o correto no SQL de aplicação.
+    // USER_IND_COLUMNS/USER_TAB_STATISTICS guardam o nome como VALOR de coluna, sempre sem aspas:
+    // comparar `table_name` com `"NX_DEV2_TMF_PHYSICAL_RESOURCE"` não casa nenhuma linha e o
+    // diagnóstico acusava "falta índice" mesmo com a migration v25 aplicada.
+    const prefixer = makeTablePrefixer('NX_TEST_');
+    expect(prefixer('tmf_physical_resource')).toBe('"NX_TEST_TMF_PHYSICAL_RESOURCE"');
+    expect(oracleDictionaryObjectName(prefixer('tmf_physical_resource'))).toBe(
+      'NX_TEST_TMF_PHYSICAL_RESOURCE',
+    );
+    expect(oracleDictionaryObjectName('nx_test_tmf_resource_type')).toBe(
+      'NX_TEST_TMF_RESOURCE_TYPE',
+    );
+  });
+
+  it('declara a migration do índice de cursor com o prefixo de colunas que a Fase 3 exige', () => {
+    const batch = MIGRATION_BATCHES.find(
+      (candidate) => candidate.name === 'phase3-map-scan-indexes',
+    );
+    expect(batch?.version).toBe(25);
+    expect(batch?.sql).toContain(
+      'ON tmf_physical_resource(tenant_id, resource_specification_id, id)',
+    );
+  });
+
+  it('mantém segmentos de linha e ranks determinísticos no índice de mapa', () => {
+    const features = phase3MapFeaturesForCandidate('vtal', {
+      ID: 'cable-1',
+      NAME: 'Cabo OSP',
+      FEATURE_KIND: 'resource',
+      ENTITY_TYPE: 'PhysicalResource',
+      TYPE_CODE: 'BackboneCable',
+      SITE_CATEGORY: null,
+      SOURCE_MODEL_TYPE: 'RESOURCE_TYPE',
+      SOURCE_MODEL_ID: 'BackboneCable',
+      STATUS: 'active',
+      SUBLABEL: null,
+      GEOMETRY_TYPE: 'LineString',
+      GEOMETRY: JSON.stringify({
+        type: 'LineString',
+        coordinates: [
+          [-43.11, -22.9],
+          [-43.1, -22.89],
+        ],
+      }),
+    });
+    expect(features).not.toBeNull();
+    expect(features?.length).toBeGreaterThan(0);
+    expect(features?.every((feature) => feature.shape === 'line')).toBe(true);
+    expect(features?.map((feature) => feature.rank)).toEqual(expect.arrayContaining([0]));
+  });
+
+  it('seleciona CDO canônica, endereço determinístico e pagina por ID', () => {
+    const source = phase3CdoSourceSql(t);
+    const page = phase3CdoPageSql(t);
+    expect(source).toContain("rt.code IN ('category:CDOI','category:CDOE','CTO')");
+    expect(source).toContain("UPPER(r.name) LIKE 'CDO%'");
+    expect(source).toContain('ORDER BY address.id');
+    expect(source).toContain('FETCH FIRST 1 ROWS ONLY');
+    expect(page).toContain('(:lastId IS NULL OR "ID" > :lastId)');
+    expect(page).toContain('FETCH FIRST :batchSize ROWS ONLY');
   });
 });
 
@@ -660,6 +829,43 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
     await expect(
       bulkMergeRows(connection as never, t, 'tmf_physical_resource', ['id'], ['id'], []),
     ).resolves.toBe(0);
+  });
+
+  it('força bind CLOB em colunas conhecidas, mesmo quando a primeira linha do lote é curta', () => {
+    // Reproduz a Fase 3.B: o polígono de bairro (primeira linha) é pequeno, mas o polígono
+    // agregado de cidade/UF (linha posterior) é muito maior. Sem bindDef explícito, o
+    // node-oracledb dimensiona o bind pela primeira linha e o Oracle rejeita a linha maior com
+    // ORA-01461, mesmo a coluna de destino sendo CLOB.
+    const bindDefs = bulkMergeBindDefs(
+      ['id', 'geometry', 'characteristics'],
+      [
+        { id: 'loc-1', geometry: 'x'.repeat(10), characteristics: '[]' },
+        { id: 'loc-2', geometry: 'x'.repeat(50_000), characteristics: '[]' },
+      ],
+    );
+    expect(bindDefs[0]).toMatchObject({ type: oracledb.STRING });
+    expect(bindDefs[1]).toEqual({ type: oracledb.CLOB });
+    expect(bindDefs[2]).toEqual({ type: oracledb.CLOB });
+  });
+
+  it('reconhece colunas numéricas mistas com NULL sem forçar bind STRING', () => {
+    const bindDefs = bulkMergeBindDefs(
+      ['cdo_total', 'city'],
+      [
+        { cdo_total: 12, city: null },
+        { cdo_total: null, city: 'Niterói' },
+      ],
+    );
+    expect(bindDefs[0]).toEqual({ type: oracledb.NUMBER });
+    expect(bindDefs[1]).toMatchObject({ type: oracledb.STRING });
+  });
+
+  it('dimensiona o bindDef STRING pelo maior valor do lote, não só pela primeira linha', () => {
+    const bindDefs = bulkMergeBindDefs(
+      ['name'],
+      [{ name: 'A' }, { name: 'A'.repeat(500) }, { name: 'AB' }],
+    );
+    expect(bindDefs[0]).toEqual({ type: oracledb.STRING, maxSize: 500 });
   });
 });
 

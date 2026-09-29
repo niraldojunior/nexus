@@ -125,7 +125,7 @@ export type CreateProjectAreaInput = {
 };
 
 // Location (Polygon) que o chamador (scripts/build-project-areas.mjs) já monta pronta para
-// gravação — mesma forma que build-gpon-coverage.mjs monta para tmf_geographic_location.
+// gravação — mesma forma que build-coverage.mjs monta para tmf_geographic_location.
 export type CreateProjectAreaLocationInput = {
   id: string;
   geometry: string;
@@ -807,7 +807,7 @@ export class GeoProjectRepository {
   }
 
   // SUBSTITUI a geração anterior do projeto (idempotente por escopo, como
-  // build-gpon-coverage.mjs): apaga os vínculos e as Locations `PROJECT:<projectId>` antigas
+  // build-coverage.mjs): apaga os vínculos e as Locations `PROJECT:<projectId>` antigas
   // antes de gravar as novas. Usado pelo script de geração (que fala direto com o loader-db
   // via SQL equivalente, para bulkInsert em massa) e disponível ao chamador HTTP na mesma forma.
   async replaceAreas(

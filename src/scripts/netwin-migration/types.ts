@@ -1,4 +1,4 @@
-export type MigrationPhase = '1' | '2' | '2c' | '2d' | 'all';
+export type MigrationPhase = '1' | '2' | '2c' | '2d' | '3' | 'all';
 
 export type MigrationScope = {
   municipio?: string | undefined;

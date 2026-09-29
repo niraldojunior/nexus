@@ -3,7 +3,7 @@
 // escalas abertas (ver comentário em mapScale.ts); este hook fica pronto para reativação sem
 // reintroduzir corte global de visibilidade de infra passiva.
 //
-// Segue o mesmo padrão de useGponCoverage, e não o de useMapTiles, porque a leitura é por bbox:
+// Segue o mesmo padrão de useCoverage, e não o de useMapTiles, porque a leitura é por bbox:
 // em zoom aberto a viewport cobre poucas células grossas e pedir uma a uma custaria mais em
 // ida-e-volta do que a consulta inteira. Daí também o reuso do truque de folga: o bbox pedido é
 // 25% maior que a viewport e arredondado a uma grade por nível, então um pan pequeno dentro da
@@ -27,7 +27,7 @@ const requestKey = (bounds: MapBounds, z: MapDensityZoom): string =>
 
 // Grade (graus) a que o bbox pedido é arredondado, por zoom — maior nos níveis mais abertos,
 // onde um pan cobre muito mais chão. Mesma ideia (e mesmos valores) de REQUEST_GRID_DEG em
-// useGponCoverage, já que os degraus de escala são os mesmos.
+// useCoverage, já que os degraus de escala são os mesmos.
 const REQUEST_GRID_DEG: Record<MapDensityZoom, number> = {
   13: 0.05,
   10: 0.5,

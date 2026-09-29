@@ -5,6 +5,7 @@ import type {
   StudioValidationResult,
 } from '../domain.js';
 import type { ResourceType } from '../../resource/domain.js';
+import type { GeographicSiteSpecification } from '../../geo/domain.js';
 import type { VisualIdentity } from '../../../shared/ui/visual-identity.js';
 
 /** Snapshot v1, kept only to normalize historical publications and drafts. */
@@ -477,7 +478,7 @@ export const CANONICAL_STUDIO_GEO_SNAPSHOT: StudioGeoSnapshot = {
       'coverage',
       'Cobertura',
       20,
-      'Manchas agregadas por tema — hoje só GPON, outras entram como novos itens do grupo',
+      'Manchas agregadas por tema',
     ),
     group('netwinInfrastructure', 'Infraestrutura Civil', 30),
     group('resources', 'Recursos de Rede', 40),
@@ -816,7 +817,12 @@ const visualConfigIssues = (
 export class StudioGeoAdapter implements StudioDomainAdapter {
   public readonly domain = 'studio-geo';
 
-  constructor(private readonly listResourceTypes: (tenantId: string) => Promise<ResourceType[]>) {}
+  constructor(
+    private readonly listResourceTypes: (tenantId: string) => Promise<ResourceType[]>,
+    private readonly listRegionSiteSpecs: (
+      tenantId: string,
+    ) => Promise<GeographicSiteSpecification[]>,
+  ) {}
 
   public prepareSnapshot(snapshot: Record<string, unknown>): StudioGeoSnapshot {
     return normalizeStudioGeoSnapshot(snapshot);
@@ -1003,7 +1009,33 @@ export class StudioGeoAdapter implements StudioDomainAdapter {
         statusCode: 422,
       });
     const resourceTypes = await this.listResourceTypes(context.tenantId);
+    // Carregado sempre, não só quando há nó COVERAGE: a lista é pequena (specs de categoria
+    // Region) e o custo de buscar à toa é menor que o de manter dois caminhos de validação.
+    const regionSpecs = await this.listRegionSiteSpecs(context.tenantId);
     for (const node of normalizeStudioGeoSnapshot(snapshot).nodes) {
+      // Um sourceId de COVERAGE que não resolve para uma spec Region real publica limpo e nunca
+      // desenha — silenciosamente, sem erro em lugar nenhum (a classe do bug que motivou esta
+      // validação). `GPON_AGGREGATE` é o nó canônico do bootstrap legado e não referencia spec
+      // nenhuma; segue sem checagem, como sempre fez.
+      if (
+        node.kind === 'ENTITY' &&
+        node.entity.category === 'COVERAGE' &&
+        node.entity.sourceType === 'GEOGRAPHIC_SITE_SPECIFICATION'
+      ) {
+        const spec = regionSpecs.find(
+          (candidate) =>
+            candidate.id === node.entity.sourceId || candidate.code === node.entity.sourceId,
+        );
+        if (!spec) {
+          throw new AppError(
+            `studio GEO: o nó "${node.label}" referencia "${node.entity.sourceId}" e não pode ser publicado — não existe uma especificação de site de categoria "Region" com esse id/código.`,
+            {
+              code: 'STUDIO_GEO_COVERAGE_SOURCE_INVALID',
+              statusCode: 422,
+            },
+          );
+        }
+      }
       // Snapshots legados não materializavam `visualConfig`; eles seguem legíveis/publicáveis até
       // serem normalizados pelo editor. Toda entidade RESOURCE configurada pelo fluxo atual traz
       // a geometria visual explícita e precisa coincidir com o ResourceType canônico.

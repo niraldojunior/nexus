@@ -17,11 +17,12 @@ export type MigrationContext = {
   t: TablePrefixer;
   getSourceConnection: () => Promise<Connection>;
   getTargetConnection: () => Promise<Connection | null>;
+  getTargetReadConnection: () => Promise<Connection>;
   close: () => Promise<void>;
 };
 
-const READ_ONLY_SOURCE_SQL = /^(?:SELECT|WITH)\b/iu;
-const SOURCE_BLOCKED_METHODS = new Set<keyof Connection>([
+const READ_ONLY_SQL = /^(?:SELECT|WITH)\b/iu;
+const READ_ONLY_BLOCKED_METHODS = new Set<keyof Connection>([
   'changePassword',
   'clearAppContext',
   'clearEndUserSecurityContext',
@@ -42,12 +43,10 @@ function stripLeadingSqlComments(sql: string): string {
   return sql.replace(/^(?:\s|--[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)+/u, '');
 }
 
-export function assertReadOnlySourceSql(sql: string): void {
+export function assertReadOnlySql(sql: string, label = 'conexão read-only'): void {
   const normalized = stripLeadingSqlComments(sql);
-  if (!READ_ONLY_SOURCE_SQL.test(normalized)) {
-    throw new Error(
-      'Operação bloqueada: a origem Netwin aceita exclusivamente consultas SELECT ou WITH somente-leitura.',
-    );
+  if (!READ_ONLY_SQL.test(normalized)) {
+    throw new Error(`Operação bloqueada: ${label} aceita exclusivamente consultas SELECT ou WITH.`);
   }
 
   if (
@@ -55,27 +54,29 @@ export function assertReadOnlySourceSql(sql: string): void {
       normalized,
     )
   ) {
-    throw new Error(
-      'Operação bloqueada: a origem Netwin aceita exclusivamente consultas sem escrita ou bloqueio.',
-    );
+    throw new Error(`Operação bloqueada: ${label} aceita exclusivamente consultas sem escrita ou bloqueio.`);
   }
 }
 
-function guardReadOnlySourceConnection(connection: Connection): Connection {
+export function assertReadOnlySourceSql(sql: string): void {
+  assertReadOnlySql(sql, 'a origem Netwin');
+}
+
+function guardReadOnlyConnection(connection: Connection, label: string): Connection {
   return new Proxy(connection, {
     get(target, property, receiver) {
       if (property === 'execute' || property === 'queryStream') {
         return (sql: string, ...args: unknown[]) => {
-          assertReadOnlySourceSql(sql);
+          assertReadOnlySql(sql, label);
           return Reflect.apply(target[property], target, [sql, ...args]);
         };
       }
       if (
         typeof property === 'string' &&
-        SOURCE_BLOCKED_METHODS.has(property as keyof Connection)
+        READ_ONLY_BLOCKED_METHODS.has(property as keyof Connection)
       ) {
         return () => {
-          throw new Error(`Operação ${property} bloqueada na origem Netwin read-only.`);
+          throw new Error(`Operação ${property} bloqueada em ${label}.`);
         };
       }
       const value = Reflect.get(target, property, receiver) as unknown;
@@ -98,28 +99,32 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
     );
   }
 
+  const requiresSource = options.phase !== '3';
+  const requiresTargetRead = options.phase === '3' || options.phase === 'all';
   const netwinTnsAdmin = process.env.NETWIN_DR_TNS_ADMIN ?? process.env.TNS_ADMIN;
   const sourceConnectString = process.env.NETWIN_DR_ORACLE_CONNECT_STRING;
   const sourceUser = process.env.NETWIN_DR_ORACLE_USER;
   const sourcePassword = process.env.NETWIN_DR_ORACLE_PASSWORD;
 
-  if (!sourceConnectString || !sourceUser || !sourcePassword) {
-    throw new Error(
-      'NETWIN_DR_ORACLE_CONNECT_STRING, NETWIN_DR_ORACLE_USER e NETWIN_DR_ORACLE_PASSWORD são obrigatórios.',
-    );
+  let sourcePool: Pool | null = null;
+  if (requiresSource) {
+    if (!sourceConnectString || !sourceUser || !sourcePassword) {
+      throw new Error(
+        'NETWIN_DR_ORACLE_CONNECT_STRING, NETWIN_DR_ORACLE_USER e NETWIN_DR_ORACLE_PASSWORD são obrigatórios para esta fase.',
+      );
+    }
+    sourcePool = await oracledb.createPool({
+      connectString: oracleConnectDescriptor(sourceConnectString),
+      user: sourceUser,
+      password: sourcePassword,
+      ...(netwinTnsAdmin ? { configDir: netwinTnsAdmin } : {}),
+      poolMin: 1,
+      poolMax: 2,
+    });
   }
 
-  const sourcePool = await oracledb.createPool({
-    connectString: oracleConnectDescriptor(sourceConnectString),
-    user: sourceUser,
-    password: sourcePassword,
-    ...(netwinTnsAdmin ? { configDir: netwinTnsAdmin } : {}),
-    poolMin: 1,
-    poolMax: 2,
-  });
-
   let targetPool: Pool | null = null;
-  if (options.apply) {
+  if (options.apply || requiresTargetRead) {
     const targetConnectString =
       process.env.TARGET_ORACLE_CONNECT_STRING || process.env.ORACLE_CONNECTION_STRING;
     const targetUser = process.env.TARGET_ORACLE_USER || process.env.ORACLE_USER;
@@ -127,7 +132,7 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
 
     if (!targetConnectString || !targetUser || !targetPassword) {
       throw new Error(
-        'ORACLE_CONNECTION_STRING, ORACLE_USER e ORACLE_PASSWORD são obrigatórios para gravar (--apply).',
+        'ORACLE_CONNECTION_STRING, ORACLE_USER e ORACLE_PASSWORD são obrigatórios para acessar o destino.',
       );
     }
 
@@ -144,16 +149,26 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
     options,
     t,
     getSourceConnection: async () => {
+      if (!sourcePool) throw new Error('A Fase 3 não abre conexão com a origem Netwin.');
       const conn = await sourcePool.getConnection();
       await conn.execute('SET TRANSACTION READ ONLY');
-      return guardReadOnlySourceConnection(conn);
+      return guardReadOnlyConnection(conn, 'a origem Netwin read-only');
     },
     getTargetConnection: async () => {
-      if (!targetPool) return null;
+      if (!targetPool || !options.apply) return null;
       return await targetPool.getConnection();
     },
+    getTargetReadConnection: async () => {
+      if (!targetPool) throw new Error('Conexão de leitura do destino não está disponível.');
+      const conn = await targetPool.getConnection();
+      if (!options.apply) {
+        await conn.execute('SET TRANSACTION READ ONLY');
+        return guardReadOnlyConnection(conn, 'o destino da Fase 3 em dry-run');
+      }
+      return conn;
+    },
     close: async () => {
-      await sourcePool.close(10);
+      if (sourcePool) await sourcePool.close(10);
       if (targetPool) await targetPool.close(10);
     },
   };

@@ -267,6 +267,16 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
           roles: ['studio.admin'],
           traceId: 'studio-geo-adapter',
         }),
+      async (tenantId) =>
+        await geoService.listSpecs(
+          { category: 'Region' },
+          {
+            actorSub: 'studio-geo-adapter',
+            tenantId,
+            roles: ['studio.admin'],
+            traceId: 'studio-geo-adapter',
+          },
+        ),
     ),
   );
   studioService.registerAdapter(new RulesWorkflowsStudioAdapter(db));

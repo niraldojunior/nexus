@@ -2828,9 +2828,9 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, density);
   }
 
-  // Consulta inversa de cobertura GPON (REQ-MOD01-014, issue #171 Fase 4): dado o id de um
+  // Consulta inversa de cobertura (REQ-MOD01-014, issue #171 Fase 4): dado o id de um
   // recurso, resolve seu ponto (via GeoTreeService.resourcesByIds, que já hidrata geometria para
-  // os três tipos de `place`) e devolve a célula/áreas de geo_gpon_coverage_* que o contêm — o
+  // os três tipos de `place`) e devolve a célula/áreas de geo_coverage_* que o contêm — o
   // inverso do recorte por bbox de `/v1/geo/coverage` logo abaixo. "Setor Censitário" não existe
   // no modelo (sem geometria IBGE) — item futuro, fora deste endpoint.
   const coverageByResourceMatch = url.pathname.match(/^\/v1\/geo\/coverage\/by-resource\/([^/]+)$/);
@@ -2844,15 +2844,22 @@ const routeGeoRequest = async ({
       });
     }
     const [lng, lat] = node.geometry.coordinates;
-    return sendJson(response, 200, runtime.geoCoverageService.coverageForPoint(lng, lat));
+    return sendJson(
+      response,
+      200,
+      runtime.geoCoverageService.coverageForPoint(lng, lat, geoContext.tenantId),
+    );
   }
 
-  // Mapa de calor de cobertura GPON — fonte do mapa acima de 100 m, no lugar dos recursos
+  // Mapa de calor de cobertura — fonte do mapa acima de 100 m, no lugar dos recursos
   // individuais e dos clusters (ver GeoCoverageService). `level`: fine (células de 50 m) ou
   // coarse (agregado 250 m) — grade de calor, hoje sem uso no frontend; neighborhood (polígono
   // de bairro), city (polígono de município) ou uf (polígono de estado) — o LOD real usado pelo
   // mapa, escolhido por escala (ver coverageLevelForScale no frontend). `area` é aceito como
   // alias de `neighborhood` — nome do nível antes da LOD por município/estado. Recorte por bbox.
+  // `sourceType`/`sourceId` identificam a camada COVERAGE do catálogo Studio GEO (o mesmo par que
+  // identifica a entidade no mapa) — sem eles (ou com sourceType=GPON_AGGREGATE, o nó canônico de
+  // fallback), o serviço não filtra por origem, preservando ambientes sem publicação própria.
   if (request.method === 'GET' && url.pathname === '/v1/geo/coverage') {
     const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
     const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
@@ -2879,10 +2886,18 @@ const routeGeoRequest = async ({
         : levelParam === 'area'
           ? 'neighborhood'
           : 'fine';
+    const sourceType = url.searchParams.get('sourceType');
+    const sourceId = url.searchParams.get('sourceId');
+    const layer = sourceType && sourceId ? { sourceType, sourceId } : null;
     return sendJson(
       response,
       200,
-      runtime.geoCoverageService.coverage({ minLng, minLat, maxLng, maxLat }, level),
+      runtime.geoCoverageService.coverage(
+        { minLng, minLat, maxLng, maxLat },
+        level,
+        geoContext.tenantId,
+        layer,
+      ),
     );
   }
 

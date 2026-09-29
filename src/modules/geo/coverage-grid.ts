@@ -15,7 +15,7 @@
 // projetadas.
 //
 // Tudo aqui é função pura (sem banco, sem I/O): o serviço de leitura e o script de carga
-// (`scripts/build-gpon-coverage.mjs`, via `dist/`) compõem em cima, e os testes exercitam
+// (`scripts/build-coverage.mjs`, via `dist/`) compõem em cima, e os testes exercitam
 // o algoritmo isolado.
 
 import type { GeoJSONPolygon } from './domain.js';
@@ -34,7 +34,7 @@ export const COVERAGE_CELL_METERS = 50;
 export const COVERAGE_COARSE_FACTOR = 5;
 
 // Célula de traçado dos níveis agregados (escala de município/estado) que
-// scripts/build-gpon-coverage.mjs grava em geo_gpon_coverage_area (ver GeoCoverageService). Estes
+// scripts/build-coverage.mjs grava em geo_coverage_area (ver GeoCoverageService). Estes
 // níveis NÃO re-estampam os pontos com um raio maior — isso incharia a mancha muito além da
 // cobertura real (uma CDO isolada "pintando" um disco de 2 km em vez dos 200 m reais, criando
 // falso positivo de cobertura em área sem CDO nenhuma). Em vez disso, `aggregateCells` agrega a
@@ -544,7 +544,7 @@ export function tracePolygon(
 // Agrupa por bairro, separa em componentes conexos e traça o polígono de cada um — a metade
 // "geometria" de buildCoverage, isolada para poder rodar sobre uma grade AGREGADA (ver
 // aggregateCells) em vez de sempre estampar os pontos de novo. Exportada para os níveis
-// city/uf (scripts/build-gpon-coverage.mjs) reusarem sem duplicar o agrupamento/traçado.
+// city/uf (scripts/build-coverage.mjs) reusarem sem duplicar o agrupamento/traçado.
 export function tracePolygonsFromCells(
   cells: CoverageCell[],
   cellMeters: number,

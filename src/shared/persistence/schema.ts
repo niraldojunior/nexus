@@ -50,8 +50,8 @@ export const TABLE_NAMES = [
   'research_session',
   'research_message',
   'mcp_confirmation',
-  'geo_gpon_coverage_cell',
-  'geo_gpon_coverage_area',
+  'geo_coverage_cell',
+  'geo_coverage_area',
   'geo_map_feature',
   'geo_map_density',
   'studio_workspace',
@@ -499,7 +499,7 @@ export const MIGRATIONS_SQL = `
    WHERE map_presence IS NULL;
 
   -- Índice de exibição do mapa (geo_map_feature) — artefato derivado e regenerável, mesma
-  -- postura de geo_gpon_coverage_area: uma linha por feature visível (ponto de Site/Recurso
+  -- postura de geo_coverage_area: uma linha por feature visível (ponto de Site/Recurso
   -- outdoor, ou trecho de cabo já recortado no tile — ver src/modules/geo/map-tile.ts), pronta
   -- para o cliente desenhar sem JOIN, sem parse de JSON, sem grafo de relacionamentos. A PK É o
   -- índice de leitura: servir um tile é uma igualdade em 4 colunas. entity_id é o uuid puro (não
@@ -934,7 +934,7 @@ export const SCHEMA_SQL = `
       -- comum em tmf_geographic_location (reference_point 'PROJECT:<projectId>'); esta tabela
       -- guarda o vínculo com o projeto e o resto do relatório (mesmo espírito de
       -- geo_project_site.note: extensão de plataforma, não characteristic TMF — C1 não se
-      -- aplica). Artefato derivado e regenerável (como geo_gpon_coverage_cell): toda execução
+      -- aplica). Artefato derivado e regenerável (como geo_coverage_cell): toda execução
       -- do script SUBSTITUI a geração anterior do projeto — exceção consciente a C6.
       CREATE TABLE IF NOT EXISTS geo_project_area (
         project_id TEXT NOT NULL,
@@ -1512,47 +1512,58 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_mcp_confirmation_operation ON mcp_confirmation(domain, operation);
       CREATE INDEX IF NOT EXISTS idx_mcp_confirmation_expires ON mcp_confirmation(expires_at);
 
-      -- ========== MODULE 1: GPON COVERAGE (mapa de calor por bairro, REQ-MOD01-014) ==========
+      -- ========== MODULE 1: COVERAGE (mapa de calor por camada, REQ-MOD01-014) ==========
+      -- Agnóstico à indústria/tecnologia de recurso: cada linha pertence a uma camada do
+      -- catálogo Studio GEO (source_type + source_id, ex. GEOGRAPHIC_SITE_SPECIFICATION +
+      -- código da spec de Region), nunca a uma tecnologia hardcoded. GPON é hoje o único gerador
+      -- (scripts/build-coverage.mjs), mas o schema não sabe disso — outra camada (HFC, satélite)
+      -- grava com o mesmo formato, source_type/source_id diferente.
 
-      -- Projeção de leitura da cobertura GPON: a grade de calor derivada da posição das
-      -- CDOs (ver scripts/build-gpon-coverage.mjs e src/modules/geo/coverage-grid.ts). Não é
-      -- entidade TMF — é artefato regenerável, como geo_search_history. O polígono do bairro
-      -- em si mora em tmf_geographic_location (Polygon, TMF675); aqui fica o campo de densidade
-      -- fino de 150 m que a API agrega por zoom (150 m → 750 m via GROUP BY floor(grid_x/5)).
-      -- coverage_area_id aponta (por convenção, sem FK rígida — a tabela é substituída inteira
-      -- a cada geração) a GeographicLocation do componente de cobertura da célula.
-      -- ports_total/ports_used ficam NULL hoje e reservam o takeup futuro (portas ocupadas).
-      -- Sem coluna JSON de propósito: a base Oracle tem CHECK(col IS JSON) global por nome.
-      CREATE TABLE IF NOT EXISTS geo_gpon_coverage_cell (
+      -- Projeção de leitura da cobertura: a grade de calor derivada da posição das unidades
+      -- contadas pela camada (ver scripts/build-coverage.mjs e src/modules/geo/coverage-grid.ts).
+      -- Não é entidade TMF — é artefato regenerável, como geo_search_history. O polígono do
+      -- bairro em si mora em tmf_geographic_location (Polygon, TMF675); aqui fica o campo de
+      -- densidade fino de 150 m que a API agrega por zoom (150 m → 750 m via GROUP BY
+      -- floor(grid_x/5)). coverage_area_id aponta (por convenção, sem FK rígida — a tabela é
+      -- substituída inteira a cada geração) a GeographicLocation do componente de cobertura da
+      -- célula. ports_total/ports_used ficam NULL hoje e reservam o takeup futuro (portas
+      -- ocupadas). Sem coluna JSON de propósito: a base Oracle tem CHECK(col IS JSON) global por
+      -- nome.
+      CREATE TABLE IF NOT EXISTS geo_coverage_cell (
         tenant_id TEXT NOT NULL DEFAULT 'default',
         grid_size_m INTEGER NOT NULL,
         grid_x INTEGER NOT NULL,
         grid_y INTEGER NOT NULL,
         coverage_area_id TEXT,
-        cdo_total INTEGER NOT NULL DEFAULT 0,
-        cdo_available INTEGER NOT NULL DEFAULT 0,
+        unit_total INTEGER NOT NULL DEFAULT 0,
+        unit_available INTEGER NOT NULL DEFAULT 0,
         ports_total INTEGER,
         ports_used INTEGER,
         generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (tenant_id, grid_size_m, grid_x, grid_y)
       );
-      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_xy
-        ON geo_gpon_coverage_cell(grid_size_m, grid_x, grid_y);
-      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_cell_area
-        ON geo_gpon_coverage_cell(coverage_area_id);
+      CREATE INDEX IF NOT EXISTS idx_geo_coverage_cell_xy
+        ON geo_coverage_cell(grid_size_m, grid_x, grid_y);
+      CREATE INDEX IF NOT EXISTS idx_geo_coverage_cell_area
+        ON geo_coverage_cell(coverage_area_id);
 
       -- Índice de leitura por polígono de cobertura (1 linha por Location "GPON:"/"GPON-CITY:"/
-      -- "GPON-UF:"), com bbox e estatística DESNORMALIZADOS — evita, no recorte por viewport, ter
-      -- que varrer geo_gpon_coverage_cell (milhões de linhas) e reparsear characteristics (dezenas
-      -- de MB) a cada requisição. lod_level espelha os três níveis de detalhe que
-      -- scripts/build-gpon-coverage.mjs grava: neighborhood (bairro, célula fina) até 500 m de
-      -- escala, city (município) até 10 km, uf (estado) acima disso — ver coverageLevelForScale no
-      -- frontend. (Nome da coluna evita "level": palavra reservada do Oracle, usada em
-      -- CONNECT BY LEVEL.) Artefato derivado e regenerável, como geo_gpon_coverage_cell: toda
-      -- execução do script SUBSTITUI a geração anterior do escopo/nível.
-      CREATE TABLE IF NOT EXISTS geo_gpon_coverage_area (
+      -- "GPON-UF:", ou o prefixo equivalente de outra camada), com bbox e estatística
+      -- DESNORMALIZADOS — evita, no recorte por viewport, ter que varrer geo_coverage_cell
+      -- (milhões de linhas) e reparsear characteristics (dezenas de MB) a cada requisição.
+      -- source_type/source_id identificam a camada do Studio GEO dona da linha (ver
+      -- GeoCoverageService.coverage) — é o que permite duas camadas de cobertura coexistirem sem
+      -- misturar polígonos de uma na consulta da outra. lod_level espelha os três níveis de
+      -- detalhe que scripts/build-coverage.mjs grava: neighborhood (bairro, célula fina) até
+      -- 500 m de escala, city (município) até 10 km, uf (estado) acima disso — ver
+      -- coverageLevelForScale no frontend. (Nome da coluna evita "level": palavra reservada do
+      -- Oracle, usada em CONNECT BY LEVEL.) Artefato derivado e regenerável, como
+      -- geo_coverage_cell: toda execução do script SUBSTITUI a geração anterior do escopo/nível.
+      CREATE TABLE IF NOT EXISTS geo_coverage_area (
         tenant_id TEXT NOT NULL DEFAULT 'default',
         location_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
         lod_level TEXT NOT NULL,
         cell_size_m INTEGER NOT NULL,
         min_lng REAL NOT NULL,
@@ -1563,18 +1574,19 @@ export const SCHEMA_SQL = `
         neighborhood TEXT,
         city TEXT,
         uf TEXT,
-        cdo_total INTEGER NOT NULL DEFAULT 0,
-        cdo_available INTEGER NOT NULL DEFAULT 0,
+        unit_total INTEGER NOT NULL DEFAULT 0,
+        unit_available INTEGER NOT NULL DEFAULT 0,
+        unit_label TEXT,
         covered_area_km2 REAL NOT NULL DEFAULT 0,
         ports_total INTEGER,
         ports_used INTEGER,
         generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (tenant_id, location_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_bbox
-        ON geo_gpon_coverage_area(tenant_id, lod_level, min_lng, max_lng, min_lat, max_lat);
-      CREATE INDEX IF NOT EXISTS idx_geo_gpon_coverage_area_rank
-        ON geo_gpon_coverage_area(tenant_id, lod_level, cdo_total);
+      CREATE INDEX IF NOT EXISTS idx_geo_coverage_area_bbox
+        ON geo_coverage_area(tenant_id, source_type, source_id, lod_level, min_lng, max_lng, min_lat, max_lat);
+      CREATE INDEX IF NOT EXISTS idx_geo_coverage_area_rank
+        ON geo_coverage_area(tenant_id, source_type, source_id, lod_level, unit_total);
 `;
 
 /**
@@ -2053,6 +2065,17 @@ const MIGRATIONS_SQL_V24_PARTY_ROLE_TYPE_ID = `
   ALTER TABLE tmf_party_role ADD COLUMN IF NOT EXISTS role_type_id TEXT;
 `;
 
+// V25: a reconstrução full-tenant do índice de mapa pagina PhysicalResources por tenant+ID
+// e resolve a Specification no mesmo tenant. Sem estes índices, um tenant carregado com centenas
+// de milhares de Portas invisíveis ainda exige varreduras caras no Oracle antes de aplicar a régua
+// map_presence/Port/Splitter.
+const MIGRATIONS_SQL_V25_PHASE3_MAP_SCAN_INDEXES = `
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_tenant_id
+    ON tmf_physical_resource(tenant_id, id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_physical_resource_tenant_spec_id
+    ON tmf_physical_resource(tenant_id, resource_specification_id, id);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2149,6 +2172,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 24,
     name: 'party-role-type-id',
     sql: MIGRATIONS_SQL_V24_PARTY_ROLE_TYPE_ID,
+  },
+  {
+    version: 25,
+    name: 'phase3-map-scan-indexes',
+    sql: MIGRATIONS_SQL_V25_PHASE3_MAP_SCAN_INDEXES,
   },
 ];
 

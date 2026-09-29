@@ -16,6 +16,7 @@ import {
   readStoredLayers,
   setGroupVisibility,
   viewportInclude,
+  visibleCoverageLayer,
   writeStoredBaseMap,
   writeStoredExpandedGroups,
   writeStoredLayerControlOpen,
@@ -258,6 +259,123 @@ describe('viewportInclude', () => {
   it('estações e cobertura não entram no include (não vêm do viewport)', () => {
     const visibility = { ...ALL_MAP_LAYERS_VISIBLE, stations: false, 'coverage-gpon': false };
     expect(viewportInclude(visibility)).toBeUndefined();
+  });
+});
+
+describe('visibleCoverageLayer', () => {
+  // Catálogo mínimo com dois nós COVERAGE, cada um com um sourceType diferente — nenhum é
+  // GPON_AGGREGATE, o caso que motivou a função (publicação via seletor "Região (Cobertura)"
+  // do Studio, que sempre emite GEOGRAPHIC_SITE_SPECIFICATION).
+  const catalogWithTwoCoverageLayers: StudioGeoCatalog = {
+    schemaVersion: 2,
+    configured: true,
+    environmentId: 'coverage-agnostic',
+    fallback: false,
+    nodes: [
+      { id: 'group', kind: 'GROUP', parentNodeId: null, label: 'Cobertura', sortOrder: 10, active: true },
+      {
+        id: 'coverage-region',
+        kind: 'ENTITY',
+        parentNodeId: 'group',
+        label: 'Cobertura por Região',
+        sortOrder: 10,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'COVERAGE',
+          sourceDomain: 'location-model',
+          sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+          sourceId: 'GPON_COVERAGE',
+        },
+      },
+      {
+        id: 'coverage-spatial',
+        kind: 'ENTITY',
+        parentNodeId: 'group',
+        label: 'Cobertura Espacial',
+        sortOrder: 20,
+        active: true,
+        defaultVisible: true,
+        entity: {
+          category: 'COVERAGE',
+          sourceDomain: 'spatial',
+          sourceType: 'SPATIAL_COVERAGE',
+          sourceId: 'spatial-1',
+        },
+      },
+    ],
+  };
+
+  it('acha um nó COVERAGE publicado como GEOGRAPHIC_SITE_SPECIFICATION, não só GPON_AGGREGATE', () => {
+    const catalog: StudioGeoCatalog = {
+      ...catalogWithTwoCoverageLayers,
+      nodes: catalogWithTwoCoverageLayers.nodes.filter((node) => node.id !== 'coverage-spatial'),
+    };
+    const visibility = defaultMapLayerVisibility(catalog);
+    const layer = visibleCoverageLayer(visibility, catalog);
+    expect(layer?.id).toBe('coverage-region');
+    expect(layer?.entity.sourceType).toBe('GEOGRAPHIC_SITE_SPECIFICATION');
+  });
+
+  it('ignora nó COVERAGE desligado na visibilidade', () => {
+    const catalog: StudioGeoCatalog = {
+      ...catalogWithTwoCoverageLayers,
+      nodes: catalogWithTwoCoverageLayers.nodes.filter((node) => node.id !== 'coverage-spatial'),
+    };
+    const visibility = { ...defaultMapLayerVisibility(catalog), 'coverage-region': false };
+    expect(visibleCoverageLayer(visibility, catalog)).toBeUndefined();
+  });
+
+  it('ignora nó COVERAGE fora da faixa de escala publicada', () => {
+    const scaleBands = {
+      le5m: { visible: false, strokeWidth: 0 },
+      le10m: { visible: false, strokeWidth: 0 },
+      le20m: { visible: false, strokeWidth: 0 },
+      le50m: { visible: false, strokeWidth: 0 },
+      le100m: { visible: false, strokeWidth: 0 },
+      le500m: { visible: false, strokeWidth: 0 },
+      le1km: { visible: false, strokeWidth: 0 },
+      gt1km: { visible: false, strokeWidth: 0 },
+    };
+    const catalog: StudioGeoCatalog = {
+      ...catalogWithTwoCoverageLayers,
+      nodes: catalogWithTwoCoverageLayers.nodes
+        .map((node) =>
+          node.id === 'coverage-region'
+            ? {
+                ...node,
+                visualConfig: {
+                  geometryKind: 'POLYGON' as const,
+                  fill: defaultColorRule('COVERAGE', '#000'),
+                  fillOpacity: 1,
+                  stroke: defaultColorRule('COVERAGE', '#000'),
+                  strokeOpacity: 1,
+                  strokeStyle: 'solid' as const,
+                  scaleBands,
+                },
+              }
+            : node,
+        )
+        .filter((node) => node.id !== 'coverage-spatial'),
+    };
+    const visibility = defaultMapLayerVisibility(catalog);
+    // scaleMeters explícito (200m) cai numa banda marcada como invisível na publicação.
+    expect(visibleCoverageLayer(visibility, catalog, 200)).toBeUndefined();
+  });
+
+  it('com duas camadas COVERAGE ligadas, vence a primeira em ordem de desenho', () => {
+    const visibility = defaultMapLayerVisibility(catalogWithTwoCoverageLayers);
+    const layer = visibleCoverageLayer(visibility, catalogWithTwoCoverageLayers);
+    // mapLayerEntitiesForDraw inverte a ordem do Studio: o último da lista (coverage-spatial)
+    // desenha primeiro.
+    expect(layer?.id).toBe('coverage-spatial');
+  });
+
+  it('continua reconhecendo o nó canônico GPON_AGGREGATE do bootstrap legado', () => {
+    const visibility = defaultMapLayerVisibility(MAP_LAYER_CATALOG_FALLBACK);
+    const layer = visibleCoverageLayer(visibility, MAP_LAYER_CATALOG_FALLBACK);
+    expect(layer?.id).toBe('coverage-gpon');
+    expect(layer?.entity.sourceType).toBe('GPON_AGGREGATE');
   });
 });
 

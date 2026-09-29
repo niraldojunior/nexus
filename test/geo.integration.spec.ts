@@ -1123,7 +1123,7 @@ test.skipIf(!oracleConfigured)(
 );
 
 test.skipIf(!oracleConfigured)(
-  'Geo coverage serves the GPON heat grid and neighborhood polygons by bounding box',
+  'Geo coverage serves the heat grid and neighborhood polygons by bounding box',
   async () => {
     const server = createApp({
       config: createTestConfig(0),
@@ -1132,8 +1132,12 @@ test.skipIf(!oracleConfigured)(
     const port = await server.start();
     try {
       // Mesma instância de banco que o app usa (getOracleTestClient() memoiza um único client por
-      // processo): a cobertura é semeada direto nas tabelas de projeção, como faz o build-gpon-coverage.
+      // processo): a cobertura é semeada direto nas tabelas de projeção, como faz o build-coverage.mjs.
       const db = await getOracleTestClient();
+      // Identidade da camada (ver GeoCoverageService.CoverageLayer) — GPON é o único gerador hoje,
+      // mas as colunas source_type/source_id do read model são agnósticas a isso.
+      const SOURCE_TYPE = 'GEOGRAPHIC_SITE_SPECIFICATION';
+      const SOURCE_ID = 'GPON_COVERAGE';
 
       const coverageChars = (stat: {
         key: string;
@@ -1177,7 +1181,7 @@ test.skipIf(!oracleConfigured)(
         ]);
 
       // Bbox fixo do polígono semeado (as duas áreas do teste compartilham o mesmo quadrado, por
-      // simplicidade) — geo_gpon_coverage_area guarda o bbox pronto, como build-gpon-coverage.mjs.
+      // simplicidade) — geo_coverage_area guarda o bbox pronto, como build-coverage.mjs.
       const AREA_BOUNDS = { minLng: -43.108, minLat: -22.908, maxLng: -43.1, maxLat: -22.902 };
 
       const seedArea = async (
@@ -1216,19 +1220,20 @@ test.skipIf(!oracleConfigured)(
         );
         for (const cell of cells) {
           await db.run(
-            `INSERT INTO geo_gpon_coverage_cell
-           (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, cdo_total, cdo_available)
+            `INSERT INTO geo_coverage_cell
+           (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, unit_total, unit_available)
          VALUES ('default', ?, ?, ?, ?, ?, ?)`,
             [COVERAGE_CELL_METERS, cell.gx, cell.gy, locId, cell.total, cell.avail],
           );
         }
         // Índice de leitura por polígono (ver GeoCoverageService.areaIndexLevel) — o que o loader
-        // grava em geo_gpon_coverage_area para o nível neighborhood.
+        // grava em geo_coverage_area para o nível neighborhood.
         await db.run(
-          `INSERT INTO geo_gpon_coverage_area
+          `INSERT INTO geo_coverage_area
          (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
-          area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
-       VALUES ('default', ?, 'neighborhood', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.25)`,
+          area_key, neighborhood, city, uf, unit_total, unit_available, unit_label,
+          covered_area_km2, source_type, source_id)
+       VALUES ('default', ?, 'neighborhood', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CDOs', 0.25, ?, ?)`,
           [
             locId,
             COVERAGE_CELL_METERS,
@@ -1242,6 +1247,8 @@ test.skipIf(!oracleConfigured)(
             stat.uf,
             stat.cdoTotal,
             stat.cdoAvailable,
+            SOURCE_TYPE,
+            SOURCE_ID,
           ],
         );
       };
@@ -1293,8 +1300,8 @@ test.skipIf(!oracleConfigured)(
         neighborhoods: Array<{
           id: number;
           neighborhood: string;
-          cdoTotal: number;
-          cdoAvailable: number;
+          unitTotal: number;
+          unitAvailable: number;
         }>;
         truncated: boolean;
       };
@@ -1305,11 +1312,11 @@ test.skipIf(!oracleConfigured)(
       const icarai = fineBody.neighborhoods.find((item) => item.neighborhood === 'Icaraí');
       assert.ok(icarai);
       assert.equal(
-        icarai!.cdoTotal,
+        icarai!.unitTotal,
         5,
         'estatística do balão é a contagem real, não a soma das células',
       );
-      assert.equal(icarai!.cdoAvailable, 3);
+      assert.equal(icarai!.unitAvailable, 3);
       // Toda célula referencia um índice de bairro válido.
       for (const cell of fineBody.cells) {
         assert.ok(cell[4]! >= 0 && cell[4]! < fineBody.neighborhoods.length);
@@ -1325,13 +1332,13 @@ test.skipIf(!oracleConfigured)(
       };
       assert.equal(coarseBody.level, 'coarse');
       assert.equal(coarseBody.grid.sizeMeters, COVERAGE_CELL_METERS * 5);
-      const totalCdo = coarseBody.cells.reduce((sum, cell) => sum + cell[2]!, 0);
+      const totalUnits = coarseBody.cells.reduce((sum, cell) => sum + cell[2]!, 0);
       const totalAvail = coarseBody.cells.reduce((sum, cell) => sum + cell[3]!, 0);
-      assert.equal(totalCdo, 9);
+      assert.equal(totalUnits, 9);
       assert.equal(totalAvail, 3);
 
       // neighborhood: polígonos de bairro com geometria e estatística, lidos do índice
-      // geo_gpon_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
+      // geo_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
       const neighborhoodLevel = await requestJson(
         port,
         'GET',
@@ -1346,7 +1353,7 @@ test.skipIf(!oracleConfigured)(
           geometry: { type: string };
           bounds: [number, number, number, number];
         }>;
-        neighborhoods: Array<{ neighborhood: string; cdoTotal: number; cdoAvailable: number }>;
+        neighborhoods: Array<{ neighborhood: string; unitTotal: number; unitAvailable: number }>;
       };
       assert.equal(neighborhoodBody.level, 'neighborhood');
       assert.equal(neighborhoodBody.areas.length, 2);
@@ -1365,8 +1372,8 @@ test.skipIf(!oracleConfigured)(
         (item) => item.neighborhood === 'Icaraí',
       );
       assert.ok(icaraiArea);
-      assert.equal(icaraiArea!.cdoTotal, 5);
-      assert.equal(icaraiArea!.cdoAvailable, 3);
+      assert.equal(icaraiArea!.unitTotal, 5);
+      assert.equal(icaraiArea!.unitAvailable, 3);
 
       // `area` é aceito como alias de `neighborhood` (nome do nível antes da LOD por
       // município/estado) — mesma resposta.
@@ -1374,6 +1381,37 @@ test.skipIf(!oracleConfigured)(
       assert.equal(areaAlias.statusCode, 200);
       assert.equal((areaAlias.body as { level: string }).level, 'neighborhood');
       assert.equal((areaAlias.body as { areas: unknown[] }).areas.length, 2);
+
+      // Filtro por camada (source_type/source_id) — só atua no nível neighborhood/area, onde
+      // geo_coverage_area carrega essas colunas (fine/coarse leem geo_coverage_cell, sem camada).
+      // Camada correta: mesmas 2 áreas de antes.
+      const scoped = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/coverage?${bbox}&level=neighborhood&sourceType=${SOURCE_TYPE}&sourceId=${SOURCE_ID}`,
+      );
+      assert.equal(scoped.statusCode, 200);
+      assert.equal((scoped.body as { areas: unknown[] }).areas.length, 2);
+
+      // Camada errada (outro sourceId): nenhuma área é dessa camada, mesmo bbox coberto.
+      const wrongLayer = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/coverage?${bbox}&level=neighborhood&sourceType=${SOURCE_TYPE}&sourceId=OUTRA_CAMADA`,
+      );
+      assert.equal(wrongLayer.statusCode, 200);
+      assert.deepEqual((wrongLayer.body as { areas: unknown[] }).areas, []);
+
+      // Bypass legado: `sourceType=GPON_AGGREGATE` (o nó canônico de bootstrap, ver
+      // GeoCoverageService.isLegacyLayer) ignora o filtro de origem mesmo com sourceId
+      // arbitrário — preserva ambientes sem publicação própria no Studio GEO.
+      const legacyBypass = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/coverage?${bbox}&level=neighborhood&sourceType=GPON_AGGREGATE&sourceId=qualquer`,
+      );
+      assert.equal(legacyBypass.statusCode, 200);
+      assert.equal((legacyBypass.body as { areas: unknown[] }).areas.length, 2);
 
       // bbox distante: nada volta.
       const empty = await requestJson(
@@ -1442,8 +1480,8 @@ test.skipIf(!oracleConfigured)(
       );
 
       await db.run(
-        `INSERT INTO geo_gpon_coverage_cell
-       (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, cdo_total, cdo_available)
+        `INSERT INTO geo_coverage_cell
+       (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, unit_total, unit_available)
      VALUES ('default', ?, ?, ?, NULL, ?, ?)`,
         [COVERAGE_CELL_METERS, gx, gy, 3, 2],
       );
@@ -1469,11 +1507,13 @@ test.skipIf(!oracleConfigured)(
         ],
       );
       await db.run(
-        `INSERT INTO geo_gpon_coverage_area
+        `INSERT INTO geo_coverage_area
        (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
-        area_key, neighborhood, city, uf, cdo_total, cdo_available, covered_area_km2)
+        area_key, neighborhood, city, uf, unit_total, unit_available, unit_label,
+        covered_area_km2, source_type, source_id)
      VALUES ('default', ?, 'neighborhood', ?, -43.108, -22.908, -43.1, -22.902,
-             'RJ|Niterói|Icaraí', 'Icaraí', 'Niterói', 'RJ', 5, 3, 0.25)`,
+             'RJ|Niterói|Icaraí', 'Icaraí', 'Niterói', 'RJ', 5, 3, 'CDOs', 0.25,
+             'GEOGRAPHIC_SITE_SPECIFICATION', 'GPON_COVERAGE')`,
         [areaLocationId, COVERAGE_CELL_METERS],
       );
 
@@ -1481,21 +1521,21 @@ test.skipIf(!oracleConfigured)(
       assert.equal(found.statusCode, 200);
       const foundBody = found.body as {
         point: { lng: number; lat: number };
-        cell: { gridX: number; gridY: number; cdoTotal: number; cdoAvailable: number } | null;
+        cell: { gridX: number; gridY: number; unitTotal: number; unitAvailable: number } | null;
         areas: Array<{
           level: string;
           neighborhood: string;
-          cdoTotal: number;
-          cdoAvailable: number;
+          unitTotal: number;
+          unitAvailable: number;
         }>;
       };
       assert.ok(foundBody.cell);
-      assert.equal(foundBody.cell!.cdoTotal, 3);
-      assert.equal(foundBody.cell!.cdoAvailable, 2);
+      assert.equal(foundBody.cell!.unitTotal, 3);
+      assert.equal(foundBody.cell!.unitAvailable, 2);
       assert.equal(foundBody.areas.length, 1);
       assert.equal(foundBody.areas[0]!.level, 'neighborhood');
       assert.equal(foundBody.areas[0]!.neighborhood, 'Icaraí');
-      assert.equal(foundBody.areas[0]!.cdoTotal, 5);
+      assert.equal(foundBody.areas[0]!.unitTotal, 5);
 
       // Recurso sem geometria de ponto (place_id nulo) — 404, não erro genérico.
       const orphanResourceId = '77777777-7777-7777-8777-777777777777';

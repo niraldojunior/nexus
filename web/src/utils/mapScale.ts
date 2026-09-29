@@ -16,7 +16,7 @@ const SCALE_BAR_MAX_PX = 64;
 // COVERAGE_CITY_MAX_SCALE_METERS e de estado acima disso. Em zoom aberto um bairro é sub-pixel
 // — nada se perde visualmente subindo de nível, e o payload cai de ~30 MB (12 mil bairros) para
 // algumas centenas de KB (ver GeoCoverageService.areaIndexLevel e
-// scripts/build-gpon-coverage.mjs).
+// scripts/build-coverage.mjs).
 export const COVERAGE_NEIGHBORHOOD_MAX_SCALE_METERS = 500;
 export const COVERAGE_CITY_MAX_SCALE_METERS = 10_000;
 

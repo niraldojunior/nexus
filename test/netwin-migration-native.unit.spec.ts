@@ -1,4 +1,4 @@
-import oracledb from 'oracledb';
+import oracledb, { type BindDefinition, type ExecuteManyOptions } from 'oracledb';
 import { describe, expect, it } from 'vitest';
 import {
   deterministicUuid,
@@ -1002,6 +1002,64 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
       [{ name: 'A' }, { name: 'A'.repeat(500) }, { name: 'AB' }],
     );
     expect(bindDefs[0]).toEqual({ type: oracledb.STRING, maxSize: 500 });
+  });
+
+  it('isola a linha larga em lote próprio para não arrastar as curtas ao bind CLOB', async () => {
+    // O tipo de bind é por coluna e vale para o lote inteiro. Medido na Fase 2.B do RJ, ~1 cabo em
+    // 3.400 tem geometria acima de 4000 bytes — o bastante para tornar lento quase metade dos
+    // lotes de 2.000, já que CLOB custa ~400x.
+    const calls: Array<{ binds: unknown[][]; bindDefs: BindDefinition[] }> = [];
+    const connection = {
+      executeMany: async (_sql: string, binds: unknown[][], options: ExecuteManyOptions) => {
+        calls.push({ binds, bindDefs: options.bindDefs as BindDefinition[] });
+        return { rowsAffected: binds.length };
+      },
+    };
+
+    const merged = await bulkMergeRows(
+      connection as never,
+      t,
+      'tmf_geographic_location',
+      ['id'],
+      ['id', 'geometry'],
+      [
+        { id: 'a', geometry: 'x'.repeat(10) },
+        { id: 'b', geometry: 'x'.repeat(50_000) },
+        { id: 'c', geometry: 'x'.repeat(20) },
+      ],
+    );
+
+    expect(merged).toBe(3);
+    expect(calls).toHaveLength(2);
+    // As curtas seguem juntas em VARCHAR2; a larga vai sozinha em CLOB.
+    expect(calls[0]?.binds.map((bind) => bind[0])).toEqual(['a', 'c']);
+    expect(calls[0]?.bindDefs[1]).toMatchObject({ type: oracledb.STRING });
+    expect(calls[1]?.binds.map((bind) => bind[0])).toEqual(['b']);
+    expect(calls[1]?.bindDefs[1]).toEqual({ type: oracledb.CLOB });
+  });
+
+  it('não parte o lote quando nenhuma linha precisa de CLOB', async () => {
+    const calls: unknown[][][] = [];
+    const connection = {
+      executeMany: async (_sql: string, binds: unknown[][]) => {
+        calls.push(binds);
+        return { rowsAffected: binds.length };
+      },
+    };
+
+    await bulkMergeRows(
+      connection as never,
+      t,
+      'tmf_geographic_location',
+      ['id'],
+      ['id', 'geometry'],
+      [
+        { id: 'a', geometry: 'x'.repeat(10) },
+        { id: 'b', geometry: 'x'.repeat(20) },
+      ],
+    );
+
+    expect(calls).toHaveLength(1);
   });
 });
 

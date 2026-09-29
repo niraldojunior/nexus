@@ -187,6 +187,64 @@ export async function hydrateByIds<T extends Record<string, unknown>>(
   return ids.flatMap((id) => (rows.has(id) ? [rows.get(id)!] : []));
 }
 
+/**
+ * Converte `GEOM` em WKT tolerando geometria corrompida na origem.
+ *
+ * `SDO_UTIL.TO_WKTGEOMETRY` é uma chamada Java que roda no servidor sobre o conjunto inteiro, e o
+ * DR tem geometria com ordenada vazia: uma única linha ruim aborta o lote com
+ * `ORA-29532 / NumberFormatException: empty String` **antes de qualquer linha voltar**, então um
+ * try/catch do lado do Node nunca chega a rodar. Foi o que derrubou a Fase 2.B em OSP_ROUTE.
+ *
+ * A conversão em lote continua sendo o caminho rápido — dado limpo custa um round-trip por chunk.
+ * Só quando o chunk estoura é que caímos para uma consulta por id, isolando a linha defeituosa:
+ * ela perde a geometria em vez de levar as outras junto. O custo por linha fica restrito aos
+ * chunks realmente contaminados.
+ *
+ * Devolve um mapa só com os ids que converteram; os ausentes são os corrompidos.
+ */
+export async function hydrateWktByIds(
+  source: Connection,
+  table: string,
+  ids: readonly number[],
+  geometryColumn = 'GEOM',
+  idColumn = 'ID',
+): Promise<{ wktById: Map<number, string>; failedIds: number[] }> {
+  const wktById = new Map<number, string>();
+  const failedIds: number[] = [];
+  const select = `SELECT source_row.${idColumn} AS ID,
+                         SDO_UTIL.TO_WKTGEOMETRY(source_row.${geometryColumn}) AS WKT
+                    FROM ${table} source_row`;
+
+  for (const chunk of chunksOf(ids)) {
+    const { clause, binds } = namedInBinds(chunk, 'id');
+    try {
+      const result = await source.execute<{ ID: number; WKT: string | null }>(
+        `${select} WHERE source_row.${idColumn} IN (${clause})`,
+        binds,
+        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: chunk.length },
+      );
+      for (const row of result.rows ?? []) if (row.WKT) wktById.set(row.ID, row.WKT);
+      continue;
+    } catch {
+      // Chunk contaminado: repete linha a linha para descobrir quais ids são os ruins.
+    }
+    for (const id of chunk) {
+      try {
+        const result = await source.execute<{ ID: number; WKT: string | null }>(
+          `${select} WHERE source_row.${idColumn} = :id`,
+          { id },
+          { outFormat: oracledb.OUT_FORMAT_OBJECT },
+        );
+        const wkt = result.rows?.[0]?.WKT;
+        if (wkt) wktById.set(id, wkt);
+      } catch {
+        failedIds.push(id);
+      }
+    }
+  }
+  return { wktById, failedIds };
+}
+
 export async function selectScopedInfranodeIds(
   source: Connection,
   scope: Pick<MigrationScope, 'bairro' | 'municipio' | 'uf'>,

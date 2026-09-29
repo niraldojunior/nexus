@@ -22,6 +22,7 @@ import {
 import {
   chunksOf,
   fullTableIdQuery,
+  hydrateWktByIds,
   namedInBinds,
   resourceIdsByInfranodesQuery,
   resourceIdsByStructuredInfranodeQuery,
@@ -263,6 +264,56 @@ describe('netwin-migration: seleção e hidratação em lote', () => {
       clause: ':location0, :location1',
       binds: { location0: 12, location1: 34 },
     });
+  });
+});
+
+describe('netwin-migration: geometria corrompida na origem', () => {
+  // `SDO_UTIL.TO_WKTGEOMETRY` roda no servidor sobre o lote inteiro. O DR tem rota com ordenada
+  // vazia, e uma única linha ruim aborta o lote com ORA-29532 antes de qualquer linha voltar —
+  // foi o que derrubou a Fase 2.B do RJ depois de 356k equipamentos migrados.
+  const fakeConnection = (badIds: Set<number>) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      execute: (sql: string, binds: Record<string, number>) => {
+        calls.push(sql);
+        const ids = Object.values(binds);
+        if (ids.some((id) => badIds.has(id))) {
+          return Promise.reject(
+            new Error('ORA-29532: java.lang.NumberFormatException: empty String'),
+          );
+        }
+        return Promise.resolve({
+          rows: ids.map((id) => ({ ID: id, WKT: `LINESTRING(${id} 0, ${id} 1)` })),
+        });
+      },
+    };
+  };
+
+  it('usa uma só consulta por chunk quando toda a geometria é válida', async () => {
+    const connection = fakeConnection(new Set());
+    const { wktById, failedIds } = await hydrateWktByIds(
+      connection as never,
+      'NETWIN.OSP_ROUTE',
+      [1, 2, 3],
+    );
+    expect(failedIds).toEqual([]);
+    expect(wktById.size).toBe(3);
+    // Caminho rápido preservado: sem fallback, é um round-trip por chunk, não por linha.
+    expect(connection.calls).toHaveLength(1);
+  });
+
+  it('isola a linha corrompida sem perder as demais do lote', async () => {
+    const connection = fakeConnection(new Set([2]));
+    const { wktById, failedIds } = await hydrateWktByIds(
+      connection as never,
+      'NETWIN.OSP_ROUTE',
+      [1, 2, 3],
+    );
+    expect(failedIds).toEqual([2]);
+    expect([...wktById.keys()]).toEqual([1, 3]);
+    // 1 tentativa em lote (falha) + 3 individuais.
+    expect(connection.calls).toHaveLength(4);
   });
 });
 

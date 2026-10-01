@@ -20,7 +20,7 @@
     "db:environment": "npm run build && node dist/src/scripts/manage-database-environment.js",
     "migrate:netwin:infranode": "npm run build && node dist/src/scripts/migrate-netwin-infranode.js",
     "migrate:netwin:osp": "npm run build && node dist/src/scripts/migrate-netwin-osp.js",
-    "migrate:netwin:native": "npm run build && node dist/src/scripts/netwin-migration/index.js",
+    "migrate:netwin:native": "npm run build && node --max-old-space-size=8192 dist/src/scripts/netwin-migration/index.js",
     "migrate:netwin:tenant": "npm run build && node dist/src/scripts/reconcile-netwin-tenant.js",
     "migrate:netwin:phase2c-containment": "npm run build && node dist/src/scripts/reconcile-netwin-phase2c-containment.js",
     "migrate:resource-catalog": "npm run build && node dist/src/scripts/migrate-resource-catalog.js",

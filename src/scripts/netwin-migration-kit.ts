@@ -290,7 +290,7 @@ export function bulkMergeBindDefs(
  * Particionar devolve o caminho rápido à esmagadora maioria e isola o custo do CLOB em um lote
  * pequeno. Como o `MERGE` é por chave, a ordem entre as partições é irrelevante.
  */
-function partitionByBindWidth(
+export function partitionByBindWidth(
   columns: string[],
   rows: Array<Record<string, unknown>>,
 ): { narrow: Array<Record<string, unknown>>; wide: Array<Record<string, unknown>> } {

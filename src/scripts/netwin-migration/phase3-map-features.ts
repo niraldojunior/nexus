@@ -1,11 +1,12 @@
 import oracledb from 'oracledb';
 import type { Connection } from 'oracledb';
 import type { MigrationContext } from './context.js';
-import { MigrationProgress } from './progress.js';
+import { MigrationProgress, shouldCommitMigrationBatch } from './progress.js';
 import { MAP_DENSITY_ZOOMS, densityFactor } from '../../modules/geo/map-density.js';
 import { MAP_TILE_ZOOM, tileForPoint, tileSegmentsForLine } from '../../modules/geo/map-tile.js';
 import type { GeoJSONLineString } from '../../modules/geo/domain.js';
 import { excludeInternalResourceTypesSql } from '../../modules/geo/map-visibility.js';
+import { bulkMergeBindDefs, partitionByBindWidth, quote } from '../netwin-migration-kit.js';
 
 export type Phase3MapStats = {
   candidates: number;
@@ -61,6 +62,11 @@ const FEATURE_COLUMNS = [
   'rank',
 ] as const;
 
+// Tamanho fixo (literal, não bind) da página de varredura de `phase3MapResourcePageSql` — ver o
+// comentário da função para o motivo de ser literal. Independente de `--batch-size`, que continua
+// controlando só o tamanho do lote de INSERT em `insertFeatures`.
+const PHASE3_MAP_PAGE_SIZE = 5000;
+
 const PHYSICAL_RESOURCE_INDEX_COLUMNS = ['TENANT_ID', 'RESOURCE_SPECIFICATION_ID', 'ID'];
 const DIAGNOSTIC_TABLES = [
   'tmf_physical_resource',
@@ -93,6 +99,29 @@ export function phase3VisibleMapSpecificationsSql(t: (table: string) => string):
 // A página é restringida no CTE antes dos joins de Place/Location. Assim, cada consulta parte de
 // uma ResourceSpecification visível e do índice (tenant_id, resource_specification_id, id), sem
 // examinar instâncias de Port/Splitter ou de qualquer outro tipo não exibível no mapa.
+//
+// O `place_id` do recurso pode apontar para Site, Address ou direto para Location, e a Location
+// efetiva é o primeiro que resolver. Escrever esse COALESCE dentro da condição de join do
+// Location (como era antes) produz um predicado não-sargável: o otimizador não consegue propagar
+// a seletividade para o índice único de Address e resolve o join por HASH JOIN OUTER, varrendo
+// `tmf_geographic_address` INTEIRA (2,1M linhas medidas) a cada página de 5.000 candidatos. Medido
+// por isolamento de cada join nesta base: CTE sozinho 132ms, + site 111ms, + address 104ms,
+// + location direto 160ms, mas os três via COALESCE no join 5.288ms (~40x).
+//
+// Resolver o COALESCE num CTE intermediário (`resolved`) e só então juntar Location por igualdade
+// simples devolve o predicado à forma sargável. Os `USE_NL` fixam o nested loop + INDEX UNIQUE SCAN
+// que é sempre o acesso certo aqui: a página tem no máximo `batchSize` linhas e cada lookup é por
+// chave primária, então hash join (que materializa a tabela inteira do lado direito) nunca compensa
+// — sem os hints o otimizador volta a escolher hash assim que as estatísticas mudam.
+//
+// O `FETCH FIRST` usa literal, não bind: com `:batchSize` o otimizador não enxerga o limite na hora
+// de montar o plano (estimava 27.445 linhas em vez de 5.000) e superdimensiona os passos seguintes.
+// Por isso o tamanho de página desta query é fixo em PHASE3_MAP_PAGE_SIZE em vez de seguir
+// `--batch-size`, que continua governando o tamanho do lote de GRAVAÇÃO.
+//
+// Resultado medido na maior specification (AerialSpan, 691.721 candidatos), com resultado idêntico
+// ao da forma anterior em todas as profundidades testadas: 5.409ms -> 2.154ms (prof. 5k),
+// 4.632ms -> 980ms (prof. 200k), 4.463ms -> 1.994ms (prof. 500k).
 export function phase3MapResourcePageSql(t: (table: string) => string): string {
   return `WITH resource_page AS (
             SELECT r.id, r.name, r.status, r.place_id, r.tenant_id
@@ -102,20 +131,25 @@ export function phase3MapResourcePageSql(t: (table: string) => string): string {
                AND (:lastId IS NULL OR r.id > :lastId)
                AND r.status <> 'terminated'
              ORDER BY r.id
-             FETCH FIRST :batchSize ROWS ONLY
+             FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
+          ), resolved AS (
+            SELECT /*+ USE_NL(place_site) USE_NL(place_address) */
+                   r.id, r.name, r.status, r.tenant_id,
+                   COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id) AS location_id
+              FROM resource_page r
+              LEFT JOIN ${t('tmf_geographic_site')} place_site
+                ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
+              LEFT JOIN ${t('tmf_geographic_address')} place_address
+                ON place_address.id = r.place_id AND place_address.tenant_id = r.tenant_id
           )
-          SELECT r.id AS "ID", r.name AS "NAME", 'resource' AS "FEATURE_KIND",
+          SELECT /*+ USE_NL(l) */
+                 r.id AS "ID", r.name AS "NAME", 'resource' AS "FEATURE_KIND",
                  'PhysicalResource' AS "ENTITY_TYPE", :typeCode AS "TYPE_CODE", NULL AS "SITE_CATEGORY",
                  'RESOURCE_TYPE' AS "SOURCE_MODEL_TYPE", :typeCode AS "SOURCE_MODEL_ID", r.status AS "STATUS",
                  NULL AS "SUBLABEL", l.geometry_type AS "GEOMETRY_TYPE", l.geometry AS "GEOMETRY"
-            FROM resource_page r
-            LEFT JOIN ${t('tmf_geographic_site')} place_site
-              ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
-            LEFT JOIN ${t('tmf_geographic_address')} place_address
-              ON place_address.id = r.place_id AND place_address.tenant_id = r.tenant_id
+            FROM resolved r
             LEFT JOIN ${t('tmf_geographic_location')} l
-              ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
-             AND l.tenant_id = r.tenant_id
+              ON l.id = r.location_id AND l.tenant_id = r.tenant_id
            ORDER BY r.id`;
 }
 
@@ -140,6 +174,37 @@ export function phase3MapSitePageSql(t: (table: string) => string): string {
              )
            ORDER BY s.id
            FETCH FIRST :batchSize ROWS ONLY`;
+}
+
+// Contagem de candidatos, usada só para dar `total` (e portanto ETA) ao progresso da gravação.
+// Espelha os filtros de `phase3MapResourcePageSql` restritos à própria tabela de recurso: os LEFT
+// JOINs de Place/Location daquela query não filtram linha nenhuma (são LEFT), então omiti-los aqui
+// não muda a contagem e evita varrer Geo à toa.
+export function phase3MapResourceCountSql(t: (table: string) => string): string {
+  return `SELECT COUNT(*) AS "TOTAL"
+            FROM ${t('tmf_physical_resource')} r
+           WHERE r.tenant_id = :tenantId
+             AND r.resource_specification_id = :specificationId
+             AND r.status <> 'terminated'`;
+}
+
+// Espelha `phase3MapSitePageSql`. Aqui os JOINs são INNER e o NOT EXISTS filtra de fato, então
+// todos precisam ser replicados para a contagem bater com o que a paginação vai percorrer.
+export function phase3MapSiteCountSql(t: (table: string) => string): string {
+  return `SELECT COUNT(*) AS "TOTAL"
+            FROM ${t('tmf_geographic_site')} s
+            JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id = s.site_specification_id
+            JOIN ${t('tmf_geographic_location')} l
+              ON l.id = s.geographic_location_id AND l.tenant_id = s.tenant_id
+           WHERE s.tenant_id = :tenantId
+             AND spec.category = 'Site'
+             AND s.status NOT IN ('Retired', 'terminated')
+             AND l.geometry_type = 'Point'
+             AND NOT EXISTS (
+               SELECT 1 FROM ${t('geo_project_site')} ps
+               JOIN ${t('geo_project')} p ON p.id = ps.project_id
+              WHERE ps.site_id = s.id AND p.status <> 'terminated'
+             )`;
 }
 
 // Mantido para testes e ferramentas que exibem a fonte do rebuild. A execução real pagina
@@ -261,18 +326,31 @@ export function phase3MapFeaturesForCandidate(
   });
 }
 
+// Sem `bindDefs`, `executeMany` infere o tipo de cada bind e escolhe CLOB para `geometry` (que é
+// coluna CLOB no destino) em TODAS as linhas do lote — inclusive nas features de ponto, onde
+// `geometry` é null. Bind CLOB materializa um LOB temporário por valor no servidor: medido neste
+// projeto, 2.000 linhas custaram 77.970ms em CLOB contra 196ms em VARCHAR2 (~400x — ver
+// `bulkMergeBindDefs` em netwin-migration-kit.ts). Era a causa dos ~44 candidatos/s da gravação.
+//
+// A correção é a mesma já usada pela Fase 2: dimensionar o bind pelo conteúdo REAL do lote e
+// isolar as poucas linhas de geometria larga (> 4000 bytes) num lote próprio, para que uma linha
+// grande não arraste as demais ao caminho lento.
 async function insertFeatures(
   conn: Connection,
   ctx: MigrationContext,
   rows: FeatureRow[],
 ): Promise<void> {
   if (rows.length === 0) return;
+  const columns = [...FEATURE_COLUMNS];
   const sql = `INSERT INTO ${ctx.t('geo_map_feature')} (${FEATURE_COLUMNS.map((column) => `"${column.toUpperCase()}"`).join(',')}) VALUES (${FEATURE_COLUMNS.map((_, index) => `:${index + 1}`).join(',')})`;
-  await conn.executeMany(
-    sql,
-    rows.map((row) => FEATURE_COLUMNS.map((column) => row[column] ?? null)),
-    { autoCommit: false },
-  );
+  for (const partition of Object.values(partitionByBindWidth(columns, rows))) {
+    if (partition.length === 0) continue;
+    await conn.executeMany(
+      sql,
+      partition.map((row) => columns.map((column) => row[column] ?? null)),
+      { autoCommit: false, bindDefs: bulkMergeBindDefs(columns, partition) },
+    );
+  }
 }
 
 function addDensityTiles(densityTiles: Set<string>, rows: FeatureRow[]): void {
@@ -311,6 +389,235 @@ async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext):
   console.log(
     `[Mapa] Índice Oracle confirmado: ${indexName} (${PHYSICAL_RESOURCE_INDEX_COLUMNS.join(', ')}).`,
   );
+}
+
+const MAP_INDEX_TABLES = ['geo_map_feature', 'geo_map_density'] as const;
+
+type PlainIndexStatus = { indexName: string; status: string };
+type UniqueConstraintInfo = {
+  constraintName: string;
+  enabled: boolean;
+  indexName: string | null;
+  columns: string[];
+};
+
+// `user_indexes` também devolve o índice de LOB gerado implicitamente pelo Oracle para a
+// coluna `geometry` (CLOB — ver CLOB_COLUMNS em oracle-schema.ts), ex.: "SYS_IL0000095939C00018$$".
+// Esse índice é gerenciado junto com o segmento LOB e não aceita ALTER INDEX ... UNUSABLE/REBUILD
+// (ORA-22864: cannot ALTER or DROP LOB indexes) — só os B-tree normais interessam aqui, por isso
+// o filtro em index_type. Índices que sustentam PRIMARY KEY/UNIQUE são excluídos explicitamente:
+// eles passam pelo caminho de `tableUniqueConstraints`, não por este.
+async function tableNormalIndexes(conn: Connection, tableName: string): Promise<PlainIndexStatus[]> {
+  const result = await conn.execute<{ INDEX_NAME: string; STATUS: string }>(
+    `SELECT ui.index_name AS "INDEX_NAME", ui.status AS "STATUS"
+       FROM user_indexes ui
+      WHERE ui.table_name = :tableName AND ui.index_type = 'NORMAL'
+        AND NOT EXISTS (
+          SELECT 1 FROM user_constraints uc
+           WHERE uc.table_name = ui.table_name AND uc.constraint_type IN ('P', 'U')
+             AND uc.index_name = ui.index_name
+        )`,
+    { tableName },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  return (result.rows ?? []).map((r) => ({ indexName: r.INDEX_NAME, status: r.STATUS }));
+}
+
+// `user_cons_columns` guarda a definição de colunas do constraint independentemente do índice que
+// o sustenta — sobrevive mesmo depois que o índice é dropado (confirmado ao vivo), o que é
+// exatamente o que permite recriar o índice certo mais tarde, inclusive depois de um crash em
+// outro processo. `index_name` em `user_constraints`, por outro lado, já some assim que o
+// constraint é desabilitado (confirmado ao vivo) — por isso é lido aqui, antes de qualquer DISABLE,
+// e não depois.
+async function tableUniqueConstraints(
+  conn: Connection,
+  tableName: string,
+): Promise<UniqueConstraintInfo[]> {
+  const consResult = await conn.execute<{
+    CONSTRAINT_NAME: string;
+    STATUS: string;
+    INDEX_NAME: string | null;
+  }>(
+    `SELECT constraint_name AS "CONSTRAINT_NAME", status AS "STATUS", index_name AS "INDEX_NAME"
+       FROM user_constraints
+      WHERE table_name = :tableName AND constraint_type IN ('P', 'U')`,
+    { tableName },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  const infos: UniqueConstraintInfo[] = [];
+  for (const row of consResult.rows ?? []) {
+    const colsResult = await conn.execute<{ COLUMN_NAME: string }>(
+      `SELECT column_name AS "COLUMN_NAME" FROM user_cons_columns
+        WHERE constraint_name = :constraintName ORDER BY position`,
+      { constraintName: row.CONSTRAINT_NAME },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    infos.push({
+      constraintName: row.CONSTRAINT_NAME,
+      enabled: row.STATUS === 'ENABLED',
+      indexName: row.INDEX_NAME,
+      columns: (colsResult.rows ?? []).map((r) => r.COLUMN_NAME),
+    });
+  }
+  return infos;
+}
+
+// Manutenção de índice B-tree durante o INSERT é o que faz a gravação desacelerar de ~1.450
+// candidatos/s (tabela vazia) para um platô de ~65-120/s conforme ela cresce — confirmado:
+// não é fan-out de linha/cabo (proporção linhas:candidatos medida em ~1,06:1). Desabilitar os
+// índices antes da carga e reconstruí-los em bloco no final troca custo incremental por INSERT
+// por um único rebuild sequencial por índice.
+//
+// Para o índice de PK/UNIQUE, `ALTER INDEX ... UNUSABLE` não é suficiente mesmo com o constraint
+// desabilitado via `KEEP INDEX` — confirmado ao vivo: `SKIP_UNUSABLE_INDEXES` simplesmente não se
+// aplica a índice único/PK, então a primeira instrução de DML na tabela continua falhando com
+// ORA-01502. A única forma de eliminar o custo de manutenção deste índice durante a carga é
+// removê-lo de fato (DROP INDEX) e recriá-lo do zero no final — por isso o tratamento é separado
+// dos índices simples (que continuam no caminho UNUSABLE/REBUILD, que já funciona).
+//
+// `DISABLE CONSTRAINT` (sem `KEEP INDEX`) tem comportamento diferente dependendo da origem do
+// índice que sustenta o constraint — confirmado ao vivo com os dois lados: quando o índice foi
+// implicitamente criado pelo próprio Oracle (nunca passou por este ciclo disable/drop/recreate
+// antes), o DISABLE já o remove sozinho; quando o índice foi anexado explicitamente via
+// `USING INDEX` (como este script faz no `rebuildMapIndexes`, ou qualquer execução anterior já
+// tiver feito), o DISABLE preserva o índice e o `DROP INDEX` explícito abaixo é que faz o
+// trabalho. Isso quer dizer que o `DROP INDEX` pode legitimamente encontrar "nada a remover" na
+// primeira vez que toca um índice ainda intocado (ORA-01418) — não é erro, é o auto-drop do
+// Oracle chegando primeiro. Em qualquer execução futura (índice já recriado via USING INDEX),
+// o DROP explícito passa a ser necessário de fato.
+async function disableMapIndexes(conn: Connection, ctx: MigrationContext, table: string): Promise<void> {
+  const tableName = oracleDictionaryObjectName(ctx.t(table));
+  for (const { constraintName, enabled, indexName } of await tableUniqueConstraints(conn, tableName)) {
+    if (!enabled) continue;
+    const droppedIndexName = indexName ?? constraintName;
+    console.log(
+      `[Mapa] Desabilitando constraint ${constraintName} e removendo o índice único ${droppedIndexName} (${tableName}) para a carga em massa.`,
+    );
+    await conn.execute(`ALTER TABLE ${quote(tableName)} DISABLE CONSTRAINT ${quote(constraintName)}`);
+    try {
+      await conn.execute(`DROP INDEX ${quote(droppedIndexName)}`);
+    } catch (error) {
+      // ORA-01418: o DISABLE CONSTRAINT acima já removeu o índice (caso implícito — ver
+      // comentário da função). Qualquer outro erro é real e deve propagar.
+      if (!(error instanceof Error) || !/ORA-01418/.test(error.message)) throw error;
+    }
+  }
+  for (const { indexName } of await tableNormalIndexes(conn, tableName)) {
+    console.log(`[Mapa] Marcando índice ${indexName} (${tableName}) como UNUSABLE para a carga em massa.`);
+    await conn.execute(`ALTER INDEX ${quote(indexName)} UNUSABLE`);
+  }
+}
+
+// Um crash (ou duas execuções sobrepostas — a suspeita mais provável, dado que os grupos
+// duplicados vistos ao vivo cobrem só ~13% das linhas, não a tabela inteira) pode deixar linhas
+// duplicadas na chave do constraint depois que `disableMapIndexes` já dropou o índice único: sem
+// ele, nada impede o INSERT de aceitar a mesma chave duas vezes, e o commit-por-página já tornou
+// isso permanente antes de qualquer rebuild conseguir rejeitar. Sem esta limpeza, `CREATE UNIQUE
+// INDEX` falha com ORA-01452 e trava tanto o caminho normal quanto o backstop
+// (`recoverUnusableMapIndexes`) indefinidamente, exigindo cirurgia manual — como aconteceu ao
+// vivo. Mantém a linha mais recente (`generated_at`) de cada grupo; perder a mais antiga é inócuo
+// porque o conteúdo das duas é idêntico (mesma projeção da mesma entidade).
+async function dedupeMapTableDuplicates(
+  conn: Connection,
+  ctx: MigrationContext,
+  tableName: string,
+  columns: string[],
+): Promise<number> {
+  const quotedTable = quote(tableName);
+  const keyColumns = columns.map(quote).join(', ');
+  const result = await conn.execute(
+    `DELETE FROM ${quotedTable} t
+      WHERE t.rowid NOT IN (
+        SELECT keep_rowid FROM (
+          SELECT rowid AS keep_rowid,
+                 ROW_NUMBER() OVER (PARTITION BY ${keyColumns} ORDER BY generated_at DESC, rowid DESC) AS rn
+            FROM ${quotedTable}
+        )
+        WHERE rn = 1
+      )`,
+  );
+  const removed = result.rowsAffected ?? 0;
+  if (removed > 0) {
+    await conn.execute('COMMIT');
+    console.warn(
+      `[Mapa] Removida(s) ${removed} linha(s) duplicada(s) de ${tableName} (chave ${columns.join(', ')}) antes de recriar o índice único.`,
+    );
+  }
+  return removed;
+}
+
+async function rebuildMapIndexes(conn: Connection, ctx: MigrationContext, table: string): Promise<void> {
+  const tableName = oracleDictionaryObjectName(ctx.t(table));
+  for (const { constraintName, enabled, indexName, columns } of await tableUniqueConstraints(conn, tableName)) {
+    if (enabled) continue;
+    await dedupeMapTableDuplicates(conn, ctx, tableName, columns);
+    const newIndexName = indexName ?? constraintName;
+    const startedAt = Date.now();
+    try {
+      await conn.execute(
+        `CREATE UNIQUE INDEX ${quote(newIndexName)} ON ${quote(tableName)} (${columns.map(quote).join(', ')}) PARALLEL 4 NOLOGGING`,
+      );
+      await conn.execute(`ALTER INDEX ${quote(newIndexName)} NOPARALLEL`);
+      // NOVALIDATE evita o full-scan de validação: o CREATE UNIQUE INDEX acima já teria falhado
+      // com ORA-01452 se houvesse chave duplicada, então a unicidade já está garantida.
+      await conn.execute(
+        `ALTER TABLE ${quote(tableName)} ENABLE NOVALIDATE CONSTRAINT ${quote(constraintName)} USING INDEX ${quote(newIndexName)}`,
+      );
+    } catch (error) {
+      // ORA-01452 (chave duplicada) ou qualquer outra falha aqui deixa a tabela sem este
+      // constraint — nunca engolir, sempre relançar com contexto.
+      throw new Error(
+        `Rebuild de mapa abortado: falha ao recriar índice único/constraint ${constraintName} de ${tableName}. ` +
+          `Se for ORA-01452, há duplicidade de chave nos dados recém-gravados. Detalhe: ${String(error)}`,
+      );
+    }
+    console.log(`[Mapa] Constraint ${constraintName} (${tableName}) reabilitada em ${Date.now() - startedAt}ms.`);
+  }
+  for (const { indexName, status } of await tableNormalIndexes(conn, tableName)) {
+    if (status === 'VALID') continue;
+    const startedAt = Date.now();
+    try {
+      await conn.execute(`ALTER INDEX ${quote(indexName)} REBUILD PARALLEL 4 NOLOGGING`);
+      await conn.execute(`ALTER INDEX ${quote(indexName)} NOPARALLEL`);
+    } catch (error) {
+      throw new Error(
+        `Rebuild de mapa abortado: falha ao reconstruir índice ${indexName} de ${tableName}. Detalhe: ${String(error)}`,
+      );
+    }
+    console.log(`[Mapa] Índice ${indexName} (${tableName}) reconstruído em ${Date.now() - startedAt}ms.`);
+  }
+}
+
+// Backstop: um crash no meio da carga deixa índices UNUSABLE e/ou o constraint de PK/UNIQUE
+// desabilitado sem seu índice. Sem isto, a próxima execução (ou o app do mapa) herdaria esse
+// estado quebrado sem aviso. Em dry-run a conexão é read-only (ver getTargetReadConnection em
+// context.ts) e bloqueia ALTER/DROP/CREATE — só pode diagnosticar e avisar; a reparação de fato
+// só roda em --apply.
+async function recoverUnusableMapIndexes(conn: Connection, ctx: MigrationContext): Promise<void> {
+  const broken: { table: string; description: string }[] = [];
+  for (const table of MAP_INDEX_TABLES) {
+    const tableName = oracleDictionaryObjectName(ctx.t(table));
+    for (const { indexName, status } of await tableNormalIndexes(conn, tableName)) {
+      if (status !== 'VALID') broken.push({ table, description: `${indexName} (${tableName})` });
+    }
+    for (const { constraintName, enabled } of await tableUniqueConstraints(conn, tableName)) {
+      if (!enabled) broken.push({ table, description: `constraint ${constraintName} (${tableName})` });
+    }
+  }
+  if (broken.length === 0) return;
+
+  const description = broken.map((b) => b.description).join(', ');
+  if (!ctx.options.apply) {
+    console.warn(
+      `[Mapa] AVISO: índice(s)/constraint(s) não restaurados de uma execução anterior interrompida: ${description}. ` +
+        `Leituras do mapa continuam funcionando (via full scan, ou sem validação de unicidade), mas rode --apply para reparar.`,
+    );
+    return;
+  }
+  console.warn(`[Mapa] Reparando índice(s)/constraint(s) deixados por execução anterior: ${description}.`);
+  for (const table of new Set(broken.map((b) => b.table))) {
+    await rebuildMapIndexes(conn, ctx, table);
+  }
 }
 
 async function reportStatistics(conn: Connection, ctx: MigrationContext): Promise<void> {
@@ -360,12 +667,14 @@ async function scanResourceSpecification(
         specificationId: specification.ID,
         typeCode: specification.TYPE_CODE,
         lastId,
-        batchSize: ctx.options.batchSize,
       },
       {
+        // A SQL agora pagina em PHASE3_MAP_PAGE_SIZE (literal, não :batchSize — ver o comentário
+        // de phase3MapResourcePageSql), então o fetch array precisa seguir o mesmo valor em vez
+        // de --batch-size: ctx.options.batchSize continua governando só o lote de GRAVAÇÃO.
         outFormat: oracledb.OUT_FORMAT_OBJECT,
-        fetchArraySize: ctx.options.batchSize,
-        prefetchRows: ctx.options.batchSize,
+        fetchArraySize: PHASE3_MAP_PAGE_SIZE,
+        prefetchRows: PHASE3_MAP_PAGE_SIZE,
       },
     );
     const candidatePage = queryResult.rows ?? [];
@@ -423,12 +732,40 @@ async function scanSites(
   }
 }
 
+// Conta candidatos antes da gravação. Substitui a antiga passada de "validação", que percorria
+// TODA a fonte só para produzir esses dois números (2h44m medidos no tenant nacional) e depois
+// repetia a varredura inteira para gravar. Aqui o mesmo resultado sai de agregações indexadas.
+async function countCandidates(
+  conn: Connection,
+  ctx: MigrationContext,
+  specifications: VisibleSpecification[],
+): Promise<number> {
+  let total = 0;
+  const resourceCountSql = phase3MapResourceCountSql(ctx.t);
+  for (const specification of specifications) {
+    const result = await conn.execute<{ TOTAL: number }>(
+      resourceCountSql,
+      { tenantId: ctx.options.tenantId, specificationId: specification.ID },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    total += Number(result.rows?.[0]?.TOTAL ?? 0);
+  }
+  const siteResult = await conn.execute<{ TOTAL: number }>(
+    phase3MapSiteCountSql(ctx.t),
+    { tenantId: ctx.options.tenantId },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  total += Number(siteResult.rows?.[0]?.TOTAL ?? 0);
+  return total;
+}
+
 async function scanCandidates(
   conn: Connection,
   ctx: MigrationContext,
   stage: 'validação' | 'gravação',
   specifications: VisibleSpecification[],
   onFeatures?: (rows: FeatureRow[]) => Promise<void>,
+  total?: number,
 ): Promise<CandidateScan> {
   const scan: CandidateScan = {
     candidates: 0,
@@ -442,6 +779,7 @@ async function scanCandidates(
     label: `Fase 3.A — ${stage}`,
     unit: 'candidatos',
     reportEvery: ctx.options.batchSize,
+    ...(total === undefined ? {} : { total }),
   });
   progress.start();
   for (const specification of specifications) {
@@ -477,44 +815,82 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
   try {
     console.log('\n=== Fase 3.A: Índices de mapa e densidade ===');
     await ensureResourceScanIndex(conn, ctx);
+    await recoverUnusableMapIndexes(conn, ctx);
     await reportStatistics(conn, ctx);
     const specifications = await visibleSpecifications(conn, ctx);
     console.log(
       `[Mapa] ${specifications.length} ResourceSpecification(s) visíveis; Port, Splitter e tipos map_presence=0 não são consultados.`,
     );
-    const scan = await scanCandidates(conn, ctx, 'validação', specifications);
-    if (scan.candidates === 0) {
+    const expectedCandidates = await countCandidates(conn, ctx, specifications);
+    console.log(
+      `[Mapa] ${expectedCandidates.toLocaleString('pt-BR')} candidato(s) a percorrer (contagem direta; a varredura de validação foi eliminada).`,
+    );
+    if (expectedCandidates === 0) {
       console.log('[Mapa] nenhum candidato elegível; projeções vigentes preservadas.');
       return { candidates: 0, features: 0, skippedGeometry: 0, densityCells: 0 };
     }
-    if (scan.features === 0) {
-      throw new Error('Rebuild de mapa abortado: candidatos elegíveis sem features válidas.');
-    }
 
-    let densityCells = scan.densityTiles.size;
-    if (ctx.options.apply) {
+    // DRY-RUN percorre sem gravar; --apply grava na mesma passada. Antes eram duas varreturas
+    // completas da fonte (validação + gravação) para o mesmo resultado.
+    let scan: CandidateScan;
+    let densityCells: number;
+    if (!ctx.options.apply) {
+      scan = await scanCandidates(conn, ctx, 'validação', specifications, undefined, expectedCandidates);
+      densityCells = scan.densityTiles.size;
+    } else {
+      // Commit por página: uma queda de conexão no meio do rebuild deixa de descartar horas de
+      // trabalho. O preço é uma janela em que o mapa mostra estado misto (parte novo, parte
+      // antigo) — aceitável porque o mapa é o único consumidor destas projeções.
+      await conn.execute(`ALTER SESSION SET SKIP_UNUSABLE_INDEXES = TRUE`);
+      let pendingSinceCommit = 0;
       try {
+        // disableMapIndexes e o DELETE entram no try: se qualquer um falhar (ex.: ORA-01502 por
+        // um índice de constraint que não foi desabilitado corretamente), o catch ainda tenta o
+        // rebuild de emergência antes de propagar — sem isso, um erro aqui deixava o índice
+        // UNUSABLE sem nenhuma tentativa de reparo até a próxima execução.
+        await disableMapIndexes(conn, ctx, 'geo_map_feature');
         await conn.execute(`DELETE FROM ${ctx.t('geo_map_feature')} WHERE tenant_id=:tenantId`, {
           tenantId: ctx.options.tenantId,
         });
-        const writeScan = await scanCandidates(
+        scan = await scanCandidates(
           conn,
           ctx,
           'gravação',
           specifications,
           async (rows) => {
             await insertFeatures(conn, ctx, rows);
+            pendingSinceCommit += rows.length;
+            if (shouldCommitMigrationBatch(pendingSinceCommit, ctx.options.batchSize)) {
+              await conn.execute('COMMIT');
+              pendingSinceCommit = 0;
+            }
           },
+          expectedCandidates,
         );
-        if (writeScan.candidates !== scan.candidates || writeScan.features !== scan.features) {
-          throw new Error('Rebuild de mapa abortado: a fonte mudou durante a reconstrução.');
+        if (scan.features === 0) {
+          throw new Error('Rebuild de mapa abortado: candidatos elegíveis sem features válidas.');
         }
+        await rebuildMapIndexes(conn, ctx, 'geo_map_feature');
+        // A densidade agrega a tabela inteira, então só pode ser reconstruída depois que todas as
+        // features existem — permanece um passo final único, junto do commit que o fecha.
+        await disableMapIndexes(conn, ctx, 'geo_map_density');
         await conn.execute(`DELETE FROM ${ctx.t('geo_map_density')} WHERE tenant_id=:tenantId`, {
           tenantId: ctx.options.tenantId,
         });
         densityCells = await rebuildDensity(conn, ctx);
+        await rebuildMapIndexes(conn, ctx, 'geo_map_density');
         await conn.execute('COMMIT');
       } catch (error) {
+        // Paliativo de disponibilidade: tenta deixar os índices VALID mesmo no caminho de erro,
+        // sem mascarar o erro original. Se isto também falhar, o backstop real é
+        // recoverUnusableMapIndexes na próxima execução.
+        for (const table of MAP_INDEX_TABLES) {
+          try {
+            await rebuildMapIndexes(conn, ctx, table);
+          } catch (rebuildError) {
+            console.error('[Mapa] Rebuild de emergência falhou:', rebuildError);
+          }
+        }
         await conn.execute('ROLLBACK');
         throw error;
       }

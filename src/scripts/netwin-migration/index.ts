@@ -28,6 +28,8 @@ import {
   completeNativeMigrationJob,
   openNativeMigrationJob,
   pauseNativeMigrationJob,
+  reconcileNativeRelationships,
+  summarizeNativeRelationships,
 } from './checkpoint.js';
 import { createMigrationContext } from './context.js';
 import { runPhase1Parties } from './phase1-parties.js';
@@ -76,7 +78,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
     );
   }
   if (phase === '3' && (uf || municipio || bairro)) {
-    throw new Error('A Fase 3 reconstrói o tenant inteiro; não combine com --uf, --municipio ou --bairro.');
+    throw new Error(
+      'A Fase 3 reconstrói o tenant inteiro; não combine com --uf, --municipio ou --bairro.',
+    );
   }
   if (!full && !uf && !municipio && phase !== '1' && phase !== '3') {
     throw new Error(
@@ -108,7 +112,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
     throw new Error('--job-id só pode ser usado com --resume.');
   }
   if (phase === '3' && (resume || jobId || maxRecords)) {
-    throw new Error('A Fase 3 não aceita --resume, --job-id ou --max-records; ela reconstrói o tenant integralmente.');
+    throw new Error(
+      'A Fase 3 não aceita --resume, --job-id ou --max-records; ela reconstrói o tenant integralmente.',
+    );
   }
 
   return {
@@ -159,7 +165,12 @@ async function main() {
   const ctx = await createMigrationContext(options);
 
   try {
-    const nativePhase2Selected = ['2', 'all'].includes(options.phase);
+    // A Fase 2.C isolada (`--phase 2c`) também escreve checkpoint e enfileira `connectedTo`,
+    // então precisa do mesmo job nativo validado — sem isto, `--apply` sozinho faz
+    // `saveNativeCheckpoint`/`enqueueNativeRelationships` virar no-op silencioso, e
+    // `--resume --job-id X` grava checkpoint sem validar tenant/escopo/versão (Passo 6 do
+    // plano de paginação da Fase 2.C).
+    const nativePhase2Selected = ['2', '2c', 'all'].includes(options.phase);
     if (nativePhase2Selected && options.apply) {
       const jobId = await openNativeMigrationJob(ctx);
       if (!jobId) throw new Error('Não foi possível abrir o job nativo da Fase 2.');
@@ -201,6 +212,25 @@ async function main() {
     } else if (options.phase === '2c') {
       console.log('\n>>> INICIANDO FASE 2.C: CDOs E PORTAS FÍSICAS <<<');
       await runPhase2InternalPlant(ctx);
+      if (options.apply) {
+        // Reconcilia direto, sem `completeNativeMigrationJob`: este ramo não marca o job
+        // como `loaded`, pois a Fase 2.D ainda não rodou para este job (Passo 6).
+        const target = await ctx.getTargetConnection();
+        if (target) {
+          const reconciled = await reconcileNativeRelationships(target, ctx);
+          const summary = await summarizeNativeRelationships(target, ctx);
+          await target.execute('COMMIT');
+          console.log(
+            `[Topologia] fila=${summary.total}; elegíveis=${summary.eligible}; novas=${reconciled}; pendentesOrigem=${summary.missingSource}; pendentesDestino=${summary.missingTarget}; pendentesAmbos=${summary.missingBoth}.`,
+          );
+          const pending = summary.missingSource + summary.missingTarget + summary.missingBoth;
+          if (pending > 0) {
+            console.warn(
+              `[Topologia] ${pending} relação(ões) permanecem pendentes porque um ou ambos os extremos físicos não existem no tenant.`,
+            );
+          }
+        }
+      }
     } else if (options.phase === '2d') {
       console.log('\n>>> INICIANDO FASE 2.D: DESCOBERTA DE PLANTA INTERNA DE ESTAÇÕES <<<');
       await runPhase2StationInternalPlantDiscovery(ctx);

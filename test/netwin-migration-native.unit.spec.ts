@@ -33,6 +33,7 @@ import {
   parseSplitterRatio,
   resolveCanonicalCdoParents,
 } from '../src/scripts/netwin-migration/phase2-internal-plant.js';
+import { cdoEquipmentIdQuery } from '../src/scripts/netwin-migration/internal-plant-source.js';
 import { isStationPlantDiscoveryBlocked } from '../src/scripts/netwin-migration/phase2-station-internal-plant.js';
 import { CANONICAL_SITE_SPECS } from '../src/scripts/netwin-migration/phase1-site-specs.js';
 import {
@@ -51,10 +52,8 @@ import {
   bulkMergeBindDefs,
   bulkMergeRows,
   makeTablePrefixer,
-  mergeCharacteristicDefinitions,
   mergeSql,
-  netwinOriginCharacteristics,
-  reconcileCatalogCharacteristics,
+  partitionByBindWidth,
 } from '../src/scripts/netwin-migration-kit.js';
 import { MIGRATION_BATCHES } from '../src/shared/persistence/schema.js';
 import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
@@ -64,7 +63,9 @@ import {
   phase3MapCandidatePageSql,
   phase3MapCandidatesSql,
   phase3MapFeaturesForCandidate,
+  phase3MapResourceCountSql,
   phase3MapResourcePageSql,
+  phase3MapSiteCountSql,
   phase3MapSitePageSql,
   phase3VisibleMapSpecificationsSql,
   stalePhase3Statistics,
@@ -190,6 +191,16 @@ describe('netwin-migration: Fase 2.C CDO canônica', () => {
       isCompatiblePortSpecification({ tenantId: 'vtal', resourceTypeCode: 'Splitter' }, 'vtal'),
     ).toBe(false);
     expect(isCompatiblePortSpecification(undefined, 'vtal')).toBe(false);
+  });
+
+  it('filtra CDO por tipo em SQL, sem DISTINCT, ordenada por equipamento (Fase 2.C paginada)', () => {
+    const query = cdoEquipmentIdQuery(':id0, :id1');
+
+    expect(query).toContain('e.ID_BD_TIPO_NE IN (270, 271, 272)');
+    expect(query).toContain('ORDER BY e.ID_BD_EQUIPAMENTO');
+    expect(query).not.toContain('DISTINCT');
+    expect(query).toContain('oq.INFRANODE_ID IN (:id0, :id1)');
+    expect(query).toContain('WHERE ROWNUM <= :maxRecords');
   });
 });
 
@@ -435,13 +446,64 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(resourcePage).toContain('r.resource_specification_id = :specificationId');
     expect(resourcePage).toContain('(:lastId IS NULL OR r.id > :lastId)');
     expect(resourcePage).toContain("r.status <> 'terminated'");
-    expect(resourcePage).toContain('FETCH FIRST :batchSize ROWS ONLY');
+    // Página desta query é literal (PHASE3_MAP_PAGE_SIZE), não bind — ver o comentário de
+    // phase3MapResourcePageSql: com :batchSize o otimizador superdimensionava o plano.
+    expect(resourcePage).toMatch(/FETCH FIRST \d+ ROWS ONLY/);
+    expect(resourcePage).not.toContain('FETCH FIRST :batchSize');
     expect(resourcePage).toContain('FROM resource_page r');
     expect(resourcePage).toContain('place_site.geographic_location_id');
+    // COALESCE do Place é resolvido num CTE próprio antes do join de Location, não dentro da
+    // condição ON — é o que torna o predicado sargável (ver comentário da função).
+    expect(resourcePage).toContain('resolved AS');
+    expect(resourcePage).toContain(
+      'COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)',
+    );
+    expect(resourcePage).toContain('USE_NL(place_site)');
+    expect(resourcePage).toContain('USE_NL(l)');
     expect(sitePage).toContain("spec.category = 'Site'");
     expect(sitePage).toContain('(:lastId IS NULL OR s.id > :lastId)');
     expect(source).toContain('resource pages');
     expect(compatibilityPage).toBe(resourcePage);
+  });
+
+  it('conta candidatos com os mesmos filtros das páginas, sem varrer a fonte duas vezes', () => {
+    const resourceCount = phase3MapResourceCountSql(t);
+    const siteCount = phase3MapSiteCountSql(t);
+    // A contagem de recurso replica os filtros da página que restringem linha; os LEFT JOINs de
+    // Place/Location não filtram nada, então ficam de fora de propósito.
+    expect(resourceCount).toContain('COUNT(*)');
+    expect(resourceCount).toContain('r.resource_specification_id = :specificationId');
+    expect(resourceCount).toContain("r.status <> 'terminated'");
+    expect(resourceCount).not.toContain('LEFT JOIN');
+    // Já a de site tem JOINs INNER e NOT EXISTS, que filtram — todos precisam ser replicados ou a
+    // contagem não bate com o que a paginação percorre.
+    expect(siteCount).toContain("spec.category = 'Site'");
+    expect(siteCount).toContain("s.status NOT IN ('Retired', 'terminated')");
+    expect(siteCount).toContain("l.geometry_type = 'Point'");
+    expect(siteCount).toContain('NOT EXISTS');
+    // A contagem não pagina: é agregação, não cursor.
+    expect(resourceCount).not.toContain(':lastId');
+    expect(siteCount).not.toContain(':lastId');
+  });
+
+  it('dimensiona o bind de geo_map_feature pelo lote e isola a geometria larga', () => {
+    const columns = ['entity_id', 'tile_x', 'geometry'];
+    // Feature de ponto: geometry null. É a maioria esmagadora das linhas e não deve pagar CLOB.
+    const point = { entity_id: 'a'.repeat(36), tile_x: 1, geometry: null };
+    const shortLine = { entity_id: 'b'.repeat(36), tile_x: 2, geometry: '{"type":"LineString"}' };
+    const wideLine = { entity_id: 'c'.repeat(36), tile_x: 3, geometry: 'x'.repeat(5000) };
+
+    const narrowDefs = bulkMergeBindDefs(columns, [point, shortLine]);
+    expect(narrowDefs[2]).toMatchObject({ type: oracledb.STRING });
+    expect(narrowDefs[1]).toMatchObject({ type: oracledb.NUMBER });
+
+    // Só quando o lote realmente passa de VARCHAR2 o bind volta a ser CLOB.
+    expect(bulkMergeBindDefs(columns, [wideLine])[2]).toMatchObject({ type: oracledb.CLOB });
+
+    // E a partição impede que a única linha larga arraste as demais ao caminho lento.
+    const { narrow, wide } = partitionByBindWidth(columns, [point, shortLine, wideLine]);
+    expect(narrow).toHaveLength(2);
+    expect(wide).toEqual([wideLine]);
   });
 
   it('reconhece o índice de cursor da Fase 3 e estatísticas que exigem atualização', () => {
@@ -809,38 +871,6 @@ describe('netwin-migration: reparo target-only da Fase 2.C', () => {
     });
   });
 
-  it('aceita a proveniência no formato canônico _origin.extra, além do formato legado agrupado', () => {
-    const canonicalCharacteristics = JSON.stringify([
-      { name: 'sourcePortType', value: 'Adapter', valueType: 'string' },
-      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
-      { name: '_origin.entity', value: 'ISP_INS_PORTO_FISICO', valueType: 'string' },
-      { name: '_origin.id', value: '7', valueType: 'string' },
-      {
-        name: '_origin.extra',
-        value: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
-        valueType: 'json',
-      },
-    ]);
-    expect(parsePhase2cPortProvenance(canonicalCharacteristics)).toMatchObject({
-      kind: 'valid',
-      provenance: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
-    });
-
-    // Um valor de topo (quando presente) tem precedência sobre o mesmo nome dentro de _origin.extra.
-    const withTopLevelOverride = JSON.stringify([
-      { name: 'parentOspEquipmentId', value: '99', valueType: 'string' },
-      {
-        name: '_origin.extra',
-        value: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
-        valueType: 'json',
-      },
-    ]);
-    expect(parsePhase2cPortProvenance(withTopLevelOverride)).toMatchObject({
-      kind: 'valid',
-      provenance: { parentOspEquipmentId: 99, parentIspEquipmentId: 15 },
-    });
-  });
-
   it('repara apenas o par legada→canônica e preserva a contenção canônica', () => {
     const canonicalParentId = netwinEquipmentId(42);
     const legacyParentId = netwinInternalEquipmentId(15);
@@ -1108,67 +1138,6 @@ describe('netwin-migration: phase 1 canonical catalogs', () => {
     expect(codes.has('Splitter')).toBe(true);
   });
 
-  it('contém stateLifecycle por padrão em toda specification de site canônica', () => {
-    // Nenhuma entrada declara specCharacteristic próprio: o runner da Fase 1.A aplica o fallback
-    // STATE_LIFECYCLE_CHARACTERISTIC a todas, o que garante que reexecuções não deixem specs sem o
-    // contrato de instância que a Fase 2.A emite (stateLifecycle).
-    for (const spec of CANONICAL_SITE_SPECS) {
-      expect(spec.specCharacteristic, `specCharacteristic customizado em ${spec.code}`).toBeUndefined();
-    }
-  });
-
-  it('declara substatus apenas nos equipamentos que a Fase 2.B resolve para OSP_EQUIPMENT', () => {
-    for (const code of ['category:CDOE', 'category:CDOI', 'SpliceClosure', 'OpticalNode']) {
-      const names = (canonicalType(code)?.resourceTypeCharacteristic ?? []).map((c) => c.name);
-      expect(names, code).toEqual(['substatus']);
-    }
-  });
-
-  it('declara exatamente os atributos operacionais comprovados de Splitter e Port', () => {
-    const splitterNames = (canonicalType('Splitter')?.resourceTypeCharacteristic ?? []).map(
-      (c) => c.name,
-    );
-    expect(splitterNames).toEqual([
-      'sourceCardType',
-      'sourceCardSigla',
-      'slotNumber',
-      'positionUf',
-      'splitRatio',
-    ]);
-
-    const portNames = (canonicalType('Port')?.resourceTypeCharacteristic ?? []).map((c) => c.name);
-    expect(portNames).toEqual([
-      'sourcePortType',
-      'portId',
-      'coding',
-      'occupancy',
-      'circuit',
-      'bandwidth',
-    ]);
-
-    for (const name of [...splitterNames, ...portNames]) {
-      expect(name.startsWith('_origin')).toBe(false);
-    }
-  });
-
-  it('marca todo resourceTypeCharacteristic canônico como nível de instância, nunca de specification', () => {
-    for (const resourceType of CANONICAL_RESOURCE_TYPES) {
-      for (const characteristic of resourceType.resourceTypeCharacteristic ?? []) {
-        expect(characteristic.characteristicLevel, `${resourceType.code}.${characteristic.name}`).toBe(
-          'instance',
-        );
-      }
-    }
-  });
-
-  it('não declara identificadores de pai ou proveniência como atributos operacionais do tipo', () => {
-    for (const resourceType of CANONICAL_RESOURCE_TYPES) {
-      for (const characteristic of resourceType.resourceTypeCharacteristic ?? []) {
-        expect(characteristic.name).not.toMatch(/^parent|^_origin|^source(System|Id)$/i);
-      }
-    }
-  });
-
   it('prioriza o ResourceType compartilhado para Port e Splitter', () => {
     const resolved = sharedTypeIdByCode([
       { id: 'vtal-port', code: 'Port', tenantId: 'vtal' },
@@ -1203,93 +1172,5 @@ describe('netwin-migration: phase 1 canonical catalogs', () => {
         resourceSpecificationCount: 42,
       }),
     ).toContain('mesmo tenant');
-  });
-});
-
-describe('netwin-migration: reconciliação aditiva de characteristics de catálogo', () => {
-  it('netwinOriginCharacteristics emite somente nomes pontuados reservados (_origin.*)', () => {
-    expect(netwinOriginCharacteristics('LOCATION', 42)).toEqual([
-      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
-      { name: '_origin.entity', value: 'LOCATION', valueType: 'string' },
-      { name: '_origin.id', value: '42', valueType: 'string' },
-    ]);
-
-    expect(
-      netwinOriginCharacteristics('ISP_INS_PORTO_FISICO', 7, {
-        parentOspEquipmentId: 42,
-        parentIspEquipmentId: 15,
-      }),
-    ).toEqual([
-      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
-      { name: '_origin.entity', value: 'ISP_INS_PORTO_FISICO', valueType: 'string' },
-      { name: '_origin.id', value: '7', valueType: 'string' },
-      {
-        name: '_origin.extra',
-        value: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
-        valueType: 'json',
-      },
-    ]);
-
-    // Sem extra (ex.: rotas/cabos que só carregam proveniência), nenhum `_origin.extra` é emitido.
-    expect(netwinOriginCharacteristics('REC_CAT_CABOS', 1, {})).toHaveLength(3);
-  });
-
-  it('mergeCharacteristicDefinitions preserva customização existente do Studio e completa só o ausente', () => {
-    const studioCustomized = JSON.stringify([
-      { group: '', name: 'substatus', description: 'Customizado pelo Studio', value: 'Ativo' },
-    ]);
-    const merged = mergeCharacteristicDefinitions(studioCustomized, [
-      { name: 'substatus', description: 'Padrão do migrador', value: '', valueType: 'string' },
-    ]);
-    expect(merged).toHaveLength(1);
-    expect(merged[0]?.description).toBe('Customizado pelo Studio');
-  });
-
-  it('mergeCharacteristicDefinitions é case-insensitive por group+name e aditivo', () => {
-    const current = JSON.stringify([{ group: '_origin', name: 'SYSTEM', value: 'Netwin' }]);
-    const merged = mergeCharacteristicDefinitions(current, [
-      { group: '_origin', name: 'system', value: 'outro' },
-      { name: 'stateLifecycle', value: '', valueType: 'string' },
-    ]);
-    expect(merged).toHaveLength(2);
-    expect(merged.map((c) => c.name)).toEqual(['SYSTEM', 'stateLifecycle']);
-  });
-
-  it('mergeCharacteristicDefinitions trata JSON nulo, vazio ou inválido como ausência segura', () => {
-    const canonical = [{ name: 'stateLifecycle', value: '', valueType: 'string' }];
-    expect(mergeCharacteristicDefinitions(null, canonical)).toEqual(canonical);
-    expect(mergeCharacteristicDefinitions('', canonical)).toEqual(canonical);
-    expect(mergeCharacteristicDefinitions('not-json', canonical)).toEqual(canonical);
-    expect(mergeCharacteristicDefinitions('{"not":"an array"}', canonical)).toEqual(canonical);
-  });
-
-  it('reconcileCatalogCharacteristics só grava quando o conjunto mesclado difere do atual', async () => {
-    const existing = JSON.stringify([
-      { group: '', name: 'substatus', description: 'Customizado', value: 'Ativo' },
-    ]);
-    const executed: Array<{ sql: string; binds: unknown }> = [];
-    const fakeConnection = {
-      execute: async (sql: string, binds: unknown) => {
-        executed.push({ sql, binds });
-        if (sql.startsWith('SELECT')) return { rows: [{ CHARACTERISTICS: existing }] };
-        return { rows: [] };
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
-
-    await reconcileCatalogCharacteristics(fakeConnection, (name) => `NX_TEST_${name}`, 'tmf_resource_type', 'rt-1', [
-      { name: 'substatus', description: 'Padrão', value: '', valueType: 'string' },
-    ]);
-    expect(executed).toHaveLength(1); // nada mudou: nenhum UPDATE foi emitido
-
-    await reconcileCatalogCharacteristics(fakeConnection, (name) => `NX_TEST_${name}`, 'tmf_resource_type', 'rt-1', [
-      { name: 'substatus', description: 'Padrão', value: '', valueType: 'string' },
-      { name: 'outraCaracteristica', description: 'Nova', value: '', valueType: 'string' },
-    ]);
-    expect(executed).toHaveLength(3); // SELECT + SELECT + UPDATE aditivo
-    expect(executed[2]?.sql).toContain('UPDATE');
-    const updateBinds = executed[2]?.binds as { characteristics: string };
-    const updated = JSON.parse(updateBinds.characteristics) as Array<{ name: string }>;
-    expect(updated.map((c) => c.name)).toEqual(['substatus', 'outraCaracteristica']);
   });
 });

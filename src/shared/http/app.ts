@@ -2,6 +2,8 @@
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import type { AppConfig } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
+import { databaseUnavailableError } from '../errors/http-errors.js';
+import { resolveListLimit, assertListBounded } from './list-query.js';
 import {
   buildRequestContext,
   ensureAuthorized as ensureRequestAuthorized,
@@ -166,6 +168,17 @@ export const handleHttpRequest = async (
   dependencies: HttpRequestHandlerDependencies,
 ): Promise<void> => routeRequest(dependencies);
 
+// Prefixos de rota que `mapDataLoading` (web/src/pages/GeoPage.tsx) dispara a cada pan/zoom/
+// drag do mapa: tile de exibição, densidade agregada, catálogo de camadas e a árvore/viewport
+// de navegação. Usado só para decidir o que entra no log independente de duração — ver uso em
+// `createApp`, logo acima.
+const MAP_NAVIGATION_PATH_PREFIXES = [
+  '/v1/geo/map/tile',
+  '/v1/geo/map/density',
+  '/v1/geo/map-layer-catalog',
+  '/v1/geo/tree/',
+] as const;
+
 export const createApp = ({ config, logger }: AppDependencies) => {
   configureHrefBaseUrl(config.tmfPublicBaseUrl);
   const repository = new InMemoryEntityRepository();
@@ -208,7 +221,15 @@ export const createApp = ({ config, logger }: AppDependencies) => {
         const durationMs = Date.now() - startedAt;
         const pathname = (request.url ?? '/').split('?')[0] ?? '/';
         recordRequestMetric(request.method, pathname, response.statusCode, durationMs);
-        if (durationMs >= 250) {
+        // Chamadas disparadas por pan/zoom/drag no mapa (tile, densidade, catálogo de camadas,
+        // árvore/viewport — os mesmos endpoints que alimentam `mapDataLoading` em GeoPage e,
+        // portanto, a faixa de progresso do mapa) são sempre logadas, mesmo abaixo de 250ms:
+        // é exatamente essa navegação "rápida demais pro limiar" que fica invisível no log hoje
+        // e deixa a barra carregando sem nenhuma pista de qual chamada ou quanto tempo levou.
+        const isMapNavigationCall = MAP_NAVIGATION_PATH_PREFIXES.some((prefix) =>
+          pathname.startsWith(prefix),
+        );
+        if (durationMs >= 250 || isMapNavigationCall) {
           // traceId correlaciona com o do chamador (Apigee) quando ele manda x-trace-id/
           // x-request-id — sem esses headers, cada camada geraria um id próprio e o log
           // ficaria com uma correlação falsa, então preferimos omitir a não sintetizar aqui.
@@ -222,7 +243,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
               statusCode: response.statusCode,
               ...(traceId ? { traceId } : {}),
             },
-            'request completed',
+            isMapNavigationCall ? 'map navigation request completed' : 'request completed',
           );
         }
       });
@@ -969,9 +990,12 @@ const routePublishedGeoLayerCatalogRequest = async ({
           environmentId: runtime.environmentProfile.environmentId,
           fallback: false,
         };
+  const specsLimit = resolveListLimit(undefined);
   const [resourceTypes, geographicSiteSpecifications] = await Promise.all([
     runtime.resourceService.listResourceTypes(context),
-    runtime.geoService.listSpecs(undefined, context),
+    runtime.geoService
+      .listSpecs({ limit: specsLimit.limit }, context)
+      .then((rows) => assertListBounded(rows, specsLimit)),
   ]);
   const resourceTypeById = new Map(resourceTypes.map((item) => [item.id, item]));
   const resourceTypeByCode = new Map(resourceTypes.map((item) => [item.code, item]));
@@ -3369,9 +3393,17 @@ const routeGeoRequest = async ({
   if (route.resource === 'locations') {
     if (!route.id && request.method === 'GET') {
       const spatialQuery = parseGeoLocationSpatialQuery(url.searchParams);
-      const locations = await (spatialQuery
-        ? geoService.listLocationsSpatial(spatialQuery, geoContext)
-        : geoService.listLocations(parseGeoListQuery(url.searchParams), geoContext));
+      let locations;
+      if (spatialQuery) {
+        locations = await geoService.listLocationsSpatial(spatialQuery, geoContext);
+      } else {
+        const query = parseGeoListQuery(url.searchParams);
+        const resolved = resolveListLimit(query.limit);
+        locations = assertListBounded(
+          await geoService.listLocations({ ...query, limit: resolved.limit }, geoContext),
+          resolved,
+        );
+      }
       if ((request.headers.accept ?? '').includes('application/geo+json')) {
         return sendJson(response, 200, geoService.locationsToFeatureCollection(locations));
       }
@@ -3460,12 +3492,15 @@ const routeGeoRequest = async ({
   }
 
   if (route.resource === 'site-specifications') {
-    if (!route.id && request.method === 'GET')
-      return sendJson(
-        response,
-        200,
-        geoService.listSpecs(parseGeoSpecificationListQuery(url.searchParams), geoContext),
+    if (!route.id && request.method === 'GET') {
+      const query = parseGeoSpecificationListQuery(url.searchParams);
+      const resolved = resolveListLimit(query.limit);
+      const specs = assertListBounded(
+        await geoService.listSpecs({ ...query, limit: resolved.limit }, geoContext),
+        resolved,
       );
+      return sendJson(response, 200, specs);
+    }
     if (!route.id && request.method === 'POST')
       return sendJson(
         response,
@@ -3496,12 +3531,15 @@ const routeGeoRequest = async ({
   }
 
   if (route.resource === 'sites') {
-    if (!route.id && request.method === 'GET')
-      return sendJson(
-        response,
-        200,
-        geoService.listSites(parseGeoListQuery(url.searchParams), geoContext),
+    if (!route.id && request.method === 'GET') {
+      const query = parseGeoListQuery(url.searchParams);
+      const resolved = resolveListLimit(query.limit);
+      const sites = assertListBounded(
+        await geoService.listSites({ ...query, limit: resolved.limit }, geoContext),
+        resolved,
       );
+      return sendJson(response, 200, sites);
+    }
     if (!route.id && request.method === 'POST')
       return sendJson(
         response,
@@ -4981,8 +5019,9 @@ const resolveProjectStatus = async (
   return item;
 };
 
-// Sem limit/offset explícitos, mantém o comportamento histórico (lista completa) para não quebrar
-// os consumidores que ainda dependem do catálogo inteiro — a paginação é opt-in por quem pede.
+// Apenas parseia a query string. O clamp de `limit` (teto implícito quando ausente, ver
+// src/shared/http/list-query.ts) é responsabilidade de cada rota chamadora — nunca retornar
+// lista completa sem teto a partir daqui (ver issue #291).
 const parseGeoListQuery = (
   params: URLSearchParams,
 ): {
@@ -6910,6 +6949,24 @@ export const handleHttpError = ({
     sendJson(response, error.statusCode, {
       error: error.code,
       message: error.message,
+    });
+    return;
+  }
+
+  // NJS-040 (fila do pool esgotada) / NJS-076 (connect timeout) são lançados pelo driver thin
+  // antes de qualquer SQL sair (oracledb/lib/pool.js) — um `Error` cru, sem `code` nem `name`
+  // próprios, então o único jeito de reconhecê-los é por substring na mensagem (issue #291:
+  // starvation do pool virava sete 500 INTERNAL_SERVER_ERROR idênticos e indistinguíveis).
+  if (
+    error instanceof Error &&
+    (error.message.includes('NJS-040') || error.message.includes('NJS-076'))
+  ) {
+    logger.error({ error: error.message }, 'database pool exhausted');
+    const dbError = databaseUnavailableError();
+    response.setHeader('Retry-After', '5');
+    sendJson(response, dbError.statusCode, {
+      error: dbError.code,
+      message: dbError.message,
     });
     return;
   }

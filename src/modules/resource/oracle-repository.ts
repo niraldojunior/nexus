@@ -1471,18 +1471,24 @@ export class OracleResourceRepository implements IResourceRepository {
 
     const tenantId = scope?.tenantId ?? row.tenant_id ?? 'default';
 
-    const [
-      relationships,
-      specification,
-      statusCatalogEntry,
-      parentRow,
-      childRow,
-      place,
-      servingSite,
-      project,
-    ] = await Promise.all([
+    // Issue #291: era um único Promise.all com 8 queries concorrentes por request — com
+    // poolMax=5 a própria request de detalhe se auto-estrangulava, e mesmo com o pool maior
+    // 8 conexões por clique de painel é desproporcional (é o que fazia o painel degradar a
+    // cada elemento clicado). Dividido em duas ondas: a primeira traz o que o restante da
+    // função depende (specification decide o `return undefined` abaixo; place alimenta
+    // `resolveDetailLocation`); a segunda é só complemento de exibição. Teto de ~3-4
+    // conexões simultâneas por request em vez de 8.
+    const [relationships, specification, place] = await Promise.all([
       this.listResourceRelationships(id),
       this.getResourceSpecification(row.resource_specification_id, scope),
+      row.place_id
+        ? this.resolveDetailPlace(row.place_id, row.place_type, tenantId)
+        : Promise.resolve(undefined),
+    ]);
+
+    if (!specification) return undefined;
+
+    const [statusCatalogEntry, parentRow, childRow, servingSite, project] = await Promise.all([
       row.status_code
         ? this.getResourceStatusCatalogEntry(row.status_code, tenantId)
         : Promise.resolve(undefined),
@@ -1514,9 +1520,6 @@ export class OracleResourceRepository implements IResourceRepository {
             AND c.tenant_id = ?`,
         [id, tenantId],
       ),
-      row.place_id
-        ? this.resolveDetailPlace(row.place_id, row.place_type, tenantId)
-        : Promise.resolve(undefined),
       row.serving_site_id
         ? this.db.get<{ id: string; name: string }>(
             `SELECT id, name FROM tmf_geographic_site WHERE id = ? AND tenant_id = ?`,
@@ -1530,8 +1533,6 @@ export class OracleResourceRepository implements IResourceRepository {
           )
         : Promise.resolve(undefined),
     ]);
-
-    if (!specification) return undefined;
     const resource = this.mapPhysicalResource(row, relationships);
     const location = await this.resolveDetailLocation(row, place, tenantId);
 

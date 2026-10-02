@@ -11,6 +11,7 @@ import {
   requestJson,
 } from './test-utils.js';
 import { COVERAGE_CELL_METERS, lngLatToMercator } from '../src/modules/geo/coverage-grid.js';
+import { MAX_LIST_LIMIT } from '../src/shared/http/list-query.js';
 
 const oracleConfigured = isOracleTestConfigured();
 
@@ -2440,3 +2441,142 @@ test.skipIf(!oracleConfigured)('App root returns Nexus shell html', async () => 
     await cleanupOracleTables(client);
   }
 });
+
+test.skipIf(!oracleConfigured)(
+  'GET /v1/geo/sites pelado é contido pelo teto implícito — 400 LIST_TOO_LARGE, nunca lista truncada (issue #291)',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+      const siteSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Estação em massa (issue #291)',
+        category: 'Site',
+      });
+      assert.equal(siteSpec.statusCode, 201);
+      const siteSpecId = idOf(siteSpec);
+
+      // Insere diretamente via SQL — não pelo endpoint — porque o que esta spec exercita é o
+      // teto do SELECT, não o caminho de criação (já coberto em outros casos deste arquivo).
+      // 1001 linhas = MAX_LIST_LIMIT + 1, o mínimo que estoura o teto implícito.
+      const client = await getOracleTestClient();
+      const now = new Date().toISOString();
+      for (let i = 0; i < MAX_LIST_LIMIT + 1; i += 1) {
+        await client.run(
+          `INSERT INTO tmf_geographic_site
+           (id, tenant_id, name, status, site_specification_id, related_party, site_addresses,
+            characteristics, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `site-bulk-291-${i}`,
+            'default',
+            `Site em massa ${i}`,
+            'Active',
+            siteSpecId,
+            '[]',
+            '[]',
+            '[]',
+            now,
+            now,
+          ],
+        );
+      }
+
+      // Sem `limit`: a base (1001) passa do teto implícito (1000) — 400, nunca os 1000
+      // primeiros em silêncio. Era exatamente esta request, pelada, que derrubava o processo
+      // (ver plano da issue #291: 192.698 ms e NJS-500/heap OOM).
+      const bare = await requestJson(port, 'GET', '/v1/geo/sites');
+      assert.equal(bare.statusCode, 400);
+      assert.equal((bare.body as { error: string }).error, 'LIST_TOO_LARGE');
+
+      // Com `limit` explícito, mesmo acima do teto, recebe 200 com clamp em MAX_LIST_LIMIT —
+      // nunca erro, porque o chamador já declarou que sabe que está paginando.
+      const explicit = await requestJson(port, 'GET', '/v1/geo/sites?limit=999999');
+      assert.equal(explicit.statusCode, 200);
+      assert.equal((explicit.body as unknown[]).length, MAX_LIST_LIMIT);
+
+      // `limit` dentro do teto passa normalmente.
+      const small = await requestJson(port, 'GET', '/v1/geo/sites?limit=10');
+      assert.equal(small.statusCode, 200);
+      assert.equal((small.body as unknown[]).length, 10);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'listSpecs cai para allowed_parent/child_spec_ids da coluna quando a tabela de regras de contenção está vazia (issue #291)',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const idOf = (response: { body: unknown }) => (response.body as { id: string }).id;
+
+      // Criado pela API normal: popula a coluna allowed_*_spec_ids E a tabela de regras
+      // (syncSpecContainmentRules) nos dois lados do par — caminho de escrita já coberto
+      // em outros testes deste arquivo.
+      const parentSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Central issue #291',
+        category: 'Site',
+      });
+      const childSpec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Sala issue #291',
+        category: 'SubSite',
+        allowedParentSpecIds: [idOf(parentSpec)],
+      });
+      const patched = await requestJson(
+        port,
+        'PATCH',
+        `/v1/geo/site-specifications/${idOf(parentSpec)}`,
+        { allowedChildSpecIds: [idOf(childSpec)] },
+      );
+      assert.equal(patched.statusCode, 200);
+      assert.deepEqual((patched.body as { allowedChildSpecIds: string[] }).allowedChildSpecIds, [
+        idOf(childSpec),
+      ]);
+
+      // Simula o cenário real de produção (migração que nunca populou a tabela de regras,
+      // ver plano da issue #291): apaga só a tabela de regras, mantendo a coluna JSON intacta.
+      const client = await getOracleTestClient();
+      await client.run(
+        `DELETE FROM tmf_geographic_site_spec_containment_rule
+         WHERE parent_spec_id = ? OR child_spec_id = ?`,
+        [idOf(parentSpec), idOf(parentSpec)],
+      );
+      await client.run(
+        `DELETE FROM tmf_geographic_site_spec_containment_rule
+         WHERE parent_spec_id = ? OR child_spec_id = ?`,
+        [idOf(childSpec), idOf(childSpec)],
+      );
+
+      const specs = await requestJson(port, 'GET', '/v1/geo/site-specifications');
+      assert.equal(specs.statusCode, 200);
+      const refreshedParent = (
+        specs.body as Array<{ id: string; allowedChildSpecIds?: string[] }>
+      ).find((spec) => spec.id === idOf(parentSpec));
+      const refreshedChild = (
+        specs.body as Array<{ id: string; allowedParentSpecIds?: string[] }>
+      ).find((spec) => spec.id === idOf(childSpec));
+
+      // Sem nenhuma linha na tabela de regras, o único jeito de a amarração sobreviver é o
+      // fallback por coluna em hydrateSpecs — se isto falhar, o filtro de locais pai no
+      // GeoPage volta a ficar vazio (a causa raiz original da issue #291).
+      assert.deepEqual(refreshedParent?.allowedChildSpecIds, [idOf(childSpec)]);
+      assert.deepEqual(refreshedChild?.allowedParentSpecIds, [idOf(parentSpec)]);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);

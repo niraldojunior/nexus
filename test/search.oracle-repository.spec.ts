@@ -120,3 +120,36 @@ test.skipIf(!oracleConfigured)(
     assert.equal(sessions[0]?.userId, 'tenant-2');
   },
 );
+
+test.skipIf(!oracleConfigured)(
+  'OracleSearchRepository.listSessionsByUser não carrega mensagens por sessão (issue #291, N+1)',
+  async () => {
+    const client = await getOracleTestClient();
+    const repository = new OracleSearchRepository(client);
+
+    await repository.createSession({
+      '@type': 'ResearchSession',
+      id: 'session-c',
+      href: '/v1/search/sessions/session-c',
+      userId: 'tenant-3',
+      title: 'Sessão C',
+      status: 'active',
+    });
+    await repository.addMessage('session-c', {
+      id: 'message-c1',
+      role: 'user',
+      content: 'Mensagem que não deve aparecer na lista',
+    });
+
+    // O payload de lista nunca traz o corpo das mensagens — era 1 query de sessões + N
+    // queries de mensagens concorrentes no pool (51 para 50 sessões). getSession, por outro
+    // lado, continua carregando as mensagens completas.
+    const sessions = await repository.listSessionsByUser('tenant-3');
+    const listed = sessions.find((session) => session.id === 'session-c');
+    assert.deepEqual(listed?.messages, []);
+
+    const detail = await repository.getSession('session-c');
+    assert.equal(detail?.messages?.length, 1);
+    assert.equal(detail?.messages?.[0]?.id, 'message-c1');
+  },
+);

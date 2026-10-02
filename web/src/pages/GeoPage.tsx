@@ -484,6 +484,13 @@ const PROJECT_PANEL_SITE_LIMIT = 200;
 // google.maps.Marker reais — o gargalo que travava a interação com o mapa (issue #72).
 const PROJECT_VIEWPORT_SITE_LIMIT = 1500;
 
+// Teto defensivo do seletor de local pai (ver loadGeo abaixo). O servidor já recusa listas
+// implícitas acima do seu próprio teto (400 LIST_TOO_LARGE — issue #291); este `limit` explícito
+// é defesa em profundidade para nunca deixar essa chamada sair sem um, mesmo que o filtro de
+// specs-container volte vazio por algum motivo futuro. O conjunto real é dezenas de sites
+// (Region/CO/POP/Floor/Room…), bem abaixo deste teto.
+const GEO_CONTAINER_SITE_LIMIT = 500;
+
 // A partir daqui o pin individual de um local de Projeto sai do mapa: a mancha de concentração/
 // dispersão do ProjectAreaOverlay já representa o conjunto (REQ-MOD01-017). Este corte é
 // específico de Projeto (agregação de UI, não inibição de camada) — a visibilidade de infra
@@ -878,7 +885,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       const containerSpecIds = specData
         .filter((spec) => spec.allowedChildSpecIds.length > 0)
         .map((spec) => spec.id);
-      const siteData = await listGeoSites({ siteSpecificationIds: containerSpecIds });
+      // Sem spec-container nenhuma não existe local pai válido para o seletor — desistir é a
+      // resposta certa (ver comentário acima de loadGeo), não um fallback para buscar tudo.
+      const siteData = containerSpecIds.length > 0
+        ? await listGeoSites({ siteSpecificationIds: containerSpecIds, limit: GEO_CONTAINER_SITE_LIMIT })
+        : [];
       setSites(siteData);
       setSpecs(specData);
     } catch (err) {

@@ -268,12 +268,18 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
           traceId: 'studio-geo-adapter',
         }),
       async (tenantId) =>
+        // `listSpecs` é leitura e exige `inventory.reader` (ou `platform.admin`) via
+        // `GeoService.assertRole` — `studio.admin` sozinho nunca bateu nessa checagem literal de
+        // array, então todo bootstrap com pelo menos um GeographicSiteSpecification de categoria
+        // Region (qualquer ambiente dev/Oracle já semeado) falhava com GEO_RBAC_FORBIDDEN
+        // (issue #292). O callback irmão (`listResourceTypes`, acima) nunca passou por
+        // `assertRole`, por isso só o lado Geo quebrava.
         await geoService.listSpecs(
           { category: 'Region' },
           {
             actorSub: 'studio-geo-adapter',
             tenantId,
-            roles: ['studio.admin'],
+            roles: ['studio.admin', 'inventory.reader'],
             traceId: 'studio-geo-adapter',
           },
         ),

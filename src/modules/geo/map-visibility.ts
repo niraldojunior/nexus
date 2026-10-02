@@ -8,7 +8,7 @@
 // própria na navegação nem no mapa: reaproveitam a Location de quem os contém, então um pin
 // deles cairia em cima do pin do pai. Splitter mora na caixa; Porta mora no splitter — mesma
 // regra, um nível mais fundo, coberta pelo pass-through de `RESOURCE_CHILD_TREE_SOURCE`/
-// `countResourceChildren` em tree-service.ts (PASS_THROUGH_MAX_DEPTH já cobre uma cadeia
+// `resourceIdsWithChildren` em tree-service.ts (PASS_THROUGH_MAX_DEPTH já cobre uma cadeia
 // caixa→splitter→porta).
 export const INTERNAL_RESOURCE_TYPES = ['Splitter', 'Port'] as const;
 

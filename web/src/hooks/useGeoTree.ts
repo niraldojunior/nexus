@@ -63,6 +63,17 @@ export function useGeoTree(): GeoTree {
   // efeito duas vezes: sem isto, a mesma expansão custaria o dobro do tempo.
   const inFlight = useRef(new Map<string, Promise<void>>());
 
+  // Dedupe de `tree/path` por nó — mesma razão acima; `revealNode` é o único chamador, mas
+  // um clique duplo rápido no mesmo nó pediria o mesmo caminho duas vezes em voo.
+  const pathInFlight = useRef(new Map<string, Promise<string[] | null>>());
+
+  // Cancela a cadeia sequencial de `revealNode` quando um novo clique chega no meio do
+  // caminho: sem isto, a cadeia do clique anterior seguia emitindo `tree/children` depois do
+  // novo clique, e as novas requisições entravam na fila atrás dela (o backend atende em
+  // série — AGENTS.md §3).
+  const revealTokenRef = useRef(0);
+  const revealControllerRef = useRef<AbortController | null>(null);
+
   // `revealNode` percorre a cadeia de forma assíncrona e precisa enxergar o que já foi
   // carregado *durante* o próprio percurso — o `state` fechado no callback nasceria
   // velho no primeiro await.
@@ -187,8 +198,25 @@ export function useGeoTree(): GeoTree {
    */
   const revealNode = useCallback(
     (nodeId: string, options: { expandSelf?: boolean } = {}) => {
+      // Um novo reveal sempre supera o anterior — aborta o `tree/path` em voo (se ainda não
+      // resolveu) e marca o token, para a cadeia sequencial abaixo parar de emitir
+      // `tree/children` assim que notar que não é mais a corrente mais recente.
+      revealControllerRef.current?.abort();
+      const controller = new AbortController();
+      revealControllerRef.current = controller;
+      const token = ++revealTokenRef.current;
+      const isCurrent = () => revealTokenRef.current === token;
+
       void (async () => {
-        let chain = await fetchTreePath(nodeId).catch(() => null);
+        const running = pathInFlight.current.get(nodeId);
+        const pathRequest =
+          running ??
+          fetchTreePath(nodeId, { signal: controller.signal }).finally(() => {
+            pathInFlight.current.delete(nodeId);
+          });
+        pathInFlight.current.set(nodeId, pathRequest);
+        let chain = await pathRequest.catch(() => null);
+        if (!isCurrent()) return;
 
         if (!chain?.length) {
           // Fallback: sobe pelo que já está carregado (childIds invertido).
@@ -206,14 +234,19 @@ export function useGeoTree(): GeoTree {
         }
 
         // Sequencial de propósito: o filho seguinte só aparece no estado depois que o
-        // pai foi buscado, então não dá para disparar os níveis em paralelo.
+        // pai foi buscado, então não dá para disparar os níveis em paralelo. `isCurrent()`
+        // interrompe a cadeia assim que um reveal mais novo chega — sem isto, um clique
+        // rápido em dois nós deixava a cadeia do primeiro clique correndo atrás do segundo.
         for (let index = 0; index < chain.length - 1; index += 1) {
+          if (!isCurrent()) return;
           const parentId = chain[index]!;
           if (!stateRef.current.childIds[parentId]) await loadChildren(parentId, 0);
         }
+        if (!isCurrent()) return;
         if (options.expandSelf && !stateRef.current.childIds[nodeId]) {
           await loadChildren(nodeId, 0);
         }
+        if (!isCurrent()) return;
 
         setExpandedRows((prev) => {
           const next = new Set(prev);

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
 import { patchJson, postJson, type GeoSpec } from '../../services/geoApi';
 import { fetchTreeChildren, type GeoTreeNode } from '../../services/geoTreeApi';
+import { useSiteChildren } from '../../hooks/useSiteChildren';
 import { allowedChildSpecsOf, siteSpecLabel } from '../../utils/geoLabels';
 import { NodeIcon } from './HierarchyTreeView';
 import { Modal } from './Modal';
@@ -35,29 +36,18 @@ export function SiteSubSitesTab({
   onOpenSubSite,
   onChanged,
 }: SiteSubSitesTabProps) {
-  const [rootNodes, setRootNodes] = useState<GeoTreeNode[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Filhos do Site cacheados/deduplicados em nível de módulo (useSiteChildren) — a mesma
+  // chamada alimenta SiteResourcesTab, cada aba filtrando por `kind` localmente.
+  const { nodes: children, loading, reload: reloadSiteChildren } = useSiteChildren(siteId);
+  const rootNodes = useMemo(
+    () => children.filter((node) => node.kind === 'site'),
+    [children],
+  );
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void fetchTreeChildren(`site:${siteId}`, { scope: 'all' })
-      .then((page) => {
-        if (cancelled) return;
-        setRootNodes(page.nodes.filter((node) => node.kind === 'site'));
-      })
-      .catch(() => !cancelled && setRootNodes([]))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [siteId, reloadToken]);
 
   const refresh = () => {
-    setReloadToken((token) => token + 1);
+    reloadSiteChildren();
     onChanged();
   };
 
@@ -100,7 +90,7 @@ export function SiteSubSitesTab({
 
       {loading ? (
         <div className="px-2 py-3 text-[0.82rem] text-app-muted">Carregando sub-locais…</div>
-      ) : !rootNodes || rootNodes.length === 0 ? (
+      ) : rootNodes.length === 0 ? (
         <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
           Este local ainda não possui sub-locais.
         </div>

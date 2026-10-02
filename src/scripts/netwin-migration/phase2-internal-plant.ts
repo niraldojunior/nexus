@@ -108,15 +108,10 @@ function defaultName(value: string | null, fallback: string): string {
   return (value?.trim() || fallback).slice(0, 255);
 }
 
-function originCharacteristics(entity: string, sourceId: number, fields: Array<[string, unknown]>) {
-  return [
-    { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-    { group: '_origin', name: 'entity', value: entity, valueType: 'string' },
-    { group: '_origin', name: 'id', value: String(sourceId), valueType: 'string' },
-    ...fields
-      .filter(([, value]) => value !== null && value !== undefined && value !== '')
-      .map(([name, value]) => ({ name, value: String(value), valueType: 'string' })),
-  ];
+function instanceCharacteristics(fields: Array<[string, unknown]>) {
+  return fields
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([name, value]) => ({ name, value: String(value), valueType: 'string' }));
 }
 
 async function scopedLocationIds(ctx: MigrationContext): Promise<number[]> {

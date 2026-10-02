@@ -649,31 +649,53 @@ export class GeoTreeService {
    * "Traceroute" da fibra: do equipamento óptico selecionado (`resourceId`, sem prefixo
    * `resource:`) até a Estação, andando pela cadeia `equipA --connectedTo--> cabo
    * --connectedTo--> equipZ` que `migrate-netwin-osp.ts` grava — sempre subindo (aresta de
-   * entrada do nó atual), o inverso do sentido A→Z da carga. Iterativo, não CTE recursiva
-   * (mesma cautela de `pathTo`/`resourceIdsWithChildren`: dialeto Oracle já deu problema com
-   * recursão neste read-model).
+   * entrada do nó atual), o inverso do sentido A→Z da carga.
+   *
+   * `CONNECT BY NOCYCLE` nativo (item 3.4, issue #295), não mais a caminhada sequencial de
+   * até `SCHEMATIC_MAX_HOPS` idas e voltas que havia aqui — mesmo motivo de `countResourceChildren`
+   * (item 3.1) e `listResourceComponents` (item 3.3): C10 manda `CONNECT BY` nativo, e o N+1
+   * round-trip por salto era o custo real por trás dos 105.665 ms medidos no plano original,
+   * não o teto de saltos em si (que já existia, ver `SCHEMATIC_MAX_HOPS`/`truncated` abaixo).
+   * `LEVEL <= SCHEMATIC_MAX_HOPS` dentro do próprio `CONNECT BY` poda a travessia no servidor —
+   * o teto nunca materializa mais do que isso, nem precisa de um `FETCH FIRST` por fora.
+   * Medido (Oracle dev, 60 cadeias reais de `connectedTo`): paridade exata com a caminhada
+   * sequencial em todas, e a cadeia mais funda da amostra (34 saltos) caiu de 986 ms para 28 ms.
+   *
+   * O grafo é, por construção, uma cadeia linear (um único predecessor por nó); o `Map` abaixo
+   * só existe para não presumir isso — se a carga algum dia gravar mais de uma aresta de entrada
+   * para o mesmo nó, a escolha arbitrária da primeira ainda-não-visitada repete exatamente o
+   * comportamento antigo (`LIMIT 1` sem `ORDER BY`), inclusive a mesma guarda de ciclo.
    *
    * Só segue `connectedTo` — `containsAsChild` é contenção (ex.: splitter dentro de CTO),
    * uma hierarquia diferente da cadeia equipamento/cabo que o esquemático desenha.
    */
   public async schematicPath(resourceId: string): Promise<GeoSchematicPath> {
+    const edges = await this.db.all<{ resource_to_id: string; resource_from_id: string }>(
+      `SELECT resource_to_id, resource_from_id
+         FROM tmf_resource_relationship
+        START WITH resource_to_id = ? AND relationship_type = 'connectedTo'
+      CONNECT BY NOCYCLE LEVEL <= ? AND PRIOR resource_from_id = resource_to_id
+             AND relationship_type = 'connectedTo'`,
+      [resourceId, SCHEMATIC_MAX_HOPS],
+    );
+    const incomingByTo = new Map<string, string[]>();
+    for (const edge of edges) {
+      const list = incomingByTo.get(edge.resource_to_id) ?? [];
+      list.push(edge.resource_from_id);
+      incomingByTo.set(edge.resource_to_id, list);
+    }
+
     const chain: string[] = [resourceId];
     const visited = new Set<string>([resourceId]);
     let current = resourceId;
     let truncated = false;
 
     for (let hop = 0; hop < SCHEMATIC_MAX_HOPS; hop++) {
-      const edge = await this.db.get<{ resource_from_id: string }>(
-        `SELECT resource_from_id FROM tmf_resource_relationship
-          WHERE resource_to_id = ? AND relationship_type = 'connectedTo'
-          LIMIT 1`,
-        [current],
-      );
-      if (!edge) break;
-      if (visited.has(edge.resource_from_id)) break; // ciclo — não deveria acontecer (DAG), mas não trava a UI
-      visited.add(edge.resource_from_id);
-      chain.push(edge.resource_from_id);
-      current = edge.resource_from_id;
+      const next = incomingByTo.get(current)?.find((id) => !visited.has(id));
+      if (!next) break; // sem aresta de entrada, ou só restam arestas em ciclo já visitadas
+      visited.add(next);
+      chain.push(next);
+      current = next;
       if (hop === SCHEMATIC_MAX_HOPS - 1) truncated = true;
     }
 

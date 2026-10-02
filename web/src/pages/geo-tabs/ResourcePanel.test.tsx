@@ -39,8 +39,16 @@ vi.mock('./ResourceHistoryTab', () => ({
   ),
 }));
 vi.mock('./ResourceComponentsTab', () => ({
-  ResourceComponentsTab: ({ components }: { components: Array<{ id: string }> }) => (
-    <div>Componentes ({components.length})</div>
+  ResourceComponentsTab: ({
+    components,
+    rootResource,
+  }: {
+    components: Array<{ id: string }>;
+    rootResource: { name: string; specificationName?: string };
+  }) => (
+    <div>
+      Componentes ({components.length}) de {rootResource.name} · {rootResource.specificationName}
+    </div>
   ),
 }));
 vi.mock('./ResourceConnectionsView', () => ({
@@ -119,7 +127,7 @@ const portDetail = {
 
 function defaultMocks() {
   mocks.useResourceDetail.mockReturnValue({
-    detail: { childCount: 2 },
+    detail: { childCount: 2, specification: { name: 'CDOE 1:8 NC-NC' } },
     loading: false,
     error: null,
     reload: vi.fn().mockResolvedValue(undefined),
@@ -133,6 +141,7 @@ function defaultMocks() {
   });
   mocks.useResourceComponents.mockReturnValue({
     components: [{ id: 'comp-1' }, { id: 'comp-2' }],
+    connections: [],
     truncated: false,
     loading: false,
     error: null,
@@ -204,7 +213,7 @@ describe('ResourcePanel', () => {
     expect(mocks.useResourceComponents).toHaveBeenLastCalledWith('cto-1', {
       enabled: true,
     });
-    expect(screen.getByText('Componentes (2)')).toBeInTheDocument();
+    expect(screen.getByText('Componentes (2) de CDOE-6746 · CDOE 1:8 NC-NC')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Conexões' }));
     expect(mocks.useResourceConnections).toHaveBeenLastCalledWith('cto-1', {

@@ -127,6 +127,7 @@ export function ResourcePanel({
   // Porta não tem árvore própria (usa "Recursos atendidos", derivado de usePortDetail).
   const {
     components,
+    connections: componentConnections,
     truncated: componentsTruncated,
     loading: componentsLoading,
     error: componentsError,
@@ -430,11 +431,17 @@ export function ResourcePanel({
         ) : (
           <ResourceComponentsTab
             components={components}
+            connections={componentConnections}
             truncated={componentsTruncated}
             loading={componentsLoading}
             error={componentsError}
             reload={reloadComponents}
-            onOpenResource={onOpenResource}
+            rootResource={{
+              name: title,
+              resourceType: node.resourceType ?? eyebrow,
+              specificationName: detail?.specification.name,
+              status: node.status,
+            }}
             onOpenPort={onOpenPort}
           />
         )

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   fetchResourceComponents,
+  type ResourceComponentConnection,
   type ResourceComponentNode,
   type ResourceComponentsView,
 } from '../services/resourceApi';
@@ -49,6 +50,7 @@ export function useResourceComponents(
   options?: { maxDepth?: number; enabled?: boolean },
 ): {
   components: ResourceComponentNode[];
+  connections: ResourceComponentConnection[];
   truncated: boolean;
   loading: boolean;
   error: string | null;
@@ -57,6 +59,7 @@ export function useResourceComponents(
   const maxDepth = options?.maxDepth;
   const enabled = options?.enabled ?? true;
   const [components, setComponents] = useState<ResourceComponentNode[]>([]);
+  const [connections, setConnections] = useState<ResourceComponentConnection[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +72,7 @@ export function useResourceComponents(
   useEffect(() => {
     if (!enabled) {
       setComponents([]);
+      setConnections([]);
       setTruncated(false);
       setLoading(false);
       setError(null);
@@ -84,6 +88,7 @@ export function useResourceComponents(
       .then((data) => {
         if (!cancelled) {
           setComponents(data.components);
+          setConnections(data.connections);
           setTruncated(data.truncated);
         }
       })
@@ -105,5 +110,5 @@ export function useResourceComponents(
     };
   }, [resourceId, maxDepth, enabled, revision]);
 
-  return { components, truncated, loading, error, reload };
+  return { components, connections, truncated, loading, error, reload };
 }

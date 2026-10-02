@@ -788,15 +788,28 @@ export type ResourceComponentNode = {
   kind: 'PhysicalResource' | 'LogicalResource';
   parentId: string | null;
   depth: number;
+  administrativeState?: ResourceBase['administrativeState'];
+  operationalState?: ResourceBase['operationalState'];
+  specification?: { id: string; name?: string; '@referredType': string };
+  manufacturer?: { id: string; name?: string; '@referredType': string };
   model?: string;
   serialNumber?: string;
+  characteristics?: ResourceCharacteristic[];
   portInfo?: ResourceComponentPortInfo;
+};
+
+export type ResourceComponentConnection = {
+  '@type': 'ResourceComponentConnection';
+  fromId: string;
+  toId: string;
+  relationshipType: string;
 };
 
 export type ResourceComponentsView = {
   '@type': 'ResourceComponentsView';
   resourceId: string;
   components: ResourceComponentNode[];
+  connections: ResourceComponentConnection[];
   truncated: boolean;
 };
 

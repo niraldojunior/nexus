@@ -1,4 +1,4 @@
-import type { ResourceConnection } from '../services/resourceApi';
+import type { ResourceComponentConnection, ResourceConnection } from '../services/resourceApi';
 
 /**
  * Deduplica conexões incidentes de um recurso. `connectedTo` é simétrica — a mesma aresta pode
@@ -18,6 +18,22 @@ export function dedupeResourceConnections(connections: ResourceConnection[]): Re
     if (!existing || (existing.direction === 'incoming' && connection.direction === 'outgoing')) {
       unique.set(key, connection);
     }
+  }
+  return Array.from(unique.values());
+}
+
+/** `connectedTo` é simétrica também dentro da subárvore; o diagrama a desenha uma única vez. */
+export function dedupeComponentConnections(
+  connections: ResourceComponentConnection[],
+): ResourceComponentConnection[] {
+  const unique = new Map<string, ResourceComponentConnection>();
+  for (const connection of connections) {
+    const [firstId, secondId] = [connection.fromId, connection.toId].sort();
+    const key =
+      connection.relationshipType === 'connectedTo'
+        ? `${connection.relationshipType}::${firstId}::${secondId}`
+        : `${connection.relationshipType}::${connection.fromId}::${connection.toId}`;
+    if (!unique.has(key)) unique.set(key, connection);
   }
   return Array.from(unique.values());
 }

@@ -3823,6 +3823,7 @@ const routeResourceRequest = async ({
       JSON.stringify({
         event: 'resource_components_view_loaded',
         componentCount: view.components.length,
+        connectionCount: view.connections.length,
         portCount: portIds.length,
         maxDepth: maxDepth && !Number.isNaN(maxDepth) ? maxDepth : 8,
         truncated: view.truncated,

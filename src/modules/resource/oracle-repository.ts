@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import type { Characteristic } from '../../shared/tmf/index.js';
 import type { GeoGeometryType } from '../geo/domain.js';
 import type {
   LogicalResource,
@@ -20,6 +21,7 @@ import type {
   ResourcePortDetail,
   ResourcePortsView,
   ResourceConnection,
+  ResourceComponentConnection,
   ResourceComponentNode,
   ResourceCatalog,
   ResourceCatalogNode,
@@ -110,6 +112,18 @@ const characteristicNumberFromJson = (raw: string | null, name: string): number 
       : undefined;
   } catch {
     return undefined;
+  }
+};
+
+const characteristicsFromJson = (raw: string | null): Characteristic[] => {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? (parsed as Characteristic[]).filter((characteristic) => !characteristic.name.startsWith('_'))
+      : [];
+  } catch {
+    return [];
   }
 };
 
@@ -1726,7 +1740,11 @@ export class OracleResourceRepository implements IResourceRepository {
   public async listResourceComponents(
     resourceId: string,
     options?: { scope?: ResourceTenantScope; maxDepth?: number },
-  ): Promise<{ components: ResourceComponentNode[]; truncated: boolean }> {
+  ): Promise<{
+    components: ResourceComponentNode[];
+    connections: ResourceComponentConnection[];
+    truncated: boolean;
+  }> {
     const tenantId = options?.scope?.tenantId ?? 'default';
     const maxDepth = options?.maxDepth ?? 8;
 
@@ -1752,6 +1770,7 @@ export class OracleResourceRepository implements IResourceRepository {
       status: string | null;
       parent_id: string | null;
       depth: number;
+      specification_id: string | null;
       model: string | null;
       serial_number: string | null;
       administrative_state: string | null;
@@ -1771,6 +1790,7 @@ export class OracleResourceRepository implements IResourceRepository {
        )
        SELECT t.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
               t.parent_id, t.depth,
+              r.resource_specification_id AS specification_id,
               NULL AS model,
               r.serial_number,
               r.administrative_state, r.operational_state, r.usage_state,
@@ -1783,6 +1803,7 @@ export class OracleResourceRepository implements IResourceRepository {
        UNION ALL
        SELECT t.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
               t.parent_id, t.depth,
+              r.resource_specification_id AS specification_id,
               NULL AS model,
               NULL AS serial_number,
               r.administrative_state, r.operational_state, r.usage_state,
@@ -1818,8 +1839,17 @@ export class OracleResourceRepository implements IResourceRepository {
       ),
       tenantId,
     );
+    const specificationInfoById = await this.loadComponentSpecificationInfo(
+      [...new Set(componentRows.flatMap((row) => (row.specification_id ? [row.specification_id] : [])))],
+      tenantId,
+    );
+    const connections = await this.listComponentConnections(resourceId, maxDepth, visited);
     const components = componentRows.map((row): ResourceComponentNode => {
       const portInfo = portInfoById.get(row.id);
+      const specificationInfo = row.specification_id
+        ? specificationInfoById.get(row.specification_id)
+        : undefined;
+      const characteristics = characteristicsFromJson(row.characteristics);
       return {
         '@type': 'ResourceComponentNode',
         id: row.id,
@@ -1829,13 +1859,147 @@ export class OracleResourceRepository implements IResourceRepository {
         kind: row.entity_type,
         parentId: row.parent_id,
         depth: row.depth,
-        ...(row.model ? { model: row.model } : {}),
+        ...(row.administrative_state
+          ? {
+              administrativeState:
+                row.administrative_state as NonNullable<ResourceComponentNode['administrativeState']>,
+            }
+          : {}),
+        ...(row.operational_state
+          ? {
+              operationalState:
+                row.operational_state as NonNullable<ResourceComponentNode['operationalState']>,
+            }
+          : {}),
+        ...(specificationInfo
+          ? {
+              specification: {
+                id: specificationInfo.id,
+                name: specificationInfo.name,
+                '@referredType': 'ResourceSpecification',
+              },
+            }
+          : {}),
+        ...(specificationInfo?.manufacturer ? { manufacturer: specificationInfo.manufacturer } : {}),
+        ...(specificationInfo?.model ? { model: specificationInfo.model } : {}),
         ...(row.serial_number ? { serialNumber: row.serial_number } : {}),
+        ...(characteristics.length > 0 ? { characteristics } : {}),
         ...(portInfo ? { portInfo } : {}),
       };
     });
 
-    return { components, truncated };
+    return { components, connections, truncated };
+  }
+
+  private async listComponentConnections(
+    resourceId: string,
+    maxDepth: number,
+    componentIds: Set<string>,
+  ): Promise<ResourceComponentConnection[]> {
+    const rows = await this.db.all<{
+      from_id: string;
+      to_id: string;
+      relationship_type: string;
+    }>(
+      `WITH tree AS (
+         SELECT /*+ MATERIALIZE */ e.resource_to_id AS id
+           FROM tmf_resource_relationship e
+          WHERE e.relationship_type = 'containsAsChild'
+        START WITH e.resource_from_id = ?
+        CONNECT BY NOCYCLE
+               PRIOR e.resource_to_id = e.resource_from_id
+           AND e.relationship_type = 'containsAsChild'
+           AND LEVEL <= ?
+       )
+       SELECT DISTINCT c.resource_from_id AS from_id, c.resource_to_id AS to_id, c.relationship_type
+         FROM tmf_resource_relationship c
+        WHERE c.relationship_type NOT IN ('containsAsChild', 'containedBy')
+          AND c.resource_from_id IN (SELECT id FROM tree)
+          AND c.resource_to_id IN (SELECT id FROM tree)`,
+      [resourceId, maxDepth],
+    );
+    return rows.flatMap((row) =>
+      componentIds.has(row.from_id) && componentIds.has(row.to_id)
+        ? [
+            {
+              '@type': 'ResourceComponentConnection' as const,
+              fromId: row.from_id,
+              toId: row.to_id,
+              relationshipType: row.relationship_type,
+            },
+          ]
+        : [],
+    );
+  }
+
+  private async loadComponentSpecificationInfo(
+    specificationIds: string[],
+    tenantId: string,
+  ): Promise<
+    Map<
+      string,
+      {
+        id: string;
+        name: string;
+        model?: string;
+        manufacturer?: ResourceDetailReference;
+      }
+    >
+  > {
+    const result = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        model?: string;
+        manufacturer?: ResourceDetailReference;
+      }
+    >();
+    const batchSize = 900;
+    for (let offset = 0; offset < specificationIds.length; offset += batchSize) {
+      const ids = specificationIds.slice(offset, offset + batchSize);
+      const placeholders = ids.map(() => '?').join(', ');
+      const rows = await this.db.all<{
+        id: string;
+        name: string;
+        characteristics: string | null;
+        related_party: string | null;
+      }>(
+        `SELECT id, name, characteristics, related_party
+           FROM tmf_resource_specification
+          WHERE tenant_id = ? AND id IN (${placeholders})`,
+        [tenantId, ...ids],
+      );
+      for (const row of rows) {
+        const characteristics = characteristicsFromJson(row.characteristics);
+        const relatedParty = JSON.parse(row.related_party || '[]') as Array<{
+          id: string;
+          name?: string;
+          role?: string;
+          '@referredType': string;
+        }>;
+        const manufacturer = relatedParty.find((party) => party.role === 'manufacturer');
+        const model = characteristicStringFromCharacteristics(
+          characteristics,
+          MODEL_CHARACTERISTIC.name,
+        );
+        result.set(row.id, {
+          id: row.id,
+          name: row.name,
+          ...(model ? { model } : {}),
+          ...(manufacturer
+            ? {
+                manufacturer: {
+                  id: manufacturer.id,
+                  ...(manufacturer.name ? { name: manufacturer.name } : {}),
+                  '@referredType': manufacturer['@referredType'],
+                },
+              }
+            : {}),
+        });
+      }
+    }
+    return result;
   }
 
   private async loadComponentPortInfo(

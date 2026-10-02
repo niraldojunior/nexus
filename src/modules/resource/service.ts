@@ -2101,6 +2101,7 @@ export class ResourceService {
       '@type': 'ResourceComponentsView',
       resourceId,
       components: result.components,
+      connections: result.connections,
       truncated: result.truncated,
     };
   }

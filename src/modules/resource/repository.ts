@@ -15,6 +15,7 @@ import type {
   ResourcePortDetail,
   ResourcePortsView,
   ResourceConnection,
+  ResourceComponentConnection,
   ResourceComponentNode,
   ResourceCatalog,
   ResourceCatalogNode,
@@ -663,7 +664,11 @@ export class ResourceRepository implements IResourceRepository {
   public listResourceComponents(
     resourceId: string,
     options?: { scope?: ResourceTenantScope; maxDepth?: number },
-  ): { components: ResourceComponentNode[]; truncated: boolean } {
+  ): {
+    components: ResourceComponentNode[];
+    connections: ResourceComponentConnection[];
+    truncated: boolean;
+  } {
     const tenantId = options?.scope?.tenantId;
     const maxDepth = options?.maxDepth ?? 8;
     const components: ResourceComponentNode[] = [];
@@ -698,9 +703,10 @@ export class ResourceRepository implements IResourceRepository {
       const kind: 'PhysicalResource' | 'LogicalResource' = physical
         ? 'PhysicalResource'
         : 'LogicalResource';
-      const spec = physical?.resourceSpecification?.id
-        ? this.resourceSpecifications.get(physical.resourceSpecification.id)
+      const spec = res.resourceSpecification?.id
+        ? this.resourceSpecifications.get(res.resourceSpecification.id)
         : undefined;
+      const manufacturer = spec?.relatedParty.find((party) => party.role === 'manufacturer');
       const model = spec?.resourceSpecificationCharacteristic?.find(
         (c) => c.name === MODEL_CHARACTERISTIC.name,
       )?.value as string | undefined;
@@ -732,8 +738,31 @@ export class ResourceRepository implements IResourceRepository {
         kind,
         parentId: item.parentId,
         depth: item.depth,
+        ...(res.administrativeState ? { administrativeState: res.administrativeState } : {}),
+        ...(res.operationalState ? { operationalState: res.operationalState } : {}),
+        ...(spec
+          ? {
+              specification: {
+                id: spec.id,
+                name: spec.name,
+                '@referredType': 'ResourceSpecification',
+              },
+            }
+          : {}),
+        ...(manufacturer
+          ? {
+              manufacturer: {
+                id: manufacturer.id,
+                ...(manufacturer.name ? { name: manufacturer.name } : {}),
+                '@referredType': manufacturer['@referredType'],
+              },
+            }
+          : {}),
         ...(model ? { model } : {}),
         ...(physical?.serialNumber ? { serialNumber: physical.serialNumber } : {}),
+        ...(res.characteristic.length > 0
+          ? { characteristics: res.characteristic.filter((characteristic) => !characteristic.name.startsWith('_')) }
+          : {}),
         ...(portInfo ? { portInfo } : {}),
       });
 
@@ -750,7 +779,28 @@ export class ResourceRepository implements IResourceRepository {
       }
     }
 
-    return { components, truncated };
+    const descendantIds = new Set(components.map((component) => component.id));
+    const connections: ResourceComponentConnection[] = [];
+    for (const [fromId, relationships] of this.relationships.entries()) {
+      if (!descendantIds.has(fromId)) continue;
+      for (const relationship of relationships) {
+        if (
+          relationship.relationshipType === 'containsAsChild' ||
+          relationship.relationshipType === 'containedBy' ||
+          !descendantIds.has(relationship.id)
+        ) {
+          continue;
+        }
+        connections.push({
+          '@type': 'ResourceComponentConnection',
+          fromId,
+          toId: relationship.id,
+          relationshipType: relationship.relationshipType,
+        });
+      }
+    }
+
+    return { components, connections, truncated };
   }
 
   /** ONT alimentada por um drop, via `connectedTo` — mesmo grafo físico do Postgres. */

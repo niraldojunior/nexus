@@ -15,7 +15,11 @@ import {
   netwinLocationId,
   NEXUS_NETWIN_NAMESPACE,
 } from './identity.js';
-import { bulkMergeRows, resolveLifecycleStatus } from '../netwin-migration-kit.js';
+import {
+  bulkMergeRows,
+  netwinOriginCharacteristics,
+  resolveLifecycleStatus,
+} from '../netwin-migration-kit.js';
 import { MigrationProgress } from './progress.js';
 import type { PhaseStats } from './types.js';
 
@@ -94,15 +98,15 @@ function defaultName(value: string | null, fallback: string): string {
   return (value?.trim() || fallback).slice(0, 255);
 }
 
-function originCharacteristics(entity: string, sourceId: number, fields: Array<[string, unknown]>) {
-  return [
-    { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-    { group: '_origin', name: 'entity', value: entity, valueType: 'string' },
-    { group: '_origin', name: 'id', value: String(sourceId), valueType: 'string' },
-    ...fields
-      .filter(([, value]) => value !== null && value !== undefined && value !== '')
-      .map(([name, value]) => ({ name, value: String(value), valueType: 'string' })),
-  ];
+// Separa o que é atributo operacional de instância (coberto pela matriz de
+// `ResourceType.resourceTypeCharacteristic` da Fase 1.D — ver SPLITTER_INSTANCE_CHARACTERISTICS e
+// PORT_INSTANCE_CHARACTERISTICS em phase1-resource-specs.ts) do que é proveniência reservada C5.
+// Identificadores de pai/card não são atributo do recurso: servem só para reconciliação de
+// contenção (ver reconcile-netwin-phase2c-containment.ts) e vão em `_origin.extra`.
+function instanceCharacteristics(fields: Array<[string, unknown]>) {
+  return fields
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([name, value]) => ({ name, value: String(value), valueType: 'string' }));
 }
 
 async function scopedLocationIds(ctx: MigrationContext): Promise<number[]> {
@@ -474,17 +478,19 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
         related_party: JSON.stringify([
           { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
         ]),
-        characteristics: JSON.stringify(
-          originCharacteristics('ISP_INS_CARTA', card.ID_BD_CARTA, [
+        characteristics: JSON.stringify([
+          ...instanceCharacteristics([
             ['sourceCardType', card.TIPO_NOME],
             ['sourceCardSigla', card.TIPO_SIGLA],
             ['slotNumber', card.N_SLOT],
             ['positionUf', card.POSICAO_UF],
             ['splitRatio', `1:${ratio}`],
-            ['parentOspEquipmentId', parent.ospEquipmentId],
-            ['parentIspEquipmentId', parent.ispEquipmentId],
           ]),
-        ),
+          ...netwinOriginCharacteristics('ISP_INS_CARTA', card.ID_BD_CARTA, {
+            parentOspEquipmentId: parent.ospEquipmentId,
+            parentIspEquipmentId: parent.ispEquipmentId,
+          }),
+        ]),
       });
       splitterRelationships.push({
         resource_from_id: parent.resourceId,
@@ -544,20 +550,22 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
         related_party: JSON.stringify([
           { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
         ]),
-        characteristics: JSON.stringify(
-          originCharacteristics('ISP_INS_PORTO_FISICO', port.ID_BD_PORTO_FISICO, [
+        characteristics: JSON.stringify([
+          ...instanceCharacteristics([
             ['sourcePortType', port.TIPO_NOME],
             ['portId', port.ID_PORTO],
             ['coding', port.CODIFICACAO_PORTO],
             ['occupancy', port.OCUPACAO],
             ['circuit', port.CIRCUITO],
             ['bandwidth', port.DEBITO],
-            ['parentOspEquipmentId', parent.ospEquipmentId],
-            ['parentIspEquipmentId', parent.ispEquipmentId],
-            ['parentCardId', port.ID_BD_CARTA ?? ''],
-            ['parentCardType', portCard?.TIPO_NOME ?? ''],
           ]),
-        ),
+          ...netwinOriginCharacteristics('ISP_INS_PORTO_FISICO', port.ID_BD_PORTO_FISICO, {
+            parentOspEquipmentId: parent.ospEquipmentId,
+            parentIspEquipmentId: parent.ispEquipmentId,
+            ...(port.ID_BD_CARTA ? { parentCardId: port.ID_BD_CARTA } : {}),
+            ...(portCard?.TIPO_NOME ? { parentCardType: portCard.TIPO_NOME } : {}),
+          }),
+        ]),
       });
       portRelationships.push({
         resource_from_id: parentResourceId,

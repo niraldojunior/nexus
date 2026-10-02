@@ -113,6 +113,96 @@ export function resolveLifecycleStatus(designation: string | undefined): Lifecyc
 
 export type TablePrefixer = (name: string) => string;
 
+export type MigrationCharacteristic = {
+  group?: string;
+  name: string;
+  value: string | number | boolean | Record<string, unknown> | null;
+  valueType?: string;
+  characteristicLevel?: 'instance';
+  [key: string]: unknown;
+};
+
+const characteristicDefinitionKey = (characteristic: Pick<MigrationCharacteristic, 'group' | 'name'>) =>
+  `${characteristic.group?.trim().toLowerCase() ?? ''}:${characteristic.name.trim().toLowerCase()}`;
+
+/**
+ * Mescla definitions canônicas do migrador sem substituir configuração feita no Studio. A primeira
+ * definição já persistida para a mesma chave semântica (`group` + `name`, case-insensitive) é a
+ * autoridade; o bootstrap só completa characteristics ausentes.
+ */
+export function mergeCharacteristicDefinitions(
+  current: string | null | undefined,
+  canonical: MigrationCharacteristic[],
+): MigrationCharacteristic[] {
+  let existing: MigrationCharacteristic[] = [];
+  if (current) {
+    try {
+      const parsed: unknown = JSON.parse(current);
+      if (Array.isArray(parsed)) {
+        existing = parsed.filter(
+          (item): item is MigrationCharacteristic =>
+            Boolean(item) &&
+            typeof item === 'object' &&
+            'name' in item &&
+            typeof item.name === 'string' &&
+            'value' in item,
+        );
+      }
+    } catch {
+      // Um valor legado inválido não pode bloquear a reparação do contrato do catálogo. O array
+      // canônico substitui somente esse caso irrecuperável; arrays válidos nunca perdem entradas.
+    }
+  }
+  const existingKeys = new Set(existing.map(characteristicDefinitionKey));
+  return [
+    ...existing,
+    ...canonical.filter((characteristic) => !existingKeys.has(characteristicDefinitionKey(characteristic))),
+  ];
+}
+
+/** Atualiza somente o JSON de definitions de um catálogo, preservando campos escalares do MERGE. */
+export async function reconcileCatalogCharacteristics(
+  target: Connection,
+  t: TablePrefixer,
+  table: 'tmf_resource_type' | 'tmf_geographic_site_specification' | 'tmf_resource_specification',
+  id: string,
+  canonical: MigrationCharacteristic[],
+): Promise<void> {
+  const result = await target.execute<{ CHARACTERISTICS: string | null }>(
+    `SELECT characteristics AS "CHARACTERISTICS" FROM ${t(table)} WHERE id=:id`,
+    { id },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  const current = result.rows?.[0]?.CHARACTERISTICS;
+  if (current === undefined) {
+    throw new Error(`Catálogo ${table} ausente para reconciliar characteristics: ${id}.`);
+  }
+  const next = mergeCharacteristicDefinitions(current, canonical);
+  const serialized = JSON.stringify(next);
+  if (serialized !== current) {
+    await target.execute(
+      `UPDATE ${t(table)} SET characteristics=:characteristics WHERE id=:id`,
+      { characteristics: serialized, id },
+    );
+  }
+}
+
+/** Características reservadas de origem no formato que os guardas de domínio reconhecem. */
+export function netwinOriginCharacteristics(
+  entity: string,
+  sourceId: string | number,
+  extra?: Record<string, unknown>,
+): MigrationCharacteristic[] {
+  return [
+    { name: '_origin.system', value: 'Netwin', valueType: 'string' },
+    { name: '_origin.entity', value: entity, valueType: 'string' },
+    { name: '_origin.id', value: String(sourceId), valueType: 'string' },
+    ...(extra && Object.keys(extra).length > 0
+      ? [{ name: '_origin.extra', value: extra, valueType: 'json' }]
+      : []),
+  ];
+}
+
 export function makeTablePrefixer(targetPrefix?: string): TablePrefixer {
   const prefix = targetPrefix ?? required('TARGET_ORACLE_OBJECT_PREFIX');
   return (name: string) => quote(prefixed(name, prefix));

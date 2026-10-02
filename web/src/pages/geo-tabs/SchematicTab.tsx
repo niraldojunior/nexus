@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import { ResourceIcon } from '../../components/ResourceIcon';
 import { useResourceSchematic } from '../../hooks/useResourceSchematic';
 import { useResourceTypeVisualIdentities } from '../../hooks/useResourceTypeVisualIdentities';
 import { treeNodeRoute, type GeoSchematicHop, type GeoTreeNode } from '../../services/geoTreeApi';
@@ -24,6 +25,13 @@ function hopTypeLabel(
 ): string {
   if (hop.role === 'site') return hop.node.sublabel ?? 'Local';
   return resourceTypeName(hop.node.resourceType) ?? hop.node.sublabel ?? 'Recurso';
+}
+
+function SchematicHopIcon({ node }: { node: GeoTreeNode }) {
+  if (node.kind === 'resource') {
+    return <ResourceIcon resource={node} variant="glyph" size={20} />;
+  }
+  return <NodeIcon node={node} />;
 }
 
 /** Caminho físico a montante do Resource selecionado até a Estação. */
@@ -126,7 +134,7 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
                   {hop.index}
                 </span>
                 <span className="mt-0.5 shrink-0">
-                  <NodeIcon node={hop.node} />
+                  <SchematicHopIcon node={hop.node} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block break-words text-[0.85rem] font-medium leading-snug">

@@ -8,8 +8,26 @@ import type {
   UseResourceSchematicResult,
 } from '../../hooks/useResourceSchematic';
 
-const mocks = vi.hoisted(() => ({ useResourceTypeVisualIdentities: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  useResourceTypeVisualIdentities: vi.fn(),
+  resourceIcon: vi.fn(),
+  nodeIcon: vi.fn(),
+}));
 const useResourceSchematic = vi.fn<() => UseResourceSchematicResult>();
+
+vi.mock('../../components/ResourceIcon', () => ({
+  ResourceIcon: (props: { resource: GeoTreeNode; variant: string; size: number }) => {
+    mocks.resourceIcon(props);
+    return <span data-testid="resource-icon" data-resource-type={props.resource.resourceType} />;
+  },
+}));
+
+vi.mock('./HierarchyTreeView', () => ({
+  NodeIcon: (props: { node: GeoTreeNode }) => {
+    mocks.nodeIcon(props);
+    return <span data-testid="node-icon" data-node-id={props.node.id} />;
+  },
+}));
 
 vi.mock('../../hooks/useResourceTypeVisualIdentities', () => ({
   useResourceTypeVisualIdentities: mocks.useResourceTypeVisualIdentities,
@@ -66,8 +84,14 @@ const state = (
 
 beforeEach(() => {
   useResourceSchematic.mockReset();
+  mocks.resourceIcon.mockReset();
+  mocks.nodeIcon.mockReset();
   mocks.useResourceTypeVisualIdentities.mockReset();
-  mocks.useResourceTypeVisualIdentities.mockReturnValue(() => undefined);
+  mocks.useResourceTypeVisualIdentities.mockReturnValue((resourceType: string | undefined) =>
+    resourceType === 'DistributionCable'
+      ? { name: 'Cabo de distribuição', nature: 'PhysicalResource' }
+      : undefined,
+  );
 });
 
 afterEach(cleanup);
@@ -114,6 +138,43 @@ describe('SchematicTab', () => {
     // A descrição de Resource traz somente o nome humano do ResourceType.
     expect(items[1]).toHaveTextContent('Cabo de distribuição');
     expect(items[1]).not.toHaveTextContent('2 lances');
+  });
+
+  it('usa ResourceIcon para cada salto de Resource e preserva NodeIcon para Local', () => {
+    const resource = equipmentNode('cdoe-icon', 'CDOE-Ícone', 'CDOE', 'active', [[-43.1, -22.9]]);
+    const cable = cableNode('cable-icon', 'Cabo-Ícone', [
+      [-43.1, -22.9],
+      [-43.101, -22.901],
+    ]);
+    const site = siteNode('estacao-icon', 'Estação Ícone');
+    useResourceSchematic.mockReturnValue(
+      state('ready', {
+        nodeId: resource.id,
+        reachedSite: true,
+        truncated: false,
+        hops: [
+          { index: 1, role: 'equipment', node: resource },
+          { index: 2, role: 'cable', node: cable },
+          { index: 3, role: 'site', node: site },
+        ],
+      }),
+    );
+
+    render(<SchematicTab nodeId={resource.id} onSimulate={vi.fn()} onPreview={vi.fn()} />);
+
+    expect(screen.getAllByTestId('resource-icon')).toHaveLength(2);
+    expect(screen.getAllByTestId('resource-icon').map((icon) => icon.dataset.resourceType)).toEqual([
+      'CDOE',
+      'DistributionCable',
+    ]);
+    expect(mocks.resourceIcon).toHaveBeenCalledWith(
+      expect.objectContaining({ resource, variant: 'glyph', size: 20 }),
+    );
+    expect(mocks.resourceIcon).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: cable, variant: 'glyph', size: 20 }),
+    );
+    expect(screen.getByTestId('node-icon')).toHaveAttribute('data-node-id', site.id);
+    expect(mocks.nodeIcon).toHaveBeenCalledWith(expect.objectContaining({ node: site }));
   });
 
   it('exibe somente o nome do ResourceType na descrição de cada recurso', () => {

@@ -860,8 +860,8 @@ export class GeoTreeService {
     offset: number,
     scope: GeoTreeScope,
   ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
-    const site = await this.db.get<{ id: string; geographic_location_id: string | null }>(
-      'SELECT id, geographic_location_id FROM tmf_geographic_site WHERE id = ?',
+    const site = await this.db.get<{ id: string }>(
+      'SELECT id FROM tmf_geographic_site WHERE id = ?',
       [siteId],
     );
     if (!site) return { nodes: [], total: 0 };
@@ -895,7 +895,9 @@ export class GeoTreeService {
     // projeção pesada duas vezes (uma para contar, outra para as linhas). Hidratação dos
     // ≤ `limit` ids da página fica em hydrateSiteResourceRows.
     const idSource = siteResourceIdSource(scope);
-    const resourceParams = [siteId, site.geographic_location_id ?? '', siteId];
+    // Um bind por bloco de blocksFor (place, serving_site) — ver o comentário em
+    // siteResourceIdSource sobre o terceiro bloco removido no item 3.2.
+    const resourceParams = [siteId, siteId];
     let resourceTotal = 0;
 
     if (resourceLimit > 0) {
@@ -1484,10 +1486,9 @@ const siteResourceEntityBlock = (
 // geometry nem os subselects escalares de characteristics (substatus, origem). Usada por
 // childrenOfSite para achar o total (COUNT(*) OVER()) e a página de ids num único SELECT;
 // hydrateSiteResourceRows resolve a projeção completa depois, só para os ids da página.
-// Mesmos três blocos por entidade e mesma ordem de binds (site.id, location.id, site.id,
-// repetidos para PhysicalResource e LogicalResource) que a versão hidratada
-// (siteResourceEntityBlock) — os dois têm que continuar em sincronia com `resourceParams`
-// em childrenOfSite.
+// Dois blocos por entidade (place, serving_site — ver blocksFor) e mesma ordem de binds
+// (site.id, site.id, repetidos para PhysicalResource e LogicalResource); precisa continuar
+// em sincronia com `resourceParams` em childrenOfSite.
 const siteResourceIdSource = (scope: GeoTreeScope): string => {
   const extra = hideInternalResourceSql(scope);
   const idBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
@@ -1496,8 +1497,18 @@ const siteResourceIdSource = (scope: GeoTreeScope): string => {
     LEFT JOIN tmf_resource_type rt
       ON rt.id = rs.resource_type_id WHERE (${where}) ${extra}`;
   };
+  // Só dois blocos por entidade — não três. Havia um `idBlock(entity, RESOURCE_BY_PLACE_WHERE)`
+  // repetido aqui, textualmente idêntico ao primeiro, bindado a `site.geographic_location_id`
+  // em vez de `siteId` (ver `resourceParams` em childrenOfSite). Parecia cobrir um segundo
+  // jeito válido de um recurso referenciar o Site (direto pela Location, não pelo próprio
+  // id) — mas o `place_id` de recurso é normalizado para sempre apontar ao Site (place
+  // canônico é Site) desde o script de reparo. Medido contra a base atual (item 3.2,
+  // issue #295): 0 recursos, físicos ou lógicos, têm `place_id = site.geographic_location_id`
+  // sem também ter `place_id = site.id` — o bloco nunca capturava nada que o primeiro não
+  // já cobrisse. Com duas entidades, eram 6 ramos de UNION ALL onde 4 bastam; o
+  // `count(*) OVER ()` que envolve tudo em childrenOfSite forçava materializar o terço morto
+  // antes de paginar.
   const blocksFor = (entity: 'PhysicalResource' | 'LogicalResource'): string[] => [
-    idBlock(entity, RESOURCE_BY_PLACE_WHERE),
     idBlock(entity, RESOURCE_BY_PLACE_WHERE),
     idBlock(entity, RESOURCE_BY_SERVING_SITE_WHERE),
   ];

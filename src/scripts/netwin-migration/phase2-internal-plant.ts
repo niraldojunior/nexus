@@ -1,11 +1,14 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import {
+  hasAnyPhysicalConnections,
   loadInternalCards,
-  loadInternalEquipment,
+  loadInternalCdoEquipmentIds,
   loadInternalEquipmentByNeighborhood,
   loadInternalPortConnections,
   loadInternalPorts,
+  resolveCardCanonicalEquipmentIds,
+  type CdoEquipmentIdRow,
 } from './internal-plant-source.js';
 import {
   deterministicUuid,
@@ -20,8 +23,20 @@ import {
   netwinOriginCharacteristics,
   resolveLifecycleStatus,
 } from '../netwin-migration-kit.js';
+import {
+  enqueueNativeRelationships,
+  loadNativeCheckpoint,
+  saveNativeCheckpoint,
+} from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import type { PhaseStats } from './types.js';
+
+/**
+ * Tem de ser exatamente 900: é o tamanho de bloco interno de `loadInternalPorts`
+ * (`internal-plant-source.ts`). Usar `batchSize` (2000) faria cada página virar consultas
+ * desiguais e engrossaria o cursor de resume — ver Passo 1 do plano de paginação da Fase 2.C.
+ */
+const CDO_PAGE_SIZE = 900;
 
 const CDO_TYPE_TO_SPEC = new Map<number, { typeCode: string; specName: string }>([
   [270, { typeCode: 'category:CDOI', specName: 'Netwin CDOI' }],
@@ -45,12 +60,7 @@ export function parseSplitterRatio(
   return 8; // fallback padrão para FTTH CDO splitter
 }
 
-type CdoSourceRow = {
-  ID_BD_EQUIPAMENTO: number;
-  ID_BD_EQUIPAMENTO_OSP: number;
-  ID_BD_LOCAL: number;
-  ID_BD_TIPO_NE: number | null;
-};
+type CdoSourceRow = CdoEquipmentIdRow;
 
 type CanonicalCdoParent = {
   ispEquipmentId: number;
@@ -98,11 +108,6 @@ function defaultName(value: string | null, fallback: string): string {
   return (value?.trim() || fallback).slice(0, 255);
 }
 
-// Separa o que é atributo operacional de instância (coberto pela matriz de
-// `ResourceType.resourceTypeCharacteristic` da Fase 1.D — ver SPLITTER_INSTANCE_CHARACTERISTICS e
-// PORT_INSTANCE_CHARACTERISTICS em phase1-resource-specs.ts) do que é proveniência reservada C5.
-// Identificadores de pai/card não são atributo do recurso: servem só para reconciliação de
-// contenção (ver reconcile-netwin-phase2c-containment.ts) e vão em `_origin.extra`.
 function instanceCharacteristics(fields: Array<[string, unknown]>) {
   return fields
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -288,44 +293,35 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
   const target = await ctx.getTargetConnection();
   try {
     const maxRecords = ctx.options.maxRecords ?? Number.MAX_SAFE_INTEGER;
-    const sourceTiming = { equipmentMs: 0, portsMs: 0, cardsMs: 0, connectionsMs: 0 };
-    let startedAt = Date.now();
-    const equipment = ctx.options.scope.bairro
-      ? await loadInternalEquipmentByNeighborhood(source, ctx.options.scope, maxRecords)
-      : await loadInternalEquipment(source, locationIds, maxRecords);
-    sourceTiming.equipmentMs = Date.now() - startedAt;
-    const cdoEquipment = equipment.filter((item) => CDO_TYPE_TO_SPEC.has(item.ID_BD_TIPO_NE ?? -1));
+    const equipmentStartedAt = Date.now();
+
+    // Varredura de equipamento em passada única: a projeção slim (4 campos numéricos) de
+    // ~266k CDOs é ~25 MB, não o risco de memória. Só as portas paginam a seguir (Passo 1
+    // do plano de paginação da Fase 2.C). O filtro de tipo CDO já vem do SQL — não filtra
+    // mais em JS — então `loadInternalEquipment` (usada pela Fase 2.D) fica intacta.
+    const cdoEquipment: CdoSourceRow[] = ctx.options.scope.bairro
+      ? (await loadInternalEquipmentByNeighborhood(source, ctx.options.scope, maxRecords)).filter(
+          (item) => CDO_TYPE_TO_SPEC.has(item.ID_BD_TIPO_NE ?? -1),
+        )
+      : await loadInternalCdoEquipmentIds(source, locationIds, maxRecords);
+    const equipmentMs = Date.now() - equipmentStartedAt;
+
     const { parents: canonicalParents, rejectedEquipmentIds } =
       resolveCanonicalCdoParents(cdoEquipment);
-    startedAt = Date.now();
-    const ports = await loadInternalPorts(source, [...canonicalParents.keys()]);
-    sourceTiming.portsMs = Date.now() - startedAt;
-    const cardIds = [
-      ...new Set(
-        ports
-          .map((p) => p.ID_BD_CARTA)
-          .filter((id): id is number => typeof id === 'number' && id > 0),
-      ),
-    ];
-    startedAt = Date.now();
-    const cards = await loadInternalCards(source, cardIds);
-    sourceTiming.cardsMs = Date.now() - startedAt;
-    startedAt = Date.now();
-    const connections = await loadInternalPortConnections(
-      source,
-      ports.map((item) => item.ID_BD_PORTO_FISICO),
-    );
-    sourceTiming.connectionsMs = Date.now() - startedAt;
-    stats.rejected = equipment.length - cdoEquipment.length + rejectedEquipmentIds.size;
+    const equipmentById = new Map(cdoEquipment.map((item) => [item.ID_BD_EQUIPAMENTO, item]));
+    // Ordem crescente global: cada bloco de 900 locais volta ordenado internamente, mas a
+    // concatenação de vários blocos não é — sem isto o cursor de resume descartaria ids
+    // nunca processados.
+    const sortedCdoIds = [...canonicalParents.keys()].sort((a, b) => a - b);
+    stats.rejected = rejectedEquipmentIds.size;
 
     console.log(
-      `Fonte ISP: ${equipment.length} equipamentos vinculados ao escopo; ${cdoEquipment.length} CDOs com tipo explícito; ${canonicalParents.size} pontes OSP inequívocas; ${cards.length} splitters (cards); ${ports.length} portas físicas reais; ${connections.length} conexões físicas. Tempos de leitura: equipamentos=${sourceTiming.equipmentMs}ms; portas=${sourceTiming.portsMs}ms; cards=${sourceTiming.cardsMs}ms; conexões=${sourceTiming.connectionsMs}ms.`,
+      `Fonte ISP: ${cdoEquipment.length} equipamentos CDO no escopo; ${canonicalParents.size} pontes OSP inequívocas; ${rejectedEquipmentIds.size} rejeitadas por ambiguidade OSP. Tempo de leitura: equipamentos=${equipmentMs}ms.`,
     );
 
     if (!target) {
-      stats.loaded = cards.length + ports.length;
       console.log(
-        `DRY-RUN 2.C: ${cards.length} splitters e ${ports.length} portas seriam relacionados às CDOs OSP canônicas; ${stats.rejected} itens não seriam importados por contrato incompleto.`,
+        `DRY-RUN 2.C: ${canonicalParents.size} CDOs canônicas seriam processadas em páginas de ${CDO_PAGE_SIZE}; ${stats.rejected} equipamento(s) rejeitado(s) por ambiguidade OSP.`,
       );
       return stats;
     }
@@ -333,6 +329,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     await requireSpecIds(ctx, target);
     const portSpecId = await requirePortSpecification(ctx, target);
     const splitterSpecsByRatio = await requireSplitterSpecifications(ctx, target);
+
     const validParentIds = new Set<string>();
     const parentIds = [
       ...new Set(Array.from(canonicalParents.values(), (parent) => parent.resourceId)),
@@ -351,20 +348,17 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
         if (row.TENANT_ID === ctx.options.tenantId) validParentIds.add(row.ID);
       }
     }
-
     for (const parent of canonicalParents.values()) {
       if (!validParentIds.has(parent.resourceId)) stats.rejected++;
     }
 
-    const equipmentById = new Map(cdoEquipment.map((item) => [item.ID_BD_EQUIPAMENTO, item]));
-    const cardById = new Map(cards.map((c) => [c.ID_BD_CARTA, c]));
-
-    // Mapear cada card ao seu equipamento pai via as portas que pertencem a ele
-    const cardToEquipmentId = new Map<number, number>();
-    for (const port of ports) {
-      if (port.ID_BD_CARTA && port.ID_BD_EQUIPAMENTO && !cardToEquipmentId.has(port.ID_BD_CARTA)) {
-        cardToEquipmentId.set(port.ID_BD_CARTA, port.ID_BD_EQUIPAMENTO);
-      }
+    // NETWIN.MRD_CONECTOR está vazia no DR inteiro (confirmado). Uma única consulta de
+    // existência evita 9.944 consultas contra uma tabela sem linhas (Passo 4).
+    const hasConnections = await hasAnyPhysicalConnections(source);
+    if (!hasConnections) {
+      console.log(
+        '[Conexões] NETWIN.MRD_CONECTOR não tem linhas; estágio de conexões pulado (guarda de existência).',
+      );
     }
 
     const resourceColumns = [
@@ -399,240 +393,270 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       relationshipMergeMs: 0,
       commitMs: 0,
       executeManyCalls: 0,
+      portsMs: 0,
+      cardsMs: 0,
+      connectionsMs: 0,
     };
-    const commit = async (stage: string, processed: number): Promise<void> => {
-      const startedAt = Date.now();
-      await target.execute('COMMIT');
-      timing.commitMs += Date.now() - startedAt;
-      console.log(`[Commit] Fase 2.C — ${stage}: ${processed} item(ns) confirmados.`);
-    };
-    const mergeStage = async (
-      stage: string,
-      rows: Array<Record<string, unknown>>,
-      relationships: Array<Record<string, unknown>>,
-      progress: MigrationProgress,
-    ): Promise<void> => {
-      for (const resourceBatch of batches(rows)) {
-        const resourceStartedAt = Date.now();
-        await bulkMergeRows(
-          target,
-          ctx.t,
-          'tmf_physical_resource',
-          ['id'],
-          resourceColumns,
-          resourceBatch,
-          ctx.options.batchSize,
-        );
-        timing.resourceMergeMs += Date.now() - resourceStartedAt;
-        timing.executeManyCalls++;
-        await commit(stage, resourceBatch.length);
-        progress.advance(resourceBatch.length);
-      }
-      for (const relationshipBatch of batches(relationships)) {
-        const relationshipStartedAt = Date.now();
-        await bulkMergeRows(
-          target,
-          ctx.t,
-          'tmf_resource_relationship',
-          relationshipColumns,
-          relationshipColumns,
-          relationshipBatch,
-          ctx.options.batchSize,
-        );
-        timing.relationshipMergeMs += Date.now() - relationshipStartedAt;
-        timing.executeManyCalls++;
-        await commit(`${stage} — contenções`, relationshipBatch.length);
-      }
-      progress.finish();
-    };
+
+    // Checkpoint por CDO — não existe estágio '2C' até aqui (só '2A', '2B-equipment',
+    // '2B-route', '2B-cable'); reusa `NativeCheckpoint` sem mudança de forma (Passo 2).
+    const checkpoint = await loadNativeCheckpoint(target, ctx, '2C-plant');
+    let lastCdoId = checkpoint.lastSourceId;
+    let cdoProcessedCount = checkpoint.processedCount;
+    if (ctx.options.resume) {
+      console.log(`[Resume] Fase 2.C: cursor ${lastCdoId}; processados=${cdoProcessedCount}.`);
+    }
+
+    // Progresso único, fora do laço de página, medido em CDOs — instanciar por página
+    // produziria 297 barras de 0->100% e destruiria a noção de progresso global.
+    const plantProgress = new MigrationProgress({
+      label: 'Fase 2.C — CDOs',
+      unit: 'CDOs',
+      total: canonicalParents.size,
+      reportEvery: CDO_PAGE_SIZE,
+    });
+    plantProgress.start();
+    plantProgress.advance(cdoProcessedCount);
 
     const importedCardIds = new Set<number>();
-    const splitterRows: Array<Record<string, unknown>> = [];
-    const splitterRelationships: Array<Record<string, unknown>> = [];
-    for (const card of cards) {
-      const equipmentId = cardToEquipmentId.get(card.ID_BD_CARTA);
-      const parent = equipmentId ? canonicalParents.get(equipmentId) : undefined;
-      const cdo = equipmentId ? equipmentById.get(equipmentId) : undefined;
-      if (!parent || !cdo || !validParentIds.has(parent.resourceId)) {
-        stats.rejected++;
-        continue;
-      }
-      const ratio = parseSplitterRatio(card.TIPO_NOME, card.TIPO_SIGLA, card.NOME);
-      const splitterId = netwinInternalCardId(card.ID_BD_CARTA);
-      splitterRows.push({
-        id: splitterId,
-        tenant_id: ctx.options.tenantId,
-        name: defaultName(
-          card.NOME,
-          card.NOME_ALTERNATIVO ||
-            `${card.TIPO_SIGLA ?? card.TIPO_NOME ?? 'Splitter'} ${card.ID_BD_CARTA}`,
-        ),
-        resource_specification_id: splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!,
-        status: resolveLifecycleStatus(undefined).status,
-        place_id: netwinLocationId(cdo.ID_BD_LOCAL),
-        place_type: 'GeographicSite',
-        serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
-        administrative_state: 'unlocked',
-        operational_state: card.ESTADO_OPERACIONAL === null ? 'unknown' : 'enabled',
-        usage_state: 'idle',
-        related_party: JSON.stringify([
-          { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
-        ]),
-        characteristics: JSON.stringify([
-          ...instanceCharacteristics([
-            ['sourceCardType', card.TIPO_NOME],
-            ['sourceCardSigla', card.TIPO_SIGLA],
-            ['slotNumber', card.N_SLOT],
-            ['positionUf', card.POSICAO_UF],
-            ['splitRatio', `1:${ratio}`],
-          ]),
-          ...netwinOriginCharacteristics('ISP_INS_CARTA', card.ID_BD_CARTA, {
-            parentOspEquipmentId: parent.ospEquipmentId,
-            parentIspEquipmentId: parent.ispEquipmentId,
-          }),
-        ]),
-      });
-      splitterRelationships.push({
-        resource_from_id: parent.resourceId,
-        resource_to_id: splitterId,
-        relationship_type: 'containsAsChild',
-      });
-      importedCardIds.add(card.ID_BD_CARTA);
-    }
-    const splitterProgress = new MigrationProgress({
-      label: 'Fase 2.C — Splitters',
-      unit: 'splitters',
-      total: splitterRows.length,
-      reportEvery: ctx.options.batchSize,
-    });
-    splitterProgress.start();
-    await mergeStage(
-      'Splitters',
-      uniqueRows(splitterRows, (row) => String(row.id)),
-      uniqueRows(
-        splitterRelationships,
-        (row) => `${row.resource_from_id}:${row.resource_to_id}:${row.relationship_type}`,
-      ),
-      splitterProgress,
-    );
-    stats.loaded += splitterRows.length;
-
     const importedPortIds = new Set<number>();
-    const portRows: Array<Record<string, unknown>> = [];
-    const portRelationships: Array<Record<string, unknown>> = [];
-    for (const port of ports) {
-      const parent = port.ID_BD_EQUIPAMENTO
-        ? canonicalParents.get(port.ID_BD_EQUIPAMENTO)
-        : undefined;
-      const cdo = port.ID_BD_EQUIPAMENTO ? equipmentById.get(port.ID_BD_EQUIPAMENTO) : undefined;
-      if (!parent || !cdo || !validParentIds.has(parent.resourceId)) {
-        stats.rejected++;
-        continue;
-      }
-      const hasCard = typeof port.ID_BD_CARTA === 'number' && importedCardIds.has(port.ID_BD_CARTA);
-      const parentResourceId = hasCard
-        ? netwinInternalCardId(port.ID_BD_CARTA!)
-        : parent.resourceId;
-      const portId = netwinInternalPhysicalPortId(port.ID_BD_PORTO_FISICO);
-      const portCard = port.ID_BD_CARTA ? cardById.get(port.ID_BD_CARTA) : undefined;
-      portRows.push({
-        id: portId,
-        tenant_id: ctx.options.tenantId,
-        name: defaultName(port.NOME, port.CODIFICACAO_PORTO || `Porta ${port.ID_BD_PORTO_FISICO}`),
-        resource_specification_id: portSpecId,
-        status: resolveLifecycleStatus(undefined).status,
-        place_id: netwinLocationId(cdo.ID_BD_LOCAL),
-        place_type: 'GeographicSite',
-        serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
-        administrative_state: 'unlocked',
-        operational_state: port.ESTADO_OPERACIONAL === null ? 'unknown' : 'enabled',
-        usage_state: 'idle',
-        related_party: JSON.stringify([
-          { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
-        ]),
-        characteristics: JSON.stringify([
-          ...instanceCharacteristics([
-            ['sourcePortType', port.TIPO_NOME],
-            ['portId', port.ID_PORTO],
-            ['coding', port.CODIFICACAO_PORTO],
-            ['occupancy', port.OCUPACAO],
-            ['circuit', port.CIRCUITO],
-            ['bandwidth', port.DEBITO],
-          ]),
-          ...netwinOriginCharacteristics('ISP_INS_PORTO_FISICO', port.ID_BD_PORTO_FISICO, {
-            parentOspEquipmentId: parent.ospEquipmentId,
-            parentIspEquipmentId: parent.ispEquipmentId,
-            ...(port.ID_BD_CARTA ? { parentCardId: port.ID_BD_CARTA } : {}),
-            ...(portCard?.TIPO_NOME ? { parentCardType: portCard.TIPO_NOME } : {}),
-          }),
-        ]),
-      });
-      portRelationships.push({
-        resource_from_id: parentResourceId,
-        resource_to_id: portId,
-        relationship_type: 'containsAsChild',
-      });
-      importedPortIds.add(port.ID_BD_PORTO_FISICO);
-    }
-    const portProgress = new MigrationProgress({
-      label: 'Fase 2.C — Portas',
-      unit: 'portas',
-      total: portRows.length,
-      reportEvery: ctx.options.batchSize,
-    });
-    portProgress.start();
-    await mergeStage(
-      'Portas',
-      uniqueRows(portRows, (row) => String(row.id)),
-      uniqueRows(
-        portRelationships,
-        (row) => `${row.resource_from_id}:${row.resource_to_id}:${row.relationship_type}`,
-      ),
-      portProgress,
-    );
-    stats.loaded += portRows.length;
+    let queuedConnections = 0;
 
-    const connectionRelationships = uniqueRows(
-      connections
-        .filter(
-          (connection) =>
-            importedPortIds.has(connection.ID_BD_PORTO_FISICO_A) &&
-            importedPortIds.has(connection.ID_BD_PORTO_FISICO_Z),
-        )
-        .map((connection) => ({
+    const remainingCdoIds = sortedCdoIds.filter((id) => id > lastCdoId);
+    for (let offset = 0; offset < remainingCdoIds.length; offset += CDO_PAGE_SIZE) {
+      const pageIds = remainingCdoIds.slice(offset, offset + CDO_PAGE_SIZE);
+
+      let pageStartedAt = Date.now();
+      const ports = await loadInternalPorts(source, pageIds);
+      timing.portsMs += Date.now() - pageStartedAt;
+
+      const cardIds = [
+        ...new Set(
+          ports
+            .map((p) => p.ID_BD_CARTA)
+            .filter((id): id is number => typeof id === 'number' && id > 0),
+        ),
+      ];
+      pageStartedAt = Date.now();
+      const [cards, cardParents] = await Promise.all([
+        loadInternalCards(source, cardIds),
+        // Determinismo do card por MIN(ID_BD_EQUIPAMENTO) em SQL — Passo 3, necessário
+        // porque 10 cards no RJ pertencem a portas de mais de um equipamento.
+        resolveCardCanonicalEquipmentIds(source, cardIds),
+      ]);
+      timing.cardsMs += Date.now() - pageStartedAt;
+      const cardById = new Map(cards.map((c) => [c.ID_BD_CARTA, c]));
+
+      let connections: Array<{ ID_BD_PORTO_FISICO_A: number; ID_BD_PORTO_FISICO_Z: number }> = [];
+      if (hasConnections) {
+        pageStartedAt = Date.now();
+        connections = await loadInternalPortConnections(
+          source,
+          ports.map((item) => item.ID_BD_PORTO_FISICO),
+        );
+        timing.connectionsMs += Date.now() - pageStartedAt;
+      }
+
+      const pageResources: Array<Record<string, unknown>> = [];
+      const pageRelationships: Array<Record<string, unknown>> = [];
+      let pageRejected = 0;
+
+      // Splitters (cards): resolvidos antes das portas na mesma página, espelhando a ordem
+      // original de duas passadas. Cards já emitidos em página anterior não são reemitidos.
+      for (const [cardId, equipmentId] of cardParents) {
+        if (importedCardIds.has(cardId)) continue;
+        const card = cardById.get(cardId);
+        const parent = canonicalParents.get(equipmentId);
+        const cdo = equipmentById.get(equipmentId);
+        if (!card || !parent || !cdo || !validParentIds.has(parent.resourceId)) {
+          pageRejected++;
+          continue;
+        }
+        const ratio = parseSplitterRatio(card.TIPO_NOME, card.TIPO_SIGLA, card.NOME);
+        const splitterId = netwinInternalCardId(card.ID_BD_CARTA);
+        pageResources.push({
+          id: splitterId,
+          tenant_id: ctx.options.tenantId,
+          name: defaultName(
+            card.NOME,
+            card.NOME_ALTERNATIVO ||
+              `${card.TIPO_SIGLA ?? card.TIPO_NOME ?? 'Splitter'} ${card.ID_BD_CARTA}`,
+          ),
+          resource_specification_id:
+            splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!,
+          status: resolveLifecycleStatus(undefined).status,
+          place_id: netwinLocationId(cdo.ID_BD_LOCAL),
+          place_type: 'GeographicSite',
+          serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
+          administrative_state: 'unlocked',
+          operational_state: card.ESTADO_OPERACIONAL === null ? 'unknown' : 'enabled',
+          usage_state: 'idle',
+          related_party: JSON.stringify([
+            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+          ]),
+          characteristics: JSON.stringify([
+            ...instanceCharacteristics([
+              ['sourceCardType', card.TIPO_NOME],
+              ['sourceCardSigla', card.TIPO_SIGLA],
+              ['slotNumber', card.N_SLOT],
+              ['positionUf', card.POSICAO_UF],
+              ['splitRatio', `1:${ratio}`],
+            ]),
+            ...netwinOriginCharacteristics('ISP_INS_CARTA', card.ID_BD_CARTA, {
+              parentOspEquipmentId: parent.ospEquipmentId,
+              parentIspEquipmentId: parent.ispEquipmentId,
+            }),
+          ]),
+        });
+        pageRelationships.push({
+          resource_from_id: parent.resourceId,
+          resource_to_id: splitterId,
+          relationship_type: 'containsAsChild',
+        });
+        importedCardIds.add(card.ID_BD_CARTA);
+      }
+
+      // Portas físicas desta página.
+      for (const port of ports) {
+        const equipmentId = port.ID_BD_EQUIPAMENTO;
+        const parent = equipmentId ? canonicalParents.get(equipmentId) : undefined;
+        const cdo = equipmentId ? equipmentById.get(equipmentId) : undefined;
+        if (!parent || !cdo || !validParentIds.has(parent.resourceId)) {
+          pageRejected++;
+          continue;
+        }
+        const hasCard =
+          typeof port.ID_BD_CARTA === 'number' && importedCardIds.has(port.ID_BD_CARTA);
+        const parentResourceId = hasCard
+          ? netwinInternalCardId(port.ID_BD_CARTA!)
+          : parent.resourceId;
+        const portId = netwinInternalPhysicalPortId(port.ID_BD_PORTO_FISICO);
+        const portCard = port.ID_BD_CARTA ? cardById.get(port.ID_BD_CARTA) : undefined;
+        pageResources.push({
+          id: portId,
+          tenant_id: ctx.options.tenantId,
+          name: defaultName(
+            port.NOME,
+            port.CODIFICACAO_PORTO || `Porta ${port.ID_BD_PORTO_FISICO}`,
+          ),
+          resource_specification_id: portSpecId,
+          status: resolveLifecycleStatus(undefined).status,
+          place_id: netwinLocationId(cdo.ID_BD_LOCAL),
+          place_type: 'GeographicSite',
+          serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
+          administrative_state: 'unlocked',
+          operational_state: port.ESTADO_OPERACIONAL === null ? 'unknown' : 'enabled',
+          usage_state: 'idle',
+          related_party: JSON.stringify([
+            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+          ]),
+          characteristics: JSON.stringify([
+            ...instanceCharacteristics([
+              ['sourcePortType', port.TIPO_NOME],
+              ['portId', port.ID_PORTO],
+              ['coding', port.CODIFICACAO_PORTO],
+              ['occupancy', port.OCUPACAO],
+              ['circuit', port.CIRCUITO],
+              ['bandwidth', port.DEBITO],
+            ]),
+            ...netwinOriginCharacteristics('ISP_INS_PORTO_FISICO', port.ID_BD_PORTO_FISICO, {
+              parentOspEquipmentId: parent.ospEquipmentId,
+              parentIspEquipmentId: parent.ispEquipmentId,
+              ...(port.ID_BD_CARTA ? { parentCardId: port.ID_BD_CARTA } : {}),
+              ...(portCard?.TIPO_NOME ? { parentCardType: portCard.TIPO_NOME } : {}),
+            }),
+          ]),
+        });
+        pageRelationships.push({
+          resource_from_id: parentResourceId,
+          resource_to_id: portId,
+          relationship_type: 'containsAsChild',
+        });
+        importedPortIds.add(port.ID_BD_PORTO_FISICO);
+      }
+
+      // `connectedTo` vai pela fila (`enqueueNativeRelationships` + `reconcileNativeRelationships`),
+      // não por um Set em memória: é o que resolve corretamente uma conexão entre portas de
+      // páginas diferentes, com o mesmo join duplo idempotente já usado na Fase 2.B.
+      const pageConnections = uniqueRows(
+        connections.map((connection) => ({
           resource_from_id: netwinInternalPhysicalPortId(connection.ID_BD_PORTO_FISICO_A),
           resource_to_id: netwinInternalPhysicalPortId(connection.ID_BD_PORTO_FISICO_Z),
           relationship_type: 'connectedTo',
         })),
-      (row) => `${row.resource_from_id}:${row.resource_to_id}:${row.relationship_type}`,
-    );
-    const connectionProgress = new MigrationProgress({
-      label: 'Fase 2.C — Conexões',
-      unit: 'conexões',
-      total: connectionRelationships.length,
-      reportEvery: ctx.options.batchSize,
-    });
-    connectionProgress.start();
-    for (const connectionBatch of batches(connectionRelationships)) {
-      const relationshipStartedAt = Date.now();
-      await bulkMergeRows(
-        target,
-        ctx.t,
-        'tmf_resource_relationship',
-        relationshipColumns,
-        relationshipColumns,
-        connectionBatch,
-        ctx.options.batchSize,
+        (row) => `${row.resource_from_id}:${row.resource_to_id}:${row.relationship_type}`,
+      ) as Array<{ resource_from_id: string; resource_to_id: string; relationship_type: string }>;
+
+      const uniqueResources = uniqueRows(pageResources, (row) => String(row.id));
+      const uniqueRelationships = uniqueRows(
+        pageRelationships,
+        (row) => `${row.resource_from_id}:${row.resource_to_id}:${row.relationship_type}`,
       );
-      timing.relationshipMergeMs += Date.now() - relationshipStartedAt;
-      timing.executeManyCalls++;
-      await commit('Conexões', connectionBatch.length);
-      connectionProgress.advance(connectionBatch.length);
+
+      const nextLastCdoId = pageIds[pageIds.length - 1]!;
+      const nextProcessedCount = cdoProcessedCount + pageIds.length;
+      try {
+        let mergeStartedAt = Date.now();
+        for (const resourceBatch of batches(uniqueResources)) {
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'tmf_physical_resource',
+            ['id'],
+            resourceColumns,
+            resourceBatch,
+            ctx.options.batchSize,
+          );
+          timing.executeManyCalls++;
+        }
+        timing.resourceMergeMs += Date.now() - mergeStartedAt;
+
+        mergeStartedAt = Date.now();
+        for (const relationshipBatch of batches(uniqueRelationships)) {
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'tmf_resource_relationship',
+            relationshipColumns,
+            relationshipColumns,
+            relationshipBatch,
+            ctx.options.batchSize,
+          );
+          timing.executeManyCalls++;
+        }
+        timing.relationshipMergeMs += Date.now() - mergeStartedAt;
+
+        if (pageConnections.length > 0) {
+          await enqueueNativeRelationships(target, ctx, pageConnections, ctx.options.batchSize);
+          queuedConnections += pageConnections.length;
+        }
+
+        await saveNativeCheckpoint(target, ctx, '2C-plant', {
+          lastSourceId: nextLastCdoId,
+          processedCount: nextProcessedCount,
+        });
+
+        const commitStartedAt = Date.now();
+        await target.execute('COMMIT');
+        timing.commitMs += Date.now() - commitStartedAt;
+      } catch (error) {
+        await target.execute('ROLLBACK');
+        throw error;
+      }
+
+      cdoProcessedCount = nextProcessedCount;
+      lastCdoId = nextLastCdoId;
+      stats.rejected += pageRejected;
+      plantProgress.advance(pageIds.length);
+      console.log(
+        `[Progresso] Fase 2.C — CDOs: cursor ${lastCdoId}; página=${pageIds.length}; portas=${ports.length}; cards=${cards.length}; conexões=${connections.length}; rejeitados(página)=${pageRejected}.`,
+      );
     }
-    connectionProgress.finish();
+    plantProgress.finish();
+    stats.loaded = importedCardIds.size + importedPortIds.size;
 
     console.log(
-      `Fase 2.C concluída: ${importedCardIds.size} splitters e ${importedPortIds.size} portas reconciliados; ${splitterRelationships.length + portRelationships.length} contenções e ${connectionRelationships.length} conexões reconciliadas; ${stats.rejected} itens rejeitados. DML em lote: ${timing.executeManyCalls} executeMany; recursos=${timing.resourceMergeMs}ms; relações=${timing.relationshipMergeMs}ms; commits=${timing.commitMs}ms. Nenhuma CDO ISP duplicada foi criada.`,
+      `Fase 2.C concluída: ${importedCardIds.size} splitters e ${importedPortIds.size} portas reconciliados; ${stats.rejected} itens rejeitados; ${queuedConnections} conexões enfileiradas para reconciliação de topologia. DML em lote: ${timing.executeManyCalls} executeMany; recursos=${timing.resourceMergeMs}ms; relações=${timing.relationshipMergeMs}ms; commits=${timing.commitMs}ms; leitura — portas=${timing.portsMs}ms, cards=${timing.cardsMs}ms, conexões=${timing.connectionsMs}ms. Nenhuma CDO ISP duplicada foi criada.`,
     );
     return stats;
   } finally {

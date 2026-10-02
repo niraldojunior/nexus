@@ -46,11 +46,21 @@ export function structuredInfranodePredicates(
 /**
  * Descobre apenas PI_ID do índice geográfico estruturado. Não use esta query para hidratar
  * LOCATION: o recorte é propositalmente separado para evitar JOIN/LIKE/GROUP BY por página.
+ *
+ * Sem DISTINCT: PI_ID já é único por linha em DL_INFRANODE dentro de um recorte geográfico
+ * (medido no DR para `--uf RJ`: 2.102.724 linhas para 2.102.724 PI_IDs distintos). O DISTINCT
+ * não eliminava nenhuma linha e custava caríssimo — SORT/HASH UNIQUE é bloqueante, então o
+ * Oracle não conseguia empurrar o stop-key do ROWNUM através dele e materializava a UF inteira
+ * a cada página. Medido: ~52s por página com DISTINCT contra ~0,7s sem, o que projeta 15h
+ * contra 12min só na seleção de IDs do RJ.
+ *
+ * Sem o DISTINCT a paginação percorre DL_INFRANODE_IDX1 (PI_ID) em ordem e para nas primeiras
+ * `batchSize` linhas que casam com o predicado, sem precisar de índice sobre a coluna de escopo.
  */
 export const scopedInfranodeIdQuery = (predicates: string[]): string => `
   SELECT PI_ID
   FROM (
-    SELECT DISTINCT infranode.PI_ID
+    SELECT infranode.PI_ID
     FROM NETWINOI.DL_INFRANODE infranode
     WHERE infranode.PI_ID > :lastId
       AND ${predicates.join(' AND ')}
@@ -175,6 +185,65 @@ export async function hydrateByIds<T extends Record<string, unknown>>(
     }
   }
   return ids.flatMap((id) => (rows.has(id) ? [rows.get(id)!] : []));
+}
+
+/**
+ * Converte `GEOM` em WKT tolerando geometria corrompida na origem.
+ *
+ * `SDO_UTIL.TO_WKTGEOMETRY` é uma chamada Java que roda no servidor sobre o conjunto inteiro, e o
+ * DR tem geometria com ordenada vazia: uma única linha ruim aborta o lote com
+ * `ORA-29532 / NumberFormatException: empty String` **antes de qualquer linha voltar**, então um
+ * try/catch do lado do Node nunca chega a rodar. Foi o que derrubou a Fase 2.B em OSP_ROUTE.
+ *
+ * A conversão em lote continua sendo o caminho rápido — dado limpo custa um round-trip por chunk.
+ * Quando o chunk estoura, **bissecta**: parte ao meio e tenta cada metade. A linha ruim é
+ * isolada em ~2·log2(n) consultas em vez de n, e todo id são numa metade limpa volta em lote.
+ *
+ * A bisseção importa porque a corrupção não é rara. Medido no RJ, `OSP_ROUTE` traz ~25 rotas
+ * ruins por lote de 2.000 (~1,3%) — espalhadas o bastante para contaminar quase todo chunk de
+ * 900. Com fallback linear isso era ~2.000 consultas por lote e derrubava a vazão de 852/s
+ * (equipamentos) para 58/s.
+ *
+ * Devolve um mapa só com os ids que converteram; os ausentes são os corrompidos.
+ */
+export async function hydrateWktByIds(
+  source: Connection,
+  table: string,
+  ids: readonly number[],
+  geometryColumn = 'GEOM',
+  idColumn = 'ID',
+): Promise<{ wktById: Map<number, string>; failedIds: number[] }> {
+  const wktById = new Map<number, string>();
+  const failedIds: number[] = [];
+  const select = `SELECT source_row.${idColumn} AS ID,
+                         SDO_UTIL.TO_WKTGEOMETRY(source_row.${geometryColumn}) AS WKT
+                    FROM ${table} source_row`;
+
+  const convert = async (batch: readonly number[]): Promise<void> => {
+    if (batch.length === 0) return;
+    const { clause, binds } = namedInBinds(batch, 'id');
+    try {
+      const result = await source.execute<{ ID: number; WKT: string | null }>(
+        `${select} WHERE source_row.${idColumn} IN (${clause})`,
+        binds,
+        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: batch.length },
+      );
+      for (const row of result.rows ?? []) if (row.WKT) wktById.set(row.ID, row.WKT);
+      return;
+    } catch {
+      // Lote contaminado: isola abaixo.
+    }
+    if (batch.length === 1) {
+      failedIds.push(batch[0]!);
+      return;
+    }
+    const middle = Math.floor(batch.length / 2);
+    await convert(batch.slice(0, middle));
+    await convert(batch.slice(middle));
+  };
+
+  for (const chunk of chunksOf(ids)) await convert(chunk);
+  return { wktById, failedIds };
 }
 
 export async function selectScopedInfranodeIds(

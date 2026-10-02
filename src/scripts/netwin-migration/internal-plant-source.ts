@@ -107,6 +107,28 @@ function inBinds(ids: number[]): { clause: string; binds: Record<string, number>
   return { clause, binds };
 }
 
+/**
+ * Default do node-oracledb (100) força um round-trip de rede a cada 100 linhas — mesma
+ * medição de [oracle-database.ts](../../shared/persistence/oracle-database.ts): 7,5s -> 0,6s
+ * num SELECT de 62k linhas só por subir para 2000. O pool de origem do migrador (`context.ts`)
+ * não define isto globalmente, então toda consulta aqui precisa pedir explicitamente.
+ */
+const FETCH_OPTIONS = {
+  outFormat: oracledb.OUT_FORMAT_OBJECT,
+  fetchArraySize: 2000,
+  prefetchRows: 2000,
+} as const;
+
+/** IDs de tipo de equipamento CDO — mesmas chaves de `CDO_TYPE_TO_SPEC` em phase2-internal-plant.ts. */
+const CDO_TYPE_IDS = [270, 271, 272] as const;
+
+export type CdoEquipmentIdRow = {
+  ID_BD_EQUIPAMENTO: number;
+  ID_BD_EQUIPAMENTO_OSP: number;
+  ID_BD_LOCAL: number;
+  ID_BD_TIPO_NE: number | null;
+};
+
 export async function loadInternalEquipment(
   source: Connection,
   locationIds: number[],
@@ -135,7 +157,61 @@ export async function loadInternalEquipment(
           ORDER BY e.ID_BD_EQUIPAMENTO
        ) WHERE ROWNUM <= :maxRecords`,
       { ...binds, maxRecords: maxRecords - rows.length },
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      FETCH_OPTIONS,
+    );
+    rows.push(...(result.rows ?? []));
+  }
+
+  return rows;
+}
+
+/**
+ * Projeção slim de equipamento, filtrada a CDO **em SQL**, para a Fase 2.C paginada.
+ *
+ * `loadInternalEquipment` continua intacta e não deve ganhar este filtro: a Fase 2.D
+ * (`phase2-station-internal-plant.ts`) consome equipamento NÃO-CDO e campos de catálogo
+ * (`TIPO_NOME`/`TIPO_SIGLA`) que esta função não carrega. Ver Passo 5 do plano de paginação
+ * da Fase 2.C — empurrar o filtro para dentro de `loadInternalEquipment` faria o relatório de
+ * contratos da 2.D sair silenciosamente errado.
+ *
+ * Sem `DISTINCT`: medido no RJ (amostra de 900 locais) que o join
+ * ISP_INS_EQUIPAMENTO -> NS_RES_INS_NODE_MIRROR -> OSP_EQUIPMENT não faz fan-out
+ * (COUNT(*) == COUNT(DISTINCT ID_BD_EQUIPAMENTO)). Sem stop-key para proteger (o
+ * `maxRecords` real é `Number.MAX_SAFE_INTEGER`), `DISTINCT` só pagaria um SORT UNIQUE
+ * desnecessário.
+ */
+/**
+ * SQL puro, exportado à parte para ser testável por forma sem DR — mesmo padrão de
+ * `fullTableIdQuery` em `source-batches.ts`. Nenhuma consulta neste arquivo era
+ * estruturada assim antes do Passo 1 do plano de paginação da Fase 2.C.
+ */
+export const cdoEquipmentIdQuery = (clause: string): string => `
+  SELECT * FROM (
+     SELECT e.ID_BD_EQUIPAMENTO, nm.ID_BD_ENTITY_OSP AS ID_BD_EQUIPAMENTO_OSP,
+            oq.INFRANODE_ID AS ID_BD_LOCAL, e.ID_BD_TIPO_NE
+       FROM NETWIN.ISP_INS_EQUIPAMENTO e
+       JOIN NETWIN.NS_RES_INS_NODE_MIRROR nm ON nm.ID_BD_ENTITY_ISP = e.ID_BD_EQUIPAMENTO
+       JOIN NETWIN.OSP_EQUIPMENT oq ON oq.ID = nm.ID_BD_ENTITY_OSP
+      WHERE nm.ENTITY_ISP = 'AC_GEN_INS_EQUIPAMENTO'
+        AND oq.INFRANODE_ID IN (${clause})
+        AND e.ID_BD_TIPO_NE IN (${CDO_TYPE_IDS.join(', ')})
+      ORDER BY e.ID_BD_EQUIPAMENTO
+   ) WHERE ROWNUM <= :maxRecords`;
+
+export async function loadInternalCdoEquipmentIds(
+  source: Connection,
+  locationIds: number[],
+  maxRecords: number,
+): Promise<CdoEquipmentIdRow[]> {
+  if (locationIds.length === 0 || maxRecords <= 0) return [];
+  const rows: CdoEquipmentIdRow[] = [];
+
+  for (let offset = 0; offset < locationIds.length && rows.length < maxRecords; offset += 900) {
+    const { clause, binds } = inBinds(locationIds.slice(offset, offset + 900));
+    const result = await source.execute<CdoEquipmentIdRow>(
+      cdoEquipmentIdQuery(clause),
+      { ...binds, maxRecords: maxRecords - rows.length },
+      FETCH_OPTIONS,
     );
     rows.push(...(result.rows ?? []));
   }
@@ -181,7 +257,7 @@ export async function loadInternalEquipmentByNeighborhood(
         ORDER BY e.ID_BD_EQUIPAMENTO
      ) WHERE ROWNUM <= :maxRecords`,
     binds,
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    FETCH_OPTIONS,
   );
   return result.rows ?? [];
 }
@@ -205,11 +281,47 @@ export async function loadInternalPorts(
           AND (cp.TIPO IS NULL OR UPPER(cp.TIPO) IN ('ADAPTER', 'FO.I', 'FO.O'))
         ORDER BY p.ID_BD_PORTO_FISICO`,
       binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      FETCH_OPTIONS,
     );
     rows.push(...(result.rows ?? []));
   }
   return rows;
+}
+
+/**
+ * Determinismo do card para a Fase 2.C paginada (Passo 3 do plano de paginação).
+ *
+ * Um card pode pertencer a portas de mais de um equipamento (confirmado no RJ: 10 casos).
+ * Sem isto, `cardToEquipmentId` em `phase2-internal-plant.ts` ligava o card ao primeiro
+ * equipamento **visto**, o que depende da ordem — e portanto da página. Aqui o pai é
+ * resolvido em SQL por `MIN(ID_BD_EQUIPAMENTO)`, restrito a equipamento tipo CDO, replicando
+ * os dois predicados de `loadInternalPorts` acima (join com `NS_RES_INS_TP_MIRROR_ALL` e o
+ * filtro `cp.TIPO IN ('ADAPTER','FO.I','FO.O')`) — sem replicá-los, o `MIN` pode devolver um
+ * equipamento cujas portas nunca foram carregadas, rejeitando o splitter em toda página.
+ */
+export async function resolveCardCanonicalEquipmentIds(
+  source: Connection,
+  cardIds: number[],
+): Promise<Map<number, number>> {
+  const result = new Map<number, number>();
+  for (let offset = 0; offset < cardIds.length; offset += 900) {
+    const { clause, binds } = inBinds(cardIds.slice(offset, offset + 900));
+    const page = await source.execute<{ ID_BD_CARTA: number; PARENT_ID: number }>(
+      `SELECT p.ID_BD_CARTA, MIN(p.ID_BD_EQUIPAMENTO) AS PARENT_ID
+         FROM NETWIN.ISP_INS_PORTO_FISICO p
+         LEFT JOIN NETWIN.ISP_CAT_PORTO_FISICO cp ON cp.ID_BD_TIPO_PORTO_FISICO = p.ID_BD_TIPO_PORTO_FISICO
+         JOIN NETWIN.NS_RES_INS_TP_MIRROR_ALL mirror ON mirror.ID_BD_ENTITY_ISP = p.ID_BD_PORTO_FISICO
+         JOIN NETWIN.ISP_INS_EQUIPAMENTO e ON e.ID_BD_EQUIPAMENTO = p.ID_BD_EQUIPAMENTO
+        WHERE p.ID_BD_CARTA IN (${clause})
+          AND (cp.TIPO IS NULL OR UPPER(cp.TIPO) IN ('ADAPTER', 'FO.I', 'FO.O'))
+          AND e.ID_BD_TIPO_NE IN (${CDO_TYPE_IDS.join(', ')})
+        GROUP BY p.ID_BD_CARTA`,
+      binds,
+      FETCH_OPTIONS,
+    );
+    for (const row of page.rows ?? []) result.set(row.ID_BD_CARTA, row.PARENT_ID);
+  }
+  return result;
 }
 
 export async function loadInternalCards(
@@ -227,7 +339,7 @@ export async function loadInternalCards(
          LEFT JOIN NETWIN.ISP_CAT_CARTA cc ON cc.ID_BD_TIPO_CARTA = c.ID_BD_TIPO_CARTA
         WHERE c.ID_BD_CARTA IN (${clause})`,
       binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      FETCH_OPTIONS,
     );
     rows.push(...(result.rows ?? []));
   }
@@ -247,7 +359,7 @@ export async function loadInternalSlots(
        LEFT JOIN NETWIN.ISP_CAT_SLOT cs ON cs.ID_BD_TIPO_SLOT = s.ID_BD_TIPO_SLOT
       WHERE s.ID_BD_CARTA IN (${clause}) OR s.ID_BD_CARTA_PARENT IN (${clause})`,
     binds,
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    FETCH_OPTIONS,
   );
   return result.rows ?? [];
 }
@@ -266,9 +378,23 @@ export async function loadInternalSubracks(
        LEFT JOIN NETWIN.ISP_CAT_SUBBASTIDOR cs ON cs.ID_BD_TIPO_SUBBASTIDOR = s.ID_BD_TIPO_SUBBASTIDOR
       WHERE s.ID_BD_SUBBASTIDOR IN (${clause})`,
     binds,
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    FETCH_OPTIONS,
   );
   return result.rows ?? [];
+}
+
+/**
+ * Guarda de existência para `NETWIN.MRD_CONECTOR` (Passo 4 do plano de paginação da Fase 2.C).
+ * Confirmado no DR inteiro: a tabela está **vazia**. Chamar isto uma vez antes do estágio de
+ * conexões evita 9.944 consultas contra uma tabela sem linhas (~133s medidos no run do RJ).
+ */
+export async function hasAnyPhysicalConnections(source: Connection): Promise<boolean> {
+  const result = await source.execute<{ ONE: number }>(
+    'SELECT 1 AS ONE FROM NETWIN.MRD_CONECTOR WHERE ROWNUM = 1',
+    [],
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  return (result.rows?.length ?? 0) > 0;
 }
 
 export async function loadInternalPortConnections(
@@ -284,9 +410,13 @@ export async function loadInternalPortConnections(
     }>(
       `SELECT ID_BD_PORTO_FISICO_A, ID_BD_PORTO_FISICO_Z
          FROM NETWIN.MRD_CONECTOR
-        WHERE ID_BD_PORTO_FISICO_A IN (${clause}) OR ID_BD_PORTO_FISICO_Z IN (${clause})`,
+        WHERE ID_BD_PORTO_FISICO_A IN (${clause})
+       UNION ALL
+       SELECT ID_BD_PORTO_FISICO_A, ID_BD_PORTO_FISICO_Z
+         FROM NETWIN.MRD_CONECTOR
+        WHERE ID_BD_PORTO_FISICO_Z IN (${clause})`,
       binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      FETCH_OPTIONS,
     );
     rows.push(...(result.rows ?? []));
   }
@@ -307,7 +437,7 @@ export async function loadInternalRacks(
        LEFT JOIN NETWIN.ISP_CAT_BASTIDOR cb ON cb.ID_BD_TIPO_BASTIDOR = b.ID_BD_TIPO_BASTIDOR
       WHERE b.ID_BD_BASTIDOR IN (${clause})`,
     binds,
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    FETCH_OPTIONS,
   );
   return result.rows ?? [];
 }

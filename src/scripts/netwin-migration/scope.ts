@@ -27,8 +27,15 @@ export function municipalityInfranodePredicate(
   return `NETWIN.LIMPASTRING(${infranodeAlias}.BADDR_MUNICIPIO) = :${bindName}`;
 }
 
+/**
+ * A UF é comparada diretamente, sem LIMPASTRING. A sigla em BADDR_UF_ABRV já é maiúscula, sem
+ * acento e sem espaço (verificado no DR: 27 siglas distintas, 1:1 com BADDR_UF_ID), então a
+ * normalização não mudava nenhum valor — só impedia o uso de índice e forçava uma chamada
+ * PL/SQL por linha varrida. O índice funcional DL_INFRANODE_IDX5 cobre apenas
+ * LIMPASTRING(BAIRRO); nunca existiu equivalente para a coluna de UF.
+ */
 export function ufInfranodePredicate(infranodeAlias: string, bindName = 'uf'): string {
-  return `NETWIN.LIMPASTRING(${infranodeAlias}.BADDR_UF_ABRV) = :${bindName}`;
+  return `${infranodeAlias}.BADDR_UF_ABRV = :${bindName}`;
 }
 
 export function infranodeScopeBinds(

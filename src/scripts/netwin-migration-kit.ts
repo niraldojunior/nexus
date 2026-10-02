@@ -238,19 +238,28 @@ export async function merge(
   await target.execute(mergeSql(t, table, keys, columns), Object.values(record));
 }
 
+// Maior payload que ainda cabe num bind VARCHAR2 de `executeMany`. Acima disso o bind precisa
+// mesmo ser CLOB; abaixo, CLOB é só custo.
+const MAX_VARCHAR2_BIND_BYTES = 4000;
+
 // `executeMany` infere tipo/tamanho de cada bind a partir da PRIMEIRA linha do lote. Se uma linha
 // posterior tiver um valor bem maior naquela coluna (ex.: geometria de polígono agregado em nível
 // cidade/UF, muito maior que a geometria de bairro que calhou de abrir o lote), o driver excede o
 // espaço reservado e o Oracle rejeita com ORA-01461 — mesmo a coluna de destino sendo CLOB.
 // Calcular o `bindDef` a partir do lote inteiro (não só da primeira linha) evita esse falso
-// negativo; colunas conhecidas como CLOB (característica/geometria/relatedParty) sempre usam bind
-// explícito `type: oracledb.CLOB`, que aceita qualquer tamanho.
+// negativo.
+//
+// Para colunas CLOB a escolha é por TAMANHO MEDIDO no lote, não pelo nome da coluna. Bind CLOB
+// materializa um LOB temporário por valor no servidor, com round-trips próprios: medido no Oracle
+// dev, 2.000 linhas de `tmf_geographic_site` (related_party 46B, characteristics 221B) levaram
+// 77.970ms com bind CLOB contra 196ms com bind VARCHAR2 — ~400x. Na Fase 2.A do Netwin isso era
+// ~105s dos ~109s de cada lote. Quando o lote realmente passa de VARCHAR2 (geometria grande, o
+// caso do ORA-01461 acima), o bind volta a ser CLOB automaticamente.
 export function bulkMergeBindDefs(
   columns: string[],
   rows: Array<Record<string, unknown>>,
 ): BindDefinition[] {
   return columns.map((column) => {
-    if (CLOB_COLUMNS.has(column)) return { type: oracledb.CLOB };
     let sawNumber = false;
     let maxSize = 1;
     for (const row of rows) {
@@ -262,8 +271,43 @@ export function bulkMergeBindDefs(
       }
       maxSize = Math.max(maxSize, Buffer.byteLength(String(value), 'utf8'));
     }
+    if (CLOB_COLUMNS.has(column)) {
+      if (maxSize > MAX_VARCHAR2_BIND_BYTES) return { type: oracledb.CLOB };
+      return { type: oracledb.STRING, maxSize };
+    }
     return sawNumber ? { type: oracledb.NUMBER } : { type: oracledb.STRING, maxSize };
   });
+}
+
+/**
+ * Separa as linhas que cabem num bind VARCHAR2 das que exigem CLOB.
+ *
+ * O tipo de bind é por COLUNA e vale para o lote inteiro: uma única linha grande arrasta todas as
+ * outras para o caminho CLOB, que custa ~400x (ver `bulkMergeBindDefs`). E o dado é
+ * desbalanceado — medido na Fase 2.B do RJ, ~1 cabo em 3.400 tem geometria acima de 4000 bytes,
+ * o suficiente para tornar lento quase metade dos lotes de 2.000.
+ *
+ * Particionar devolve o caminho rápido à esmagadora maioria e isola o custo do CLOB em um lote
+ * pequeno. Como o `MERGE` é por chave, a ordem entre as partições é irrelevante.
+ */
+export function partitionByBindWidth(
+  columns: string[],
+  rows: Array<Record<string, unknown>>,
+): { narrow: Array<Record<string, unknown>>; wide: Array<Record<string, unknown>> } {
+  const clobColumns = columns.filter((column) => CLOB_COLUMNS.has(column));
+  if (clobColumns.length === 0) return { narrow: rows, wide: [] };
+
+  const narrow: Array<Record<string, unknown>> = [];
+  const wide: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    const needsClob = clobColumns.some((column) => {
+      const value = row[column];
+      if (value === null || value === undefined || typeof value === 'number') return false;
+      return Buffer.byteLength(String(value), 'utf8') > MAX_VARCHAR2_BIND_BYTES;
+    });
+    (needsClob ? wide : narrow).push(row);
+  }
+  return { narrow, wide };
 }
 
 /**
@@ -287,12 +331,15 @@ export async function bulkMergeRows(
   let executed = 0;
   for (let offset = 0; offset < rows.length; offset += safeChunkSize) {
     const chunk = rows.slice(offset, offset + safeChunkSize);
-    await target.executeMany(
-      sql,
-      chunk.map((row) => columns.map((column) => row[column] ?? null)),
-      { autoCommit: false, bindDefs: bulkMergeBindDefs(columns, chunk) },
-    );
-    executed += chunk.length;
+    for (const partition of Object.values(partitionByBindWidth(columns, chunk))) {
+      if (partition.length === 0) continue;
+      await target.executeMany(
+        sql,
+        partition.map((row) => columns.map((column) => row[column] ?? null)),
+        { autoCommit: false, bindDefs: bulkMergeBindDefs(columns, partition) },
+      );
+      executed += partition.length;
+    }
   }
   return executed;
 }

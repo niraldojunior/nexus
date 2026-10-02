@@ -24,6 +24,7 @@ import {
 import { MigrationProgress } from './progress.js';
 import {
   hydrateByIds,
+  hydrateWktByIds,
   selectResourceIdsByInfranodes,
   selectResourceIdsByStructuredInfranode,
 } from './source-batches.js';
@@ -249,6 +250,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
     let lastEqId = equipmentCheckpoint.lastSourceId;
     let eqCount = equipmentCheckpoint.processedCount;
     let equipmentProcessedThisRun = 0;
+    let equipmentGeometryFailures = 0;
     if (ctx.options.resume) {
       console.log(`[Resume] Fase 2.B/equipamentos: cursor ${lastEqId}; processados=${eqCount}.`);
     }
@@ -272,16 +274,25 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         EXCHANGE_ID: number | null;
         CAT_LIFE_CYCLE_STATE_ID: number | null;
         EXTERNAL_CODE: string | null;
-        WKT: string | null;
       }>(
         source,
         equipmentIds,
         (inClause) => `SELECT e.ID, e.NAME, e.CAT_SUBTYPE_ID, e.INFRANODE_ID, e.EXCHANGE_ID,
-                              e.CAT_LIFE_CYCLE_STATE_ID, e.EXTERNAL_CODE,
-                              SDO_UTIL.TO_WKTGEOMETRY(e.GEOM) AS WKT
+                              e.CAT_LIFE_CYCLE_STATE_ID, e.EXTERNAL_CODE
                          FROM NETWIN.OSP_EQUIPMENT e
                         WHERE e.ID IN (${inClause})`,
       );
+      const { wktById, failedIds } = await hydrateWktByIds(
+        source,
+        'NETWIN.OSP_EQUIPMENT',
+        rows.map((row) => row.ID),
+      );
+      if (failedIds.length > 0) {
+        equipmentGeometryFailures += failedIds.length;
+        console.warn(
+          `[Geometria] ${failedIds.length} equipamento(s) com geometria corrompida na origem neste lote; migrados sem geometria. Exemplos: ${failedIds.slice(0, 5).join(', ')}.`,
+        );
+      }
       const hydrationMs = Date.now() - hydrationStartedAt;
       if (rows.length === 0) break;
 
@@ -297,9 +308,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         const name = (eq.NAME ?? `Equipamento ${eq.ID}`).slice(0, 255);
 
         // Geometria
-        if (eq.WKT) {
+        const eqWkt = wktById.get(eq.ID);
+        if (eqWkt) {
           try {
-            const point = parseWktPoint(eq.WKT);
+            const point = parseWktPoint(eqWkt);
             locations.push({
               id: resId,
               tenant_id: ctx.options.tenantId,
@@ -426,6 +438,11 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       );
     }
     equipmentProgress.finish();
+    if (equipmentGeometryFailures > 0) {
+      console.warn(
+        `[Geometria] ${equipmentGeometryFailures} equipamento(s) migrados sem geometria por dado corrompido na origem (OSP_EQUIPMENT.GEOM).`,
+      );
+    }
 
     // =========================================================================
     // 3. MIGRAÇÃO DE ROTAS / LANCES (NETWIN.OSP_ROUTE)
@@ -435,6 +452,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
     let lastRouteId = routeCheckpoint.lastSourceId;
     let routeCount = routeCheckpoint.processedCount;
     let routesProcessedThisRun = 0;
+    let routeGeometryFailures = 0;
     if (ctx.options.resume) {
       console.log(`[Resume] Fase 2.B/lances: cursor ${lastRouteId}; processados=${routeCount}.`);
     }
@@ -454,21 +472,33 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       if (routeIds.length === 0) break;
 
       const hydrationStartedAt = Date.now();
+      // A geometria fica fora deste SELECT de propósito: `SDO_UTIL.TO_WKTGEOMETRY` sobre o lote
+      // inteiro aborta tudo se uma única rota tiver geometria corrompida (ver `hydrateWktByIds`).
       const rows = await hydrateByIds<{
         ID: number;
         NAME: string | null;
         CAT_SUBTYPE_ID: number | null;
         EXCHANGE_ID: number | null;
         CAT_LIFE_CYCLE_STATE_ID: number | null;
-        WKT: string | null;
       }>(
         source,
         routeIds,
         (inClause) => `SELECT r.ID, r.NAME, r.CAT_SUBTYPE_ID, r.EXCHANGE_ID,
-                              r.CAT_LIFE_CYCLE_STATE_ID, SDO_UTIL.TO_WKTGEOMETRY(r.GEOM) AS WKT
+                              r.CAT_LIFE_CYCLE_STATE_ID
                          FROM NETWIN.OSP_ROUTE r
                         WHERE r.ID IN (${inClause})`,
       );
+      const { wktById, failedIds } = await hydrateWktByIds(
+        source,
+        'NETWIN.OSP_ROUTE',
+        rows.map((row) => row.ID),
+      );
+      if (failedIds.length > 0) {
+        routeGeometryFailures += failedIds.length;
+        console.warn(
+          `[Geometria] ${failedIds.length} rota(s) com geometria corrompida na origem neste lote; migradas sem geometria. Exemplos: ${failedIds.slice(0, 5).join(', ')}.`,
+        );
+      }
       const hydrationMs = Date.now() - hydrationStartedAt;
       if (rows.length === 0) break;
 
@@ -483,9 +513,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         const resId = netwinRouteId(r.ID);
         const name = (r.NAME ?? `Lance ${r.ID}`).slice(0, 255);
 
-        if (r.WKT) {
+        const wkt = wktById.get(r.ID);
+        if (wkt) {
           try {
-            const line = parseWktLineString(r.WKT);
+            const line = parseWktLineString(wkt);
             locations.push({
               id: resId,
               tenant_id: ctx.options.tenantId,
@@ -603,6 +634,11 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       );
     }
     routeProgress.finish();
+    if (routeGeometryFailures > 0) {
+      console.warn(
+        `[Geometria] ${routeGeometryFailures} rota(s) migradas sem geometria por dado corrompido na origem (OSP_ROUTE.GEOM).`,
+      );
+    }
 
     // =========================================================================
     // 4. MIGRAÇÃO DE CABOS E TOPOLOGIA (NETWIN.OSP_CABLE + RELACIONAMENTOS)
@@ -612,6 +648,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
     let lastCableId = cableCheckpoint.lastSourceId;
     let cableCount = cableCheckpoint.processedCount;
     let cablesProcessedThisRun = 0;
+    let cableGeometryFailures = 0;
     if (ctx.options.resume) {
       console.log(`[Resume] Fase 2.B/cabos: cursor ${lastCableId}; processados=${cableCount}.`);
     }
@@ -639,16 +676,25 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         CAT_MODEL_ID: number | null;
         EXCHANGE_ID: number | null;
         CAT_LIFE_CYCLE_STATE_ID: number | null;
-        WKT: string | null;
       }>(
         source,
         cableIds,
         (inClause) => `SELECT c.ID, c.NAME, c.EQUIPMENT_ID_A, c.EQUIPMENT_ID_Z, c.CAT_MODEL_ID,
-                              c.EXCHANGE_ID, c.CAT_LIFE_CYCLE_STATE_ID,
-                              SDO_UTIL.TO_WKTGEOMETRY(c.GEOM) AS WKT
+                              c.EXCHANGE_ID, c.CAT_LIFE_CYCLE_STATE_ID
                          FROM NETWIN.OSP_CABLE c
                         WHERE c.ID IN (${inClause})`,
       );
+      const { wktById, failedIds } = await hydrateWktByIds(
+        source,
+        'NETWIN.OSP_CABLE',
+        rows.map((row) => row.ID),
+      );
+      if (failedIds.length > 0) {
+        cableGeometryFailures += failedIds.length;
+        console.warn(
+          `[Geometria] ${failedIds.length} cabo(s) com geometria corrompida na origem neste lote; migrados sem geometria. Exemplos: ${failedIds.slice(0, 5).join(', ')}.`,
+        );
+      }
       const hydrationMs = Date.now() - hydrationStartedAt;
       if (rows.length === 0) break;
 
@@ -665,9 +711,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         const cableId = netwinCableId(c.ID);
         const name = (c.NAME ?? `Cabo ${c.ID}`).slice(0, 255);
 
-        if (c.WKT) {
+        const cableWkt = wktById.get(c.ID);
+        if (cableWkt) {
           try {
-            const line = parseWktLineString(c.WKT);
+            const line = parseWktLineString(cableWkt);
             locations.push({
               id: cableId,
               tenant_id: ctx.options.tenantId,
@@ -840,6 +887,11 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       );
     }
     cableProgress.finish();
+    if (cableGeometryFailures > 0) {
+      console.warn(
+        `[Geometria] ${cableGeometryFailures} cabo(s) migrados sem geometria por dado corrompido na origem (OSP_CABLE.GEOM).`,
+      );
+    }
 
     stats.paused = Boolean(
       ctx.options.maxRecords &&

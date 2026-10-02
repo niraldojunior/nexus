@@ -54,7 +54,9 @@ export function assertReadOnlySql(sql: string, label = 'conexão read-only'): vo
       normalized,
     )
   ) {
-    throw new Error(`Operação bloqueada: ${label} aceita exclusivamente consultas sem escrita ou bloqueio.`);
+    throw new Error(
+      `Operação bloqueada: ${label} aceita exclusivamente consultas sem escrita ou bloqueio.`,
+    );
   }
 }
 
@@ -85,8 +87,20 @@ function guardReadOnlyConnection(connection: Connection, label: string): Connect
   });
 }
 
+/**
+ * Teto por chamada na origem Netwin. Generoso o bastante para as varreduras legítimas de uma UF
+ * inteira, mas finito: sem ele uma query degenerada pendura a migração sem erro.
+ * Ajustável por NETWIN_DR_CALL_TIMEOUT_MS.
+ */
+const DEFAULT_SOURCE_CALL_TIMEOUT_MS = 15 * 60 * 1000;
+
 export async function createMigrationContext(options: CliOptions): Promise<MigrationContext> {
   const t = makeTablePrefixer(options.targetPrefix);
+  const parsedCallTimeout = Number(process.env.NETWIN_DR_CALL_TIMEOUT_MS);
+  const sourceCallTimeoutMs =
+    Number.isFinite(parsedCallTimeout) && parsedCallTimeout > 0
+      ? parsedCallTimeout
+      : DEFAULT_SOURCE_CALL_TIMEOUT_MS;
   const normalizedPrefix = options.targetPrefix.toUpperCase();
   if (options.apply && options.tenantId === 'default') {
     throw new Error(
@@ -151,6 +165,10 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
     getSourceConnection: async () => {
       if (!sourcePool) throw new Error('A Fase 3 não abre conexão com a origem Netwin.');
       const conn = await sourcePool.getConnection();
+      // Sem teto, uma query patológica na origem trava a migração indefinidamente e fica
+      // indistinguível de uma execução apenas lenta — foi assim que um escopo de UF inteira
+      // ficou horas sem fechar um único lote, sem erro nenhum.
+      conn.callTimeout = sourceCallTimeoutMs;
       await conn.execute('SET TRANSACTION READ ONLY');
       return guardReadOnlyConnection(conn, 'a origem Netwin read-only');
     },

@@ -1,70 +1,53 @@
-import { useState } from 'react';
-import { AlertCircle, ChevronDown, ChevronRight, Info, Loader2 } from 'lucide-react';
-import type { ResourceComponentNode } from '../../services/resourceApi';
-import { ResourceIcon } from '../../components/ResourceIcon';
-import { ResourceStateLights } from './ResourceStateLights';
-import { portDropState } from '../../utils/portDropState';
-import { resourceIconFor } from '../../utils/resourceIcon';
+import { AlertCircle, Info } from 'lucide-react';
+import type { ResourceComponentConnection, ResourceComponentNode } from '../../services/resourceApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
+import { InternalComponentsView } from './internal-components/InternalComponentsView';
 
 export type ResourceComponentsTabProps = {
-  // A árvore recursiva (containsAsChild, todos os níveis) já vem carregada de `ResourcePanel`
-  // via `useResourceComponents` — o mesmo dado alimenta o contador da aba (issue: contador
-  // recursivo de componentes). Buscar aqui de novo duplicaria a chamada ao backend, que
-  // atende em série (AGENTS §3).
   components: ResourceComponentNode[];
+  connections: ResourceComponentConnection[];
   truncated: boolean;
   loading: boolean;
   error: string | null;
   reload: () => void;
-  onOpenResource: (id: string) => void;
+  rootResource: {
+    name: string;
+    resourceType?: string;
+    specificationName?: string;
+    status?: string;
+  };
   onOpenPort?: (node: GeoTreeNode) => void;
 };
 
+function ComponentsSkeleton() {
+  return (
+    <div className="animate-pulse rounded-[18px] border border-dashed border-app-border bg-app-panel/40 p-3">
+      <div className="h-16 rounded-[14px] border border-app-border bg-white" />
+      <div className="ml-4 mt-2 h-10 rounded-[10px] border border-app-border bg-white" />
+      <div className="ml-8 mt-2 h-10 rounded-[10px] border border-app-border bg-white" />
+    </div>
+  );
+}
+
 export function ResourceComponentsTab({
   components,
+  connections,
   truncated,
   loading,
   error,
   reload,
-  onOpenResource,
-  onOpenPort,
+  rootResource,
 }: ResourceComponentsTabProps) {
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-
-  const toggleCollapse = (id: string) => {
-    setCollapsedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-        Carregando componentes…
-      </div>
-    );
-  }
+  if (loading) return <ComponentsSkeleton />;
 
   if (error) {
     return (
       <div className="grid gap-3 rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
         <span className="flex items-center gap-2">
           <AlertCircle className="h-4 w-4" />
-          {error}
+          Não foi possível carregar a estrutura interna.
         </span>
-        <button
-          type="button"
-          onClick={reload}
-          className="w-fit text-[0.8rem] font-semibold underline"
-        >
+        <button type="button" onClick={reload} className="w-fit text-[0.8rem] font-semibold underline">
           Tentar novamente
         </button>
       </div>
@@ -74,28 +57,10 @@ export function ResourceComponentsTab({
   if (!components.length) {
     return (
       <div className="rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-        Este recurso não possui componentes internos.
+        Este recurso não possui componentes internos cadastrados.
       </div>
     );
   }
-
-  // Identifica nós que possuem filhos para exibir chevron de expansão
-  const parentIds = new Set<string>();
-  for (const node of components) {
-    if (node.parentId) {
-      parentIds.add(node.parentId);
-    }
-  }
-
-  // Filtra nós ocultos por colapso de algum ancestral
-  const hiddenIds = new Set<string>();
-  for (const node of components) {
-    if (node.parentId && (collapsedIds.has(node.parentId) || hiddenIds.has(node.parentId))) {
-      hiddenIds.add(node.id);
-    }
-  }
-
-  const visibleNodes = components.filter((node) => !hiddenIds.has(node.id));
 
   return (
     <div className="grid gap-2">
@@ -105,171 +70,11 @@ export function ResourceComponentsTab({
           <span>Árvore de componentes truncada (limite de 2000 nós atingido).</span>
         </div>
       ) : null}
-
-      {visibleNodes.map((node) => {
-        const isPort = node.resourceType === 'Port';
-        const hasChildren = parentIds.has(node.id);
-        const isCollapsed = collapsedIds.has(node.id);
-        const indentPadding = Math.max(0, (node.depth - 1) * 16);
-
-        if (isPort && node.portInfo) {
-          const dropState = portDropState({
-            '@type': 'ResourcePortDetail',
-            resource: {
-              id: node.id,
-              name: node.name,
-              '@type': 'PhysicalResource',
-              resourceType: 'Port',
-              status: 'active',
-              administrativeState: 'unlocked',
-              operationalState: 'enabled',
-              usageState: 'idle',
-              resourceSpecificationId: '',
-              resourceSpecification: { id: '', '@referredType': 'ResourceSpecification' },
-              relatedParty: [],
-              characteristic: [],
-            },
-            derivedUsageState: 'idle',
-            hasActiveService: node.portInfo.hasActiveService ?? false,
-            drops:
-              node.portInfo.activeDropOnt || (node.portInfo.dropCount ?? 0) > 0
-                ? [
-                    {
-                      resource: {
-                        id: '',
-                        name: '',
-                        '@referredType': 'PhysicalResource' as const,
-                        resourceType: 'DropCable',
-                      },
-                      active: (node.portInfo.dropCount ?? 0) > 0,
-                      ...(node.portInfo.activeDropOnt
-                        ? {
-                            ont: {
-                              id: node.portInfo.activeDropOnt.id,
-                              name: node.portInfo.activeDropOnt.name,
-                              '@referredType': 'PhysicalResource',
-                              resourceType: node.portInfo.activeDropOnt.resourceType,
-                            },
-                          }
-                        : {}),
-                    },
-                  ]
-                : [],
-          });
-
-          const portNode: GeoTreeNode = {
-            id: `resource:${node.id}`,
-            refId: node.id,
-            kind: 'resource',
-            resourceType: node.resourceType,
-            status: node.status,
-            label: node.name,
-            sublabel: node.portInfo.role,
-            hasChildren: false,
-          };
-
-          return (
-            <div
-              key={node.id}
-              style={{ paddingLeft: `${indentPadding}px` }}
-              className="flex w-full min-w-0 items-center gap-1.5"
-            >
-              <button
-                type="button"
-                onClick={() => (onOpenPort ? onOpenPort(portNode) : onOpenResource(node.id))}
-                className="flex flex-1 min-w-0 items-center gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-              >
-                <ResourceIcon
-                  resource={{
-                    resourceType: node.resourceType ?? '',
-                    status: node.status,
-                    name: node.name,
-                  }}
-                  variant="glyph"
-                  size={26}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
-                    {node.portInfo.role === 'FO.O' && node.portInfo.index !== undefined
-                      ? `FO.O.${node.portInfo.index}`
-                      : (node.portInfo.role ?? node.name)}
-                  </span>
-                  <span className="mt-0.5 block text-[0.75rem] leading-snug text-app-muted">
-                    {dropState.label ??
-                      resourceIconFor({
-                        resourceType: node.resourceType ?? '',
-                        status: node.status,
-                        name: node.name,
-                      }).label}
-                  </span>
-                </span>
-                <ResourceStateLights
-                  administrativeState={node.portInfo.administrativeState}
-                  operationalState={node.portInfo.operationalState}
-                  usageState={node.portInfo.usageState}
-                  dropDisabled={dropState.hasDisabledDrop}
-                />
-              </button>
-            </div>
-          );
-        }
-
-        const typeInfo = resourceIconFor({
-          resourceType: node.resourceType ?? '',
-          status: node.status,
-          name: node.name,
-        });
-
-        return (
-          <div
-            key={node.id}
-            style={{ paddingLeft: `${indentPadding}px` }}
-            className="flex w-full min-w-0 items-center gap-1.5"
-          >
-            {hasChildren ? (
-              <button
-                type="button"
-                onClick={() => toggleCollapse(node.id)}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-app-muted hover:bg-app-accent-soft hover:text-app-text"
-                title={isCollapsed ? 'Expandir' : 'Recolher'}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </button>
-            ) : (
-              <div className="h-7 w-7 shrink-0" />
-            )}
-
-            <button
-              type="button"
-              onClick={() => onOpenResource(node.id)}
-              className="flex flex-1 min-w-0 items-start gap-2.5 rounded-[14px] border border-app-border px-3 py-2 text-left transition hover:border-app-accent-border hover:bg-app-accent-soft"
-            >
-              <ResourceIcon
-                resource={{
-                  resourceType: node.resourceType ?? '',
-                  status: node.status,
-                  name: node.name,
-                }}
-                variant="glyph"
-                size={26}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block break-words text-[0.86rem] font-semibold leading-snug text-app-text">
-                  {node.name}
-                </span>
-                <span className="mt-0.5 block break-words text-[0.75rem] leading-snug text-app-muted">
-                  {[typeInfo.label, node.model, node.serialNumber].filter(Boolean).join(' · ')}
-                </span>
-              </span>
-              <span className="shrink-0 text-[0.78rem] font-semibold text-app-muted">Abrir</span>
-            </button>
-          </div>
-        );
-      })}
+      <InternalComponentsView
+        components={components}
+        connections={connections}
+        rootResource={{ ...rootResource, componentCount: components.length }}
+      />
     </div>
   );
 }

@@ -650,7 +650,7 @@ export class GeoTreeService {
    * `resource:`) até a Estação, andando pela cadeia `equipA --connectedTo--> cabo
    * --connectedTo--> equipZ` que `migrate-netwin-osp.ts` grava — sempre subindo (aresta de
    * entrada do nó atual), o inverso do sentido A→Z da carga. Iterativo, não CTE recursiva
-   * (mesma cautela de `pathTo`/`countResourceChildren`: dialeto Oracle já deu problema com
+   * (mesma cautela de `pathTo`/`resourceIdsWithChildren`: dialeto Oracle já deu problema com
    * recursão neste read-model).
    *
    * Só segue `connectedTo` — `containsAsChild` é contenção (ex.: splitter dentro de CTO),
@@ -1043,7 +1043,7 @@ export class GeoTreeService {
   }
 
   // `childCounts: false` (o mapa — ver resourcesInViewport) pula a CTE recursiva de
-  // countResourceChildren inteira — o maior custo isolado da consulta de viewport: cada pan
+  // resourceIdsWithChildren inteira — o maior custo isolado da consulta de viewport: cada pan
   // pagava uma travessia do grafo de relacionamentos semeada com até 10.000 ids só para
   // preencher `hasChildren`. Sem contar de verdade, o nó vem OTIMISTA (`hasChildren: true`), não
   // `false`: `GeoPage.selectNode` usa esse campo para decidir `expandSelf` ao clicar um recurso
@@ -1057,12 +1057,12 @@ export class GeoTreeService {
     options: { childCounts?: boolean } = {},
   ): Promise<GeoTreeNode[]> {
     const wantChildCounts = options.childCounts ?? true;
-    const childCounts = wantChildCounts
-      ? await this.countResourceChildren(
+    const idsWithChildren = wantChildCounts
+      ? await this.resourceIdsWithChildren(
           rows.map((row) => row.id),
           scope,
         )
-      : new Map<string, number>();
+      : new Set<string>();
 
     return rows.map((row) => {
       const node: GeoTreeNode = {
@@ -1071,7 +1071,7 @@ export class GeoTreeService {
         label: row.name,
         refId: row.id,
         referredType: row.entity_type,
-        hasChildren: wantChildCounts ? (childCounts.get(row.id) ?? 0) > 0 : true,
+        hasChildren: wantChildCounts ? idsWithChildren.has(row.id) : true,
       };
       if (row.resource_type) node.resourceType = row.resource_type;
       if (row.spec_name) node.sublabel = row.spec_name;
@@ -1158,7 +1158,7 @@ export class GeoTreeService {
   // (scope: 'tree') só revela até esse nível; um sub-local sem ancestral CO/POP (site
   // órfão fora da Hierarquia, ex.: Cabinet raiz) devolve `null`, mesmo tratamento do
   // recurso sem Site nem recurso pai em `pathTo`. Iterativo, não CTE recursiva — mesma
-  // cautela de `pathTo`/`countResourceChildren` com o dialeto Oracle, e a cadeia real
+  // cautela de `pathTo`/`resourceIdsWithChildren` com o dialeto Oracle, e a cadeia real
   // (Estação → Andar → Sala) tem no máximo poucos níveis.
   private async findStationAncestor(
     siteId: string,
@@ -1293,67 +1293,68 @@ export class GeoTreeService {
     return withChildren;
   }
 
-  private async countResourceChildren(
+  // Existência, não contagem — o único consumidor (`:1074`, `toResourceNodes`) lê só
+  // `(count ?? 0) > 0` para preencher o chevron. A reescrita em `CONNECT BY NOCYCLE` troca a
+  // CTE `WITH RECURSIVE` (que `transformOracleQuery` só despe do `RECURSIVE` e deixa o Oracle
+  // planejar mal — ~20 s medidos para um recurso com 84 descendentes) pela travessia hierárquica
+  // nativa (~50 ms medidos para o mesmo recurso, ~2.900× mais rápida; ver issue #295 e C10).
+  private async resourceIdsWithChildren(
     resourceIds: string[],
     scope: GeoTreeScope,
-  ): Promise<Map<string, number>> {
-    const counts = new Map<string, number>();
-    if (resourceIds.length === 0) return counts;
+  ): Promise<Set<string>> {
+    const withChildren = new Set<string>();
+    if (resourceIds.length === 0) return withChildren;
 
     if (scope === 'all') {
-      const rows = await this.db.all<{ resource_from_id: string; n: number }>(
-        `SELECT resource_from_id, count(*) AS n
+      const rows = await this.db.all<{ resource_from_id: string }>(
+        `SELECT DISTINCT resource_from_id
          FROM tmf_resource_relationship
          WHERE resource_from_id IN (${placeholders(resourceIds)})
-           AND relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
-         GROUP BY resource_from_id`,
+           AND relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})`,
         [...resourceIds, ...TREE_EDGE_TYPES],
       );
-      for (const row of rows) counts.set(row.resource_from_id, Number(row.n));
-      return counts;
+      for (const row of rows) withChildren.add(row.resource_from_id);
+      return withChildren;
     }
 
-    // scope 'tree': mesmo pass-through de childrenOfResource, mas em lote — anda a
-    // partir de cada id da lista e, sempre que o nó alcançado for interno (Splitter),
-    // continua descendo a partir dele; o que sobra na fronteira (visível, depth ≥ 1)
-    // é o que conta como filho de cada raiz.
+    // scope 'tree': mesmo pass-through de childrenOfResource, em lote — para cada raiz da
+    // lista, anda por arestas `containsAsChild`/`connectedTo` e só continua a travessia além
+    // do primeiro salto enquanto o nó já alcançado for interno (Splitter/Port). `CONNECT_BY_ROOT`
+    // devolve, por linha, de qual raiz do lote aquele caminho partiu — equivalente ao
+    // `root_id` da CTE, mas resolvido nativamente por Oracle em vez de materializado em JS.
+    // O gate "só desce através de nó interno" cai exatamente na condição de CONNECT BY: ela
+    // é avaliada para gerar a linha de nível N+1 a partir da linha de nível N, então checar
+    // "o próprio resource_from_id da nova linha é interno" tem o mesmo efeito de "o nó
+    // alcançado no nível anterior era interno" — sem gating nenhum no primeiro nível (START
+    // WITH sempre produz LEVEL=1 incondicionalmente, como o `depth=0` da CTE original).
     const seed = dialectFor().inlineRows(resourceIds, 'v', 'id');
-    const rows = await this.db.all<{ root_id: string; n: number }>(
-      `WITH RECURSIVE frontier(root_id, node_id, depth) AS (
-         SELECT v.id, v.id, 0 FROM ${seed.sql}
-         UNION ALL
-         SELECT f.root_id, e.resource_to_id, f.depth + 1
-           FROM frontier f
-           JOIN tmf_resource_relationship e
-             ON e.resource_from_id = f.node_id
-            AND e.relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
-          WHERE f.depth < ${PASS_THROUGH_MAX_DEPTH}
-            AND (
-              f.depth = 0
-              OR EXISTS (
-                SELECT 1 FROM tmf_physical_resource p
-                  JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-                  JOIN tmf_resource_type rt
-                    ON rt.id = rs.resource_type_id
-                 WHERE p.id = f.node_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
-              )
-            )
-       )
-       SELECT root_id, count(DISTINCT node_id) AS n
-         FROM frontier
-        WHERE depth >= 1
+    const rows = await this.db.all<{ root_id: string }>(
+      `SELECT DISTINCT CONNECT_BY_ROOT e.resource_from_id AS root_id
+         FROM tmf_resource_relationship e
+        WHERE e.relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
           AND NOT EXISTS (
             SELECT 1 FROM tmf_physical_resource p
               JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
               JOIN tmf_resource_type rt
                 ON rt.id = rs.resource_type_id
-             WHERE p.id = frontier.node_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
+             WHERE p.id = e.resource_to_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
           )
-        GROUP BY root_id`,
-      [...seed.binds, ...TREE_EDGE_TYPES],
+        START WITH e.resource_from_id IN (SELECT id FROM ${seed.sql})
+      CONNECT BY NOCYCLE
+             PRIOR e.resource_to_id = e.resource_from_id
+         AND e.relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
+         AND LEVEL <= ${PASS_THROUGH_MAX_DEPTH}
+         AND EXISTS (
+             SELECT 1 FROM tmf_physical_resource p
+               JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
+               JOIN tmf_resource_type rt
+                 ON rt.id = rs.resource_type_id
+              WHERE p.id = e.resource_from_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
+         )`,
+      [...TREE_EDGE_TYPES, ...seed.binds, ...TREE_EDGE_TYPES],
     );
-    for (const row of rows) counts.set(row.root_id, Number(row.n));
-    return counts;
+    for (const row of rows) withChildren.add(row.root_id);
+    return withChildren;
   }
 }
 

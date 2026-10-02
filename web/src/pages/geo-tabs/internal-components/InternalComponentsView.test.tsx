@@ -106,6 +106,11 @@ describe('InternalComponentsView', () => {
     expect(screen.getByTestId('component-port-01')).toHaveAttribute('data-view-mode', 'simplified');
     expect(screen.getByTestId('component-splitter')).toHaveAttribute('data-view-mode', 'simplified');
 
+    const diagramContent = screen.getByTestId('internal-components-diagram');
+    const graphHost = screen.getByTestId('internal-components-graph-host');
+    expect(diagramContent).toHaveStyle({ minWidth: '100%' });
+    expect(graphHost).toHaveClass('min-w-full');
+
     fireEvent.click(detalhada);
 
     expect(detalhada).toHaveAttribute('aria-pressed', 'true');

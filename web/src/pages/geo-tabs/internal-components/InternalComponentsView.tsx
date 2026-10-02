@@ -89,14 +89,15 @@ export function InternalComponentsView({
             className="mb-3"
           />
           <div
+            data-testid="internal-components-diagram"
             className="rounded-[8px] border border-[var(--border-strong)] bg-white p-2"
-            style={{ width: contentWidth }}
+            style={{ width: contentWidth, minWidth: '100%' }}
           >
             <div
-              className="origin-top-left"
+              className="min-w-full origin-top-left"
               style={{ transform: `scale(${zoom})`, width: contentSize.width || undefined }}
             >
-              <div ref={hostRef} className="relative">
+              <div ref={hostRef} data-testid="internal-components-graph-host" className="relative min-w-full">
                 <ResourceConnectionsLayer
                   connections={edges}
                   rects={rects}

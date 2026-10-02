@@ -1729,6 +1729,20 @@ export class OracleResourceRepository implements IResourceRepository {
     const tenantId = options?.scope?.tenantId ?? 'default';
     const maxDepth = options?.maxDepth ?? 8;
 
+    // Era `WITH RECURSIVE` — mesma doença de `resourceIdsWithChildren` em tree-service.ts
+    // (ver issue #295): `transformOracleQuery` só despe o `RECURSIVE` e o Oracle planeja mal,
+    // ~29-36 s medidos ao vivo para só 22 componentes / profundidade 8 (issue #296). A travessia
+    // aqui precisa da árvore inteira (não só existência), mas o `WITH tree AS (SELECT … CONNECT BY
+    // NOCYCLE …)` é uma subquery comum — não é "recursivo" do ponto de vista do Oracle — e pode
+    // ser referenciada duas vezes (físico/lógico) como o `UNION ALL` original fazia com a CTE.
+    // `maxDepth` passa a ser bindado (antes interpolado no texto, hard parse novo por valor).
+    // `/*+ MATERIALIZE */` é necessário, não cosmético: sem ele, medido ao vivo contra a base
+    // atual (~2,1M recursos físicos), o otimizador às vezes decide reavaliar a travessia
+    // hierárquica por trás de cada JOIN em vez de materializá-la uma vez — 103s numa árvore de
+    // só 24 nós (mesmo resultado final, mesma contagem de linhas de caminho em cada profundidade
+    // isolada; só a combinação com os dois JOINs do UNION ALL dispara o plano ruim). Com o hint,
+    // a mesma árvore cai para ~20-50ms. Testado nos 5 recursos com mais filhos diretos da base
+    // atual — paridade exata com a CTE antiga em todos, e sem esse caso patológico.
     const rows = await this.db.all<{
       id: string;
       name: string;
@@ -1744,16 +1758,15 @@ export class OracleResourceRepository implements IResourceRepository {
       usage_state: string | null;
       characteristics: string | null;
     }>(
-      `WITH RECURSIVE tree(id, parent_id, depth) AS (
-         SELECT e.resource_to_id, e.resource_from_id, 1
+      `WITH tree AS (
+         SELECT /*+ MATERIALIZE */ e.resource_to_id AS id, e.resource_from_id AS parent_id, LEVEL AS depth
            FROM tmf_resource_relationship e
-          WHERE e.resource_from_id = ? AND e.relationship_type = 'containsAsChild'
-         UNION ALL
-         SELECT e.resource_to_id, e.resource_from_id, t.depth + 1
-           FROM tree t
-           JOIN tmf_resource_relationship e ON e.resource_from_id = t.id
           WHERE e.relationship_type = 'containsAsChild'
-            AND t.depth < ${maxDepth}
+        START WITH e.resource_from_id = ?
+        CONNECT BY NOCYCLE
+               PRIOR e.resource_to_id = e.resource_from_id
+           AND e.relationship_type = 'containsAsChild'
+           AND LEVEL <= ?
        )
        SELECT t.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
               t.parent_id, t.depth,
@@ -1779,7 +1792,7 @@ export class OracleResourceRepository implements IResourceRepository {
          LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
         WHERE r.tenant_id = ?
         ORDER BY depth, name, id`,
-      [resourceId, tenantId, tenantId],
+      [resourceId, maxDepth, tenantId, tenantId],
     );
 
     const visited = new Set<string>([resourceId]);
@@ -1880,21 +1893,25 @@ export class OracleResourceRepository implements IResourceRepository {
     for (let offset = 0; offset < portIds.length; offset += batchSize) {
       const ids = portIds.slice(offset, offset + batchSize);
       const placeholders = ids.map(() => '?').join(', ');
+      // `action = 'update'` agora é filtro de SQL, não de JS — antes trazia para o Node o
+      // `after_state` (CLOB) de toda linha de auditoria já escrita para o lote inteiro de portas,
+      // incluindo create/delete que o laço abaixo descartava sem nunca precisar do payload. Bind
+      // de CLOB é ~400× mais lento que VARCHAR2 por linha (ver issue #296): o volume que esse
+      // filtro evita buscar, não só processar, é o que inflava memória do processo.
       const auditRows = await this.db.all<{
         entity_id: string;
-        action: string;
         after_state: string | null;
       }>(
-        `SELECT entity_id, action, after_state
+        `SELECT entity_id, after_state
            FROM tmf_audit_log
           WHERE entity_type = 'PhysicalResource'
             AND tenant_id = ?
+            AND action = 'update'
             AND entity_id IN (${placeholders})
           ORDER BY event_time DESC, id DESC`,
         [tenantId, ...ids],
       );
       for (const audit of auditRows) {
-        if (audit.action !== 'update') continue;
         const payload = parseAuditState(audit.after_state);
         const relatedResourceId = payload?.relatedResourceId;
         if (

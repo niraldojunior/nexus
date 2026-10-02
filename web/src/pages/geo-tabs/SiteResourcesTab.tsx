@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, Trash2 } from 'lucide-react';
 import { linkSiteResource, unlinkSiteResource } from '../../services/geoApi';
-import { fetchTreeChildren, fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
+import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
+import { useSiteChildren } from '../../hooks/useSiteChildren';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import {
   resourceIconFor,
@@ -30,9 +31,10 @@ type PendingRemoval = { node: GeoTreeNode };
  * se é para só desvincular ou também excluir o recurso.
  */
 export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResourcesTabProps) {
-  const [nodes, setNodes] = useState<GeoTreeNode[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [reloadToken, setReloadToken] = useState(0);
+  // Filhos do Site cacheados/deduplicados em nível de módulo (useSiteChildren) — a mesma
+  // chamada alimenta SiteSubSitesTab, cada aba filtrando por `kind` localmente.
+  const { nodes: children, loading, reload } = useSiteChildren(siteId);
+  const nodes = useMemo(() => children.filter((node) => node.kind === 'resource'), [children]);
   const [query, setQuery] = useState('');
   const [predictionsOpen, setPredictionsOpen] = useState(false);
   const [predictions, setPredictions] = useState<GeoTreeNode[]>([]);
@@ -41,21 +43,6 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
   const [removing, setRemoving] = useState(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const requestTokenRef = useRef(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void fetchTreeChildren(`site:${siteId}`, { scope: 'all' })
-      .then((page) => {
-        if (cancelled) return;
-        setNodes(page.nodes.filter((node) => node.kind === 'resource'));
-      })
-      .catch(() => !cancelled && setNodes([]))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [siteId, reloadToken]);
 
   useEffect(() => {
     if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
@@ -83,7 +70,7 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
     setLinking(true);
     try {
       await linkSiteResource(siteId, node.refId);
-      setReloadToken((token) => token + 1);
+      reload();
     } finally {
       setLinking(false);
     }
@@ -95,7 +82,7 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
     try {
       await unlinkSiteResource(siteId, pendingRemoval.node.refId, mode);
       setPendingRemoval(null);
-      setReloadToken((token) => token + 1);
+      reload();
     } finally {
       setRemoving(false);
     }

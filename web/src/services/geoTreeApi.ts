@@ -71,7 +71,7 @@ export const fetchTreeRoots = () => getJson<GeoTreeRootNode[]>('/v1/geo/tree/roo
 
 export const fetchTreeChildren = (
   nodeId: string,
-  options: { limit?: number; offset?: number; scope?: GeoTreeScope } = {},
+  options: { limit?: number; offset?: number; scope?: GeoTreeScope; signal?: AbortSignal } = {},
 ): Promise<GeoTreeChildrenPage> => {
   const params = new URLSearchParams({ nodeId });
   params.set('limit', String(options.limit ?? TREE_PAGE_SIZE));
@@ -79,7 +79,9 @@ export const fetchTreeChildren = (
   // Só serializa quando 'all': o caminho quente é a navegação (scope 'tree', o
   // default do servidor), e não vale sujar a URL dele.
   if (options.scope === 'all') params.set('scope', 'all');
-  return getJson<GeoTreeChildrenPage>(`/v1/geo/tree/children?${params.toString()}`);
+  return getJson<GeoTreeChildrenPage>(`/v1/geo/tree/children?${params.toString()}`, {
+    signal: options.signal,
+  });
 };
 
 export type MapBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
@@ -131,16 +133,25 @@ export const fetchTreeSearch = (
 // o essencial pra desenhar, sem `detail` nem, para cabo, a rota inteira (só o trecho recortado
 // no tile clicado). Lança em 404 quando a feature do índice já não corresponde ao inventário
 // canônico; nesse caso o chamador descarta a seleção parcial.
-export const fetchTreeNode = (nodeId: string): Promise<GeoTreeNode> =>
-  getJson<GeoTreeNode>(`/v1/geo/tree/node?id=${encodeURIComponent(nodeId)}`);
+export const fetchTreeNode = (
+  nodeId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<GeoTreeNode> =>
+  getJson<GeoTreeNode>(`/v1/geo/tree/node?id=${encodeURIComponent(nodeId)}`, {
+    signal: options.signal,
+  });
 
 // Caminho da raiz até um nó (`['uf:RJ', 'city:RJ|Niterói', 'group:…', 'site:…', 'resource:…']`).
 // Estação já vem inteira em `roots`, mas Recurso não: selecionado pelo mapa ou pela busca,
 // ele não tem ancestral nenhum carregado no cliente — é isto que diz onde ele mora para a
 // árvore poder expandir até ele. `null` quando o nó não pende de Site nem de outro recurso.
-export const fetchTreePath = (nodeId: string): Promise<string[] | null> =>
+export const fetchTreePath = (
+  nodeId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<string[] | null> =>
   getJson<{ nodeId: string; path: string[] | null }>(
     `/v1/geo/tree/path?nodeId=${encodeURIComponent(nodeId)}`,
+    { signal: options.signal },
   ).then((result) => result.path);
 
 // "Traceroute" da fibra: do equipamento (aba Esquemático do painel de Recurso) até a

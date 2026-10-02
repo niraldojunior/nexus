@@ -1,7 +1,7 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { deterministicUuid, netwinLocationId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
-import { bulkMergeRows } from '../netwin-migration-kit.js';
+import { bulkMergeRows, netwinOriginCharacteristics } from '../netwin-migration-kit.js';
 import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import {
@@ -281,9 +281,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
           characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            { group: '_origin', name: 'entity', value: 'LOCATION', valueType: 'string' },
-            { group: '_origin', name: 'id', value: String(row.ID), valueType: 'string' },
+            ...netwinOriginCharacteristics('LOCATION', row.ID),
             ...(row.STATE_LIFECYCLE
               ? [{ name: 'stateLifecycle', value: row.STATE_LIFECYCLE, valueType: 'string' }]
               : []),

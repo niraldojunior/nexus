@@ -482,4 +482,71 @@ test('ResourceService: getResourceComponentsView traverses containsAsChild tree 
   assert.equal(portNode.parentId, splitter.id);
   assert.equal(portNode.portInfo?.role, 'FO.O');
   assert.equal(portNode.portInfo?.index, 1);
+  assert.deepEqual(view.connections, []);
+});
+
+test('ResourceService: getResourceComponentsView returns only non-structural edges internal to the tree', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never);
+  const specCdoe = await createTestSpec(repo, 'CTO');
+  const specSplitter = await createTestSpec(repo, 'Splitter');
+  const specPort = await createTestSpec(repo, 'Port');
+
+  const cdoe = await service.createPhysicalResource(
+    { name: 'CDOE-J234', resourceSpecificationId: specCdoe.id },
+    context,
+  );
+  const splitter = await service.createPhysicalResource(
+    { name: 'SPLITTER-123', resourceSpecificationId: specSplitter.id },
+    context,
+  );
+  const input = await service.createPhysicalResource(
+    { name: 'SPLITTER-IN-01', resourceSpecificationId: specPort.id },
+    context,
+  );
+  const output = await service.createPhysicalResource(
+    { name: 'SPLITTER-OUT-01', resourceSpecificationId: specPort.id },
+    context,
+  );
+  const port = await service.createPhysicalResource(
+    { name: 'PORT-01', resourceSpecificationId: specPort.id },
+    context,
+  );
+  const external = await service.createPhysicalResource(
+    { name: 'OLT-PORT-01', resourceSpecificationId: specPort.id },
+    context,
+  );
+
+  for (const [parentId, childId] of [
+    [cdoe.id, splitter.id],
+    [cdoe.id, port.id],
+    [splitter.id, input.id],
+    [splitter.id, output.id],
+  ] as Array<[string, string]>) {
+    await service.addResourceRelationship(
+      parentId,
+      { id: childId, relationshipType: 'containsAsChild', '@referredType': 'Resource' },
+      context,
+    );
+  }
+  await service.addResourceRelationship(
+    output.id,
+    { id: port.id, relationshipType: 'connectedTo', '@referredType': 'Resource' },
+    context,
+  );
+  await service.addResourceRelationship(
+    external.id,
+    { id: input.id, relationshipType: 'connectedTo', '@referredType': 'Resource' },
+    context,
+  );
+
+  const view = await service.getResourceComponentsView(cdoe.id, undefined, context);
+  assert.deepEqual(view.connections, [
+    {
+      '@type': 'ResourceComponentConnection',
+      fromId: output.id,
+      toId: port.id,
+      relationshipType: 'connectedTo',
+    },
+  ]);
 });

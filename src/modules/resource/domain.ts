@@ -614,15 +614,29 @@ export type ResourceComponentNode = {
   kind: ResourceKind;
   parentId: string | null;
   depth: number;
+  administrativeState?: AdministrativeState;
+  operationalState?: OperationalState;
+  specification?: ResourceDetailReference;
+  manufacturer?: ResourceDetailReference;
   model?: string;
   serialNumber?: string;
+  characteristics?: Characteristic[];
   portInfo?: ResourceComponentPortInfo;
+};
+
+/** Aresta não-estrutural entre componentes da subárvore já devolvida pela mesma projeção. */
+export type ResourceComponentConnection = {
+  '@type': 'ResourceComponentConnection';
+  fromId: string;
+  toId: string;
+  relationshipType: string;
 };
 
 export type ResourceComponentsView = {
   '@type': 'ResourceComponentsView';
   resourceId: string;
   components: ResourceComponentNode[];
+  connections: ResourceComponentConnection[];
   truncated: boolean;
 };
 

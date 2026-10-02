@@ -82,6 +82,7 @@ function characteristicsToValues(value: string | null): Map<string, unknown> | u
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return undefined;
     const values = new Map<string, unknown>();
+    const extras: Record<string, unknown>[] = [];
     for (const entry of parsed) {
       if (
         entry &&
@@ -90,7 +91,20 @@ function characteristicsToValues(value: string | null): Map<string, unknown> | u
         typeof entry.name === 'string' &&
         'value' in entry
       ) {
+        // A Fase 2.C corrigida não grava mais parentOspEquipmentId/parentIspEquipmentId como
+        // characteristic de topo (eles não são atributo do recurso — C5); ficam aninhados em
+        // `_origin.extra`. Registros já importados antes da correção continuam no formato de
+        // topo, por isso ambos são aceitos aqui.
+        if (entry.name === '_origin.extra' && entry.value && typeof entry.value === 'object') {
+          extras.push(entry.value as Record<string, unknown>);
+          continue;
+        }
         values.set(entry.name, entry.value);
+      }
+    }
+    for (const extra of extras) {
+      for (const [key, extraValue] of Object.entries(extra)) {
+        if (!values.has(key)) values.set(key, extraValue);
       }
     }
     return values;

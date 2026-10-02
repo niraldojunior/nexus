@@ -50,7 +50,10 @@ import {
   bulkMergeBindDefs,
   bulkMergeRows,
   makeTablePrefixer,
+  mergeCharacteristicDefinitions,
   mergeSql,
+  netwinOriginCharacteristics,
+  reconcileCatalogCharacteristics,
 } from '../src/scripts/netwin-migration-kit.js';
 import { MIGRATION_BATCHES } from '../src/shared/persistence/schema.js';
 import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
@@ -730,6 +733,38 @@ describe('netwin-migration: reparo target-only da Fase 2.C', () => {
     });
   });
 
+  it('aceita a proveniência no formato canônico _origin.extra, além do formato legado agrupado', () => {
+    const canonicalCharacteristics = JSON.stringify([
+      { name: 'sourcePortType', value: 'Adapter', valueType: 'string' },
+      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
+      { name: '_origin.entity', value: 'ISP_INS_PORTO_FISICO', valueType: 'string' },
+      { name: '_origin.id', value: '7', valueType: 'string' },
+      {
+        name: '_origin.extra',
+        value: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
+        valueType: 'json',
+      },
+    ]);
+    expect(parsePhase2cPortProvenance(canonicalCharacteristics)).toMatchObject({
+      kind: 'valid',
+      provenance: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
+    });
+
+    // Um valor de topo (quando presente) tem precedência sobre o mesmo nome dentro de _origin.extra.
+    const withTopLevelOverride = JSON.stringify([
+      { name: 'parentOspEquipmentId', value: '99', valueType: 'string' },
+      {
+        name: '_origin.extra',
+        value: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
+        valueType: 'json',
+      },
+    ]);
+    expect(parsePhase2cPortProvenance(withTopLevelOverride)).toMatchObject({
+      kind: 'valid',
+      provenance: { parentOspEquipmentId: 99, parentIspEquipmentId: 15 },
+    });
+  });
+
   it('repara apenas o par legada→canônica e preserva a contenção canônica', () => {
     const canonicalParentId = netwinEquipmentId(42);
     const legacyParentId = netwinInternalEquipmentId(15);
@@ -914,6 +949,67 @@ describe('netwin-migration: phase 1 canonical catalogs', () => {
     expect(codes.has('Splitter')).toBe(true);
   });
 
+  it('contém stateLifecycle por padrão em toda specification de site canônica', () => {
+    // Nenhuma entrada declara specCharacteristic próprio: o runner da Fase 1.A aplica o fallback
+    // STATE_LIFECYCLE_CHARACTERISTIC a todas, o que garante que reexecuções não deixem specs sem o
+    // contrato de instância que a Fase 2.A emite (stateLifecycle).
+    for (const spec of CANONICAL_SITE_SPECS) {
+      expect(spec.specCharacteristic, `specCharacteristic customizado em ${spec.code}`).toBeUndefined();
+    }
+  });
+
+  it('declara substatus apenas nos equipamentos que a Fase 2.B resolve para OSP_EQUIPMENT', () => {
+    for (const code of ['category:CDOE', 'category:CDOI', 'SpliceClosure', 'OpticalNode']) {
+      const names = (canonicalType(code)?.resourceTypeCharacteristic ?? []).map((c) => c.name);
+      expect(names, code).toEqual(['substatus']);
+    }
+  });
+
+  it('declara exatamente os atributos operacionais comprovados de Splitter e Port', () => {
+    const splitterNames = (canonicalType('Splitter')?.resourceTypeCharacteristic ?? []).map(
+      (c) => c.name,
+    );
+    expect(splitterNames).toEqual([
+      'sourceCardType',
+      'sourceCardSigla',
+      'slotNumber',
+      'positionUf',
+      'splitRatio',
+    ]);
+
+    const portNames = (canonicalType('Port')?.resourceTypeCharacteristic ?? []).map((c) => c.name);
+    expect(portNames).toEqual([
+      'sourcePortType',
+      'portId',
+      'coding',
+      'occupancy',
+      'circuit',
+      'bandwidth',
+    ]);
+
+    for (const name of [...splitterNames, ...portNames]) {
+      expect(name.startsWith('_origin')).toBe(false);
+    }
+  });
+
+  it('marca todo resourceTypeCharacteristic canônico como nível de instância, nunca de specification', () => {
+    for (const resourceType of CANONICAL_RESOURCE_TYPES) {
+      for (const characteristic of resourceType.resourceTypeCharacteristic ?? []) {
+        expect(characteristic.characteristicLevel, `${resourceType.code}.${characteristic.name}`).toBe(
+          'instance',
+        );
+      }
+    }
+  });
+
+  it('não declara identificadores de pai ou proveniência como atributos operacionais do tipo', () => {
+    for (const resourceType of CANONICAL_RESOURCE_TYPES) {
+      for (const characteristic of resourceType.resourceTypeCharacteristic ?? []) {
+        expect(characteristic.name).not.toMatch(/^parent|^_origin|^source(System|Id)$/i);
+      }
+    }
+  });
+
   it('prioriza o ResourceType compartilhado para Port e Splitter', () => {
     const resolved = sharedTypeIdByCode([
       { id: 'vtal-port', code: 'Port', tenantId: 'vtal' },
@@ -948,5 +1044,93 @@ describe('netwin-migration: phase 1 canonical catalogs', () => {
         resourceSpecificationCount: 42,
       }),
     ).toContain('mesmo tenant');
+  });
+});
+
+describe('netwin-migration: reconciliação aditiva de characteristics de catálogo', () => {
+  it('netwinOriginCharacteristics emite somente nomes pontuados reservados (_origin.*)', () => {
+    expect(netwinOriginCharacteristics('LOCATION', 42)).toEqual([
+      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
+      { name: '_origin.entity', value: 'LOCATION', valueType: 'string' },
+      { name: '_origin.id', value: '42', valueType: 'string' },
+    ]);
+
+    expect(
+      netwinOriginCharacteristics('ISP_INS_PORTO_FISICO', 7, {
+        parentOspEquipmentId: 42,
+        parentIspEquipmentId: 15,
+      }),
+    ).toEqual([
+      { name: '_origin.system', value: 'Netwin', valueType: 'string' },
+      { name: '_origin.entity', value: 'ISP_INS_PORTO_FISICO', valueType: 'string' },
+      { name: '_origin.id', value: '7', valueType: 'string' },
+      {
+        name: '_origin.extra',
+        value: { parentOspEquipmentId: 42, parentIspEquipmentId: 15 },
+        valueType: 'json',
+      },
+    ]);
+
+    // Sem extra (ex.: rotas/cabos que só carregam proveniência), nenhum `_origin.extra` é emitido.
+    expect(netwinOriginCharacteristics('REC_CAT_CABOS', 1, {})).toHaveLength(3);
+  });
+
+  it('mergeCharacteristicDefinitions preserva customização existente do Studio e completa só o ausente', () => {
+    const studioCustomized = JSON.stringify([
+      { group: '', name: 'substatus', description: 'Customizado pelo Studio', value: 'Ativo' },
+    ]);
+    const merged = mergeCharacteristicDefinitions(studioCustomized, [
+      { name: 'substatus', description: 'Padrão do migrador', value: '', valueType: 'string' },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.description).toBe('Customizado pelo Studio');
+  });
+
+  it('mergeCharacteristicDefinitions é case-insensitive por group+name e aditivo', () => {
+    const current = JSON.stringify([{ group: '_origin', name: 'SYSTEM', value: 'Netwin' }]);
+    const merged = mergeCharacteristicDefinitions(current, [
+      { group: '_origin', name: 'system', value: 'outro' },
+      { name: 'stateLifecycle', value: '', valueType: 'string' },
+    ]);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((c) => c.name)).toEqual(['SYSTEM', 'stateLifecycle']);
+  });
+
+  it('mergeCharacteristicDefinitions trata JSON nulo, vazio ou inválido como ausência segura', () => {
+    const canonical = [{ name: 'stateLifecycle', value: '', valueType: 'string' }];
+    expect(mergeCharacteristicDefinitions(null, canonical)).toEqual(canonical);
+    expect(mergeCharacteristicDefinitions('', canonical)).toEqual(canonical);
+    expect(mergeCharacteristicDefinitions('not-json', canonical)).toEqual(canonical);
+    expect(mergeCharacteristicDefinitions('{"not":"an array"}', canonical)).toEqual(canonical);
+  });
+
+  it('reconcileCatalogCharacteristics só grava quando o conjunto mesclado difere do atual', async () => {
+    const existing = JSON.stringify([
+      { group: '', name: 'substatus', description: 'Customizado', value: 'Ativo' },
+    ]);
+    const executed: Array<{ sql: string; binds: unknown }> = [];
+    const fakeConnection = {
+      execute: async (sql: string, binds: unknown) => {
+        executed.push({ sql, binds });
+        if (sql.startsWith('SELECT')) return { rows: [{ CHARACTERISTICS: existing }] };
+        return { rows: [] };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+
+    await reconcileCatalogCharacteristics(fakeConnection, (name) => `NX_TEST_${name}`, 'tmf_resource_type', 'rt-1', [
+      { name: 'substatus', description: 'Padrão', value: '', valueType: 'string' },
+    ]);
+    expect(executed).toHaveLength(1); // nada mudou: nenhum UPDATE foi emitido
+
+    await reconcileCatalogCharacteristics(fakeConnection, (name) => `NX_TEST_${name}`, 'tmf_resource_type', 'rt-1', [
+      { name: 'substatus', description: 'Padrão', value: '', valueType: 'string' },
+      { name: 'outraCaracteristica', description: 'Nova', value: '', valueType: 'string' },
+    ]);
+    expect(executed).toHaveLength(3); // SELECT + SELECT + UPDATE aditivo
+    expect(executed[2]?.sql).toContain('UPDATE');
+    const updateBinds = executed[2]?.binds as { characteristics: string };
+    const updated = JSON.parse(updateBinds.characteristics) as Array<{ name: string }>;
+    expect(updated.map((c) => c.name)).toEqual(['substatus', 'outraCaracteristica']);
   });
 });

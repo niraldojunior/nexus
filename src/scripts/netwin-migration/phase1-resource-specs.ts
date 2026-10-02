@@ -1,6 +1,11 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
-import { merge } from '../netwin-migration-kit.js';
+import {
+  merge,
+  netwinOriginCharacteristics,
+  reconcileCatalogCharacteristics,
+  type MigrationCharacteristic,
+} from '../netwin-migration-kit.js';
 import { deterministicUuid, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import type { PhaseStats } from './types.js';
 
@@ -10,7 +15,40 @@ export type ResourceTypeItem = {
   description?: string;
   mapPresence?: boolean;
   geometryKind?: 'POINT' | 'LINE' | 'POLYGON';
+  resourceTypeCharacteristic?: MigrationCharacteristic[];
 };
+
+const instanceCharacteristic = (
+  name: string,
+  description: string,
+): MigrationCharacteristic => ({
+  name,
+  description,
+  value: '',
+  valueType: 'string',
+  characteristicLevel: 'instance',
+});
+
+const EQUIPMENT_INSTANCE_CHARACTERISTICS = [
+  instanceCharacteristic('substatus', 'Estado operacional detalhado informado pela origem.'),
+];
+
+const SPLITTER_INSTANCE_CHARACTERISTICS = [
+  instanceCharacteristic('sourceCardType', 'Tipo da placa de splitter informado pela origem.'),
+  instanceCharacteristic('sourceCardSigla', 'Sigla do tipo da placa de splitter.'),
+  instanceCharacteristic('slotNumber', 'Posição do slot informada pela origem.'),
+  instanceCharacteristic('positionUf', 'Posição física superior informada pela origem.'),
+  instanceCharacteristic('splitRatio', 'Razão de divisão efetiva do splitter.'),
+];
+
+const PORT_INSTANCE_CHARACTERISTICS = [
+  instanceCharacteristic('sourcePortType', 'Tipo de porta física informado pela origem.'),
+  instanceCharacteristic('portId', 'Identificador funcional da porta informado pela origem.'),
+  instanceCharacteristic('coding', 'Codificação física da porta.'),
+  instanceCharacteristic('occupancy', 'Ocupação informada pela origem.'),
+  instanceCharacteristic('circuit', 'Circuito associado informado pela origem.'),
+  instanceCharacteristic('bandwidth', 'Capacidade de banda informada pela origem.'),
+];
 
 export type ResourceCatalogLoadSummary = {
   catalogCode: string;
@@ -44,6 +82,7 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
     description: 'Caixa de Distribuição Óptica Externa',
     mapPresence: true,
     geometryKind: 'POINT',
+    resourceTypeCharacteristic: EQUIPMENT_INSTANCE_CHARACTERISTICS,
   },
   {
     code: 'category:CDOI',
@@ -51,6 +90,7 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
     description: 'Caixa de Distribuição Óptica Interna',
     mapPresence: true,
     geometryKind: 'POINT',
+    resourceTypeCharacteristic: EQUIPMENT_INSTANCE_CHARACTERISTICS,
   },
   {
     code: 'SpliceClosure',
@@ -58,6 +98,7 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
     description: 'CEO / CEOS de fusão óptica',
     mapPresence: true,
     geometryKind: 'POINT',
+    resourceTypeCharacteristic: EQUIPMENT_INSTANCE_CHARACTERISTICS,
   },
   {
     code: 'OpticalNode',
@@ -65,6 +106,7 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
     description: 'Nó óptico de transição ou terminação',
     mapPresence: true,
     geometryKind: 'POINT',
+    resourceTypeCharacteristic: EQUIPMENT_INSTANCE_CHARACTERISTICS,
   },
   {
     code: 'Splitter',
@@ -72,6 +114,7 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
     description: 'Divisor óptico passivo (1xN ou 2xN)',
     mapPresence: true,
     geometryKind: 'POINT',
+    resourceTypeCharacteristic: SPLITTER_INSTANCE_CHARACTERISTICS,
   },
   {
     code: 'DIO',
@@ -90,7 +133,12 @@ export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
   { code: 'OLT', name: 'OLT', description: 'Terminal de Linha Óptica' },
   { code: 'ONT', name: 'ONT', description: 'Terminal de Rede Óptica' },
   { code: 'Card', name: 'Card / Module', description: 'Placa ou módulo de equipamento' },
-  { code: 'Port', name: 'Port', description: 'Porta física de equipamento ou caixa óptica' },
+  {
+    code: 'Port',
+    name: 'Port',
+    description: 'Porta física de equipamento ou caixa óptica',
+    resourceTypeCharacteristic: PORT_INSTANCE_CHARACTERISTICS,
+  },
   { code: 'PONPort', name: 'Porta PON', description: 'Porta PON de equipamento de acesso' },
   { code: 'ONTPort', name: 'Porta ONT', description: 'Porta da ONT de cliente' },
   { code: 'Frame', name: 'Frame', description: 'Bastidor de planta interna' },
@@ -244,10 +292,6 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       // canônico compartilhado para o code. Specifications e catálogo seguem tenant-scoped.
       for (const rt of CANONICAL_RESOURCE_TYPES) {
         let typeId = resourceTypeIdByCode.get(rt.code);
-        if (sharedTypeCodes.has(rt.code)) {
-          stats.loaded++;
-          continue;
-        }
         if (!typeId) {
           typeId = deterministicUuid(
             NEXUS_NETWIN_NAMESPACE,
@@ -256,16 +300,30 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           resourceTypeIdByCode.set(rt.code, typeId);
         }
 
-        await merge(target, ctx.t, 'tmf_resource_type', ['tenant_id', 'code'], {
-          id: typeId,
-          tenant_id: ctx.options.tenantId,
-          code: rt.code,
-          name: rt.name,
-          status: 'active',
-          description: rt.description ?? null,
-          map_presence: rt.mapPresence ? 1 : 0,
-          ...(rt.geometryKind ? { geometry_kind: rt.geometryKind } : {}),
-        });
+        // Tipos compartilhados (`default`) são autoridade de vocabulário e não podem ganhar uma
+        // cópia tenant-local. Ainda assim, suas definitions precisam ser reconciliadas para que
+        // Port e Splitter usados nas specifications do tenant recebam o contrato da Fase 2.C.
+        if (!sharedTypeCodes.has(rt.code)) {
+          await merge(target, ctx.t, 'tmf_resource_type', ['tenant_id', 'code'], {
+            id: typeId,
+            tenant_id: ctx.options.tenantId,
+            code: rt.code,
+            name: rt.name,
+            status: 'active',
+            description: rt.description ?? null,
+            map_presence: rt.mapPresence ? 1 : 0,
+            ...(rt.geometryKind ? { geometry_kind: rt.geometryKind } : {}),
+          });
+        }
+        if (rt.resourceTypeCharacteristic) {
+          await reconcileCatalogCharacteristics(
+            target,
+            ctx.t,
+            'tmf_resource_type',
+            typeId,
+            rt.resourceTypeCharacteristic,
+          );
+        }
         stats.loaded++;
       }
     }
@@ -283,13 +341,15 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           name: specName,
           resource_type_id: splitterTypeId,
           description: `Divisor óptico balanceado 1 para ${ratio}`,
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            { name: 'splitRatio', value: `1:${ratio}`, valueType: 'string' },
-            { name: 'inputPorts', value: 1, valueType: 'number' },
-            { name: 'outputPorts', value: ratio, valueType: 'number' },
-          ]),
         });
+        // Aditivo (não MERGE do array inteiro): reexecutar a Fase 1 não pode apagar
+        // characteristics de specification que alguém tenha acrescentado pelo Studio.
+        await reconcileCatalogCharacteristics(target, ctx.t, 'tmf_resource_specification', specId, [
+          ...netwinOriginCharacteristics('RESOURCE_SPECIFICATION', specId),
+          { name: 'splitRatio', value: `1:${ratio}`, valueType: 'string' },
+          { name: 'inputPorts', value: 1, valueType: 'integer' },
+          { name: 'outputPorts', value: ratio, valueType: 'integer' },
+        ]);
       }
       stats.loaded++;
     }
@@ -335,10 +395,14 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           name: b.name,
           resource_type_id: typeId,
           description: `Especificação padrão importada do Netwin (${b.name})`,
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-          ]),
         });
+        await reconcileCatalogCharacteristics(
+          target,
+          ctx.t,
+          'tmf_resource_specification',
+          specId,
+          netwinOriginCharacteristics('RESOURCE_SPECIFICATION', specId),
+        );
       }
       stats.loaded++;
     }
@@ -375,12 +439,11 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           name: nome,
           resource_type_id: typeId,
           description: `Modelo de cabo Netwin ${nome} (${cap} FO)`,
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            { group: '_origin', name: 'id', value: String(cm.ID), valueType: 'string' },
-            { name: 'fiberCount', value: cap, valueType: 'number' },
-          ]),
         });
+        await reconcileCatalogCharacteristics(target, ctx.t, 'tmf_resource_specification', specId, [
+          ...netwinOriginCharacteristics('REC_CAT_CABOS', cm.ID),
+          { name: 'fiberCount', value: cap, valueType: 'integer' },
+        ]);
       }
       stats.loaded++;
     }

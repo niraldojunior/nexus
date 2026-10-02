@@ -9,7 +9,12 @@ import {
   NEXUS_NETWIN_NAMESPACE,
 } from './identity.js';
 import { parseWktLineString, parseWktPoint } from '../../shared/utils/wkt.js';
-import { bulkMergeRows, resolveLifecycleStatus, merge } from '../netwin-migration-kit.js';
+import {
+  bulkMergeRows,
+  merge,
+  netwinOriginCharacteristics,
+  resolveLifecycleStatus,
+} from '../netwin-migration-kit.js';
 import {
   enqueueNativeRelationships,
   loadNativeCheckpoint,
@@ -88,9 +93,9 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           name: 'Cabo de Distribuição Padrão',
           resource_type_id: distTypeId,
           description: 'Especificação padrão de cabo óptico Netwin',
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-          ]),
+          characteristics: JSON.stringify(
+            netwinOriginCharacteristics('RESOURCE_SPECIFICATION', defaultCableSpecId),
+          ),
         });
         await target.execute('COMMIT');
         validSpecs.add(defaultCableSpecId);
@@ -343,9 +348,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
           characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            { group: '_origin', name: 'entity', value: 'OSP_EQUIPMENT', valueType: 'string' },
-            { group: '_origin', name: 'id', value: String(eq.ID), valueType: 'string' },
+            ...netwinOriginCharacteristics('OSP_EQUIPMENT', eq.ID),
             ...(substatus ? [{ name: 'substatus', value: substatus, valueType: 'string' }] : []),
           ]),
         });
@@ -524,11 +527,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            { group: '_origin', name: 'entity', value: 'OSP_ROUTE', valueType: 'string' },
-            { group: '_origin', name: 'id', value: String(r.ID), valueType: 'string' },
-          ]),
+          characteristics: JSON.stringify(netwinOriginCharacteristics('OSP_ROUTE', r.ID)),
         });
       }
 
@@ -709,11 +708,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            { group: '_origin', name: 'entity', value: 'OSP_CABLE', valueType: 'string' },
-            { group: '_origin', name: 'id', value: String(c.ID), valueType: 'string' },
-          ]),
+          characteristics: JSON.stringify(netwinOriginCharacteristics('OSP_CABLE', c.ID)),
         });
 
         // Relacionamentos connectedTo instantâneos em memória:

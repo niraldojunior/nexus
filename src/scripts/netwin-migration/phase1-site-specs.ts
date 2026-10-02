@@ -1,5 +1,9 @@
 import type { MigrationContext } from './context.js';
-import { merge } from '../netwin-migration-kit.js';
+import {
+  merge,
+  reconcileCatalogCharacteristics,
+  type MigrationCharacteristic,
+} from '../netwin-migration-kit.js';
 import { deterministicUuid, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import type { PhaseStats } from './types.js';
 
@@ -9,6 +13,15 @@ export type SiteSpecDef = {
   category: 'Site' | 'SubSite' | 'Region';
   siteRole: 'network' | 'property' | 'service' | 'grouping';
   description?: string;
+  specCharacteristic?: MigrationCharacteristic[];
+};
+
+const STATE_LIFECYCLE_CHARACTERISTIC: MigrationCharacteristic = {
+  name: 'stateLifecycle',
+  description: 'Estado de ciclo de vida informado pelo Netwin.',
+  value: '',
+  valueType: 'string',
+  characteristicLevel: 'instance',
 };
 
 export const CANONICAL_SITE_SPECS: SiteSpecDef[] = [
@@ -116,14 +129,15 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
           category: spec.category,
           site_role: spec.siteRole,
           lifecycle_status: 'Active',
-          characteristics: JSON.stringify([
-            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
-            ...(spec.description
-              ? [{ name: 'description', value: spec.description, valueType: 'string' }]
-              : []),
-          ]),
           is_bootstrap: 1,
         });
+        await reconcileCatalogCharacteristics(
+          target,
+          ctx.t,
+          'tmf_geographic_site_specification',
+          specId,
+          spec.specCharacteristic ?? [STATE_LIFECYCLE_CHARACTERISTIC],
+        );
       }
       stats.loaded++;
     }

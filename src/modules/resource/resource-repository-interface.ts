@@ -17,6 +17,7 @@ import type {
   ResourcePortDetail,
   ResourcePortsView,
   ResourceConnection,
+  ResourceComponentConnection,
   ResourceComponentNode,
   ResourceCatalog,
   ResourceCatalogNode,
@@ -159,7 +160,11 @@ export interface IResourceRepository {
   listResourceComponents(
     resourceId: string,
     options?: { scope?: ResourceTenantScope; maxDepth?: number },
-  ): Awaitable<{ components: ResourceComponentNode[]; truncated: boolean }>;
+  ): Awaitable<{
+    components: ResourceComponentNode[];
+    connections: ResourceComponentConnection[];
+    truncated: boolean;
+  }>;
 
   upsertPhysicalResource(resource: PhysicalResource): Awaitable<PhysicalResource>;
   getPhysicalResource(

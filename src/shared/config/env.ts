@@ -149,6 +149,15 @@ const resolveOraclePoolConfig = (env: NodeJS.ProcessEnv): DatabasePoolConfig => 
     throw new Error('ORACLE_POOL_MAX must be greater than or equal to ORACLE_POOL_MIN.');
   const timeoutSeconds = normalizePositiveInteger(env.ORACLE_POOL_TIMEOUT_SECONDS, 30);
   const timeoutMs = timeoutSeconds * 1_000;
+  // Queue timeout (esperar conexão livre no pool) e connect timeout (handshake TCP) significam
+  // coisas diferentes mas historicamente dividiam a mesma variável (issue #291). Sem override,
+  // ambos continuam derivando de ORACLE_POOL_TIMEOUT_SECONDS — preserva o default de 30s que
+  // test/env.spec.ts afirma. Com ORACLE_POOL_QUEUE_TIMEOUT_SECONDS, o queue timeout pode cair
+  // (ex.: 10s) para que uma request faminta falhe rápido em vez de segurar a fila por 30s.
+  const queueTimeoutSeconds = normalizePositiveInteger(
+    env.ORACLE_POOL_QUEUE_TIMEOUT_SECONDS,
+    timeoutSeconds,
+  );
   return {
     min,
     max,
@@ -156,7 +165,7 @@ const resolveOraclePoolConfig = (env: NodeJS.ProcessEnv): DatabasePoolConfig => 
       firstNonBlank(env.ORACLE_POOL_INCREMENT, env.DATABASE_POOL_INCREMENT),
       1,
     ),
-    queueTimeoutMs: timeoutMs,
+    queueTimeoutMs: queueTimeoutSeconds * 1_000,
     connectionTimeoutMs: timeoutMs,
     pingIntervalSeconds: normalizeNonNegativeInteger(env.ORACLE_POOL_PING_INTERVAL_SECONDS, 30),
   };

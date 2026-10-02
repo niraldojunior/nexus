@@ -217,6 +217,28 @@ test('resolveDatabaseConfig retorna o shape esperado com todas as variáveis pre
   });
 });
 
+test('resolveDatabaseConfig separa queueTimeoutMs de connectionTimeoutMs via ORACLE_POOL_QUEUE_TIMEOUT_SECONDS (issue #291)', () => {
+  const config = resolveDatabaseConfig({
+    ...validOracleEnv,
+    ORACLE_POOL_TIMEOUT_SECONDS: '30',
+    ORACLE_POOL_QUEUE_TIMEOUT_SECONDS: '10',
+  });
+
+  assert.equal(config.pool.queueTimeoutMs, 10_000);
+  // connectionTimeoutMs continua derivando só de ORACLE_POOL_TIMEOUT_SECONDS.
+  assert.equal(config.pool.connectionTimeoutMs, 30_000);
+});
+
+test('resolveDatabaseConfig sem ORACLE_POOL_QUEUE_TIMEOUT_SECONDS mantém o default retrocompatível', () => {
+  const config = resolveDatabaseConfig({
+    ...validOracleEnv,
+    ORACLE_POOL_TIMEOUT_SECONDS: '30',
+  });
+
+  assert.equal(config.pool.queueTimeoutMs, 30_000);
+  assert.equal(config.pool.connectionTimeoutMs, 30_000);
+});
+
 test('resolveDatabaseConfig exige ORACLE_OBJECT_PREFIX e valida o formato', () => {
   assert.throws(
     () =>

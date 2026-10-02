@@ -268,6 +268,14 @@ const toProject = (row: ProjectRow): GeoProject => ({
 });
 
 export class GeoProjectRepository {
+  // Issue #291: `ensureStatusCatalog` percorre 17 entradas com SELECT + INSERT condicional
+  // sequencial, e era chamado no início de list()/get()/create()/listStatusCatalog()/etc — 17+
+  // round-trips em série antes de qualquer listagem de projeto, em toda request. Memoizado por
+  // tenant nesta instância do repositório: uma vez bootstrapado o tenant nesta instância do
+  // processo, as chamadas seguintes são no-op. Sobrevive a reboot só até o próximo restart do
+  // processo (o catálogo em si é persistente; isto só evita reconferi-lo a cada request).
+  private readonly bootstrappedTenants = new Set<string>();
+
   public constructor(
     private readonly db: DatabaseClient,
     private readonly options: { bootstrapStatusCatalog?: boolean } = {},
@@ -275,6 +283,7 @@ export class GeoProjectRepository {
 
   private async ensureStatusCatalog(tenantId: string): Promise<void> {
     if (this.options.bootstrapStatusCatalog === false) return;
+    if (this.bootstrappedTenants.has(tenantId)) return;
     for (const item of PROJECT_STATUS_DEFAULTS) {
       // ON CONFLICT é específico de Postgres/SQLite. O runtime corporativo usa Oracle,
       // portanto o bootstrap precisa ser simples e portável.
@@ -290,6 +299,7 @@ export class GeoProjectRepository {
         );
       }
     }
+    this.bootstrappedTenants.add(tenantId);
   }
 
   async listStatusCatalog(tenantId: string): Promise<GeoProjectStatusCatalogItem[]> {

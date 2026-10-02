@@ -59,6 +59,18 @@ const chunk = <T>(items: readonly T[], size: number): T[][] => {
   return chunks;
 };
 
+// `allowed_parent/child_spec_ids` guarda um JSON array de ids gravado na criação do spec
+// (ver `createSpec`) — fallback de `hydrateSpecs` quando a tabela de regras não cobre o spec.
+const parseSpecIdColumn = (raw: string | null): string[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
 export class OracleGeoRepository implements IGeoRepository {
   constructor(private db: DatabaseClient) {}
 
@@ -1504,6 +1516,14 @@ export class OracleGeoRepository implements IGeoRepository {
       referencedIds.add(ruleRow.parent_spec_id);
       referencedIds.add(ruleRow.child_spec_id);
     }
+    // Fallback de containment (issue #291): quando a tabela de regras não cobre um spec — por
+    // exemplo logo após uma migração que não populou `tmf_geographic_site_spec_containment_rule` —
+    // usamos a coluna `allowed_parent/child_spec_ids`, que já vem no SELECT e era ignorada. Os ids
+    // dela também precisam entrar em `referencedIds` para que `rowById` consiga montar os refs.
+    for (const row of rows) {
+      for (const id of parseSpecIdColumn(row.allowed_parent_spec_ids)) referencedIds.add(id);
+      for (const id of parseSpecIdColumn(row.allowed_child_spec_ids)) referencedIds.add(id);
+    }
 
     const referencedRows =
       referencedIds.size > 0
@@ -1552,12 +1572,20 @@ export class OracleGeoRepository implements IGeoRepository {
     for (const row of rows) {
       const parentRules = ruleRows.filter((ruleRow) => ruleRow.child_spec_id === row.id);
       const childRules = ruleRows.filter((ruleRow) => ruleRow.parent_spec_id === row.id);
-      const allowedParentSpec = parentRules
-        .map((ruleRow) => rowById.get(ruleRow.parent_spec_id))
+      // Sem regras para este spec, cai para a coluna — nunca tratamos "sem regra" como "sem pai/filho"
+      // (ver issue #291: é exatamente essa confusão que zerava o filtro de containment no cliente).
+      const allowedParentSpec = (
+        parentRules.length > 0
+          ? parentRules.map((ruleRow) => rowById.get(ruleRow.parent_spec_id))
+          : parseSpecIdColumn(row.allowed_parent_spec_ids).map((id) => rowById.get(id))
+      )
         .filter((item): item is GeographicSiteSpecificationRow => item !== undefined)
         .map((item) => this.mapSpecRefRow(item, identitiesBySpecId.get(item.id)));
-      const allowedChildSpec = childRules
-        .map((ruleRow) => rowById.get(ruleRow.child_spec_id))
+      const allowedChildSpec = (
+        childRules.length > 0
+          ? childRules.map((ruleRow) => rowById.get(ruleRow.child_spec_id))
+          : parseSpecIdColumn(row.allowed_child_spec_ids).map((id) => rowById.get(id))
+      )
         .filter((item): item is GeographicSiteSpecificationRow => item !== undefined)
         .map((item) => this.mapSpecRefRow(item, identitiesBySpecId.get(item.id)));
 

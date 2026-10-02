@@ -76,27 +76,27 @@ export class OracleSearchRepository {
       [userId, limit],
     );
 
-    return Promise.all(
-      rows.map(async (row) => {
-        const messages = await this.getSessionMessages(row.id);
-        return {
-          '@type': 'ResearchSession',
-          id: row.id,
-          href: buildHref('researchSession', row.id),
-          userId: row.user_id,
-          title: row.title,
-          ...(row.description !== null ? { description: row.description } : {}),
-          ...(row.context !== null ? { context: row.context } : {}),
-          status: row.status,
-          ...(row.model !== null ? { model: row.model } : {}),
-          ...(row.temperature !== null ? { temperature: row.temperature } : {}),
-          ...(row.max_tokens !== null ? { maxTokens: row.max_tokens } : {}),
-          messages,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        };
-      }),
-    );
+    // Issue #291: listar 50 sessões e buscar as mensagens de cada uma era 51 queries concorrentes
+    // no pool — o maior amplificador de concorrência do código, chamado duas vezes por page-load.
+    // O payload de lista nunca precisou do corpo das mensagens (nenhum consumidor em web/src lê
+    // `.messages` na lista); quem precisa do conteúdo completo usa `getSession`, que já carrega
+    // as mensagens (linha ~50 acima).
+    return rows.map((row) => ({
+      '@type': 'ResearchSession',
+      id: row.id,
+      href: buildHref('researchSession', row.id),
+      userId: row.user_id,
+      title: row.title,
+      ...(row.description !== null ? { description: row.description } : {}),
+      ...(row.context !== null ? { context: row.context } : {}),
+      status: row.status,
+      ...(row.model !== null ? { model: row.model } : {}),
+      ...(row.temperature !== null ? { temperature: row.temperature } : {}),
+      ...(row.max_tokens !== null ? { maxTokens: row.max_tokens } : {}),
+      messages: [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
   }
 
   public async updateSessionTitle(

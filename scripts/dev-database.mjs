@@ -16,14 +16,23 @@ if (!existsSync(distPath)) {
 
 if (!startOnly) console.log(`Starting Nexus with Oracle on http://localhost:${port}`);
 
-const child = spawn(process.execPath, startOnly ? [distPath] : ['--watch', distPath], {
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    DATABASE_AUTO_SCHEMA: process.env.DATABASE_AUTO_SCHEMA ?? 'false',
+// Teto de heap explícito (issue #291): o servidor HTTP nunca deveria precisar de mais que o
+// default do Node 22 (~4GB) — se precisar, é sintoma de uma query sem limite, não motivo para
+// dobrar o teto (isso só tornaria a mesma morte mais lenta). Scripts de migração legitimamente
+// usam 8192 (package.json); aqui, nunca.
+const heapFlag = '--max-old-space-size=4096';
+const child = spawn(
+  process.execPath,
+  startOnly ? [heapFlag, distPath] : [heapFlag, '--watch', distPath],
+  {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      DATABASE_AUTO_SCHEMA: process.env.DATABASE_AUTO_SCHEMA ?? 'false',
+    },
+    shell: false,
   },
-  shell: false,
-});
+);
 
 child.on('error', (error) => {
   console.error(error);

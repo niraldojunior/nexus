@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { forbiddenError, unauthorizedError } from '../src/shared/errors/http-errors.js';
+import {
+  databaseUnavailableError,
+  forbiddenError,
+  listTooLargeError,
+  unauthorizedError,
+} from '../src/shared/errors/http-errors.js';
 
 test('unauthorizedError builds the canonical auth required AppError', () => {
   const error = unauthorizedError();
@@ -18,4 +23,20 @@ test('forbiddenError builds the canonical auth forbidden AppError', () => {
   assert.equal(error.message, 'invalid bearer token');
   assert.equal(error.code, 'AUTH_FORBIDDEN');
   assert.equal(error.statusCode, 403);
+});
+
+test('listTooLargeError builds the canonical 400 for implicit lists over the cap (issue #291)', () => {
+  const error = listTooLargeError();
+
+  assert.equal(error.name, 'AppError');
+  assert.equal(error.code, 'LIST_TOO_LARGE');
+  assert.equal(error.statusCode, 400);
+});
+
+test('databaseUnavailableError builds the canonical 503 for pool exhaustion (issue #291)', () => {
+  const error = databaseUnavailableError();
+
+  assert.equal(error.name, 'AppError');
+  assert.equal(error.code, 'DATABASE_UNAVAILABLE');
+  assert.equal(error.statusCode, 503);
 });

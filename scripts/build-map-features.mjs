@@ -32,14 +32,17 @@
  * Requer o dist compilado (npm run build).
  *
  * Uso:
- *   node scripts/build-map-features.mjs                       # dry-run, base inteira
- *   node scripts/build-map-features.mjs --apply                # base inteira
- *   node scripts/build-map-features.mjs --city "Niterói" --apply
- *   node scripts/build-map-features.mjs --uf RJ --apply
+ *   node scripts/build-map-features.mjs --environment NX_DEMO_                 # dry-run, base inteira
+ *   node scripts/build-map-features.mjs --environment NX_DEMO_ --apply         # base inteira
+ *   node scripts/build-map-features.mjs --environment NX_DEMO_ --city "Niterói" --apply
+ *   node scripts/build-map-features.mjs --environment NX_DEMO_ --uf RJ --apply
+ *
+ * `--environment` prevalece sobre ORACLE_OBJECT_PREFIX; sem a flag, a variável de ambiente
+ * continua sendo usada por compatibilidade.
  */
 
 import { config as loadEnv } from 'dotenv';
-import { openLoaderDb } from './loader-db.mjs';
+import { openLoaderDb, resolveLoaderEnvironment } from './loader-db.mjs';
 import {
   MAP_TILE_ZOOM,
   tileForPoint,
@@ -56,6 +59,7 @@ const argOf = (flag, fallback) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
 
+const ENVIRONMENT = resolveLoaderEnvironment(argv);
 const APPLY = has('--apply');
 const CITY = argOf('--city', null);
 const UF = argOf('--uf', null);
@@ -301,6 +305,7 @@ async function main() {
     const scopeWhere = scopeFilter(params);
     const scopeLabel =
       [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
+    console.log(`Ambiente : ${ENVIRONMENT}`);
     console.log(`Escopo   : ${scopeLabel} (tenant=${TENANT})`);
 
     // ResourcePanel expõe o agregado de detalhe exclusivamente para PhysicalResource. Manter

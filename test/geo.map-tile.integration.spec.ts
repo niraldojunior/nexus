@@ -131,6 +131,19 @@ test.skipIf(!oracleConfigured)(
         tenantId: 'vtal',
       });
 
+      // Sites não trafegam pelo índice por tile: leitura própria por bbox (/v1/geo/map/sites).
+      await insertFeature({
+        entityId: 'aaaaaaaa-0000-0000-0000-000000000050',
+        tileX: tile.x,
+        tileY: tile.y,
+        shape: 'point',
+        kind: 'site',
+        entityType: 'GeographicSite',
+        label: 'Site-fora-do-tile-path',
+        lng: ICARAI[0],
+        lat: ICARAI[1],
+      });
+
       // Feature num tile VIZINHO — não deve aparecer na leitura do tile de Icaraí.
       await insertFeature({
         entityId: 'aaaaaaaa-0000-0000-0000-000000000099',
@@ -168,6 +181,7 @@ test.skipIf(!oracleConfigured)(
       assert.deepEqual(line?.geometry?.type, 'LineString');
       assert.equal(line?.geometry?.coordinates.length, 2);
       assert.ok(!features.some((f) => f.label === 'CDOE-vtal'));
+      assert.ok(!features.some((f) => f.kind === 'site'), 'Sites não vêm pelo tile');
 
       const vtalResult = await requestJson(
         port,

@@ -9,6 +9,13 @@ import { createHash } from 'node:crypto';
 
 /** Sistema de origem gravado em `_origin.system` de todo item importado (C5). */
 export const ORIGIN_SYSTEM = 'ANEEL_SIGEL';
+/** Origens IBGE (WFS `CCAR:`): trechos vêm da BC250 2023, estações ferroviárias da BCIM. */
+export const IBGE_BC250_ORIGIN_SYSTEM = 'IBGE_BC250';
+export const IBGE_BCIM_ORIGIN_SYSTEM = 'IBGE_BCIM';
+
+/** Domínios de infraestrutura que o seed sabe carregar (`--domains`). */
+export const ALL_DOMAINS = ['energy', 'gas', 'rail'] as const;
+export type Domain = (typeof ALL_DOMAINS)[number];
 
 /**
  * Código da `GeographicSiteSpecification` da subestação.
@@ -20,14 +27,25 @@ export const ORIGIN_SYSTEM = 'ANEEL_SIGEL';
  * encontra camada e o mapa fica vazio em silêncio. Um símbolo só elimina a classe do bug.
  */
 export const SUBSTATION_SITE_SPEC_CODE = 'ENERGY_SUBSTATION';
+export const ISOLATED_SYSTEM_SITE_SPEC_CODE = 'ENERGY_ISOLATED_SYSTEM';
 
 /** Códigos dos `ResourceType` criados pelo seed — também os `sourceId` dos nós RESOURCE. */
 export const SUBSTATION_RESOURCE_TYPE_CODE = 'EnergySubstation';
+export const ISOLATED_SYSTEM_RESOURCE_TYPE_CODE = 'EnergyIsolatedSystem';
 export const TRANSMISSION_LINE_RESOURCE_TYPE_CODE = 'EnergyTransmissionLine';
+export const GAS_PIPELINE_RESOURCE_TYPE_CODE = 'GasPipeline';
+export const RAIL_SEGMENT_RESOURCE_TYPE_CODE = 'RailSegment';
+export const RAIL_STATION_RESOURCE_TYPE_CODE = 'RailStation';
+/** Mesmo papel de `SUBSTATION_SITE_SPEC_CODE`: `code` da spec e `sourceId` do nó LOCAL do Studio. */
+export const RAIL_STATION_SITE_SPEC_CODE = 'RAIL_STATION';
 
 /** Entidades de origem (compõem a chave de idempotência e `_origin.entity`). */
 export const SUBSTATION_ENTITY = 'SUBSTATION';
+export const ISOLATED_SYSTEM_ENTITY = 'ISOLATED_SYSTEM';
 export const TRANSMISSION_LINE_ENTITY = 'TRANSMISSION_LINE';
+export const GAS_PIPELINE_ENTITY = 'GAS_PIPELINE';
+export const RAIL_SEGMENT_ENTITY = 'RAIL_SEGMENT';
+export const RAIL_STATION_ENTITY = 'RAIL_STATION';
 
 /**
  * Namespace UUID v5 próprio do seed. Não reusa `NEXUS_NETWIN_NAMESPACE`: os espaços de id precisam
@@ -35,11 +53,44 @@ export const TRANSMISSION_LINE_ENTITY = 'TRANSMISSION_LINE';
  */
 export const DEMO_INFRA_NAMESPACE = '3f6c1a58-9d24-4b77-8e05-2a91c4de7b63';
 
-/** Caixas envolventes por UF, no formato [latMin, latMax, lonMin, lonMax] (iguais a uf-geo.mjs). */
+/**
+ * Caixas envolventes por UF, no formato [latMin, latMax, lonMin, lonMax].
+ *
+ * Espelha a fonte compartilhada `scripts/uf-geo.mjs`: o seed é compilado pelo TypeScript e não pode
+ * importar diretamente o módulo JavaScript sem declarações de tipo. Manter esta tabela completa
+ * permite que qualquer UF seja selecionada e preserva a mesma tolerância espacial dos loaders.
+ */
 export const UF_BBOX: Record<string, readonly [number, number, number, number]> = {
+  AC: [-11.4, -7.0, -74.2, -66.5],
+  AL: [-10.6, -8.7, -38.3, -35.0],
+  AP: [-1.3, 4.6, -54.9, -49.8],
+  AM: [-9.9, 2.3, -73.9, -56.0],
+  BA: [-18.5, -8.4, -46.7, -37.2],
+  CE: [-8.0, -2.6, -41.5, -37.1],
+  DF: [-16.2, -15.4, -48.4, -47.2],
+  ES: [-21.4, -17.8, -42.0, -39.5],
+  GO: [-19.6, -12.3, -53.4, -45.8],
+  MA: [-10.4, -0.9, -48.9, -41.7],
+  MT: [-18.1, -7.2, -61.7, -50.1],
+  MS: [-24.2, -17.1, -58.3, -50.8],
+  MG: [-23.0, -14.1, -51.1, -39.8],
+  PA: [-9.9, 2.7, -59.0, -45.9],
+  PB: [-8.4, -5.9, -38.9, -34.7],
+  PR: [-26.8, -22.4, -54.7, -47.9],
+  PE: [-9.6, -7.2, -41.5, -32.3],
+  PI: [-11.0, -2.6, -46.0, -40.3],
   RJ: [-23.5, -20.6, -45.0, -40.8],
+  RN: [-7.0, -4.7, -38.7, -34.8],
+  RS: [-33.9, -26.9, -57.8, -49.5],
+  RO: [-13.8, -7.8, -66.9, -59.6],
+  RR: [-1.7, 5.4, -64.9, -58.9],
+  SC: [-29.5, -25.8, -54.0, -48.2],
   SP: [-25.5, -19.6, -53.3, -44.0],
+  SE: [-11.7, -9.4, -38.4, -36.3],
+  TO: [-13.6, -5.0, -50.9, -45.6],
 };
+
+export const ALL_STATES = Object.keys(UF_BBOX);
 
 export type Bbox = { latMin: number; latMax: number; lonMin: number; lonMax: number };
 
@@ -297,10 +348,15 @@ export function deterministicUuid(namespaceUuid: string, name: string): string {
  * Id estável de um item importado. A chave é `sistema:entidade:id-externo` — reexecutar o seed no
  * mesmo escopo atualiza as mesmas linhas, nunca duplica.
  */
-export const demoId = (entity: string, sourceId: string | number, part?: number): string =>
+export const demoId = (
+  entity: string,
+  sourceId: string | number,
+  part?: number,
+  system: string = ORIGIN_SYSTEM,
+): string =>
   deterministicUuid(
     DEMO_INFRA_NAMESPACE,
-    `${ORIGIN_SYSTEM}:${entity}:${sourceId}${part === undefined ? '' : `:${part}`}`,
+    `${system}:${entity}:${sourceId}${part === undefined ? '' : `:${part}`}`,
   );
 
 /** `_origin.id` acompanha o sufixo de parte, para que cada parte tenha origem rastreável única. */
@@ -327,8 +383,9 @@ export const originCharacteristics = (
   entity: string,
   sourceId: string | number,
   extra?: Record<string, unknown>,
+  system: string = ORIGIN_SYSTEM,
 ): Characteristic[] => [
-  { name: '_origin.system', value: ORIGIN_SYSTEM, valueType: 'string' },
+  { name: '_origin.system', value: system, valueType: 'string' },
   { name: '_origin.entity', value: entity, valueType: 'string' },
   { name: '_origin.id', value: String(sourceId), valueType: 'string' },
   ...(extra && Object.keys(extra).length > 0
@@ -384,7 +441,7 @@ export type SigelFeature = {
   geometry: unknown;
 };
 
-export type MappedSubstation = {
+export type MappedPointSite = {
   sourceId: string;
   locationId: string;
   siteId: string;
@@ -392,8 +449,13 @@ export type MappedSubstation = {
   name: string;
   point: Point;
   uf?: string | undefined;
+  /** Ausente = `ORIGIN_SYSTEM` (ANEEL). Vira o `source_system` da Location. */
+  originSystem?: string | undefined;
   characteristics: Characteristic[];
 };
+
+export type MappedSubstation = MappedPointSite;
+export type MappedIsolatedSystem = MappedPointSite;
 
 export type MappedLine = {
   sourceId: string;
@@ -403,6 +465,7 @@ export type MappedLine = {
   name: string;
   line: LineString;
   uf?: string | undefined;
+  originSystem?: string | undefined;
   characteristics: Characteristic[];
 };
 
@@ -442,6 +505,47 @@ export function mapSubstation(
     uf,
     characteristics: buildCharacteristics({
       entity: SUBSTATION_ENTITY,
+      sourceId,
+      fields,
+      uf,
+    }),
+  };
+}
+
+/**
+ * Mapeia um Sistema Isolado (layer 5). A fonte o disponibiliza como ponto no mesmo serviço de
+ * transmissão; ele ganha identidade e catálogo próprios, sem ser confundido com uma subestação.
+ */
+export function mapIsolatedSystem(
+  feature: SigelFeature,
+  states: readonly string[],
+): MappedIsolatedSystem | undefined {
+  const sourceId = oidOf(feature.properties);
+  if (!sourceId) return undefined;
+
+  const point = toGeoJsonPoint((feature.geometry as { coordinates?: unknown })?.coordinates);
+  if (!point) return undefined;
+
+  const [lon, lat] = point.coordinates;
+  if (!substationInScope(states, lon, lat)) return undefined;
+
+  const fields = parsePopupInfo(feature.properties.PopupInfo as string | undefined);
+  const name =
+    normalizeName(feature.properties.Name as string | undefined) ||
+    fields.nome ||
+    `Sistema Isolado ${sourceId}`;
+  const uf = ufsContaining(states, lon, lat).join('/') || undefined;
+
+  return {
+    sourceId,
+    locationId: demoId(ISOLATED_SYSTEM_ENTITY, sourceId),
+    siteId: demoId(`${ISOLATED_SYSTEM_ENTITY}:SITE`, sourceId),
+    resourceId: demoId(`${ISOLATED_SYSTEM_ENTITY}:RESOURCE`, sourceId),
+    name,
+    point,
+    uf,
+    characteristics: buildCharacteristics({
+      entity: ISOLATED_SYSTEM_ENTITY,
       sourceId,
       fields,
       uf,
@@ -491,6 +595,160 @@ export function mapTransmissionLine(
       }),
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// IBGE (WFS `CCAR:`) — Gás e Ferrovia
+// ---------------------------------------------------------------------------
+
+/**
+ * Valor textual útil de um atributo IBGE. A base marca ausência como `null` ou `Desconhecid[oa]`;
+ * nenhum dos dois vira characteristic (sem placeholder, igual ao restante do seed).
+ */
+export function knownText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = normalizeName(value);
+  if (text === '' || /^desconhecid[oa]s?$/i.test(text)) return undefined;
+  return text;
+}
+
+const pickKnown = (
+  properties: Record<string, unknown>,
+  keys: readonly string[],
+): Characteristic[] =>
+  keys.flatMap((key) => {
+    const value = knownText(properties[key]);
+    return value === undefined ? [] : [{ name: key, value, valueType: 'string' } as Characteristic];
+  });
+
+const ufCharacteristic = (uf: string | undefined): Characteristic[] =>
+  uf === undefined ? [] : [{ name: 'uf', value: uf, valueType: 'string' }];
+
+const GAS_PIPELINE_ATTRIBUTES = [
+  'tipotrechoduto',
+  'mattransp',
+  'setor',
+  'posicaorelativa',
+  'operacional',
+  'situacaofisica',
+] as const;
+const RAIL_SEGMENT_ATTRIBUTES = [
+  'tipotrechoferrov',
+  'bitola',
+  'eletrificada',
+  'nrlinhas',
+  'concessionaria',
+  'administracao',
+  'operacional',
+  'situacaofisica',
+] as const;
+const RAIL_STATION_ATTRIBUTES = [
+  'funcaoedifmetroferrov',
+  'multimodal',
+  'administracao',
+  'operacional',
+  'situacaofisica',
+] as const;
+
+type IbgeLinearSpec = {
+  entity: string;
+  system: string;
+  attributes: readonly string[];
+  fallbackName: string;
+};
+
+function mapIbgeLines(
+  feature: SigelFeature,
+  states: readonly string[],
+  spec: IbgeLinearSpec,
+): MappedLine[] {
+  const sourceId = oidOf(feature.properties);
+  if (!sourceId) return [];
+
+  const lines = toGeoJsonLines(feature.geometry);
+  if (lines.length === 0) return [];
+
+  // O nome IBGE não carrega sufixo de UF (e pode terminar em sigla por acaso): o escopo é sempre
+  // geométrico, por isso `undefined` no lugar do nome.
+  const allVertices = lines.flatMap((line) => line.coordinates);
+  if (!lineInScope(undefined, states, allVertices)) return [];
+
+  const name = knownText(feature.properties.nome) ?? `${spec.fallbackName} ${sourceId}`;
+  const attributes = pickKnown(feature.properties, spec.attributes);
+  const multipart = lines.length > 1;
+
+  return lines.map((line, index) => {
+    const part = multipart ? index + 1 : undefined;
+    const uf = resolveUf(undefined, states, line.coordinates);
+    return {
+      sourceId,
+      originId: originId(sourceId, part),
+      locationId: demoId(spec.entity, sourceId, part, spec.system),
+      resourceId: demoId(`${spec.entity}:RESOURCE`, sourceId, part, spec.system),
+      name: multipart ? `${name} (parte ${index + 1})` : name,
+      line,
+      uf,
+      originSystem: spec.system,
+      characteristics: [
+        ...attributes,
+        ...ufCharacteristic(uf),
+        ...originCharacteristics(spec.entity, originId(sourceId, part), undefined, spec.system),
+      ],
+    };
+  });
+}
+
+/** Trecho de duto (BC250 `Trecho_Duto_L`) → recurso Gasoduto. */
+export const mapGasPipeline = (feature: SigelFeature, states: readonly string[]): MappedLine[] =>
+  mapIbgeLines(feature, states, {
+    entity: GAS_PIPELINE_ENTITY,
+    system: IBGE_BC250_ORIGIN_SYSTEM,
+    attributes: GAS_PIPELINE_ATTRIBUTES,
+    fallbackName: 'Gasoduto',
+  });
+
+/** Trecho ferroviário (BC250 `Trecho_Ferroviario_L`). */
+export const mapRailSegment = (feature: SigelFeature, states: readonly string[]): MappedLine[] =>
+  mapIbgeLines(feature, states, {
+    entity: RAIL_SEGMENT_ENTITY,
+    system: IBGE_BC250_ORIGIN_SYSTEM,
+    attributes: RAIL_SEGMENT_ATTRIBUTES,
+    fallbackName: 'Trecho Ferroviário',
+  });
+
+/** Estação ferroviária/metroviária (BCIM `Edif_Metro_Ferroviaria_P`): Location → Site → Resource. */
+export function mapRailStation(
+  feature: SigelFeature,
+  states: readonly string[],
+): MappedPointSite | undefined {
+  const sourceId = oidOf(feature.properties);
+  if (!sourceId) return undefined;
+
+  const point = toGeoJsonPoint((feature.geometry as { coordinates?: unknown })?.coordinates);
+  if (!point) return undefined;
+
+  const [lon, lat] = point.coordinates;
+  if (!substationInScope(states, lon, lat)) return undefined;
+
+  const system = IBGE_BCIM_ORIGIN_SYSTEM;
+  const name = knownText(feature.properties.nome) ?? `Estação Ferroviária ${sourceId}`;
+  const uf = ufsContaining(states, lon, lat).join('/') || undefined;
+
+  return {
+    sourceId,
+    locationId: demoId(RAIL_STATION_ENTITY, sourceId, undefined, system),
+    siteId: demoId(`${RAIL_STATION_ENTITY}:SITE`, sourceId, undefined, system),
+    resourceId: demoId(`${RAIL_STATION_ENTITY}:RESOURCE`, sourceId, undefined, system),
+    name,
+    point,
+    uf,
+    originSystem: system,
+    characteristics: [
+      ...pickKnown(feature.properties, RAIL_STATION_ATTRIBUTES),
+      ...ufCharacteristic(uf),
+      ...originCharacteristics(RAIL_STATION_ENTITY, sourceId, undefined, system),
+    ],
+  };
 }
 
 /** Remove duplicatas por id, mantendo a primeira ocorrência — a fonte pode repetir `OID`. */

@@ -19,6 +19,32 @@ const chunk = (arr, size) => {
 };
 
 const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/;
+const ORACLE_PREFIX = /^[A-Za-z][A-Za-z0-9_]*_$/;
+
+// Resolve o namespace apenas para o processo do loader. `--environment` vence uma variável
+// herdada da sessão para que um rebuild explícito não grave no ambiente errado.
+export function resolveLoaderEnvironment(argv = process.argv.slice(2)) {
+  const index = argv.indexOf('--environment');
+  const argument = index >= 0 ? argv[index + 1] : undefined;
+  if (index >= 0 && (!argument || argument.startsWith('--'))) {
+    throw new Error('O parâmetro --environment exige um prefixo Oracle (ex.: NX_DEMO_).');
+  }
+  const raw = argument ?? process.env.ORACLE_OBJECT_PREFIX;
+  if (!raw) {
+    throw new Error(
+      'Informe --environment <prefixo> (ex.: NX_DEMO_) ou defina ORACLE_OBJECT_PREFIX.',
+    );
+  }
+
+  const prefix = raw.trim().toUpperCase();
+  if (!ORACLE_PREFIX.test(prefix)) {
+    throw new Error(
+      `Ambiente Oracle inválido "${raw}". Use letras, números ou _, começando por letra e terminando em _ (ex.: NX_DEMO_).`,
+    );
+  }
+  process.env.ORACLE_OBJECT_PREFIX = prefix;
+  return prefix;
+}
 
 export async function openLoaderDb() {
   const prefix = process.env.ORACLE_OBJECT_PREFIX;

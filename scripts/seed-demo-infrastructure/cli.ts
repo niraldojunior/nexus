@@ -5,12 +5,14 @@
  * e o teste unitário não deve arrastar aquele grafo só para conferir flags.
  */
 
-import { UF_BBOX } from './mapper.js';
+import { ALL_DOMAINS, ALL_STATES, UF_BBOX, type Domain } from './mapper.js';
 
 export type CliOptions = {
   apply: boolean;
   limit?: number;
   states: string[];
+  /** Domínios carregados. Default só `energy`: gás e ferrovia exigem opt-in explícito. */
+  domains: Domain[];
   /** `undefined` = resolver do próprio namespace (`nexus_environment.tenant_id`). */
   tenantId?: string | undefined;
   /** `undefined` = herdar o tenant resolvido. */
@@ -32,6 +34,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   const options: CliOptions = {
     apply: false,
     states: [...DEFAULT_STATES],
+    domains: ['energy'],
     buildFeatures: false,
   };
 
@@ -62,6 +65,26 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
         options.limit = limit;
         break;
       }
+      case '--domains': {
+        const raw = next(i, '--domains');
+        i += 1;
+        const domains = raw
+          .split(',')
+          .map((domain) => domain.trim().toLowerCase())
+          .filter(Boolean);
+        if (domains.length === 0) throw new Error('--domains exige ao menos um domínio.');
+        const unknown = domains.filter((domain) => !(ALL_DOMAINS as readonly string[]).includes(domain));
+        if (unknown.length > 0) {
+          throw new Error(
+            `Domínio desconhecido: ${unknown.join(', ')} (disponíveis: ${ALL_DOMAINS.join(', ')}).`,
+          );
+        }
+        options.domains = [...new Set(domains)] as Domain[];
+        break;
+      }
+      case '--all-states':
+        options.states = [...ALL_STATES];
+        break;
       case '--states': {
         const raw = next(i, '--states');
         i += 1;

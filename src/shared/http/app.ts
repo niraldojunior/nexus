@@ -2811,11 +2811,50 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, features);
   }
 
-  // Densidade agregada da planta (geo_map_density — Fase 4, issue #69): o que o mapa desenha
-  // ACIMA da escala em que a feature individual some. Por bbox, não por tile único como
-  // /v1/geo/map/tile — em zoom aberto a viewport cobre poucas células grossas, e pedir uma a uma
-  // custaria mais em ida-e-volta do que a consulta inteira. `z` tem de ser um dos níveis
-  // gerados (MAP_DENSITY_ZOOMS); qualquer outro devolveria vazio silenciosamente, então é 400.
+  // Sites do mapa por bbox (issue #314): leitura única e genérica para qualquer
+  // GeographicSiteSpecification pontual publicada no Studio GEO. `sourceModelId` (repetido) lista as
+  // specifications visíveis; o servidor não conhece códigos especiais. Uma chamada por viewport.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/map/sites') {
+    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined ||
+      minLng > maxLng ||
+      minLat > maxLat
+    ) {
+      throw new AppError('valid minLng, minLat, maxLng and maxLat are required', {
+        code: 'GEO_MAP_SITES_BOUNDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const sourceModelIds = [...new Set(url.searchParams.getAll('sourceModelId'))];
+    if (
+      sourceModelIds.length > 200 ||
+      sourceModelIds.some((id) => id.length === 0 || id.length > 200)
+    ) {
+      throw new AppError('sourceModelId must have at most 200 values of up to 200 characters', {
+        code: 'GEO_MAP_SITES_SOURCE_INVALID',
+        statusCode: 400,
+      });
+    }
+    const result = await runtime.geoMapSiteService.sites(
+      { minLng, minLat, maxLng, maxLat },
+      sourceModelIds,
+      { tenantId: geoContext.tenantId },
+    );
+    return sendJson(response, 200, result);
+  }
+
+  // Densidade agregada opcional da planta (geo_map_density — Fase 4, issue #69). Por bbox,
+  // não por tile único como /v1/geo/map/tile — uma visualização agregada cobre poucas células
+  // grossas, e pedir uma a uma custaria mais em ida-e-volta do que a consulta inteira. `z` tem
+  // de ser um dos níveis gerados (MAP_DENSITY_ZOOMS); qualquer outro devolveria vazio
+  // silenciosamente, então é 400. Ela não define a visibilidade das features individuais.
   if (request.method === 'GET' && url.pathname === '/v1/geo/map/density') {
     const z = parseOptionalNumber(url.searchParams.get('z'));
     if (z === undefined || !Number.isInteger(z) || !isMapDensityZoom(z)) {

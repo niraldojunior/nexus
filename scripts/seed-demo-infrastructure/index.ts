@@ -3,10 +3,11 @@
  * Seed de infraestrutura pública na instância Nexus DEMO — Energia (ANEEL SIGEL).
  *
  * Baixa subestações e linhas de transmissão reais do serviço ArcGIS público do SIGEL, restringe a
- * UFs (default RJ+SP) e grava no modelo que o Nexus já tem: `GeographicSiteSpecification` +
- * `ResourceType` + `ResourceSpecification` no catálogo, e `GeographicLocation` / `GeographicSite` /
- * `PhysicalResource` nas instâncias. Nada de modelo paralelo, nada de coluna nova: tensão, extensão,
- * operador e UF entram como `characteristic` de instância (C1), e a procedência como `_origin.*` (C5).
+ * UFs (default RJ+SP) e grava subestações, linhas e sistemas isolados no modelo que o Nexus já tem:
+ * `GeographicSiteSpecification` + `ResourceType` + `ResourceSpecification` no catálogo, e
+ * `GeographicLocation` / `GeographicSite` / `PhysicalResource` nas instâncias. Nada de modelo paralelo,
+ * nada de coluna nova: atributos da fonte e UF entram como `characteristic` de instância (C1), e a
+ * procedência como `_origin.*` (C5).
  *
  * Uso:
  *   npm run seed-demo-infra -- --limit 20                  # ensaio (dry-run), não grava
@@ -38,26 +39,47 @@ import { createDatabaseClient } from '../../src/shared/persistence/database-fact
 import { createNexusRuntime } from '../../src/shared/runtime/nexus-runtime.js';
 import { parseCliArgs, type CliOptions } from './cli.js';
 import {
+  ISOLATED_SYSTEM_LAYER_ID,
   SUBSTATION_LAYER_ID,
   TRANSMISSION_LINE_LAYER_ID,
   countFeatures,
   fetchLayerFeatures,
 } from './aneel.js';
 import {
+  IBGE_GAS_PIPELINE_LAYER,
+  IBGE_RAIL_SEGMENT_LAYER,
+  IBGE_RAIL_STATION_LAYER,
+  countIbgeFeatures,
+  fetchIbgeFeatures,
+} from './ibge.js';
+import {
   DEMO_INFRA_NAMESPACE,
+  GAS_PIPELINE_RESOURCE_TYPE_CODE,
+  ISOLATED_SYSTEM_RESOURCE_TYPE_CODE,
+  ISOLATED_SYSTEM_SITE_SPEC_CODE,
   ORIGIN_SYSTEM,
+  RAIL_SEGMENT_RESOURCE_TYPE_CODE,
+  RAIL_STATION_RESOURCE_TYPE_CODE,
+  RAIL_STATION_SITE_SPEC_CODE,
   SUBSTATION_RESOURCE_TYPE_CODE,
   SUBSTATION_SITE_SPEC_CODE,
   TRANSMISSION_LINE_RESOURCE_TYPE_CODE,
   bboxForStates,
   dedupeById,
   deterministicUuid,
+  mapGasPipeline,
+  mapIsolatedSystem,
+  mapRailSegment,
+  mapRailStation,
   mapSubstation,
   mapTransmissionLine,
+  type Domain,
   type MappedLine,
+  type MappedPointSite,
   type MappedSubstation,
+  type SigelFeature,
 } from './mapper.js';
-import { publishEnergyLayers } from './studio-geo.js';
+import { publishDomainLayers } from './studio-geo.js';
 
 loadEnv();
 oracledb.fetchAsString = [oracledb.CLOB];
@@ -77,7 +99,36 @@ type ResourceTypeDef = {
   name: string;
   description: string;
   geometryKind: 'POINT' | 'LINE';
+  domain: Domain;
 };
+
+type SiteSpecDef = {
+  code: string;
+  name: string;
+  description: string;
+  domain: Domain;
+};
+
+const SITE_SPECS: SiteSpecDef[] = [
+  {
+    code: SUBSTATION_SITE_SPEC_CODE,
+    name: 'Subestação de Energia',
+    description: 'Subestação de transmissão de energia elétrica (ANEEL SIGEL).',
+    domain: 'energy',
+  },
+  {
+    code: ISOLATED_SYSTEM_SITE_SPEC_CODE,
+    name: 'Sistema Isolado de Energia',
+    description: 'Sistema isolado de energia elétrica (ANEEL SIGEL/ONS).',
+    domain: 'energy',
+  },
+  {
+    code: RAIL_STATION_SITE_SPEC_CODE,
+    name: 'Estação Ferroviária',
+    description: 'Estação ferroviária ou metroviária (IBGE BCIM).',
+    domain: 'rail',
+  },
+];
 
 const RESOURCE_TYPES: ResourceTypeDef[] = [
   {
@@ -85,17 +136,51 @@ const RESOURCE_TYPES: ResourceTypeDef[] = [
     name: 'Subestação de Energia',
     description: 'Subestação de transmissão de energia elétrica (ANEEL SIGEL).',
     geometryKind: 'POINT',
+    domain: 'energy',
+  },
+  {
+    code: ISOLATED_SYSTEM_RESOURCE_TYPE_CODE,
+    name: 'Sistema Isolado de Energia',
+    description: 'Sistema isolado de energia elétrica (ANEEL SIGEL/ONS).',
+    geometryKind: 'POINT',
+    domain: 'energy',
   },
   {
     code: TRANSMISSION_LINE_RESOURCE_TYPE_CODE,
     name: 'Linha de Transmissão',
     description: 'Linha de transmissão de energia elétrica (ANEEL SIGEL).',
     geometryKind: 'LINE',
+    domain: 'energy',
+  },
+  {
+    code: GAS_PIPELINE_RESOURCE_TYPE_CODE,
+    name: 'Gasoduto',
+    description: 'Trecho de duto de gás e derivados (IBGE BC250).',
+    geometryKind: 'LINE',
+    domain: 'gas',
+  },
+  {
+    code: RAIL_SEGMENT_RESOURCE_TYPE_CODE,
+    name: 'Trecho Ferroviário',
+    description: 'Trecho de via férrea (IBGE BC250).',
+    geometryKind: 'LINE',
+    domain: 'rail',
+  },
+  {
+    code: RAIL_STATION_RESOURCE_TYPE_CODE,
+    name: 'Estação Ferroviária',
+    description: 'Estação ferroviária ou metroviária (IBGE BCIM).',
+    geometryKind: 'POINT',
+    domain: 'rail',
   },
 ];
 
-/** Grupo e folhas do catálogo de recursos — é o que faz a árvore ENERGIA aparecer no Inventário. */
-const CATALOG_GROUP_CODE = 'grp-energia';
+/** Grupo do catálogo de recursos por domínio — faz a árvore aparecer no Inventário. */
+const CATALOG_GROUPS: Record<Domain, { code: string; name: string; sortOrder: number }> = {
+  energy: { code: 'grp-energia', name: 'Energia', sortOrder: 100 },
+  gas: { code: 'grp-gas', name: 'Gás', sortOrder: 110 },
+  rail: { code: 'grp-ferrovia', name: 'Ferrovia', sortOrder: 120 },
+};
 
 async function idByColumns(
   conn: Connection,
@@ -120,22 +205,25 @@ async function idByColumns(
  * é resolvido antes do MERGE porque `mergeSql` atualiza toda coluna fora da chave: repontar o `id`
  * de uma spec já referenciada quebraria a FK de `tmf_geographic_site`.
  */
-async function ensureSubstationSiteSpec(conn: Connection, t: TablePrefixer): Promise<string> {
+async function ensureSiteSpec(
+  conn: Connection,
+  t: TablePrefixer,
+  definition: SiteSpecDef,
+): Promise<string> {
   const existing = await idByColumns(conn, t, 'tmf_geographic_site_specification', {
-    code: SUBSTATION_SITE_SPEC_CODE,
+    code: definition.code,
   });
-  const id =
-    existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `SITE_SPEC:${SUBSTATION_SITE_SPEC_CODE}`);
+  const id = existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `SITE_SPEC:${definition.code}`);
   await merge(conn, t, 'tmf_geographic_site_specification', ['code'], {
     id,
-    name: 'Subestação de Energia',
-    code: SUBSTATION_SITE_SPEC_CODE,
+    name: definition.name,
+    code: definition.code,
     // `category:'Site'` é o que o `SITE_SOURCE` do indexador exige para desenhar o ponto;
     // `site_role:'network'` é o eixo funcional de infraestrutura de rede (C11), igual a CO/POP.
     category: 'Site',
     site_role: 'network',
     lifecycle_status: 'Active',
-    description: 'Subestação de transmissão de energia elétrica (ANEEL SIGEL).',
+    description: definition.description,
     is_bootstrap: 0,
     // `characteristics` só no INSERT: o MERGE atualiza toda coluna listada, e incluí-la aqui
     // zeraria, a cada reexecução, as definitions configuradas no Studio.
@@ -252,6 +340,7 @@ async function ensureCatalogNodes(
   t: TablePrefixer,
   resourceTypeIdByCode: Map<string, string>,
   tenantId: string,
+  domains: readonly Domain[],
 ): Promise<void> {
   const catalog = await ensureResourceCatalog(conn, t, tenantId);
 
@@ -276,37 +365,40 @@ async function ensureCatalogNodes(
     idByCode.get(code) ??
     deterministicUuid(DEMO_INFRA_NAMESPACE, `CATALOG_NODE:${tenantId}:${catalog}:${code}`);
 
-  const groupId = nodeId(CATALOG_GROUP_CODE);
-  await merge(conn, t, 'tmf_resource_catalog_node', ['id'], {
-    id: groupId,
-    tenant_id: tenantId,
-    catalog_id: catalog,
-    parent_node_id: null,
-    code: CATALOG_GROUP_CODE,
-    name: 'Energia',
-    kind: 'GROUP',
-    resource_type_id: null,
-    status: 'active',
-    sort_order: 100,
-  });
-
-  let sortOrder = 10;
-  for (const definition of RESOURCE_TYPES) {
-    const resourceTypeId = resourceTypeIdByCode.get(definition.code);
-    if (!resourceTypeId) continue;
+  for (const domain of domains) {
+    const group = CATALOG_GROUPS[domain];
+    const groupId = nodeId(group.code);
     await merge(conn, t, 'tmf_resource_catalog_node', ['id'], {
-      id: idByTypeId.get(resourceTypeId) ?? nodeId(definition.code),
+      id: groupId,
       tenant_id: tenantId,
       catalog_id: catalog,
-      parent_node_id: groupId,
-      code: definition.code,
-      name: definition.name,
-      kind: 'RESOURCE_TYPE',
-      resource_type_id: resourceTypeId,
+      parent_node_id: null,
+      code: group.code,
+      name: group.name,
+      kind: 'GROUP',
+      resource_type_id: null,
       status: 'active',
-      sort_order: sortOrder,
+      sort_order: group.sortOrder,
     });
-    sortOrder += 10;
+
+    let sortOrder = 10;
+    for (const definition of RESOURCE_TYPES.filter((type) => type.domain === domain)) {
+      const resourceTypeId = resourceTypeIdByCode.get(definition.code);
+      if (!resourceTypeId) continue;
+      await merge(conn, t, 'tmf_resource_catalog_node', ['id'], {
+        id: idByTypeId.get(resourceTypeId) ?? nodeId(definition.code),
+        tenant_id: tenantId,
+        catalog_id: catalog,
+        parent_node_id: groupId,
+        code: definition.code,
+        name: definition.name,
+        kind: 'RESOURCE_TYPE',
+        resource_type_id: resourceTypeId,
+        status: 'active',
+        sort_order: sortOrder,
+      });
+      sortOrder += 10;
+    }
   }
 }
 
@@ -382,8 +474,8 @@ type LoadPlan = {
 const relatedPartyJson = (ownerPartyId: string): string =>
   JSON.stringify([{ id: ownerPartyId, '@referredType': 'Organization' }]);
 
-function substationRows(
-  items: readonly MappedSubstation[],
+function pointSiteRows(
+  items: readonly MappedPointSite[],
   context: { tenantId: string; ownerPartyId: string; siteSpecId: string; resourceSpecId: string },
 ): LoadPlan {
   const plan: LoadPlan = { locations: [], sites: [], resources: [] };
@@ -397,7 +489,7 @@ function substationRows(
       spatial_ref: 'EPSG:4326',
       reference_point: item.name,
       characteristics,
-      source_system: ORIGIN_SYSTEM,
+      source_system: item.originSystem ?? ORIGIN_SYSTEM,
       source_ref: item.sourceId,
     });
     plan.sites.push({
@@ -430,7 +522,8 @@ function substationRows(
   return plan;
 }
 
-function transmissionLineRows(
+/** Recurso linear (linha de transmissão, gasoduto, trecho ferroviário): Location → Resource. */
+function lineResourceRows(
   items: readonly MappedLine[],
   context: { tenantId: string; ownerPartyId: string; resourceSpecId: string },
 ): LoadPlan {
@@ -446,7 +539,7 @@ function transmissionLineRows(
       spatial_ref: 'EPSG:4326',
       reference_point: item.name,
       characteristics,
-      source_system: ORIGIN_SYSTEM,
+      source_system: item.originSystem ?? ORIGIN_SYSTEM,
       source_ref: item.originId,
     });
     plan.resources.push({
@@ -524,6 +617,7 @@ async function runSeed(options: CliOptions): Promise<void> {
   console.log(
     `    UFs: ${options.states.join(', ')}${options.limit ? ` · limite: ${options.limit}` : ''}`,
   );
+  console.log(`    domínios: ${options.domains.join(', ')}`);
 
   const t = makeTablePrefixer(prefix);
   const bbox = bboxForStates(options.states);
@@ -558,10 +652,16 @@ async function runSeed(options: CliOptions): Promise<void> {
 
     // --- [1] Catálogo -------------------------------------------------------
     console.log('[1] Catálogo');
-    const siteSpecId = await ensureSubstationSiteSpec(conn, t);
+    const siteSpecIdByCode = new Map<string, string>();
+    const wants = (domain: Domain): boolean => options.domains.includes(domain);
+    const siteSpecs = SITE_SPECS.filter((definition) => wants(definition.domain));
+    const resourceTypes = RESOURCE_TYPES.filter((definition) => wants(definition.domain));
+    for (const definition of siteSpecs) {
+      siteSpecIdByCode.set(definition.code, await ensureSiteSpec(conn, t, definition));
+    }
     const resourceTypeIdByCode = new Map<string, string>();
     const resourceSpecIdByCode = new Map<string, string>();
-    for (const definition of RESOURCE_TYPES) {
+    for (const definition of resourceTypes) {
       const typeId = await ensureResourceTypeForMap(conn, t, definition, tenantId);
       resourceTypeIdByCode.set(definition.code, typeId);
       resourceSpecIdByCode.set(
@@ -569,37 +669,51 @@ async function runSeed(options: CliOptions): Promise<void> {
         await ensureResourceSpec(conn, t, definition, typeId, tenantId),
       );
     }
-    await ensureCatalogNodes(conn, t, resourceTypeIdByCode, tenantId);
+    await ensureCatalogNodes(conn, t, resourceTypeIdByCode, tenantId, options.domains);
 
+    const catalogSummary =
+      `${siteSpecs.length} site specs · ${resourceTypes.length} resource types · ` +
+      `${resourceTypes.length} specifications · árvores ${options.domains.join('+')}`;
     if (options.apply) {
       await conn.execute('COMMIT');
-      console.log('    1 site spec · 2 resource types · 2 specifications · árvore ENERGIA');
+      console.log(`    ${catalogSummary}`);
     } else {
       await conn.execute('ROLLBACK');
-      console.log(
-        '    1 site spec · 2 resource types · 2 specifications · árvore ENERGIA (não gravado)',
-      );
+      console.log(`    ${catalogSummary} (não gravado)`);
     }
 
     // --- [2] Extração -------------------------------------------------------
     console.log('[2] Extração');
-    console.log('    Fetching ANEEL substations...');
-    const substationCount = await countFeatures({ layerId: SUBSTATION_LAYER_ID, bbox });
-    const substationFeatures = await fetchLayerFeatures({
-      layerId: SUBSTATION_LAYER_ID,
-      bbox,
-      ...(options.limit === undefined ? {} : { limit: options.limit }),
-    });
-    console.log(`    Found: ${substationFeatures.length} (envelope: ${substationCount})`);
+    const limitOption = options.limit === undefined ? {} : { limit: options.limit };
+    const energy = wants('energy');
 
-    console.log('    Fetching ANEEL transmission lines...');
-    const lineCount = await countFeatures({ layerId: TRANSMISSION_LINE_LAYER_ID, bbox });
-    const lineFeatures = await fetchLayerFeatures({
-      layerId: TRANSMISSION_LINE_LAYER_ID,
-      bbox,
-      ...(options.limit === undefined ? {} : { limit: options.limit }),
-    });
-    console.log(`    Found: ${lineFeatures.length} (envelope: ${lineCount})`);
+    const fetchAneel = async (label: string, layerId: number): Promise<SigelFeature[]> => {
+      if (!energy) return [];
+      console.log(`    Fetching ANEEL ${label}...`);
+      const count = await countFeatures({ layerId, bbox });
+      const features = await fetchLayerFeatures({ layerId, bbox, ...limitOption });
+      console.log(`    Found: ${features.length} (envelope: ${count})`);
+      return features;
+    };
+    const fetchIbge = async (
+      label: string,
+      typeName: string,
+      domain: Domain,
+    ): Promise<SigelFeature[]> => {
+      if (!wants(domain)) return [];
+      console.log(`    Fetching IBGE ${label}...`);
+      const count = await countIbgeFeatures(typeName);
+      const features = await fetchIbgeFeatures({ typeName, ...limitOption });
+      console.log(`    Found: ${features.length} (nacional: ${count})`);
+      return features;
+    };
+
+    const substationFeatures = await fetchAneel('substations', SUBSTATION_LAYER_ID);
+    const isolatedSystemFeatures = await fetchAneel('isolated systems', ISOLATED_SYSTEM_LAYER_ID);
+    const lineFeatures = await fetchAneel('transmission lines', TRANSMISSION_LINE_LAYER_ID);
+    const gasFeatures = await fetchIbge('gas pipelines', IBGE_GAS_PIPELINE_LAYER, 'gas');
+    const railSegmentFeatures = await fetchIbge('rail segments', IBGE_RAIL_SEGMENT_LAYER, 'rail');
+    const railStationFeatures = await fetchIbge('rail stations', IBGE_RAIL_STATION_LAYER, 'rail');
 
     // --- [3] Mapeamento -----------------------------------------------------
     console.log('[3] Mapeamento');
@@ -617,6 +731,19 @@ async function runSeed(options: CliOptions): Promise<void> {
       }
     }
 
+    const isolatedSystems: MappedPointSite[] = [];
+    let isolatedSystemsSkipped = 0;
+    for (const feature of isolatedSystemFeatures) {
+      try {
+        const mapped = mapIsolatedSystem(feature, options.states);
+        if (mapped) isolatedSystems.push(mapped);
+        else isolatedSystemsSkipped += 1;
+      } catch (error) {
+        console.warn(`    ! sistema isolado OID ${String(feature.properties.OID)}: ${String(error)}`);
+        isolatedSystemsSkipped += 1;
+      }
+    }
+
     const lines: MappedLine[] = [];
     let linesSkipped = 0;
     for (const feature of lineFeatures) {
@@ -630,33 +757,116 @@ async function runSeed(options: CliOptions): Promise<void> {
       }
     }
 
+    // Gás e ferrovia: mesmo laço tolerante a erro por registro.
+    const mapLinear = (
+      features: SigelFeature[],
+      map: (feature: SigelFeature, states: readonly string[]) => MappedLine[],
+      label: string,
+    ): { items: MappedLine[]; skipped: number } => {
+      const items: MappedLine[] = [];
+      let skipped = 0;
+      for (const feature of features) {
+        try {
+          const mapped = map(feature, options.states);
+          if (mapped.length === 0) skipped += 1;
+          else items.push(...mapped);
+        } catch (error) {
+          console.warn(`    ! ${label} ${String(feature.properties.OID)}: ${String(error)}`);
+          skipped += 1;
+        }
+      }
+      return { items, skipped };
+    };
+    const gas = mapLinear(gasFeatures, mapGasPipeline, 'gasoduto');
+    const railSegments = mapLinear(railSegmentFeatures, mapRailSegment, 'trecho ferroviário');
+
+    const railStations: MappedPointSite[] = [];
+    let railStationsSkipped = 0;
+    for (const feature of railStationFeatures) {
+      try {
+        const mapped = mapRailStation(feature, options.states);
+        if (mapped) railStations.push(mapped);
+        else railStationsSkipped += 1;
+      } catch (error) {
+        console.warn(`    ! estação ferroviária ${String(feature.properties.OID)}: ${String(error)}`);
+        railStationsSkipped += 1;
+      }
+    }
+
     const uniqueSubstations = dedupeById(substations);
+    const uniqueIsolatedSystems = dedupeById(isolatedSystems);
     const uniqueLines = dedupeById(lines);
-    const vertices = uniqueLines.reduce((total, line) => total + line.line.coordinates.length, 0);
-    console.log(
-      `    Subestações no escopo: ${uniqueSubstations.length} (fora: ${substationsSkipped})`,
-    );
-    console.log(
-      `    Linhas no escopo: ${uniqueLines.length} (fora: ${linesSkipped}) · ${vertices} vértices preservados`,
-    );
+    const uniqueGas = dedupeById(gas.items);
+    const uniqueRailSegments = dedupeById(railSegments.items);
+    const uniqueRailStations = dedupeById(railStations);
+    const countVertices = (items: readonly MappedLine[]): number =>
+      items.reduce((total, line) => total + line.line.coordinates.length, 0);
+    if (energy) {
+      console.log(
+        `    Subestações no escopo: ${uniqueSubstations.length} (fora: ${substationsSkipped})`,
+      );
+      console.log(
+        `    Sistemas isolados no escopo: ${uniqueIsolatedSystems.length} (fora: ${isolatedSystemsSkipped})`,
+      );
+      console.log(
+        `    Linhas no escopo: ${uniqueLines.length} (fora: ${linesSkipped}) · ${countVertices(uniqueLines)} vértices preservados`,
+      );
+    }
+    if (wants('gas')) {
+      console.log(
+        `    Gasodutos no escopo: ${uniqueGas.length} (fora: ${gas.skipped}) · ${countVertices(uniqueGas)} vértices preservados`,
+      );
+    }
+    if (wants('rail')) {
+      console.log(
+        `    Trechos ferroviários no escopo: ${uniqueRailSegments.length} (fora: ${railSegments.skipped}) · ${countVertices(uniqueRailSegments)} vértices preservados`,
+      );
+      console.log(
+        `    Estações ferroviárias no escopo: ${uniqueRailStations.length} (fora: ${railStationsSkipped})`,
+      );
+    }
 
     // --- [4] Carga ----------------------------------------------------------
     console.log('[4] Carga');
-    const substationPlan = substationRows(uniqueSubstations, {
+    const substationPlan = pointSiteRows(uniqueSubstations, {
       tenantId,
       ownerPartyId,
-      siteSpecId,
+      siteSpecId: siteSpecIdByCode.get(SUBSTATION_SITE_SPEC_CODE) ?? '',
       resourceSpecId: resourceSpecIdByCode.get(SUBSTATION_RESOURCE_TYPE_CODE) ?? '',
     });
-    const linePlan = transmissionLineRows(uniqueLines, {
+    const isolatedSystemPlan = pointSiteRows(uniqueIsolatedSystems, {
       tenantId,
       ownerPartyId,
-      resourceSpecId: resourceSpecIdByCode.get(TRANSMISSION_LINE_RESOURCE_TYPE_CODE) ?? '',
+      siteSpecId: siteSpecIdByCode.get(ISOLATED_SYSTEM_SITE_SPEC_CODE) ?? '',
+      resourceSpecId: resourceSpecIdByCode.get(ISOLATED_SYSTEM_RESOURCE_TYPE_CODE) ?? '',
+    });
+    const linePlanFor = (items: readonly MappedLine[], typeCode: string): LoadPlan =>
+      lineResourceRows(items, {
+        tenantId,
+        ownerPartyId,
+        resourceSpecId: resourceSpecIdByCode.get(typeCode) ?? '',
+      });
+    const linePlan = linePlanFor(uniqueLines, TRANSMISSION_LINE_RESOURCE_TYPE_CODE);
+    const gasPlan = linePlanFor(uniqueGas, GAS_PIPELINE_RESOURCE_TYPE_CODE);
+    const railSegmentPlan = linePlanFor(uniqueRailSegments, RAIL_SEGMENT_RESOURCE_TYPE_CODE);
+    const railStationPlan = pointSiteRows(uniqueRailStations, {
+      tenantId,
+      ownerPartyId,
+      siteSpecId: siteSpecIdByCode.get(RAIL_STATION_SITE_SPEC_CODE) ?? '',
+      resourceSpecId: resourceSpecIdByCode.get(RAIL_STATION_RESOURCE_TYPE_CODE) ?? '',
     });
 
-    const locations = [...substationPlan.locations, ...linePlan.locations];
-    const sites = substationPlan.sites;
-    const resources = [...substationPlan.resources, ...linePlan.resources];
+    const plans = [
+      substationPlan,
+      isolatedSystemPlan,
+      linePlan,
+      gasPlan,
+      railSegmentPlan,
+      railStationPlan,
+    ];
+    const locations = plans.flatMap((plan) => plan.locations);
+    const sites = plans.flatMap((plan) => plan.sites);
+    const resources = plans.flatMap((plan) => plan.resources);
 
     const alreadyThere = await existingIds(
       conn,
@@ -719,7 +929,7 @@ async function runSeed(options: CliOptions): Promise<void> {
     // As fases 1–4 já commitaram. Uma falha aqui não invalida a carga: ela só deixa o mapa sem as
     // camadas, e o remédio é republicar — por isso vira aviso acionável em vez de derrubar o run.
     try {
-      await publishLayers(tenantId);
+      await publishLayers(tenantId, options.domains);
     } catch (error) {
       console.warn(`    ! publicação do catálogo GEO falhou: ${String(error)}`);
       console.warn(
@@ -736,9 +946,9 @@ async function runSeed(options: CliOptions): Promise<void> {
   console.log('[6] Índice do mapa');
   // Sem `--uf/--city`: aqueles filtros dependem do endereço da Location, e a fonte não tem
   // endereço — um rebuild escopado deixaria tudo de fora.
-  const indexCommand = `node scripts/build-map-features.mjs --apply --tenant ${tenantId}`;
+  const indexCommand = `node scripts/build-map-features.mjs --environment ${prefix} --apply --tenant ${tenantId}`;
   if (options.apply && options.buildFeatures) {
-    await runIndexer(tenantId);
+    await runIndexer(tenantId, prefix);
   } else {
     console.log(`    pendente — rode: ${indexCommand}`);
   }
@@ -752,22 +962,26 @@ async function runSeed(options: CliOptions): Promise<void> {
  * Único trecho que sobe o runtime completo. `DATABASE_AUTO_SCHEMA:'false'` porque o seed não é o
  * lugar de criar schema — a DEMO já está provisionada.
  */
-async function publishLayers(tenantId: string): Promise<void> {
+async function publishLayers(tenantId: string, domains: readonly Domain[]): Promise<void> {
   const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
   const db = createDatabaseClient(config.database);
   await db.initialize();
   try {
     const runtime = await createNexusRuntime(db);
-    const result = await publishEnergyLayers(runtime.studioService, {
-      actorSub: 'seed-demo-infra',
-      tenantId,
-      // O adapter consulta Resource/Geo por conta própria durante o publish; `studio.admin`
-      // sozinho não satisfaz o papel de leitura daqueles serviços.
-      roles: ['studio.admin', 'platform.admin'],
-      traceId: 'seed-demo-infra',
-    });
+    const result = await publishDomainLayers(
+      runtime.studioService,
+      {
+        actorSub: 'seed-demo-infra',
+        tenantId,
+        // O adapter consulta Resource/Geo por conta própria durante o publish; `studio.admin`
+        // sozinho não satisfaz o papel de leitura daqueles serviços.
+        roles: ['studio.admin', 'platform.admin'],
+        traceId: 'seed-demo-infra',
+      },
+      domains,
+    );
     console.log(
-      `    Published: ENERGIA (2 camadas) · versão ${result.versionNumber} · ${result.nodeCount} nós`,
+      `    Published: ${domains.join(' + ')} · versão ${result.versionNumber} · ${result.nodeCount} nós`,
     );
   } finally {
     await db.close();
@@ -775,11 +989,11 @@ async function publishLayers(tenantId: string): Promise<void> {
 }
 
 /** Dispara o indexador existente em vez de reimplementar a geração de tiles. */
-async function runIndexer(tenantId: string): Promise<void> {
+async function runIndexer(tenantId: string, environment: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ['scripts/build-map-features.mjs', '--apply', '--tenant', tenantId],
+      ['scripts/build-map-features.mjs', '--environment', environment, '--apply', '--tenant', tenantId],
       { stdio: 'inherit' },
     );
     child.on('error', reject);

@@ -532,11 +532,12 @@ export const MIGRATIONS_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile
     ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank);
+  CREATE INDEX IF NOT EXISTS idx_geo_map_feature_site_bbox
+    ON geo_map_feature(tenant_id, feature_kind, shape, source_model_type, source_model_id, lng, lat);
 
-  -- Densidade agregada da planta para zoom aberto (Fase 4 da issue #69). Abaixo de
-  -- PASSIVE_INFRA_MAX_SCALE_METERS o mapa desenha feature por feature (geo_map_feature); acima
-  -- disso desenhar 780 mil pontos individuais não é só caro, é ilegível — vira borrão. Esta
-  -- tabela responde a outra pergunta: "onde HÁ planta", em vez de "qual é cada item".
+  -- Densidade agregada opcional da planta (Fase 4 da issue #69). Ela responde à pergunta
+  -- "onde HÁ planta", em vez de "qual é cada item", sem definir a visibilidade das features
+  -- individuais: essa regra pertence exclusivamente às faixas publicadas no Studio GEO.
   --
   -- A agregação é o próprio tile de geo_map_feature dividido por potência de 2 (z16 → z13/z10/
   -- z7), não uma grade métrica nova: reusa a matemática de slippy map que o índice já usa, a
@@ -2076,6 +2077,14 @@ const MIGRATIONS_SQL_V25_PHASE3_MAP_SCAN_INDEXES = `
     ON tmf_physical_resource(tenant_id, resource_specification_id, id);
 `;
 
+// V26: leitura de Sites do mapa por bbox (issue #314). Igualdades primeiro (tenant, tipo, forma,
+// specification) e o recorte espacial por lng depois; sem ele a consulta varre geo_map_feature
+// inteira em bases com milhões de linhas.
+const MIGRATIONS_SQL_V26_GEO_MAP_FEATURE_SITE_BBOX_INDEX = `
+  CREATE INDEX IF NOT EXISTS idx_geo_map_feature_site_bbox
+    ON geo_map_feature(tenant_id, feature_kind, shape, source_model_type, source_model_id, lng, lat);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2177,6 +2186,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 25,
     name: 'phase3-map-scan-indexes',
     sql: MIGRATIONS_SQL_V25_PHASE3_MAP_SCAN_INDEXES,
+  },
+  {
+    version: 26,
+    name: 'geo-map-feature-site-bbox-index',
+    sql: MIGRATIONS_SQL_V26_GEO_MAP_FEATURE_SITE_BBOX_INDEX,
   },
 ];
 

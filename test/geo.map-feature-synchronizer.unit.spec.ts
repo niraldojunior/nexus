@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'vitest';
 import {
   GeoMapFeatureSynchronizer,
@@ -12,6 +12,7 @@ import { INTERNAL_RESOURCE_TYPES } from '../src/modules/geo/map-visibility.js';
 import type { DatabaseClient, DatabaseSession } from '../src/shared/persistence/database-client.js';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const loaderDbUrl = `${pathToFileURL(resolve(rootDir, 'scripts/loader-db.mjs')).href}?test`;
 
 // O write-through monta o INSERT de `geo_map_feature` à mão, com a lista de colunas e a de
 // VALUES em linhas separadas. Um `?` a mais não quebra typecheck nem lint — estoura só em
@@ -167,10 +168,56 @@ test('syncLocation procura dependentes no tenant informado mesmo com Location co
   );
 });
 
+test('resolveLoaderEnvironment prioriza --environment, normaliza e mantém o fallback da sessão', async () => {
+  const { resolveLoaderEnvironment } = await import(loaderDbUrl);
+  const previous = process.env.ORACLE_OBJECT_PREFIX;
+  try {
+    process.env.ORACLE_OBJECT_PREFIX = 'NEXUS_DEV_';
+    assert.equal(resolveLoaderEnvironment(['--environment', 'nx_demo_']), 'NX_DEMO_');
+    assert.equal(process.env.ORACLE_OBJECT_PREFIX, 'NX_DEMO_');
+
+    process.env.ORACLE_OBJECT_PREFIX = 'nexus_dev_';
+    assert.equal(resolveLoaderEnvironment([]), 'NEXUS_DEV_');
+  } finally {
+    if (previous === undefined) delete process.env.ORACLE_OBJECT_PREFIX;
+    else process.env.ORACLE_OBJECT_PREFIX = previous;
+  }
+});
+
+test('resolveLoaderEnvironment rejeita valor ausente e prefixos inválidos', async () => {
+  const { resolveLoaderEnvironment } = await import(loaderDbUrl);
+  const previous = process.env.ORACLE_OBJECT_PREFIX;
+  try {
+    assert.throws(
+      () => resolveLoaderEnvironment(['--environment']),
+      /--environment exige um prefixo Oracle/,
+    );
+    assert.throws(
+      () => resolveLoaderEnvironment(['--environment', '123demo']),
+      /Ambiente Oracle inválido/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.ORACLE_OBJECT_PREFIX;
+    else process.env.ORACLE_OBJECT_PREFIX = previous;
+  }
+});
+
 test('rebuild do índice inclui somente PhysicalResource, compatível com ResourcePanel', async () => {
   const script = await readFile(resolve(rootDir, 'scripts/build-map-features.mjs'), 'utf8');
   assert.match(script, /resourceSource\('PhysicalResource', scopeWhere\)/);
   assert.doesNotMatch(script, /resourceSource\('LogicalResource', scopeWhere\)/);
+});
+
+test('rebuilds resolvem explicitamente o ambiente antes de abrir o loader Oracle', async () => {
+  for (const file of ['build-map-features.mjs', 'build-map-density.mjs']) {
+    const script = await readFile(resolve(rootDir, 'scripts', file), 'utf8');
+    assert.match(script, /import \{ openLoaderDb, resolveLoaderEnvironment \} from '\.\/loader-db\.mjs';/);
+    const resolvedAt = script.indexOf('const ENVIRONMENT = resolveLoaderEnvironment(argv);');
+    const openedAt = script.indexOf('await openLoaderDb();');
+    assert.ok(resolvedAt >= 0, `${file} não resolve --environment`);
+    assert.ok(openedAt > resolvedAt, `${file} abre o loader antes de resolver --environment`);
+    assert.match(script, /console\.log\(`Ambiente : \$\{ENVIRONMENT\}`\);/);
+  }
 });
 
 test('rebuild filtra a entidade pelo tenant e preserva Location compartilhada', async () => {

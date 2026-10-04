@@ -337,8 +337,8 @@ export class GeoTreeService {
    * Locais de UM Projeto de trabalho dentro de um bbox do mapa (REQ-MOD01-017) — o par de
    * `sitesInViewport` restrito a um `projectId`, para o mapa carregar um projeto com dezenas
    * de milhares de locais (ex.: 25.507 no "Onitel - Brasília") sem baixar tudo de uma vez
-   * quando ele já tem manchas de concentração/dispersão geradas (o pin individual só entra em
-   * ≤ 50 m — ver PASSIVE_INFRA_MAX_SCALE_METERS no cliente). Sem `PROJECT_SITE_EXCLUSION_SQL`
+   * quando ele já tem manchas de concentração/dispersão geradas. Sem
+   * `PROJECT_SITE_EXCLUSION_SQL`
    * (o oposto de `sitesInViewport`): é exatamente o caminho que revela local de projeto.
    */
   public async projectSitesInViewport(

@@ -36,6 +36,7 @@ import {
 } from '../utils/mapScale';
 import { useCoverage } from '../hooks/useCoverage';
 import { useMapTiles } from '../hooks/useMapTiles';
+import { useMapSites } from '../hooks/useMapSites';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
@@ -46,6 +47,8 @@ import {
   mapLayerEntities,
   mapLayerVisualRank,
   viewportInclude,
+  visibleMapSiteSourceIds,
+  isMapFeatureVisible,
   ALL_MAP_LAYERS_VISIBLE,
   MAP_LAYER_CATALOG_FALLBACK,
   readStoredBaseMap,
@@ -55,11 +58,7 @@ import {
   type MapLayerVisibility,
   type MapSiteRole,
 } from '../utils/mapLayers';
-import type {
-  StudioGeoCatalog,
-  StudioGeoEntityNode,
-  StudioGeoPointVisualConfig,
-} from '../services/studioGeoApi';
+import type { StudioGeoCatalog, StudioGeoEntityNode } from '../services/studioGeoApi';
 import {
   operationalIconFactsForTreeNode,
   pointLayerForTreeNode,
@@ -67,7 +66,6 @@ import {
   visualIdentityForTreeNode,
 } from '../utils/pointIconPreview';
 import { getStudioSvgAssetDataUrl } from '../services/studioAssetApi';
-import { resolveScaleBandKey } from '../utils/studioGeoDefaults';
 import {
   normalizeStudioGeoVisualConfig,
   resolveStudioGeoVisualStyle,
@@ -258,6 +256,9 @@ type ProjectSiteView = { mode: 'create' } | { mode: 'view'; siteId: string };
 type DockView =
   { kind: 'hierarchy' } | { kind: 'project'; projectId: string; site: ProjectSiteView | null };
 
+// Nenhum Site é Marker permanente: todos vêm como feature do InfraOverlay (issue #314).
+const NO_MAP_NODES: GeoTreeNode[] = [];
+
 // Stub de GeoTreeNode a partir de uma feature do InfraOverlay (canvas do mapa, Fase 3 da
 // issue #69) — clique/hover sobre o canvas não tem um GeoTreeNode pronto, só o essencial que o
 // índice de tile carrega. Serve para hover e para abrir o painel na hora; a reidratação
@@ -269,8 +270,8 @@ function mapTileFeatureToNode(feature: MapTileFeature): GeoTreeNode {
     kind: feature.kind,
     label: feature.label,
     refId: feature.entityId,
-    // Site do canvas nunca é CO (ver o filtro de stationIds em GeoPage) — mesma régua
-    // otimista de hasChildren:true da Fase 1 pro recurso; site segue sitesInViewport (false).
+    // Régua otimista de hasChildren:true da Fase 1 pro recurso; Site (qualquer spec) começa
+    // false e a reidratação (`fetchTreeNode`) corrige com o valor canônico.
     hasChildren: feature.kind === 'resource',
     geometry:
       feature.shape === 'line' && feature.geometry
@@ -681,7 +682,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Régua de escala própria dos pins de local de Projeto com manchas geradas (REQ-MOD01-017) —
   // mais restrita que a infra passiva comum (ver PROJECT_PIN_MAX_SCALE_METERS).
   const projectPinScaleVisible = scaleMeters !== null && scaleMeters < PROJECT_PIN_MAX_SCALE_METERS;
-  const { data: infraFeaturesRaw, loading: viewportLoading } = useMapTiles(
+  // Resources: índice por tile z16 (cache local). Sites: leitura única por bbox, uniforme para
+  // qualquer GeographicSiteSpecification pontual publicada (issue #314) — sem exceção por tipo.
+  const { data: resourceFeatures, loading: viewportLoading } = useMapTiles(
     viewportBounds,
     scaleMeters,
     viewportShapesInclude,
@@ -689,28 +692,36 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     siteRoleByCode,
     mapLayerCatalog.catalog,
   );
-  // Um CO dentro do tile também vira feature 'site'. Filtra pelos
-  // ids da árvore INTEIRA (não só as Estações visíveis, que podem estar com a camada desligada)
-  // para não desenhar um CO duas vezes: Marker real (tree.mapNodes) + sprite do canvas.
-  const infraFeatures = useMemo(() => {
-    const stationIds = new Set(tree.mapNodes.map((node) => node.id));
-    return infraFeaturesRaw.filter((feature) => !stationIds.has(mapTileFeatureNodeId(feature)));
-  }, [infraFeaturesRaw, tree.mapNodes]);
+  const siteSourceIds = useMemo(
+    () => visibleMapSiteSourceIds(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters, specs),
+    [mapLayers.layers, mapLayerCatalog.catalog, scaleMeters, specs],
+  );
+  const { features: siteFeaturesRaw, loading: sitesLoading } = useMapSites(
+    mapLayerCatalog.loading ? null : viewportBounds,
+    siteSourceIds,
+  );
+  const siteFeatures = useMemo(
+    () =>
+      siteFeaturesRaw.filter((feature) =>
+        isMapFeatureVisible(
+          feature,
+          mapLayers.layers,
+          siteRoleByCode,
+          mapLayerCatalog.catalog,
+          scaleMeters,
+        ),
+      ),
+    [siteFeaturesRaw, mapLayers.layers, siteRoleByCode, mapLayerCatalog.catalog, scaleMeters],
+  );
+  const infraFeatures = useMemo(
+    () => [...siteFeatures, ...resourceFeatures],
+    [siteFeatures, resourceFeatures],
+  );
   const siteMarkerSize = siteIconSizeForScale(scaleMeters);
   const resourceMarkerSize = resourceIconSizeForScale(scaleMeters);
-  // Cada marcador permanente resolve sua própria specification publicada. O catálogo Studio é
-  // a única fonte da associação/visibilidade; o nome exibido do Site nunca participa da regra.
-  const mapNodes = useMemo(
-    () =>
-      tree.mapNodes.filter((node) => {
-        const layer = pointLayerForNode(node, mapLayerCatalog.catalog);
-        if (!layer) return mapLayerCatalog.catalog.fallback;
-        const config = layer.visualConfig as StudioGeoPointVisualConfig;
-        const visible = mapLayers.layers[layer.id] ?? layer.defaultVisible;
-        return visible && config.scaleBands[resolveScaleBandKey(scaleMeters)]?.visible !== false;
-      }),
-    [tree.mapNodes, mapLayerCatalog.catalog, mapLayers.layers, scaleMeters],
-  );
+  // Nenhum Site é Marker permanente: todos entram no InfraOverlay. `nodes` do painel fica vazio;
+  // só o item selecionado ganha Marker próprio (`pinnedSelectedNode`).
+  const mapNodes = NO_MAP_NODES;
   const stationMarkerSize = siteMarkerSize;
 
   // Locais do Projeto de trabalho aberto (REQ-MOD01-015), desenhados por ProjectSiteOverlay
@@ -745,9 +756,8 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const pinnedSelectedNode = useMemo(() => {
     if (!selectedNode?.geometry) return null;
     const selectedVisible = selectedNode.kind === 'site' || passiveInfraVisible;
-    if (!selectedVisible) return null;
-    return mapNodes.some((node) => node.id === selectedNode.id) ? null : selectedNode;
-  }, [selectedNode, passiveInfraVisible, mapNodes]);
+    return selectedVisible ? selectedNode : null;
+  }, [selectedNode, passiveInfraVisible]);
 
   // Cobertura da viewport (mapa de calor por bairro), só acima de 100 m. `visibleCoverageLayer`
   // resolve visibilidade e identidade da camada de uma vez, por `entity.category === 'COVERAGE'`
@@ -814,7 +824,12 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // próprio dentro da doca e não entram aqui. O script do Google Maps é rastreado dentro do
   // GoogleMapPanel (mapsReady) e somado à barra por lá.
   const mapDataLoading =
-    loading || tree.busy || mapLayerCatalog.loading || viewportLoading || coverageLoading;
+    loading ||
+    tree.busy ||
+    mapLayerCatalog.loading ||
+    viewportLoading ||
+    sitesLoading ||
+    coverageLoading;
 
   const selectedSiteId =
     selectedNode?.referredType === 'GeographicSite' ? (selectedNode.refId ?? null) : null;
@@ -1390,7 +1405,16 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     (feature: MapTileFeature) => {
       const stub = mapTileFeatureToNode(feature);
       if (stub.kind !== 'resource') {
+        // Site (qualquer specification): abre pelo stub e hidrata pelo mesmo contrato canônico
+        // dos Resources; falha na hidratação mantém o stub, sem fechar o painel.
         selectNode(stub, 'map');
+        const siteToken = ++hydrateTokenRef.current;
+        void fetchTreeNode(stub.id)
+          .then((hydrated) => {
+            if (hydrateTokenRef.current !== siteToken) return;
+            setSelectedNode((current) => (current?.id === stub.id ? hydrated : current));
+          })
+          .catch(() => undefined);
         return;
       }
       // O índice de tile já classifica a entidade (mapTileFeatureToNode copia `entityType`), então
@@ -1858,7 +1882,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             {error}
           </div>
         ) : null}
-
         <div className="relative flex h-full min-h-0">
           {addressLookup ? (
             <AddressDetailPanel

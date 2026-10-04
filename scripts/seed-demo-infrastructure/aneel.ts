@@ -8,12 +8,13 @@
 
 import type { Bbox, SigelFeature } from './mapper.js';
 
-/** Serviço de Transmissão do SIGEL (layer 3 = subestações, layer 1 = linhas). */
+/** Serviço de Transmissão do SIGEL (layer 3 = subestações, 1 = linhas, 5 = sistemas isolados). */
 export const SIGEL_TRANSMISSION_SERVICE =
   'https://sigel.aneel.gov.br/arcgis/rest/services/PORTAL/Transmiss%C3%A3o/MapServer';
 
 export const SUBSTATION_LAYER_ID = 3;
 export const TRANSMISSION_LINE_LAYER_ID = 1;
+export const ISOLATED_SYSTEM_LAYER_ID = 5;
 
 /** Teto do servidor por requisição (`maxRecordCount`); pedir mais é silenciosamente truncado. */
 const PAGE_SIZE = 1000;

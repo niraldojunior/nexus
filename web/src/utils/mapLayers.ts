@@ -20,7 +20,8 @@ export type MapLayerId = string;
 export type MapLayerGroupId = string;
 export type MapLayerVisibility = Record<MapLayerId, boolean>;
 export type GroupVisibility = 'all' | 'some' | 'none';
-export type ViewportShape = 'sites' | 'resource-points' | 'resource-lines';
+// Somente Resources passam pelo índice por tile; Sites têm leitura própria por bbox (#314).
+export type ViewportShape = 'resource-points' | 'resource-lines';
 
 export type MapLayerTreeNode = StudioGeoNode & { children: MapLayerTreeNode[] };
 
@@ -350,6 +351,40 @@ const fallbackGeometryKind = (node: StudioGeoEntityNode): 'POINT' | 'LINE' | und
   return node.entity.sourceId.includes('cable') ? 'LINE' : 'POINT';
 };
 
+// Specifications de Site pontual visíveis (toggle + faixa de escala do Studio GEO), como lista
+// ordenada e deduplicada de `sourceId` para a leitura por bbox (`useMapSites`). Nenhum código de
+// specification é tratado de forma especial. No catálogo canônico de compatibilidade os IDs
+// `legacy-*` não existem no banco: são resolvidos para os códigos reais das specifications
+// carregadas (por `siteRole`) e nunca enviados.
+export function visibleMapSiteSourceIds(
+  visibility: MapLayerVisibility,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  scaleMeters?: number | null,
+  specs: readonly { code: string; siteRole?: string }[] = [],
+): string[] {
+  const ids = new Set<string>();
+  for (const node of mapLayerEntities(catalog)) {
+    if (node.entity.category !== 'LOCAL') continue;
+    if (node.entity.sourceType !== 'GEOGRAPHIC_SITE_SPECIFICATION') continue;
+    if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
+    const geometryKind =
+      node.visualConfig?.geometryKind ??
+      (catalog.fallback ? fallbackGeometryKind(node) : undefined);
+    if (geometryKind !== 'POINT') continue;
+    const sourceId = node.entity.sourceId;
+    if (!sourceId.startsWith('legacy-')) {
+      ids.add(sourceId);
+      continue;
+    }
+    if (!catalog.fallback) continue;
+    const wantsService = sourceId === 'legacy-site-service';
+    for (const spec of specs) {
+      if ((spec.siteRole === 'service') === wantsService) ids.add(spec.code);
+    }
+  }
+  return [...ids].sort();
+}
+
 export function viewportInclude(
   visibility: MapLayerVisibility,
   catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
@@ -357,22 +392,19 @@ export function viewportInclude(
 ): ViewportShape[] | undefined {
   const shapes = new Set<ViewportShape>();
   for (const node of mapLayerEntities(catalog)) {
-    // Estações não são buscadas por viewport de tile — vêm da árvore Geo, não de `useMapTiles`.
-    if (node.id === 'stations') continue;
     if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
     // A publicação sempre declara a geometria. A inferência abaixo existe exclusivamente para o
     // catálogo canônico de compatibilidade enquanto ainda não há publicação Studio GEO.
     const geometryKind =
       node.visualConfig?.geometryKind ??
       (catalog.fallback ? fallbackGeometryKind(node) : undefined);
-    if (node.entity.category === 'LOCAL' && geometryKind === 'POINT') shapes.add('sites');
     if (node.entity.category === 'RESOURCE' && geometryKind === 'POINT')
       shapes.add('resource-points');
     if (node.entity.category === 'RESOURCE' && geometryKind === 'LINE')
       shapes.add('resource-lines');
   }
   const result = [...shapes];
-  return result.length === 3 ? undefined : result;
+  return result.length === 2 ? undefined : result;
 }
 
 // Resolve a camada de cobertura visível por `category`, não por tecnologia — GPON é hoje o único

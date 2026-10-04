@@ -4,12 +4,9 @@
 // o que o usuário abriu — a abertura traz UF → Município → Estações → Estação, e
 // cada expansão busca no servidor apenas os filhos diretos do nó clicado.
 //
-// Duas saídas alimentam a tela: `rows` (as linhas visíveis, já achatadas e
-// indentadas) e `mapNodes` (as Estações/CO, único tipo de Site com visibilidade em
-// qualquer escala — ver siteKindFromSpec e mapScale.ts). Qualquer outro tipo de Site
-// (POP, CDO, Ponto de Instalação…), Recursos e cabos (infra passiva) não vêm mais
-// daqui — GeoPage os busca pela região visível do mapa em escala de detalhe (ver
-// fetchViewportResources em geoTreeApi.ts), independente do que está aberto na árvore.
+// A saída que alimenta a tela é `rows` (as linhas visíveis, já achatadas e indentadas). A árvore é
+// somente navegação: nenhum Site, Recurso ou cabo do mapa vem daqui — GeoPage os busca pela região
+// visível (Sites: useMapSites; Recursos: useMapTiles), independente do que está aberto na árvore.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -33,7 +30,6 @@ const EMPTY_STATE: GeoTreeState = { nodesById: {}, childIds: {}, totals: {}, roo
 
 export type GeoTree = {
   rows: GeoTreeRow[];
-  mapNodes: GeoTreeNode[];
   loading: boolean;
   // Qualquer carga da árvore em voo: raízes (`loading`) ou expansão de algum nó. Alimenta
   // o indicador de carga do mapa (ver MapLoadingBar em GeoPage) — a doca já mostra o seu
@@ -159,14 +155,6 @@ export function useGeoTree(): GeoTree {
     [state, expandedRows, loadingNodes],
   );
 
-  // A seleção de quais Sites compõem a navegação-resumo é responsabilidade da publicação
-  // Studio GEO no servidor. Os Sites retornados por `roots` já são essa seleção explícita;
-  // o cliente só preserva os que possuem geometria, sem deduzir código, nome ou papel.
-  const mapNodes = useMemo(
-    () => Object.values(state.nodesById).filter((node) => node.kind === 'site' && node.geometry),
-    [state.nodesById],
-  );
-
   const toggle = useCallback(
     (row: GeoTreeRow) => {
       const opening = !expandedRows.has(row.rowKey);
@@ -283,7 +271,6 @@ export function useGeoTree(): GeoTree {
   return useMemo(
     () => ({
       rows,
-      mapNodes,
       loading,
       busy,
       error,
@@ -296,7 +283,6 @@ export function useGeoTree(): GeoTree {
     }),
     [
       rows,
-      mapNodes,
       loading,
       busy,
       error,

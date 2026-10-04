@@ -189,6 +189,13 @@ button {
     border-color: var(--vt-yellow);
     box-shadow: 0 0 0 var(--vt-yellow-focus-ring-width) var(--vt-yellow-focus-ring-color);
   }
+  /* Tema claro: o composer (Nova Conversa, histórico e página de conversa) mantém só a
+     borda amarela no foco, sem o anel/sombra amarela em volta. */
+  :root:not([data-theme='dark']) .vt-composer:focus-within,
+  :root:not([data-theme='dark']) .vt-searchbar:focus-within,
+  :root:not([data-theme='dark']) .vt-searchbar-flat:focus-within {
+    box-shadow: none;
+  }
   .vt-card-interactive {
     border-color: var(--border-strong);
   }

@@ -10,7 +10,6 @@ import {
   tileKey,
   tilesForBounds,
   MAP_TILE_ZOOM,
-  MAX_TILES_PER_VIEWPORT,
 } from './mapTile';
 
 type LngLatTuple = [number, number];
@@ -93,33 +92,16 @@ describe('tilesForBounds', () => {
     expect(withDefault[0]?.z).toBe(MAP_TILE_ZOOM);
   });
 
-  // Regressão: um viewport de escala nacional (ver BRAZIL_CENTER/BRAZIL_DEFAULT_ZOOM em
-  // geoViewState.ts) cruza tiles z16 demais para o duplo laço enumerar sem estourar a memória
-  // da aba (Out of Memory no Edge/Chrome). Acima do teto, devolve vazio em vez de alocar a
-  // grade inteira — useMapTiles trata isso como "nada requisitado" (sem infra passiva por tile
-  // nessa escala, igual Sites já fazem por faixa própria).
-  it('devolve vazio (sem alocar a grade) quando o bbox cruza tiles demais', () => {
-    const brazilWide = tilesForBounds({
-      minLng: -74,
-      maxLng: -34,
-      minLat: -34,
-      maxLat: 5,
-    });
-    expect(brazilWide).toHaveLength(0);
-  });
-
-  it('respeita o teto exato de MAX_TILES_PER_VIEWPORT', () => {
-    // Uma faixa estreita de 1 tile de altura cujo width*height passa exatamente do teto.
-    // z alto o bastante (MAP_TILE_ZOOM) para a grade 2^z não clampar o índice x antes disso.
+  it('não aplica corte de visibilidade por escala ao planejar tiles', () => {
     const z = MAP_TILE_ZOOM;
-    const width = MAX_TILES_PER_VIEWPORT + 1;
+    const width = 2_001;
     const nw = tileBounds(z, 0, 0);
     const se = tileBounds(z, width - 1, 0);
     const tiles = tilesForBounds(
       { minLng: nw.minLng, maxLng: se.maxLng, minLat: se.minLat, maxLat: nw.maxLat },
       z,
     );
-    expect(tiles).toHaveLength(0);
+    expect(tiles).toHaveLength(width);
   });
 });
 

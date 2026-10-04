@@ -26,6 +26,7 @@
     "migrate:resource-catalog": "npm run build && node dist/src/scripts/migrate-resource-catalog.js",
     "addresses:enrich": "npm run build && node --use-system-ca dist/scripts/enrich-installation-addresses.js",
     "service-catalog:load": "npm run build && node --use-system-ca dist/scripts/load-service-catalog-netwin.js",
+    "seed-demo-infra": "npm run build && node --use-system-ca dist/scripts/seed-demo-infrastructure/index.js",
     "mcp:tmf": "npm run build && node dist/src/modules/mcp/stdio-server.js",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",

@@ -29,12 +29,15 @@
  * Requer o dist compilado (npm run build).
  *
  * Uso:
- *   node scripts/build-map-density.mjs           # dry-run
- *   node scripts/build-map-density.mjs --apply
+ *   node scripts/build-map-density.mjs --environment NX_DEMO_          # dry-run
+ *   node scripts/build-map-density.mjs --environment NX_DEMO_ --apply
+ *
+ * `--environment` prevalece sobre ORACLE_OBJECT_PREFIX; sem a flag, a variável de ambiente
+ * continua sendo usada por compatibilidade.
  */
 
 import { config as loadEnv } from 'dotenv';
-import { openLoaderDb } from './loader-db.mjs';
+import { openLoaderDb, resolveLoaderEnvironment } from './loader-db.mjs';
 import { MAP_DENSITY_ZOOMS, densityFactor } from '../dist/src/modules/geo/map-density.js';
 import { MAP_TILE_ZOOM } from '../dist/src/modules/geo/map-tile.js';
 
@@ -47,6 +50,7 @@ const argOf = (flag, fallback) => {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
 };
 
+const ENVIRONMENT = resolveLoaderEnvironment(argv);
 const APPLY = has('--apply');
 const TENANT = argOf('--tenant', 'default');
 
@@ -99,6 +103,7 @@ const aggregateSql = (zoom, placeholder) => {
 async function main() {
   const client = await openLoaderDb();
   try {
+    console.log(`Ambiente : ${ENVIRONMENT}`);
     console.log(`Tenant   : ${TENANT}`);
     console.log(`Níveis   : z${MAP_DENSITY_ZOOMS.join(', z')} (a partir de z${MAP_TILE_ZOOM})`);
 

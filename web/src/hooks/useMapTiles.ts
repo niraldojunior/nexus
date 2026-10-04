@@ -1,4 +1,4 @@
-// Infra passiva (recursos + Sites não-CO + cabos) da região visível do mapa, buscada por TILE
+// Infra passiva (recursos + cabos; Sites vêm de useMapSites) da região visível do mapa, buscada por TILE
 // — não por bbox — com cache LRU no cliente (Fase 2-frontend/3 da reengenharia de performance
 // do mapa, issue #69). Substitui useViewportInfra no caminho quente do mapa: aquele hook só
 // deduplicava o que estava *em voo* por bbox arredondado (nunca repete num pan contínuo); este
@@ -33,8 +33,10 @@ const tileCache = new Map<string, MapTileFeature[]>();
 const inFlightTiles = new Map<string, Promise<MapTileFeature[]>>();
 
 function isIncluded(feature: MapTileFeature, include: ViewportShape[] | undefined): boolean {
+  // Sites nunca passam por aqui: têm leitura própria por bbox (useMapSites, issue #314). O filtro
+  // protege também de respostas em cache anteriores à separação.
+  if (feature.kind !== 'resource') return false;
   if (include === undefined) return true;
-  if (feature.kind === 'site') return include.includes('sites');
   if (feature.shape === 'point') return include.includes('resource-points');
   return include.includes('resource-lines');
 }

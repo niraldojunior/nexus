@@ -15,9 +15,9 @@ export type Tile = { z: number; x: number; y: number };
 
 export type TileBoundsRect = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
-// z16 ≈ 570 m de lado na latitude do Rio — o pin individual só existe em escala ≤ 50 m
-// (PASSIVE_INFRA_MAX_SCALE_METERS, ver web/src/utils/mapScale.ts), então uma viewport de
-// detalhe cobre 2 a 6 tiles neste zoom. Fixo: mudar exige rebuild completo do índice.
+// z16 ≈ 570 m de lado na latitude do Rio. É o zoom de armazenamento do índice, independente
+// da escala de visualização: o Studio GEO decide a visibilidade de cada camada nas faixas
+// publicadas. Mudar este valor exige rebuild completo do índice.
 export const MAP_TILE_ZOOM = 16;
 
 // Margem de recorte de cabo, em fração do lado do tile — o trecho recortado carrega um pouco

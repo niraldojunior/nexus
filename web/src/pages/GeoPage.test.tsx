@@ -402,7 +402,7 @@ describe('GoogleMapPanel', () => {
     expect(siteOptions?.icon?.scaledSize?.width).toBe(20);
   });
 
-  it('site não-CO (ex.: Ponto de Instalação) segue `resourceMarkerSize`', async () => {
+  it('qualquer Site (ex.: Ponto de Instalação) segue `siteMarkerSize`, sem exceção por tipo', async () => {
     const installationPoint: GeoTreeNode = {
       ...selectionNode('site:2'),
       label: 'PI Rua Miguel de Frias',
@@ -421,7 +421,7 @@ describe('GoogleMapPanel', () => {
         onDraftAddress={vi.fn()}
         onViewportChange={vi.fn()}
         coverage={null}
-        // Site não-CO é visualmente equivalente a Resource no mapa.
+        // Todo Site usa o mesmo tamanho, independente da specification (issue #314).
         siteMarkerSize={20}
         resourceMarkerSize={7}
         onCoverageHover={vi.fn()}
@@ -432,7 +432,7 @@ describe('GoogleMapPanel', () => {
     const siteOptions = googleMocks.markerCtor.mock.calls
       .map(([options]) => options as { icon?: { scaledSize?: { width?: number } } })
       .find((options) => options.icon?.scaledSize?.width !== undefined);
-    expect(siteOptions?.icon?.scaledSize?.width).toBe(7);
+    expect(siteOptions?.icon?.scaledSize?.width).toBe(20);
   });
 
   it('mantém a seleção ao arrastar o mapa: cancela o voo e avisa navegação manual, sem desselecionar', async () => {

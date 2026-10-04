@@ -1,8 +1,8 @@
 // Níveis de densidade agregada da planta (Fase 4 da issue #69) — função pura, sem I/O.
 //
-// Abaixo de PASSIVE_INFRA_MAX_SCALE_METERS (50 m) o mapa desenha feature por feature, lendo
-// `geo_map_feature` por tile. Acima disso, desenhar centenas de milhares de pontos individuais
-// não é só caro: é ilegível. Esta camada responde "onde há planta", não "qual é cada item".
+// `geo_map_density` é uma representação agregada opcional da planta. A visibilidade das
+// features individuais é decidida exclusivamente pelas faixas publicadas no Studio GEO; esta
+// camada responde "onde há planta", não "qual é cada item".
 //
 // A grade não é métrica nova: é o PRÓPRIO tile de `geo_map_feature` (z16) reduzido por potência
 // de 2. Isso mantém um só endereçamento entre índice, densidade, servidor e cliente, e faz a
@@ -30,8 +30,8 @@ export type MapDensityZoom = (typeof MAP_DENSITY_ZOOMS)[number];
 const DENSITY_FINE_MAX_SCALE_METERS = 500;
 const DENSITY_MID_MAX_SCALE_METERS = 10_000;
 
-// Nível a pedir para a escala atual. Só faz sentido acima da escala em que a planta individual
-// some — abaixo disso quem responde é `geo_map_feature`, e o chamador nem chega aqui.
+// Nível a pedir quando a visualização agregada estiver habilitada. A escolha do chamador não
+// altera a visibilidade das features individuais.
 export function densityZoomForScale(scaleMeters: number): MapDensityZoom {
   if (scaleMeters <= DENSITY_FINE_MAX_SCALE_METERS) return 13;
   if (scaleMeters <= DENSITY_MID_MAX_SCALE_METERS) return 10;

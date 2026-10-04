@@ -33,7 +33,7 @@ export type MapTileFeature = {
   geometry?: GeoJSONLineString;
 };
 
-type MapFeatureRow = {
+export type MapFeatureRow = {
   entity_id: string;
   feature_kind: 'resource' | 'site';
   entity_type: string;
@@ -55,18 +55,20 @@ export class GeoMapTileService {
 
   public async tile(tile: Tile, options: { tenantId?: string } = {}): Promise<MapTileFeature[]> {
     const tenantId = options.tenantId ?? 'default';
+    // Sites não passam por aqui: são lidos por bbox (GeoMapSiteService), sem fan-out de tiles.
     const rows = await this.db.all<MapFeatureRow>(
       `SELECT entity_id, feature_kind, entity_type, shape, type_code, site_category,
               source_model_type, source_model_id, status, label, sublabel, lng, lat, geometry
          FROM geo_map_feature
-        WHERE tenant_id = ? AND tile_z = ? AND tile_x = ? AND tile_y = ?`,
+        WHERE tenant_id = ? AND tile_z = ? AND tile_x = ? AND tile_y = ?
+          AND feature_kind = 'resource'`,
       [tenantId, tile.z, tile.x, tile.y],
     );
-    return rows.map(toFeature);
+    return rows.map(toMapTileFeature);
   }
 }
 
-function toFeature(row: MapFeatureRow): MapTileFeature {
+export function toMapTileFeature(row: MapFeatureRow): MapTileFeature {
   const feature: MapTileFeature = {
     entityId: row.entity_id,
     kind: row.feature_kind,

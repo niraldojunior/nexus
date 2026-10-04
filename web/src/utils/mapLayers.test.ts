@@ -16,6 +16,7 @@ import {
   readStoredLayers,
   setGroupVisibility,
   viewportInclude,
+  visibleMapSiteSourceIds,
   visibleCoverageLayer,
   writeStoredBaseMap,
   writeStoredExpandedGroups,
@@ -205,7 +206,7 @@ describe('groupVisibility / setGroupVisibility', () => {
 });
 
 describe('viewportInclude', () => {
-  it('devolve undefined quando as três camadas de viewport estão ligadas (caminho quente)', () => {
+  it('devolve undefined quando as duas camadas de viewport estão ligadas (caminho quente)', () => {
     expect(viewportInclude(ALL_MAP_LAYERS_VISIBLE)).toBeUndefined();
   });
 
@@ -215,7 +216,7 @@ describe('viewportInclude', () => {
       resourceFiberCable: false,
       resourceDropCable: false,
     };
-    expect(viewportInclude(visibility)).toEqual(['sites', 'resource-points']);
+    expect(viewportInclude(visibility)).toEqual(['resource-points']);
   });
 
   it('devolve lista vazia quando tudo de viewport está desligado', () => {
@@ -237,11 +238,9 @@ describe('viewportInclude', () => {
     expect(viewportInclude(visibility)).toEqual([]);
   });
 
-  it('pede "sites" se QUALQUER um dos papéis de site estiver ligado', () => {
+  it('Sites nunca entram no include (têm leitura própria por bbox)', () => {
     const visibility = {
       ...ALL_MAP_LAYERS_VISIBLE,
-      siteNetwork: false,
-      siteService: true,
       netwinTower: false,
       netwinPole: false,
       netwinDuct: false,
@@ -253,12 +252,60 @@ describe('viewportInclude', () => {
       resourceFiberCable: false,
       resourceDropCable: false,
     };
-    expect(viewportInclude(visibility)).toEqual(['sites']);
+    expect(viewportInclude(visibility)).toEqual([]);
   });
 
   it('estações e cobertura não entram no include (não vêm do viewport)', () => {
     const visibility = { ...ALL_MAP_LAYERS_VISIBLE, stations: false, 'coverage-gpon': false };
     expect(viewportInclude(visibility)).toBeUndefined();
+  });
+});
+
+describe('visibleMapSiteSourceIds', () => {
+  const siteEntity = (
+    id: string,
+    sourceId: string,
+    visible = true,
+  ): StudioGeoCatalog['nodes'][number] =>
+    ({
+      id,
+      kind: 'ENTITY',
+      parentNodeId: null,
+      label: id,
+      sortOrder: 1,
+      active: true,
+      defaultVisible: visible,
+      entity: {
+        category: 'LOCAL',
+        sourceDomain: 'location-model',
+        sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+        sourceId,
+      },
+      visualConfig: { geometryKind: 'POINT', scaleBands: {} },
+    }) as never;
+  const catalog: StudioGeoCatalog = {
+    schemaVersion: 2,
+    configured: true,
+    environmentId: 'x',
+    fallback: false,
+    nodes: [
+      siteEntity('a', 'CO'),
+      siteEntity('b', 'ENERGY_SUBSTATION'),
+      siteEntity('c', 'HIDDEN', false),
+    ],
+  };
+
+  it('devolve source IDs ordenados, sem exceção por tipo e respeitando o toggle', () => {
+    expect(visibleMapSiteSourceIds({}, catalog)).toEqual(['CO', 'ENERGY_SUBSTATION']);
+  });
+
+  it('no fallback nunca envia IDs legacy-*', () => {
+    const ids = visibleMapSiteSourceIds(ALL_MAP_LAYERS_VISIBLE, undefined, null, [
+      { code: 'CO', siteRole: 'network' },
+      { code: 'SVC', siteRole: 'service' },
+    ]);
+    expect(ids).toEqual(['CO', 'SVC']);
+    expect(ids.some((id) => id.startsWith('legacy-'))).toBe(false);
   });
 });
 
@@ -272,7 +319,14 @@ describe('visibleCoverageLayer', () => {
     environmentId: 'coverage-agnostic',
     fallback: false,
     nodes: [
-      { id: 'group', kind: 'GROUP', parentNodeId: null, label: 'Cobertura', sortOrder: 10, active: true },
+      {
+        id: 'group',
+        kind: 'GROUP',
+        parentNodeId: null,
+        label: 'Cobertura',
+        sortOrder: 10,
+        active: true,
+      },
       {
         id: 'coverage-region',
         kind: 'ENTITY',

@@ -34,6 +34,7 @@ const result = spawnSync(
     'test/geo.integration.spec.ts',
     'test/geo.e2e.spec.ts',
     'test/geo.map-tile.integration.spec.ts',
+    'test/geo.map-site.integration.spec.ts',
     'test/geo-project.unit.spec.ts',
     'test/order-management.spec.ts',
     'test/party-management.spec.ts',

@@ -233,3 +233,201 @@ export function tileSegmentsForLine(
   }
   return segments;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Indexação por camada: o zoom de armazenamento e a simplificação das LINHAS vêm do Studio GEO
+// (visualConfig.tileZoom / simplifyToleranceMeters), não de MAP_TILE_ZOOM. Todo escritor do índice
+// e o cliente precisam ler a mesma configuração, ou a camada some do mapa.
+// ---------------------------------------------------------------------------------------------
+
+export type LineTiling = { tileZoom: number; toleranceMeters: number };
+
+const METERS_PER_DEGREE = 111_320;
+
+// Douglas-Peucker em lng/lat com distância equiretangular em metros. Preserva os extremos.
+export function simplifyLine(coordinates: LngLat[], toleranceMeters: number): LngLat[] {
+  if (!(toleranceMeters > 0) || coordinates.length <= 2) return coordinates;
+  const midLat = coordinates.reduce((sum, c) => sum + c[1], 0) / coordinates.length;
+  const kx = METERS_PER_DEGREE * Math.cos((midLat * Math.PI) / 180);
+  const ky = METERS_PER_DEGREE;
+  const keep = new Array<boolean>(coordinates.length).fill(false);
+  keep[0] = true;
+  keep[coordinates.length - 1] = true;
+  const stack: Array<[number, number]> = [[0, coordinates.length - 1]];
+  while (stack.length) {
+    const [start, end] = stack.pop() as [number, number];
+    const [ax, ay] = [coordinates[start]![0] * kx, coordinates[start]![1] * ky];
+    const [bx, by] = [coordinates[end]![0] * kx, coordinates[end]![1] * ky];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    let maxDist = -1;
+    let index = -1;
+    for (let i = start + 1; i < end; i += 1) {
+      const px = coordinates[i]![0] * kx;
+      const py = coordinates[i]![1] * ky;
+      let dist: number;
+      if (lenSq === 0) dist = Math.hypot(px - ax, py - ay);
+      else {
+        const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+        dist = Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+      }
+      if (dist > maxDist) {
+        maxDist = dist;
+        index = i;
+      }
+    }
+    if (index >= 0 && maxDist > toleranceMeters) {
+      keep[index] = true;
+      stack.push([start, index], [index, end]);
+    }
+  }
+  return coordinates.filter((_, i) => keep[i]);
+}
+
+const asObject = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+// sourceId (código do ResourceType) → configuração de indexação, só para camadas LINE de RESOURCE_TYPE.
+// Camada sem tileZoom/tolerância não entra no mapa: quem consulta cai no padrão (z16, sem simplificar).
+export function studioGeoLineTilingIndex(snapshot: unknown): Map<string, LineTiling> {
+  const index = new Map<string, LineTiling>();
+  const nodes = asObject(snapshot)?.nodes;
+  if (!Array.isArray(nodes)) return index;
+  for (const entry of nodes) {
+    const node = asObject(entry);
+    if (!node || node.kind !== 'ENTITY') continue;
+    const entity = asObject(node.entity);
+    if (!entity || entity.sourceType !== 'RESOURCE_TYPE') continue;
+    if (typeof entity.sourceId !== 'string' || !entity.sourceId.trim()) continue;
+    const visual = asObject(node.visualConfig);
+    if (visual?.geometryKind !== 'LINE') continue;
+    const zoom = visual.tileZoom;
+    const tolerance = visual.simplifyToleranceMeters;
+    const tileZoom =
+      typeof zoom === 'number' && Number.isInteger(zoom) && zoom >= 6 && zoom <= 16
+        ? zoom
+        : MAP_TILE_ZOOM;
+    const toleranceMeters =
+      typeof tolerance === 'number' && Number.isFinite(tolerance) && tolerance > 0
+        ? Math.min(tolerance, 500)
+        : 0;
+    index.set(entity.sourceId.trim(), { tileZoom, toleranceMeters });
+  }
+  return index;
+}
+
+export function tileSegmentsForLayerLine(
+  line: GeoJSONLineString,
+  tiling?: LineTiling,
+): Array<{ tile: Tile; coordinates: LngLat[]; rank: number }> {
+  const zoom = tiling?.tileZoom ?? MAP_TILE_ZOOM;
+  const coordinates = simplifyLine(line.coordinates as LngLat[], tiling?.toleranceMeters ?? 0);
+  return tileSegmentsForLine({ ...line, coordinates }, zoom);
+}
+
+// ---------------------------------------------------------------------------------------------
+// LOD multirresolução das linhas (issue #317). Cada camada LINE do Studio GEO declara perfis
+// (`lodProfiles`) e cada faixa de escala escolhe um. O índice materializa UMA vez cada perfil
+// referenciado, gravado em `geo_map_feature.lod_key`; o cliente pede exatamente o LOD da faixa.
+// ---------------------------------------------------------------------------------------------
+
+/** `lod_key` de pontos e de qualquer feature que não tem pirâmide de LOD. */
+export const MAP_BASE_LOD_KEY = 'base';
+/** `lod_key` do perfil único de camadas LINE sem `lodProfiles` (tileZoom/tolerância legados). */
+export const MAP_LEGACY_LOD_KEY = 'legacy';
+
+export type LineLodProfile = { key: string; tileZoom: number; toleranceMeters: number };
+
+const SCALE_BAND_ORDER = [
+  'le5m',
+  'le10m',
+  'le20m',
+  'le50m',
+  'le100m',
+  'le500m',
+  'le1km',
+  'gt1km',
+] as const;
+
+const validTileZoom = (value: unknown): number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 6 && value <= 16
+    ? value
+    : MAP_TILE_ZOOM;
+
+const validTolerance = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.min(value, 500) : 0;
+
+/**
+ * Perfis de LOD efetivamente usados por cada camada LINE de RESOURCE_TYPE (sourceId → perfis).
+ * Sem `lodProfiles`, a camada tem um único perfil `legacy` (tileZoom/tolerância antigos). Só entram
+ * perfis referenciados por alguma faixa; faixa sem `lodProfileId` válido usa o primeiro perfil.
+ */
+export function studioGeoLineLodIndex(snapshot: unknown): Map<string, LineLodProfile[]> {
+  const index = new Map<string, LineLodProfile[]>();
+  const nodes = asObject(snapshot)?.nodes;
+  if (!Array.isArray(nodes)) return index;
+  for (const entry of nodes) {
+    const node = asObject(entry);
+    if (!node || node.kind !== 'ENTITY') continue;
+    const entity = asObject(node.entity);
+    if (!entity || entity.sourceType !== 'RESOURCE_TYPE') continue;
+    if (typeof entity.sourceId !== 'string' || !entity.sourceId.trim()) continue;
+    const visual = asObject(node.visualConfig);
+    if (visual?.geometryKind !== 'LINE') continue;
+
+    const declared: LineLodProfile[] = [];
+    if (Array.isArray(visual.lodProfiles)) {
+      for (const raw of visual.lodProfiles) {
+        const profile = asObject(raw);
+        if (!profile || typeof profile.id !== 'string' || !profile.id) continue;
+        declared.push({
+          key: profile.id,
+          tileZoom: validTileZoom(profile.tileZoom),
+          toleranceMeters: validTolerance(profile.simplifyToleranceMeters),
+        });
+      }
+    }
+    if (declared.length === 0) {
+      index.set(entity.sourceId.trim(), [
+        {
+          key: MAP_LEGACY_LOD_KEY,
+          tileZoom: validTileZoom(visual.tileZoom),
+          toleranceMeters: validTolerance(visual.simplifyToleranceMeters),
+        },
+      ]);
+      continue;
+    }
+
+    const byKey = new Map(declared.map((profile) => [profile.key, profile]));
+    const bands = asObject(visual.scaleBands) ?? {};
+    const used = new Set<string>();
+    for (const band of SCALE_BAND_ORDER) {
+      const id = asObject(bands[band])?.lodProfileId;
+      used.add(typeof id === 'string' && byKey.has(id) ? id : declared[0]!.key);
+    }
+    index.set(
+      entity.sourceId.trim(),
+      declared.filter((profile) => used.has(profile.key)),
+    );
+  }
+  return index;
+}
+
+/** Fragmentos de uma linha em todos os perfis de LOD dados, já recortados por tile. */
+export function tileSegmentsForLineLods(
+  line: GeoJSONLineString,
+  profiles: readonly LineLodProfile[] | undefined,
+): Array<{ lodKey: string; tile: Tile; coordinates: LngLat[]; rank: number }> {
+  const effective = profiles?.length
+    ? profiles
+    : [{ key: MAP_LEGACY_LOD_KEY, tileZoom: MAP_TILE_ZOOM, toleranceMeters: 0 }];
+  return effective.flatMap((profile) =>
+    tileSegmentsForLayerLine(line, {
+      tileZoom: profile.tileZoom,
+      toleranceMeters: profile.toleranceMeters,
+    }).map((segment) => ({ ...segment, lodKey: profile.key })),
+  );
+}

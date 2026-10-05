@@ -177,13 +177,15 @@ async function bulkInsertOracle(
   { ignoreDuplicates = false } = {},
 ) {
   if (rows.length === 0) return 0;
-  const bindDefs = columns.map((column) => bindDefFor(column, rows));
   const sql = toOracleSql(
     `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map((_, index) => `$${index + 1}`).join(', ')})`,
     prefix,
   );
   let inserted = 0;
   for (const block of chunk(rows, 1000)) {
+    // Tipo de bind por lote, não pela carga inteira: uma única geometria longa não pode converter a
+    // coluna de todas as linhas em CLOB (~400x mais lento por valor) quando o resto é curto.
+    const bindDefs = columns.map((column) => bindDefFor(column, block));
     const data = block.map((row) =>
       columns.map((column, index) => bindValueFor(row[column], bindDefs[index])),
     );

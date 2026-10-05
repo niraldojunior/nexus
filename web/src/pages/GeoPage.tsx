@@ -37,6 +37,7 @@ import {
 import { useCoverage } from '../hooks/useCoverage';
 import { useMapTiles } from '../hooks/useMapTiles';
 import { useMapSites } from '../hooks/useMapSites';
+import { useMapLines } from '../hooks/useMapLines';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
@@ -47,6 +48,7 @@ import {
   mapLayerEntities,
   mapLayerVisualRank,
   viewportInclude,
+  visibleMapLineSelections,
   visibleMapSiteSourceIds,
   isMapFeatureVisible,
   ALL_MAP_LAYERS_VISIBLE,
@@ -713,9 +715,31 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       ),
     [siteFeaturesRaw, mapLayers.layers, siteRoleByCode, mapLayerCatalog.catalog, scaleMeters],
   );
+  // Linhas: uma leitura agregada por viewport, um LOD por camada/faixa (issue #317).
+  const lineSelections = useMemo(
+    () => visibleMapLineSelections(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
+    [mapLayers.layers, mapLayerCatalog.catalog, scaleMeters],
+  );
+  const { features: lineFeaturesRaw } = useMapLines(
+    mapLayerCatalog.loading ? null : viewportBounds,
+    lineSelections,
+  );
+  const lineFeatures = useMemo(
+    () =>
+      lineFeaturesRaw.filter((feature) =>
+        isMapFeatureVisible(
+          feature,
+          mapLayers.layers,
+          siteRoleByCode,
+          mapLayerCatalog.catalog,
+          scaleMeters,
+        ),
+      ),
+    [lineFeaturesRaw, mapLayers.layers, siteRoleByCode, mapLayerCatalog.catalog, scaleMeters],
+  );
   const infraFeatures = useMemo(
-    () => [...siteFeatures, ...resourceFeatures],
-    [siteFeatures, resourceFeatures],
+    () => [...siteFeatures, ...resourceFeatures, ...lineFeatures],
+    [siteFeatures, resourceFeatures, lineFeatures],
   );
   const siteMarkerSize = siteIconSizeForScale(scaleMeters);
   const resourceMarkerSize = resourceIconSizeForScale(scaleMeters);
@@ -765,7 +789,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // desligada corta a busca inteira: bounds nulo já limpa `coverage` e zera o dedupe interno do
   // hook, então religar refaz o fetch sem precisar mexer no mapa. Com duas camadas COVERAGE
   // ligadas ao mesmo tempo, ganha a primeira em ordem de desenho — só uma mancha por vez.
-  const coverageLayer = visibleCoverageLayer(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters);
+  const coverageLayer = visibleCoverageLayer(
+    mapLayers.layers,
+    mapLayerCatalog.catalog,
+    scaleMeters,
+  );
   const coverageVisible = Boolean(coverageLayer);
   const coverageLayerRef = useMemo(
     () =>
@@ -902,9 +930,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         .map((spec) => spec.id);
       // Sem spec-container nenhuma não existe local pai válido para o seletor — desistir é a
       // resposta certa (ver comentário acima de loadGeo), não um fallback para buscar tudo.
-      const siteData = containerSpecIds.length > 0
-        ? await listGeoSites({ siteSpecificationIds: containerSpecIds, limit: GEO_CONTAINER_SITE_LIMIT })
-        : [];
+      const siteData =
+        containerSpecIds.length > 0
+          ? await listGeoSites({
+              siteSpecificationIds: containerSpecIds,
+              limit: GEO_CONTAINER_SITE_LIMIT,
+            })
+          : [];
       setSites(siteData);
       setSpecs(specData);
     } catch (err) {

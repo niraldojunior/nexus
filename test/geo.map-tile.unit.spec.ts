@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
   clipLineToBounds,
+  simplifyLine,
+  studioGeoLineTilingIndex,
+  studioGeoLineLodIndex,
+  tileSegmentsForLineLods,
+  tileSegmentsForLayerLine,
   lngLatToTile,
   tileBounds,
   tileForPoint,
@@ -241,4 +246,100 @@ test('tileSegmentsForLine: trechos que reentram no mesmo tile têm rank distinto
     segments.map((segment) => segment.rank),
     [0, 1],
   );
+});
+
+test('simplifyLine preserva extremos, é neutra com tolerância 0 e reduz vértices quase colineares', () => {
+  const line: LngLat[] = [
+    [-43, -22],
+    [-42.9, -22.00001],
+    [-42.8, -22],
+    [-42.7, -22.00001],
+    [-42.6, -22],
+  ];
+  assert.equal(simplifyLine(line, 0), line);
+  const simplified = simplifyLine(line, 50);
+  assert.deepEqual(simplified, [line[0], line[4]]);
+  const bent: LngLat[] = [
+    [-43, -22],
+    [-42.8, -21.8],
+    [-42.6, -22],
+  ];
+  assert.equal(simplifyLine(bent, 50).length, 3);
+});
+
+test('studioGeoLineTilingIndex lê só camadas LINE de RESOURCE_TYPE e aplica limites', () => {
+  const entity = (sourceId: string, visualConfig: unknown, sourceType = 'RESOURCE_TYPE') => ({
+    kind: 'ENTITY',
+    entity: { sourceType, sourceId },
+    visualConfig,
+  });
+  const index = studioGeoLineTilingIndex({
+    nodes: [
+      entity('LT', { geometryKind: 'LINE', tileZoom: 10, simplifyToleranceMeters: 20 }),
+      entity('SEM', { geometryKind: 'LINE' }),
+      entity('FORA', { geometryKind: 'LINE', tileZoom: 3, simplifyToleranceMeters: 900 }),
+      entity('PT', { geometryKind: 'POINT', tileZoom: 10 }),
+      entity('SITE', { geometryKind: 'LINE', tileZoom: 10 }, 'GEOGRAPHIC_SITE_SPECIFICATION'),
+    ],
+  });
+  assert.deepEqual(index.get('LT'), { tileZoom: 10, toleranceMeters: 20 });
+  assert.deepEqual(index.get('SEM'), { tileZoom: MAP_TILE_ZOOM, toleranceMeters: 0 });
+  assert.deepEqual(index.get('FORA'), { tileZoom: MAP_TILE_ZOOM, toleranceMeters: 500 });
+  assert.equal(index.has('PT'), false);
+  assert.equal(index.has('SITE'), false);
+});
+
+test('tileSegmentsForLayerLine em z10 gera bem menos segmentos que em z16', () => {
+  const line = {
+    type: 'LineString' as const,
+    coordinates: [
+      [-43.4, -22.9],
+      [-43.0, -22.7],
+    ] as LngLat[],
+  };
+  const fine = tileSegmentsForLayerLine(line);
+  const coarse = tileSegmentsForLayerLine(line, { tileZoom: 10, toleranceMeters: 20 });
+  assert.ok(coarse.length < fine.length / 10, `${coarse.length} vs ${fine.length}`);
+  assert.ok(coarse.every((segment) => segment.tile.z === 10));
+});
+
+test('studioGeoLineLodIndex expande perfis usados e tileSegmentsForLineLods gera um conjunto por LOD', () => {
+  const band = (lodProfileId?: string) => ({ visible: true, strokeWidth: 2, lodProfileId });
+  const node = (sourceId: string, visualConfig: object) => ({
+    kind: 'ENTITY',
+    entity: { sourceType: 'RESOURCE_TYPE', sourceId },
+    visualConfig: { geometryKind: 'LINE', ...visualConfig },
+  });
+  const index = studioGeoLineLodIndex({
+    nodes: [
+      node('LEGACY', { tileZoom: 10, simplifyToleranceMeters: 20 }),
+      node('MULTI', {
+        lodProfiles: [
+          { id: 'overview', tileZoom: 6, simplifyToleranceMeters: 500 },
+          { id: 'detail', tileZoom: 12, simplifyToleranceMeters: 5 },
+          { id: 'unused', tileZoom: 9, simplifyToleranceMeters: 50 },
+        ],
+        scaleBands: { gt1km: band('overview'), le5m: band('detail'), le10m: band('detail') },
+      }),
+    ],
+  });
+  assert.deepEqual(index.get('LEGACY'), [{ key: 'legacy', tileZoom: 10, toleranceMeters: 20 }]);
+  // Faixas sem lodProfileId caem no primeiro perfil; 'unused' não é referenciado.
+  assert.deepEqual(
+    index.get('MULTI')?.map((profile) => profile.key),
+    ['overview', 'detail'],
+  );
+
+  const line = {
+    type: 'LineString' as const,
+    coordinates: [
+      [-43.4, -22.9],
+      [-43.0, -22.7],
+    ] as LngLat[],
+  };
+  const segments = tileSegmentsForLineLods(line, index.get('MULTI'));
+  const zoomByLod = new Map(segments.map((segment) => [segment.lodKey, segment.tile.z]));
+  assert.equal(zoomByLod.get('overview'), 6);
+  assert.equal(zoomByLod.get('detail'), 12);
+  assert.ok(tileSegmentsForLineLods(line, undefined).every((s) => s.lodKey === 'legacy'));
 });

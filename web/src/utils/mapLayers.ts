@@ -385,6 +385,34 @@ export function visibleMapSiteSourceIds(
   return [...ids].sort();
 }
 
+// Camadas LINE visíveis na faixa atual, cada uma com EXATAMENTE o LOD que a faixa escolhe
+// (`lodProfileId`; ausente/desconhecido = primeiro perfil, ou `legacy` sem `lodProfiles`). Alimenta a
+// leitura agregada `useMapLines`. Ordenada para uma chave de requisição estável.
+export function visibleMapLineSelections(
+  visibility: MapLayerVisibility,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  scaleMeters?: number | null,
+): Array<{ sourceModelId: string; lodKey: string }> {
+  if (catalog.fallback) return [];
+  const band = resolveScaleBandKey(scaleMeters);
+  const selections = new Map<string, string>();
+  for (const node of mapLayerEntities(catalog)) {
+    if (node.entity.category !== 'RESOURCE') continue;
+    if (node.entity.sourceType !== 'RESOURCE_TYPE') continue;
+    if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
+    const visual = node.visualConfig;
+    if (visual?.geometryKind !== 'LINE') continue;
+    const profiles = visual.lodProfiles ?? [];
+    const wanted = visual.scaleBands[band]?.lodProfileId;
+    const lodKey =
+      profiles.find((profile) => profile.id === wanted)?.id ?? profiles[0]?.id ?? 'legacy';
+    selections.set(node.entity.sourceId, lodKey);
+  }
+  return [...selections]
+    .map(([sourceModelId, lodKey]) => ({ sourceModelId, lodKey }))
+    .sort((a, b) => a.sourceModelId.localeCompare(b.sourceModelId));
+}
+
 export function viewportInclude(
   visibility: MapLayerVisibility,
   catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
@@ -419,7 +447,8 @@ export const visibleCoverageLayer = (
 ): StudioGeoEntityNode | undefined =>
   mapLayerEntitiesForDraw(catalog).find(
     (node) =>
-      node.entity.category === 'COVERAGE' && isStudioGeoEntityVisible(node, visibility, scaleMeters),
+      node.entity.category === 'COVERAGE' &&
+      isStudioGeoEntityVisible(node, visibility, scaleMeters),
   );
 
 const STORAGE_KEY_BASE = 'nexus.geo.mapLayers';

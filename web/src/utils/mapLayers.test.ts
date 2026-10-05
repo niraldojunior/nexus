@@ -16,6 +16,7 @@ import {
   readStoredLayers,
   setGroupVisibility,
   viewportInclude,
+  visibleMapLineSelections,
   visibleMapSiteSourceIds,
   visibleCoverageLayer,
   writeStoredBaseMap,
@@ -1008,5 +1009,80 @@ describe('migração de chaves legadas (sem namespace)', () => {
     };
     expect(readStoredLayers(emptyCatalog)).toEqual(ALL_MAP_LAYERS_VISIBLE);
     expect(window.localStorage.getItem('nexus.geo.mapLayers')).not.toBeNull();
+  });
+});
+
+describe('visibleMapLineSelections', () => {
+  const bandKeys = ['le5m', 'le10m', 'le20m', 'le50m', 'le100m', 'le500m', 'le1km', 'gt1km'];
+  const lineNode = (
+    id: string,
+    extra: Record<string, unknown> = {},
+    lod: Record<string, string> = {},
+  ) =>
+    ({
+      id,
+      kind: 'ENTITY',
+      parentNodeId: null,
+      label: id,
+      sortOrder: id === 'lt' ? 10 : 20,
+      active: true,
+      defaultVisible: true,
+      entity: {
+        category: 'RESOURCE',
+        sourceDomain: 'resource-model',
+        sourceType: 'RESOURCE_TYPE',
+        sourceId: id.toUpperCase(),
+      },
+      visualConfig: {
+        geometryKind: 'LINE',
+        stroke: defaultColorRule('RESOURCE', '#000'),
+        strokeStyle: 'solid',
+        opacity: 1,
+        ...extra,
+        scaleBands: Object.fromEntries(
+          bandKeys.map((k) => [
+            k,
+            { visible: true, strokeWidth: 2, ...(lod[k] ? { lodProfileId: lod[k] } : {}) },
+          ]),
+        ),
+      },
+    }) as unknown as StudioGeoCatalog['nodes'][number];
+  const profiles = [
+    { id: 'overview', tileZoom: 6, simplifyToleranceMeters: 500 },
+    { id: 'detail', tileZoom: 12, simplifyToleranceMeters: 5 },
+  ];
+  const catalog: StudioGeoCatalog = {
+    schemaVersion: 3,
+    configured: true,
+    environmentId: 'lines',
+    fallback: false,
+    nodes: [
+      lineNode('lt', { lodProfiles: profiles }, { gt1km: 'overview', le5m: 'detail' }),
+      lineNode('cabo'),
+    ],
+  } as StudioGeoCatalog;
+
+  it('escolhe exatamente um LOD por camada conforme a faixa; sem perfis usa legacy', () => {
+    expect(visibleMapLineSelections({ lt: true, cabo: true }, catalog, 5000)).toEqual([
+      { sourceModelId: 'CABO', lodKey: 'legacy' },
+      { sourceModelId: 'LT', lodKey: 'overview' },
+    ]);
+    expect(visibleMapLineSelections({ lt: true, cabo: true }, catalog, 2)).toEqual([
+      { sourceModelId: 'CABO', lodKey: 'legacy' },
+      { sourceModelId: 'LT', lodKey: 'detail' },
+    ]);
+  });
+
+  it('faixa sem lodProfileId usa o primeiro perfil', () => {
+    expect(visibleMapLineSelections({ lt: true, cabo: false }, catalog, 40)).toEqual([
+      { sourceModelId: 'LT', lodKey: 'overview' },
+    ]);
+  });
+
+  it('ignora camadas ocultas e o catálogo de fallback', () => {
+    expect(visibleMapLineSelections({ lt: false, cabo: false }, catalog, 40)).toEqual([]);
+    expect(
+      visibleMapLineSelections(ALL_MAP_LAYERS_VISIBLE, MAP_LAYER_CATALOG_FALLBACK, 40),
+    ).toEqual([]);
   });
 });

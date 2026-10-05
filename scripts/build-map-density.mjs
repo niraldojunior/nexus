@@ -83,21 +83,21 @@ async function ensureDensityTable(client) {
 // Um INSERT ... SELECT por nível. FLOOR(tile_x / factor) é a redução de zoom; o resto é
 // agregação padrão. Nada volta para o Node — a fonte tem centenas de milhares de linhas.
 const aggregateSql = (zoom, placeholder) => {
-  const factor = densityFactor(zoom);
+  // Linhas indexadas em z < 16 (zoom por camada) entram nos níveis iguais ou mais grossos que o seu z.
   return `INSERT INTO geo_map_density
     (tenant_id, tile_z, tile_x, tile_y, feature_count, resource_count, site_count, lng, lat)
    SELECT tenant_id,
           ${zoom},
-          FLOOR(tile_x / ${factor}),
-          FLOOR(tile_y / ${factor}),
+          FLOOR(tile_x / POWER(2, tile_z - ${zoom})),
+          FLOOR(tile_y / POWER(2, tile_z - ${zoom})),
           COUNT(DISTINCT entity_id),
           COUNT(DISTINCT CASE WHEN feature_kind = 'resource' THEN entity_id END),
           COUNT(DISTINCT CASE WHEN feature_kind = 'site' THEN entity_id END),
           AVG(lng),
           AVG(lat)
      FROM geo_map_feature
-    WHERE tenant_id = ${placeholder} AND tile_z = ${MAP_TILE_ZOOM}
-    GROUP BY tenant_id, FLOOR(tile_x / ${factor}), FLOOR(tile_y / ${factor})`;
+    WHERE tenant_id = ${placeholder} AND tile_z >= ${zoom} AND lod_key = 'base'
+    GROUP BY tenant_id, FLOOR(tile_x / POWER(2, tile_z - ${zoom})), FLOOR(tile_y / POWER(2, tile_z - ${zoom}))`;
 };
 
 async function main() {
@@ -109,7 +109,7 @@ async function main() {
 
     const placeholder = ':1';
     const source = await client.query(
-      `SELECT COUNT(*) AS n FROM geo_map_feature WHERE tenant_id = ${placeholder} AND tile_z = ${MAP_TILE_ZOOM}`,
+      `SELECT COUNT(*) AS n FROM geo_map_feature WHERE tenant_id = ${placeholder} AND tile_z = ${MAP_TILE_ZOOM} AND lod_key = 'base'`,
       [TENANT],
     );
     const sourceRows = Number(source.rows[0]?.n ?? source.rows[0]?.N ?? 0);

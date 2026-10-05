@@ -9,6 +9,7 @@ import {
 import {
   CANONICAL_STUDIO_GEO_SNAPSHOT,
   normalizeStudioGeoSnapshot,
+  resolveStudioGeoLineLods,
   StudioGeoAdapter,
 } from '../src/modules/studio/adapters/studio-geo-adapter.js';
 import { StudioRepository } from '../src/modules/studio/repository.js';
@@ -209,4 +210,182 @@ test('Studio GEO materialize rejects a COVERAGE node whose sourceId is not a Reg
   await adapterWithoutRegion.materialize(CANONICAL_STUDIO_GEO_SNAPSHOT, {
     tenantId: context.tenantId,
   });
+});
+
+test('Studio GEO adapter valida tileZoom e simplifyToleranceMeters das camadas LINE', async () => {
+  const adapter = new StudioGeoAdapter(noResourceTypes, noRegionSpecs);
+  const base = CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.find(
+    (node) => node.kind === 'ENTITY' && node.entity.category === 'RESOURCE',
+  );
+  assert.ok(base?.kind === 'ENTITY');
+  const bands = Object.fromEntries(
+    ['le5m', 'le10m', 'le20m', 'le50m', 'le100m', 'le500m', 'le1km', 'gt1km'].map((key) => [
+      key,
+      { visible: true, strokeWidth: 2 },
+    ]),
+  );
+  const withConfig = (extra: Record<string, unknown>) => ({
+    ...CANONICAL_STUDIO_GEO_SNAPSHOT,
+    nodes: CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.map((node) =>
+      node.id === base.id
+        ? {
+            ...node,
+            visualConfig: {
+              geometryKind: 'LINE',
+              stroke: { mode: 'fixed', defaultColor: '#123456', statusColors: {} },
+              strokeStyle: 'solid',
+              opacity: 1,
+              scaleBands: bands,
+              ...extra,
+            },
+          }
+        : node,
+    ),
+  });
+  const codes = async (extra: Record<string, unknown>) =>
+    (await adapter.validate(withConfig(extra) as never)).issues.map((issue) => issue.code);
+
+  assert.deepEqual(await codes({}), []);
+  assert.deepEqual(await codes({ tileZoom: 10, simplifyToleranceMeters: 20 }), []);
+  assert.ok((await codes({ tileZoom: 5 })).includes('STUDIO_GEO_LINE_TILE_ZOOM_INVALID'));
+  assert.ok((await codes({ tileZoom: 10.5 })).includes('STUDIO_GEO_LINE_TILE_ZOOM_INVALID'));
+  assert.ok(
+    (await codes({ simplifyToleranceMeters: 501 })).includes(
+      'STUDIO_GEO_LINE_SIMPLIFY_TOLERANCE_INVALID',
+    ),
+  );
+  const normalized = normalizeStudioGeoSnapshot(
+    withConfig({ tileZoom: 10, simplifyToleranceMeters: 20 }) as never,
+  );
+  const kept = normalized.nodes.find((node) => node.id === base.id);
+  assert.ok(kept?.kind === 'ENTITY' && kept.visualConfig?.geometryKind === 'LINE');
+  assert.equal(kept.visualConfig.tileZoom, 10);
+  assert.equal(kept.visualConfig.simplifyToleranceMeters, 20);
+});
+
+test('Studio GEO adapter valida e resolve perfis de LOD das camadas LINE', async () => {
+  const adapter = new StudioGeoAdapter(noResourceTypes, noRegionSpecs);
+  const base = CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.find(
+    (node) => node.kind === 'ENTITY' && node.entity.category === 'RESOURCE',
+  );
+  assert.ok(base?.kind === 'ENTITY');
+  const keys = ['le5m', 'le10m', 'le20m', 'le50m', 'le100m', 'le500m', 'le1km', 'gt1km'] as const;
+  const bandsWith = (lodByBand: Record<string, string | undefined> = {}) =>
+    Object.fromEntries(
+      keys.map((key) => [
+        key,
+        {
+          visible: true,
+          strokeWidth: 2,
+          ...(lodByBand[key] ? { lodProfileId: lodByBand[key] } : {}),
+        },
+      ]),
+    );
+  const withConfig = (extra: Record<string, unknown>, bands = bandsWith()) => ({
+    ...CANONICAL_STUDIO_GEO_SNAPSHOT,
+    nodes: CANONICAL_STUDIO_GEO_SNAPSHOT.nodes.map((node) =>
+      node.id === base.id
+        ? {
+            ...node,
+            visualConfig: {
+              geometryKind: 'LINE',
+              stroke: { mode: 'fixed', defaultColor: '#123456', statusColors: {} },
+              strokeStyle: 'solid',
+              opacity: 1,
+              scaleBands: bands,
+              ...extra,
+            },
+          }
+        : node,
+    ),
+  });
+  const codes = async (extra: Record<string, unknown>, bands = bandsWith()) =>
+    (await adapter.validate(withConfig(extra, bands) as never)).issues.map((issue) => issue.code);
+  const profiles = [
+    { id: 'overview', tileZoom: 6, simplifyToleranceMeters: 500 },
+    { id: 'detail', tileZoom: 12, simplifyToleranceMeters: 5 },
+  ];
+
+  assert.deepEqual(
+    await codes({ lodProfiles: profiles }, bandsWith({ gt1km: 'overview', le5m: 'detail' })),
+    [],
+  );
+  assert.ok((await codes({ lodProfiles: [] })).includes('STUDIO_GEO_LINE_LOD_PROFILES_INVALID'));
+  assert.ok(
+    (await codes({ lodProfiles: [profiles[0], profiles[0]] })).includes(
+      'STUDIO_GEO_LINE_LOD_ID_DUPLICATE',
+    ),
+  );
+  assert.ok(
+    (await codes({ lodProfiles: [{ ...profiles[0], id: 'Bad Id' }] })).includes(
+      'STUDIO_GEO_LINE_LOD_ID_INVALID',
+    ),
+  );
+  assert.ok(
+    (await codes({ lodProfiles: [{ ...profiles[0], tileZoom: 17 }] })).includes(
+      'STUDIO_GEO_LINE_TILE_ZOOM_INVALID',
+    ),
+  );
+  assert.ok(
+    (await codes({ lodProfiles: [{ ...profiles[0], simplifyToleranceMeters: 501 }] })).includes(
+      'STUDIO_GEO_LINE_SIMPLIFY_TOLERANCE_INVALID',
+    ),
+  );
+  assert.ok(
+    (await codes({ lodProfiles: profiles }, bandsWith({ gt1km: 'missing' }))).includes(
+      'STUDIO_GEO_LINE_LOD_PROFILE_UNKNOWN',
+    ),
+  );
+  // Sem lodProfiles só o perfil legado implícito é referenciável.
+  assert.deepEqual(await codes({}, bandsWith({ gt1km: 'legacy' })), []);
+  assert.ok(
+    (await codes({}, bandsWith({ gt1km: 'overview' }))).includes(
+      'STUDIO_GEO_LINE_LOD_PROFILE_UNKNOWN',
+    ),
+  );
+
+  const normalized = normalizeStudioGeoSnapshot(
+    withConfig({ lodProfiles: profiles }, bandsWith({ gt1km: 'overview' })) as never,
+  );
+  const kept = normalized.nodes.find((node) => node.id === base.id);
+  assert.ok(kept?.kind === 'ENTITY' && kept.visualConfig?.geometryKind === 'LINE');
+  assert.deepEqual(kept.visualConfig.lodProfiles, profiles);
+  assert.equal(kept.visualConfig.scaleBands.gt1km.lodProfileId, 'overview');
+  assert.equal(kept.visualConfig.scaleBands.le5m.lodProfileId, undefined);
+});
+
+test('resolveStudioGeoLineLods normaliza o legado para o perfil único e escolhe por faixa', () => {
+  const bands = Object.fromEntries(
+    ['le5m', 'le10m', 'le20m', 'le50m', 'le100m', 'le500m', 'le1km', 'gt1km'].map((key) => [
+      key,
+      { visible: true, strokeWidth: 2 },
+    ]),
+  ) as never;
+
+  const legacy = resolveStudioGeoLineLods({
+    tileZoom: 10,
+    simplifyToleranceMeters: 20,
+    scaleBands: bands,
+  });
+  assert.deepEqual(legacy.profiles, [{ id: 'legacy', tileZoom: 10, simplifyToleranceMeters: 20 }]);
+  assert.equal(legacy.profileByBand.gt1km, legacy.profiles[0]);
+  assert.equal(legacy.profileByBand.le5m, legacy.profiles[0]);
+
+  const defaults = resolveStudioGeoLineLods({ scaleBands: bands });
+  assert.deepEqual(defaults.profiles, [{ id: 'legacy', tileZoom: 16, simplifyToleranceMeters: 0 }]);
+
+  const overview = { id: 'overview', tileZoom: 6, simplifyToleranceMeters: 500 };
+  const detail = { id: 'detail', tileZoom: 12, simplifyToleranceMeters: 5 };
+  const multi = resolveStudioGeoLineLods({
+    lodProfiles: [overview, detail],
+    scaleBands: {
+      ...(bands as object),
+      gt1km: { visible: true, strokeWidth: 1, lodProfileId: 'overview' },
+      le5m: { visible: true, strokeWidth: 2, lodProfileId: 'detail' },
+    } as never,
+  });
+  assert.equal(multi.profileByBand.gt1km, overview);
+  assert.equal(multi.profileByBand.le5m, detail);
+  // Faixa sem lodProfileId usa o primeiro perfil.
+  assert.equal(multi.profileByBand.le50m, overview);
 });

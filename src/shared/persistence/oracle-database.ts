@@ -259,6 +259,9 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'geo-map-feature-segment-rank') {
         await this.applyGeoMapFeatureSegmentRankPrimaryKey(connection);
       }
+      if (batch.name === 'geo-map-feature-lod') {
+        await this.applyGeoMapFeatureLodPrimaryKey(connection);
+      }
       if (batch.name === 'shared-resource-type-catalog') {
         await this.applySharedResourceTypeCatalogMigration(connection);
       }
@@ -1051,6 +1054,14 @@ export class OracleDatabase implements DatabaseClient {
 
   private async applyGeoMapFeatureSegmentRankPrimaryKey(connection: Connection): Promise<void> {
     const tableName = prefixed('geo_map_feature', this.config.objectPrefix).toUpperCase();
+    // Tabela já criada com `lod_key` (namespace novo): a PK com LOD é a vigente e é o batch 27 que
+    // a garante; recriar aqui a chave sem LOD a regrediria.
+    const lodColumn = await connection.execute(
+      `SELECT 1 FROM user_tab_columns WHERE table_name = :1 AND column_name = 'LOD_KEY'`,
+      [tableName],
+      QUERY_OPTIONS,
+    );
+    if ((lodColumn.rows?.length ?? 0) > 0) return;
     const expected = ['TENANT_ID', 'TILE_Z', 'TILE_X', 'TILE_Y', 'ENTITY_ID', 'SHAPE', 'RANK'];
     const primaryKey = await connection.execute<{ constraint_name: string }>(
       `SELECT c.constraint_name AS "constraint_name"
@@ -1075,6 +1086,48 @@ export class OracleDatabase implements DatabaseClient {
     await connection.execute(`ALTER TABLE ${table} DROP PRIMARY KEY`);
     await connection.execute(
       `ALTER TABLE ${table} ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)`,
+    );
+  }
+
+  // Batch 27 (issue #317): a PK de geo_map_feature passa a incluir `lod_key`, para uma mesma
+  // entidade/tile coexistir em vários LODs. A coluna entra pelo DDL aditivo do batch (DEFAULT 'base'
+  // preenche as linhas existentes), então só a chave precisa de adapter. Idempotente.
+  private async applyGeoMapFeatureLodPrimaryKey(connection: Connection): Promise<void> {
+    const tableName = prefixed('geo_map_feature', this.config.objectPrefix).toUpperCase();
+    const expected = [
+      'TENANT_ID',
+      'TILE_Z',
+      'TILE_X',
+      'TILE_Y',
+      'ENTITY_ID',
+      'SHAPE',
+      'LOD_KEY',
+      'RANK',
+    ];
+    const primaryKey = await connection.execute<{ constraint_name: string }>(
+      `SELECT c.constraint_name AS "constraint_name"
+         FROM user_constraints c
+        WHERE c.table_name = :1 AND c.constraint_type = 'P'`,
+      [tableName],
+      QUERY_OPTIONS,
+    );
+    const name = primaryKey.rows?.[0]?.constraint_name;
+    if (name) {
+      const result = await connection.execute<{ column_name: string }>(
+        `SELECT cc.column_name AS "column_name"
+           FROM user_cons_columns cc
+          WHERE cc.constraint_name = :1
+          ORDER BY cc.position`,
+        [name],
+        QUERY_OPTIONS,
+      );
+      const columns = (result.rows ?? []).map((row) => row.column_name.toUpperCase());
+      if (columns.join(',') === expected.join(',')) return;
+    }
+    const table = prefixed('geo_map_feature', this.config.objectPrefix);
+    if (name) await connection.execute(`ALTER TABLE ${table} DROP PRIMARY KEY DROP INDEX`);
+    await connection.execute(
+      `ALTER TABLE ${table} ADD PRIMARY KEY (${expected.join(', ').toLowerCase()})`,
     );
   }
 

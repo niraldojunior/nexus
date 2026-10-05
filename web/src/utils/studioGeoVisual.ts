@@ -67,6 +67,8 @@ export function normalizeStudioGeoVisualConfig(
     fill?: unknown;
     fillOpacity?: unknown;
     scaleBands?: Record<string, Record<string, unknown>>;
+    tileZoom?: unknown;
+    simplifyToleranceMeters?: unknown;
   };
   const kind =
     candidate.geometryKind === 'POINT' ||
@@ -120,6 +122,13 @@ export function normalizeStudioGeoVisualConfig(
       stroke: colorRule(candidate.stroke, legacyColor),
       strokeStyle: strokeStyle(candidate.strokeStyle, defaults.strokeStyle),
       opacity: opacity(candidate.opacity, defaults.opacity),
+      ...(typeof candidate.tileZoom === 'number' && Number.isFinite(candidate.tileZoom)
+        ? { tileZoom: Math.min(16, Math.max(6, Math.round(candidate.tileZoom))) }
+        : {}),
+      ...(typeof candidate.simplifyToleranceMeters === 'number' &&
+      Number.isFinite(candidate.simplifyToleranceMeters)
+        ? { simplifyToleranceMeters: Math.min(500, Math.max(0, candidate.simplifyToleranceMeters)) }
+        : {}),
       scaleBands,
     };
   }

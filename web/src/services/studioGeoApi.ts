@@ -59,12 +59,32 @@ export type StudioGeoPointVisualConfig = {
   scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScalePointConfig>;
 };
 
+export type StudioGeoLineLodProfile = {
+  /** Identificador estável na camada; vira o `lod_key` do índice do mapa. */
+  id: string;
+  /** Zoom (6–16) de indexação. Alterar exige reindexar. */
+  tileZoom: number;
+  /** Tolerância de simplificação (m, 0–500) aplicada na indexação. */
+  simplifyToleranceMeters: number;
+};
+
+export type StudioGeoLineScaleBandConfig = StudioGeoScaleStrokeConfig & {
+  /** Perfil de LOD desta faixa. Ausente = perfil único legado da camada. */
+  lodProfileId?: string;
+};
+
 export type StudioGeoLineVisualConfig = {
   geometryKind: 'LINE';
   stroke: StudioGeoColorRule;
   strokeStyle: StudioGeoStrokeStyle;
   opacity: number;
-  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleStrokeConfig>;
+  /** Legado (perfil único): zoom de indexação. Ausente = 16. Ignorado se houver `lodProfiles`. */
+  tileZoom?: number;
+  /** Legado (perfil único): tolerância (m). Ausente = 0. Ignorado se houver `lodProfiles`. */
+  simplifyToleranceMeters?: number;
+  /** Perfis de LOD da camada; cada faixa escolhe um via `scaleBands[*].lodProfileId`. */
+  lodProfiles?: StudioGeoLineLodProfile[];
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoLineScaleBandConfig>;
 };
 
 export type StudioGeoPolygonVisualConfig = {

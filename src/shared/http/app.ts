@@ -36,6 +36,9 @@ import type { GeoService } from '../../modules/geo/service.js';
 import { isProjectInfrastructureResourceType } from '../../modules/geo/project-resource-classification.js';
 import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
+import { promisify } from 'node:util';
+import { gzip } from 'node:zlib';
+import { MAP_LINE_MAX_SELECTIONS } from '../../modules/geo/map-line-service.js';
 import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
 import type { PartyRoleTypeCharacteristicValueType } from '../../modules/party/party-role-type-characteristic-repository.js';
@@ -174,6 +177,7 @@ export const handleHttpRequest = async (
 // `createApp`, logo acima.
 const MAP_NAVIGATION_PATH_PREFIXES = [
   '/v1/geo/map/tile',
+  '/v1/geo/map/lines',
   '/v1/geo/map/density',
   '/v1/geo/map-layer-catalog',
   '/v1/geo/tree/',
@@ -2809,6 +2813,52 @@ const routeGeoRequest = async ({
       { tenantId: geoContext.tenantId },
     );
     return sendJson(response, 200, features);
+  }
+
+  // Linhas do mapa por bbox (issue #317): uma chamada por viewport, um LOD por camada. `line` é
+  // repetível no formato `<sourceModelId>:<lodKey>`; o servidor não conhece códigos especiais.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/map/lines') {
+    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined ||
+      minLng > maxLng ||
+      minLat > maxLat
+    ) {
+      throw new AppError('valid minLng, minLat, maxLng and maxLat are required', {
+        code: 'GEO_MAP_LINES_BOUNDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const selections = [...new Set(url.searchParams.getAll('line'))].map((value) => {
+      const split = value.lastIndexOf(':');
+      return { sourceModelId: value.slice(0, split), lodKey: value.slice(split + 1) };
+    });
+    if (
+      selections.length > MAP_LINE_MAX_SELECTIONS ||
+      selections.some(
+        (s) =>
+          s.sourceModelId.length === 0 ||
+          s.sourceModelId.length > 200 ||
+          !/^[a-z][a-z0-9-]{0,31}$/.test(s.lodKey),
+      )
+    ) {
+      throw new AppError(
+        `line must have at most ${MAP_LINE_MAX_SELECTIONS} values as <sourceModelId>:<lodKey>`,
+        { code: 'GEO_MAP_LINES_SELECTION_INVALID', statusCode: 400 },
+      );
+    }
+    const result = await runtime.geoMapLineService.lines(
+      { minLng, minLat, maxLng, maxLat },
+      selections,
+      { tenantId: geoContext.tenantId },
+    );
+    return sendJson(response, 200, result);
   }
 
   // Sites do mapa por bbox (issue #314): leitura única e genérica para qualquer
@@ -6880,6 +6930,9 @@ const buildConfirmationOutcomeMessage = (
   }
 };
 
+const JSON_COMPRESS_MIN_BYTES = 8 * 1024;
+const gzipAsync = promisify(gzip);
+
 const sendJson = async (
   response: ServerResponse,
   statusCode: number,
@@ -6888,7 +6941,19 @@ const sendJson = async (
   payload = await Promise.resolve(payload);
   response.statusCode = statusCode;
   response.setHeader('content-type', 'application/json; charset=utf-8');
-  response.end(JSON.stringify(payload));
+  const body = JSON.stringify(payload);
+  // Respostas cartográficas grandes (linhas por viewport) comprimem ~10x; payload pequeno não
+  // compensa o custo de CPU. Só gzip, negociado por Accept-Encoding.
+  const acceptsGzip = String(response.req?.headers['accept-encoding'] ?? '')
+    .split(',')
+    .some((token) => token.trim().toLowerCase().startsWith('gzip'));
+  if (acceptsGzip && body.length >= JSON_COMPRESS_MIN_BYTES) {
+    response.setHeader('content-encoding', 'gzip');
+    response.setHeader('vary', 'Accept-Encoding');
+    response.end(await gzipAsync(body));
+    return;
+  }
+  response.end(body);
 };
 
 const sendJsonOrNotFound = async (

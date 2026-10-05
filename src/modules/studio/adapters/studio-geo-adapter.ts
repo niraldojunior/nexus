@@ -108,12 +108,76 @@ export type StudioGeoPointVisualConfig = {
   scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScalePointConfig>;
 };
 
+/** Perfil de LOD: um desenho derivado da linha, indexado num zoom e simplificado numa tolerância. */
+export type StudioGeoLineLodProfile = {
+  /** Identificador estável na camada; vira o `lod_key` do índice `geo_map_feature`. */
+  id: string;
+  tileZoom: number;
+  simplifyToleranceMeters: number;
+};
+
+export type StudioGeoLineScaleBandConfig = StudioGeoScaleStrokeConfig & {
+  /** Perfil de LOD usado nesta faixa. Ausente = perfil único legado da camada. */
+  lodProfileId?: string;
+};
+
 export type StudioGeoLineVisualConfig = {
   geometryKind: 'LINE';
   stroke: StudioGeoColorRule;
   strokeStyle: StudioGeoStrokeStyle;
   opacity: number;
-  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoScaleStrokeConfig>;
+  /** Legado (perfil único): zoom (6–16) de indexação. Ausente = 16. Ignorado se houver `lodProfiles`. */
+  tileZoom?: number;
+  /** Legado (perfil único): tolerância (m). Ausente = 0. Ignorado se houver `lodProfiles`. */
+  simplifyToleranceMeters?: number;
+  /** Perfis de LOD da camada. Cada faixa escolhe um via `scaleBands[*].lodProfileId`. */
+  lodProfiles?: StudioGeoLineLodProfile[];
+  scaleBands: Record<StudioGeoScaleBandKey, StudioGeoLineScaleBandConfig>;
+};
+
+export const STUDIO_GEO_TILE_ZOOM_MIN = 6;
+export const STUDIO_GEO_TILE_ZOOM_MAX = 16;
+export const STUDIO_GEO_SIMPLIFY_TOLERANCE_MAX = 500;
+export const STUDIO_GEO_LOD_PROFILES_MAX = 8;
+export const STUDIO_GEO_LEGACY_LOD_PROFILE_ID = 'legacy';
+const LOD_PROFILE_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+
+export type StudioGeoResolvedLineLods = {
+  profiles: StudioGeoLineLodProfile[];
+  /** Perfil efetivo de cada faixa de escala. */
+  profileByBand: Record<StudioGeoScaleBandKey, StudioGeoLineLodProfile>;
+};
+
+/**
+ * Resolve os perfis efetivos de uma camada linear. Snapshots sem `lodProfiles` viram um único
+ * perfil `legacy` (tileZoom/tolerância antigos) compartilhado por todas as faixas. Faixa sem
+ * `lodProfileId` válido usa o primeiro perfil.
+ */
+export const resolveStudioGeoLineLods = (
+  config: Pick<
+    StudioGeoLineVisualConfig,
+    'tileZoom' | 'simplifyToleranceMeters' | 'lodProfiles' | 'scaleBands'
+  >,
+): StudioGeoResolvedLineLods => {
+  const declared = Array.isArray(config.lodProfiles) ? config.lodProfiles : [];
+  const profiles: StudioGeoLineLodProfile[] =
+    declared.length > 0
+      ? declared
+      : [
+          {
+            id: STUDIO_GEO_LEGACY_LOD_PROFILE_ID,
+            tileZoom: config.tileZoom ?? STUDIO_GEO_TILE_ZOOM_MAX,
+            simplifyToleranceMeters: config.simplifyToleranceMeters ?? 0,
+          },
+        ];
+  const byId = new Map(profiles.map((profile) => [profile.id, profile]));
+  const profileByBand = Object.fromEntries(
+    SCALE_BAND_KEYS.map((key) => {
+      const id = config.scaleBands?.[key]?.lodProfileId;
+      return [key, (id !== undefined ? byId.get(id) : undefined) ?? profiles[0]!];
+    }),
+  ) as Record<StudioGeoScaleBandKey, StudioGeoLineLodProfile>;
+  return { profiles, profileByBand };
 };
 
 export type StudioGeoPolygonVisualConfig = {
@@ -285,6 +349,16 @@ const normalizeVisualConfig = (
       stroke: normalizeColorRule(candidate.stroke, defaultColorRule(category, legacyColor)),
       strokeStyle: candidate.strokeStyle as StudioGeoStrokeStyle,
       opacity: typeof candidate.opacity === 'number' ? candidate.opacity : 0.9,
+      ...(candidate.tileZoom !== undefined && candidate.tileZoom !== null
+        ? { tileZoom: candidate.tileZoom as number }
+        : {}),
+      ...(candidate.simplifyToleranceMeters !== undefined &&
+      candidate.simplifyToleranceMeters !== null
+        ? { simplifyToleranceMeters: candidate.simplifyToleranceMeters as number }
+        : {}),
+      ...(Array.isArray(candidate.lodProfiles)
+        ? { lodProfiles: candidate.lodProfiles as StudioGeoLineLodProfile[] }
+        : {}),
       scaleBands: Object.fromEntries(
         SCALE_BAND_KEYS.map((key) => [
           key,
@@ -292,6 +366,9 @@ const normalizeVisualConfig = (
             visible: bands[key]?.visible,
             strokeWidth:
               typeof bands[key]?.strokeWidth === 'number' ? bands[key].strokeWidth : legacyWidth,
+            ...(typeof bands[key]?.lodProfileId === 'string'
+              ? { lodProfileId: bands[key].lodProfileId as string }
+              : {}),
           },
         ]),
       ) as StudioGeoLineVisualConfig['scaleBands'],
@@ -474,12 +551,7 @@ export const CANONICAL_STUDIO_GEO_SNAPSHOT: StudioGeoSnapshot = {
   schemaVersion: 3,
   nodes: [
     group('locations', 'Locais', 10),
-    group(
-      'coverage',
-      'Cobertura',
-      20,
-      'Manchas agregadas por tema',
-    ),
+    group('coverage', 'Cobertura', 20, 'Manchas agregadas por tema'),
     group('netwinInfrastructure', 'Infraestrutura Civil', 30),
     group('resources', 'Recursos de Rede', 40),
     entity(
@@ -751,6 +823,32 @@ const visualConfigIssues = (
           message: 'A opacidade da linha deve ficar entre 0 e 1.',
           path: `${path}.opacity`,
         });
+      if (
+        line.tileZoom !== undefined &&
+        (!Number.isInteger(line.tileZoom) ||
+          line.tileZoom < STUDIO_GEO_TILE_ZOOM_MIN ||
+          line.tileZoom > STUDIO_GEO_TILE_ZOOM_MAX)
+      )
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_TILE_ZOOM_INVALID',
+          message: `O zoom de indexação deve ser um inteiro entre ${STUDIO_GEO_TILE_ZOOM_MIN} e ${STUDIO_GEO_TILE_ZOOM_MAX}.`,
+          path: `${path}.tileZoom`,
+        });
+      if (
+        line.simplifyToleranceMeters !== undefined &&
+        (typeof line.simplifyToleranceMeters !== 'number' ||
+          !Number.isFinite(line.simplifyToleranceMeters) ||
+          line.simplifyToleranceMeters < 0 ||
+          line.simplifyToleranceMeters > STUDIO_GEO_SIMPLIFY_TOLERANCE_MAX)
+      )
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_SIMPLIFY_TOLERANCE_INVALID',
+          message: `A tolerância de simplificação deve ficar entre 0 e ${STUDIO_GEO_SIMPLIFY_TOLERANCE_MAX} m.`,
+          path: `${path}.simplifyToleranceMeters`,
+        });
+      issues.push(...lodProfileIssues(line.lodProfiles, line.scaleBands, path));
     } else {
       const polygon = config as Partial<StudioGeoPolygonVisualConfig>;
       issues.push(...colorRuleIssues(polygon.fill, category, `${path}.fill`));
@@ -812,6 +910,94 @@ const visualConfigIssues = (
       path: `${path}.geometryKind`,
     },
   ];
+};
+
+const lodProfileIssues = (
+  profiles: unknown,
+  bands: unknown,
+  path: string,
+): StudioValidationIssue[] => {
+  const issues: StudioValidationIssue[] = [];
+  const ids = new Set<string>();
+  if (profiles !== undefined) {
+    if (
+      !Array.isArray(profiles) ||
+      profiles.length === 0 ||
+      profiles.length > STUDIO_GEO_LOD_PROFILES_MAX
+    ) {
+      return [
+        {
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_LOD_PROFILES_INVALID',
+          message: `A camada deve declarar de 1 a ${STUDIO_GEO_LOD_PROFILES_MAX} perfis de LOD.`,
+          path: `${path}.lodProfiles`,
+        },
+      ];
+    }
+    profiles.forEach((raw: unknown, index) => {
+      const profilePath = `${path}.lodProfiles[${index}]`;
+      const profile = (
+        raw && typeof raw === 'object' ? raw : {}
+      ) as Partial<StudioGeoLineLodProfile>;
+      if (typeof profile.id !== 'string' || !LOD_PROFILE_ID_PATTERN.test(profile.id))
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_LOD_ID_INVALID',
+          message:
+            'O id do perfil de LOD deve começar com letra minúscula e ter até 32 caracteres (a-z, 0-9, hífen).',
+          path: `${profilePath}.id`,
+        });
+      else if (ids.has(profile.id))
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_LOD_ID_DUPLICATE',
+          message: `O perfil de LOD "${profile.id}" está duplicado.`,
+          path: `${profilePath}.id`,
+        });
+      else ids.add(profile.id);
+      if (
+        !Number.isInteger(profile.tileZoom) ||
+        (profile.tileZoom as number) < STUDIO_GEO_TILE_ZOOM_MIN ||
+        (profile.tileZoom as number) > STUDIO_GEO_TILE_ZOOM_MAX
+      )
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_TILE_ZOOM_INVALID',
+          message: `O zoom de indexação deve ser um inteiro entre ${STUDIO_GEO_TILE_ZOOM_MIN} e ${STUDIO_GEO_TILE_ZOOM_MAX}.`,
+          path: `${profilePath}.tileZoom`,
+        });
+      if (
+        typeof profile.simplifyToleranceMeters !== 'number' ||
+        !Number.isFinite(profile.simplifyToleranceMeters) ||
+        profile.simplifyToleranceMeters < 0 ||
+        profile.simplifyToleranceMeters > STUDIO_GEO_SIMPLIFY_TOLERANCE_MAX
+      )
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_SIMPLIFY_TOLERANCE_INVALID',
+          message: `A tolerância de simplificação deve ficar entre 0 e ${STUDIO_GEO_SIMPLIFY_TOLERANCE_MAX} m.`,
+          path: `${profilePath}.simplifyToleranceMeters`,
+        });
+    });
+  }
+  if (bands && typeof bands === 'object') {
+    for (const key of SCALE_BAND_KEYS) {
+      const id = (bands as Record<string, { lodProfileId?: unknown } | undefined>)[key]
+        ?.lodProfileId;
+      if (id === undefined) continue;
+      // Sem `lodProfiles` só o perfil legado implícito existe.
+      const known =
+        profiles === undefined ? id === STUDIO_GEO_LEGACY_LOD_PROFILE_ID : ids.has(id as string);
+      if (!known)
+        issues.push({
+          severity: 'error',
+          code: 'STUDIO_GEO_LINE_LOD_PROFILE_UNKNOWN',
+          message: `A faixa ${key} referencia um perfil de LOD inexistente.`,
+          path: `${path}.scaleBands.${key}.lodProfileId`,
+        });
+    }
+  }
+  return issues;
 };
 
 export class StudioGeoAdapter implements StudioDomainAdapter {

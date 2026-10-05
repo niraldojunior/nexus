@@ -1,4 +1,4 @@
-// Infra passiva (recursos + cabos; Sites vêm de useMapSites) da região visível do mapa, buscada por TILE
+// Infra passiva pontual (recursos; Sites vêm de useMapSites, linhas de useMapLines) da região visível do mapa, buscada por TILE
 // — não por bbox — com cache LRU no cliente (Fase 2-frontend/3 da reengenharia de performance
 // do mapa, issue #69). Substitui useViewportInfra no caminho quente do mapa: aquele hook só
 // deduplicava o que estava *em voo* por bbox arredondado (nunca repete num pan contínuo); este
@@ -35,10 +35,9 @@ const inFlightTiles = new Map<string, Promise<MapTileFeature[]>>();
 function isIncluded(feature: MapTileFeature, include: ViewportShape[] | undefined): boolean {
   // Sites nunca passam por aqui: têm leitura própria por bbox (useMapSites, issue #314). O filtro
   // protege também de respostas em cache anteriores à separação.
-  if (feature.kind !== 'resource') return false;
-  if (include === undefined) return true;
-  if (feature.shape === 'point') return include.includes('resource-points');
-  return include.includes('resource-lines');
+  // Linhas também não: têm leitura própria por bbox e LOD (useMapLines, issue #317).
+  if (feature.kind !== 'resource' || feature.shape !== 'point') return false;
+  return include === undefined || include.includes('resource-points');
 }
 
 function cacheGet(key: string): MapTileFeature[] | undefined {
@@ -86,7 +85,8 @@ export function useMapTiles(
   useEffect(() => {
     // `include` vazio significa que não há nenhuma shape publicada, habilitada pelo usuário e
     // visível na faixa atual. A escala por si só nunca decide se a infraestrutura será buscada.
-    const nothingRequested = !bounds || (Array.isArray(include) && include.length === 0);
+    const nothingRequested =
+      !bounds || (Array.isArray(include) && !include.includes('resource-points'));
     if (nothingRequested) {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
       // Uma resposta iniciada antes de todas as camadas serem desligadas não pode repopular o
@@ -98,7 +98,9 @@ export function useMapTiles(
       return;
     }
 
-    const tiles = tilesForBounds(bounds, MAP_TILE_ZOOM);
+    // Só pontos: moram sempre em MAP_TILE_ZOOM. Linhas saem de useMapLines (uma request agregada).
+    const zooms = [MAP_TILE_ZOOM];
+    const tiles = zooms.flatMap((z) => tilesForBounds(bounds, z));
     // A visibilidade tambÃ©m Ã© parte da chave do resultado, mas nÃ£o da chave do
     // tile: trocar um switch reaplica o filtro ao cache local, sem novo fetch.
     const visibilityKey = visibility

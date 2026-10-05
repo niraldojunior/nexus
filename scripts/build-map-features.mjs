@@ -45,8 +45,10 @@ import { config as loadEnv } from 'dotenv';
 import { openLoaderDb, resolveLoaderEnvironment } from './loader-db.mjs';
 import {
   MAP_TILE_ZOOM,
+  MAP_BASE_LOD_KEY,
+  studioGeoLineLodIndex,
   tileForPoint,
-  tileSegmentsForLine,
+  tileSegmentsForLineLods,
 } from '../dist/src/modules/geo/map-tile.js';
 import { excludeInternalResourceTypesSql } from '../dist/src/modules/geo/map-visibility.js';
 
@@ -66,7 +68,16 @@ const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
 
 async function ensureMapFeaturePrimaryKey(client) {
-  const expected = ['TENANT_ID', 'TILE_Z', 'TILE_X', 'TILE_Y', 'ENTITY_ID', 'SHAPE', 'RANK'];
+  const expected = [
+    'TENANT_ID',
+    'TILE_Z',
+    'TILE_X',
+    'TILE_Y',
+    'ENTITY_ID',
+    'SHAPE',
+    'LOD_KEY',
+    'RANK',
+  ];
   const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geo_map_feature`.toUpperCase();
   const primaryKey = (
     await client.query(
@@ -89,9 +100,9 @@ async function ensureMapFeaturePrimaryKey(client) {
   if (columns.join(',') === expected.join(',')) return;
   await client.query('ALTER TABLE geo_map_feature DROP PRIMARY KEY');
   await client.query(
-    'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
+    'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)',
   );
-  console.log('Chave primária de geo_map_feature atualizada para incluir rank.');
+  console.log('Chave primária de geo_map_feature atualizada para incluir lod_key e rank.');
 }
 
 async function ensureMapFeatureTable(client) {
@@ -114,9 +125,10 @@ async function ensureMapFeatureTable(client) {
     lng BINARY_DOUBLE NOT NULL,
     lat BINARY_DOUBLE NOT NULL,
     geometry CLOB,
+    lod_key VARCHAR2(64 CHAR) DEFAULT 'base' NOT NULL,
     rank NUMBER(10) DEFAULT 0 NOT NULL,
     generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)
   )`;
   try {
     await client.query(ddl);
@@ -244,13 +256,36 @@ function pointRow({
     lng,
     lat,
     geometry: null,
+    lod_key: MAP_BASE_LOD_KEY,
     rank: 0,
   };
 }
 
+let LINE_TILING = new Map();
+
+// Perfis de LOD (zoom/simplificação) por camada vêm do catálogo publicado do Studio GEO; sem camada, z16 sem simplificar.
+async function loadLineTiling(client) {
+  const row = (
+    await client.query(
+      `SELECT v.snapshot
+         FROM studio_workspace w
+         JOIN studio_version v ON v.id = w.published_version_id
+        WHERE w.domain = 'studio-geo' AND w.tenant_id = $1`,
+      [TENANT],
+    )
+  ).rows[0];
+  if (!row?.snapshot) return new Map();
+  try {
+    const snapshot = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot;
+    return studioGeoLineLodIndex(snapshot);
+  } catch {
+    return new Map();
+  }
+}
+
 function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
-  const segments = tileSegmentsForLine(geometry, MAP_TILE_ZOOM);
-  return segments.map(({ tile, coordinates, rank }) => {
+  const segments = tileSegmentsForLineLods(geometry, LINE_TILING.get(typeCode));
+  return segments.map(({ tile, coordinates, rank, lodKey }) => {
     const anchor = coordinates[Math.floor(coordinates.length / 2)];
     return {
       tenant_id: TENANT,
@@ -271,6 +306,7 @@ function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
       lng: anchor[0],
       lat: anchor[1],
       geometry: JSON.stringify({ type: 'LineString', coordinates }),
+      lod_key: lodKey,
       rank,
     };
   });
@@ -295,12 +331,14 @@ const FEATURE_COLUMNS = [
   'lng',
   'lat',
   'geometry',
+  'lod_key',
   'rank',
 ];
 
 async function main() {
   const client = await openLoaderDb();
   try {
+    LINE_TILING = await loadLineTiling(client);
     const params = [TENANT];
     const scopeWhere = scopeFilter(params);
     const scopeLabel =
@@ -387,6 +425,14 @@ async function main() {
       `Features : ${features.length} linhas de geo_map_feature${skippedGeometry ? ` (${skippedGeometry} descartadas por geometria inválida)` : ''}`,
     );
 
+    const perZoom = new Map();
+    for (const f of features) {
+      if (f.shape !== 'line') continue;
+      const key = `${f.type_code} lod=${f.lod_key} z${f.tile_z}`;
+      perZoom.set(key, (perZoom.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of [...perZoom].sort()) console.log(`  linhas ${key}: ${count}`);
+
     if (!APPLY) {
       console.log('\n— DRY-RUN. Nada foi gravado. Use --apply para executar. —');
       return;
@@ -400,7 +446,14 @@ async function main() {
     try {
       let removed;
       if (!CITY && !UF) {
-        await client.query(`DELETE FROM geo_map_feature WHERE tenant_id = $1`, [TENANT]);
+        // Em lotes (ROWNUM) para não estourar o UNDO; o índice é derivado e regenerável.
+        let batch;
+        do {
+          batch = await client.query(
+            `DELETE FROM geo_map_feature WHERE tenant_id = $1 AND ROWNUM <= 50000`,
+            [TENANT],
+          );
+        } while ((batch.rowCount ?? 0) > 0);
         removed = 'tenant inteiro';
       } else {
         removed = await deleteByEntityIds(client, entityIds);

@@ -168,19 +168,26 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     else grid.set(key, [point]);
   }
 
-  function insertLine(grid: Map<string, DrawnLine[]>, line: DrawnLine): void {
+  function insertLine(
+    grid: Map<string, DrawnLine[]>,
+    line: DrawnLine,
+    width: number,
+    height: number,
+  ): void {
     // Uma linha entra em toda célula tocada pelo bbox de cada um de seus segmentos — barato
     // (poucos segmentos por cabo no recorte de tile) e evita falso-negativo em segmentos longos.
+    // As células são limitadas ao canvas: um segmento de dezenas de km num zoom alto tem bbox de
+    // milhões de pixels fora da tela e varrê-lo inteiro trava a thread principal.
     const seen = new Set<string>();
+    const lastCx = Math.floor(width / HIT_GRID_CELL_PX);
+    const lastCy = Math.floor(height / HIT_GRID_CELL_PX);
     for (let i = 0; i < line.points.length - 1; i += 1) {
       const a = line.points[i]!;
       const b = line.points[i + 1]!;
-      const [minCx, maxCx] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])].map((v) =>
-        Math.floor(v / HIT_GRID_CELL_PX),
-      );
-      const [minCy, maxCy] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])].map((v) =>
-        Math.floor(v / HIT_GRID_CELL_PX),
-      );
+      const minCx = Math.max(0, Math.floor(Math.min(a[0], b[0]) / HIT_GRID_CELL_PX));
+      const maxCx = Math.min(lastCx, Math.floor(Math.max(a[0], b[0]) / HIT_GRID_CELL_PX));
+      const minCy = Math.max(0, Math.floor(Math.min(a[1], b[1]) / HIT_GRID_CELL_PX));
+      const maxCy = Math.min(lastCy, Math.floor(Math.max(a[1], b[1]) / HIT_GRID_CELL_PX));
       for (let cx = minCx; cx <= maxCx; cx += 1) {
         for (let cy = minCy; cy <= maxCy; cy += 1) {
           const key = cellKey(cx, cy);
@@ -367,7 +374,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       }
 
       for (const point of drawnPoints) insertPoint(pointGrid, point);
-      for (const line of drawnLines) insertLine(lineGrid, line);
+      for (const line of drawnLines) insertLine(lineGrid, line, width, height);
       syncAnimation();
     }
 

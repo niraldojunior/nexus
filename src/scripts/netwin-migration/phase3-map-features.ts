@@ -2,8 +2,15 @@ import oracledb from 'oracledb';
 import type { Connection } from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { MigrationProgress, shouldCommitMigrationBatch } from './progress.js';
-import { MAP_DENSITY_ZOOMS, densityFactor } from '../../modules/geo/map-density.js';
-import { MAP_TILE_ZOOM, tileForPoint, tileSegmentsForLine } from '../../modules/geo/map-tile.js';
+import { MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
+import {
+  MAP_TILE_ZOOM,
+  tileForPoint,
+  MAP_BASE_LOD_KEY,
+  tileSegmentsForLineLods,
+  type LineLodProfile,
+} from '../../modules/geo/map-tile.js';
+import { loadPublishedLineTiling } from './line-tiling.js';
 import type { GeoJSONLineString } from '../../modules/geo/domain.js';
 import { excludeInternalResourceTypesSql } from '../../modules/geo/map-visibility.js';
 import { bulkMergeBindDefs, partitionByBindWidth, quote } from '../netwin-migration-kit.js';
@@ -59,6 +66,7 @@ const FEATURE_COLUMNS = [
   'lng',
   'lat',
   'geometry',
+  'lod_key',
   'rank',
 ] as const;
 
@@ -274,6 +282,7 @@ function pointFeature(
     lng,
     lat,
     geometry: null,
+    lod_key: MAP_BASE_LOD_KEY,
     rank: 0,
   };
 }
@@ -281,6 +290,7 @@ function pointFeature(
 export function phase3MapFeaturesForCandidate(
   tenantId: string,
   candidate: Candidate,
+  lineTiling?: ReadonlyMap<string, LineLodProfile[]>,
 ): FeatureRow[] | null {
   if (!candidate.GEOMETRY || !candidate.GEOMETRY_TYPE) return null;
   let geometry: { coordinates?: unknown } | null = null;
@@ -300,7 +310,10 @@ export function phase3MapFeaturesForCandidate(
     type: 'LineString',
     coordinates: geometry.coordinates as GeoJSONLineString['coordinates'],
   };
-  return tileSegmentsForLine(line, MAP_TILE_ZOOM).map(({ tile, coordinates, rank }) => {
+  return tileSegmentsForLineLods(
+    line,
+    lineTiling?.get(candidate.SOURCE_MODEL_ID ?? candidate.TYPE_CODE ?? ''),
+  ).map(({ tile, coordinates, rank, lodKey }) => {
     const anchor = coordinates[Math.floor(coordinates.length / 2)]!;
     return {
       tenant_id: tenantId,
@@ -321,6 +334,7 @@ export function phase3MapFeaturesForCandidate(
       lng: anchor[0],
       lat: anchor[1],
       geometry: JSON.stringify({ type: 'LineString', coordinates }),
+      lod_key: lodKey,
       rank,
     };
   });
@@ -356,7 +370,9 @@ async function insertFeatures(
 function addDensityTiles(densityTiles: Set<string>, rows: FeatureRow[]): void {
   for (const row of rows) {
     for (const zoom of MAP_DENSITY_ZOOMS) {
-      const factor = densityFactor(zoom);
+      const tileZ = Number(row.tile_z);
+      if (tileZ < zoom) continue;
+      const factor = 2 ** (tileZ - zoom);
       densityTiles.add(
         `${zoom}:${Math.floor(Number(row.tile_x) / factor)}:${Math.floor(Number(row.tile_y) / factor)}`,
       );
@@ -407,7 +423,10 @@ type UniqueConstraintInfo = {
 // (ORA-22864: cannot ALTER or DROP LOB indexes) — só os B-tree normais interessam aqui, por isso
 // o filtro em index_type. Índices que sustentam PRIMARY KEY/UNIQUE são excluídos explicitamente:
 // eles passam pelo caminho de `tableUniqueConstraints`, não por este.
-async function tableNormalIndexes(conn: Connection, tableName: string): Promise<PlainIndexStatus[]> {
+async function tableNormalIndexes(
+  conn: Connection,
+  tableName: string,
+): Promise<PlainIndexStatus[]> {
   const result = await conn.execute<{ INDEX_NAME: string; STATUS: string }>(
     `SELECT ui.index_name AS "INDEX_NAME", ui.status AS "STATUS"
        FROM user_indexes ui
@@ -485,15 +504,24 @@ async function tableUniqueConstraints(
 // primeira vez que toca um índice ainda intocado (ORA-01418) — não é erro, é o auto-drop do
 // Oracle chegando primeiro. Em qualquer execução futura (índice já recriado via USING INDEX),
 // o DROP explícito passa a ser necessário de fato.
-async function disableMapIndexes(conn: Connection, ctx: MigrationContext, table: string): Promise<void> {
+async function disableMapIndexes(
+  conn: Connection,
+  ctx: MigrationContext,
+  table: string,
+): Promise<void> {
   const tableName = oracleDictionaryObjectName(ctx.t(table));
-  for (const { constraintName, enabled, indexName } of await tableUniqueConstraints(conn, tableName)) {
+  for (const { constraintName, enabled, indexName } of await tableUniqueConstraints(
+    conn,
+    tableName,
+  )) {
     if (!enabled) continue;
     const droppedIndexName = indexName ?? constraintName;
     console.log(
       `[Mapa] Desabilitando constraint ${constraintName} e removendo o índice único ${droppedIndexName} (${tableName}) para a carga em massa.`,
     );
-    await conn.execute(`ALTER TABLE ${quote(tableName)} DISABLE CONSTRAINT ${quote(constraintName)}`);
+    await conn.execute(
+      `ALTER TABLE ${quote(tableName)} DISABLE CONSTRAINT ${quote(constraintName)}`,
+    );
     try {
       await conn.execute(`DROP INDEX ${quote(droppedIndexName)}`);
     } catch (error) {
@@ -503,7 +531,9 @@ async function disableMapIndexes(conn: Connection, ctx: MigrationContext, table:
     }
   }
   for (const { indexName } of await tableNormalIndexes(conn, tableName)) {
-    console.log(`[Mapa] Marcando índice ${indexName} (${tableName}) como UNUSABLE para a carga em massa.`);
+    console.log(
+      `[Mapa] Marcando índice ${indexName} (${tableName}) como UNUSABLE para a carga em massa.`,
+    );
     await conn.execute(`ALTER INDEX ${quote(indexName)} UNUSABLE`);
   }
 }
@@ -546,9 +576,16 @@ async function dedupeMapTableDuplicates(
   return removed;
 }
 
-async function rebuildMapIndexes(conn: Connection, ctx: MigrationContext, table: string): Promise<void> {
+async function rebuildMapIndexes(
+  conn: Connection,
+  ctx: MigrationContext,
+  table: string,
+): Promise<void> {
   const tableName = oracleDictionaryObjectName(ctx.t(table));
-  for (const { constraintName, enabled, indexName, columns } of await tableUniqueConstraints(conn, tableName)) {
+  for (const { constraintName, enabled, indexName, columns } of await tableUniqueConstraints(
+    conn,
+    tableName,
+  )) {
     if (enabled) continue;
     await dedupeMapTableDuplicates(conn, ctx, tableName, columns);
     const newIndexName = indexName ?? constraintName;
@@ -571,7 +608,9 @@ async function rebuildMapIndexes(conn: Connection, ctx: MigrationContext, table:
           `Se for ORA-01452, há duplicidade de chave nos dados recém-gravados. Detalhe: ${String(error)}`,
       );
     }
-    console.log(`[Mapa] Constraint ${constraintName} (${tableName}) reabilitada em ${Date.now() - startedAt}ms.`);
+    console.log(
+      `[Mapa] Constraint ${constraintName} (${tableName}) reabilitada em ${Date.now() - startedAt}ms.`,
+    );
   }
   for (const { indexName, status } of await tableNormalIndexes(conn, tableName)) {
     if (status === 'VALID') continue;
@@ -584,7 +623,9 @@ async function rebuildMapIndexes(conn: Connection, ctx: MigrationContext, table:
         `Rebuild de mapa abortado: falha ao reconstruir índice ${indexName} de ${tableName}. Detalhe: ${String(error)}`,
       );
     }
-    console.log(`[Mapa] Índice ${indexName} (${tableName}) reconstruído em ${Date.now() - startedAt}ms.`);
+    console.log(
+      `[Mapa] Índice ${indexName} (${tableName}) reconstruído em ${Date.now() - startedAt}ms.`,
+    );
   }
 }
 
@@ -601,7 +642,8 @@ async function recoverUnusableMapIndexes(conn: Connection, ctx: MigrationContext
       if (status !== 'VALID') broken.push({ table, description: `${indexName} (${tableName})` });
     }
     for (const { constraintName, enabled } of await tableUniqueConstraints(conn, tableName)) {
-      if (!enabled) broken.push({ table, description: `constraint ${constraintName} (${tableName})` });
+      if (!enabled)
+        broken.push({ table, description: `constraint ${constraintName} (${tableName})` });
     }
   }
   if (broken.length === 0) return;
@@ -614,7 +656,9 @@ async function recoverUnusableMapIndexes(conn: Connection, ctx: MigrationContext
     );
     return;
   }
-  console.warn(`[Mapa] Reparando índice(s)/constraint(s) deixados por execução anterior: ${description}.`);
+  console.warn(
+    `[Mapa] Reparando índice(s)/constraint(s) deixados por execução anterior: ${description}.`,
+  );
   for (const table of new Set(broken.map((b) => b.table))) {
     await rebuildMapIndexes(conn, ctx, table);
   }
@@ -683,7 +727,7 @@ async function scanResourceSpecification(
     for (const candidate of candidatePage) {
       scan.candidates += 1;
       scan.resources += 1;
-      const generated = phase3MapFeaturesForCandidate(ctx.options.tenantId, candidate);
+      const generated = phase3MapFeaturesForCandidate(ctx.options.tenantId, candidate, lineTiling);
       if (!generated) scan.skippedGeometry += 1;
       else rows.push(...generated);
     }
@@ -720,7 +764,7 @@ async function scanSites(
     for (const candidate of candidatePage) {
       scan.candidates += 1;
       scan.sites += 1;
-      const generated = phase3MapFeaturesForCandidate(ctx.options.tenantId, candidate);
+      const generated = phase3MapFeaturesForCandidate(ctx.options.tenantId, candidate, lineTiling);
       if (!generated) scan.skippedGeometry += 1;
       else rows.push(...generated);
     }
@@ -759,6 +803,9 @@ async function countCandidates(
   return total;
 }
 
+// Carregado uma vez por execução em runPhase3MapFeatures (catálogo publicado do Studio GEO).
+let lineTiling: ReadonlyMap<string, LineLodProfile[]> = new Map();
+
 async function scanCandidates(
   conn: Connection,
   ctx: MigrationContext,
@@ -793,16 +840,17 @@ async function scanCandidates(
 async function rebuildDensity(conn: Connection, ctx: MigrationContext): Promise<number> {
   let densityCells = 0;
   for (const zoom of MAP_DENSITY_ZOOMS) {
-    const factor = densityFactor(zoom);
+    // Linhas indexadas em z < MAP_TILE_ZOOM (zoom por camada) entram só nos níveis de densidade
+    // iguais ou mais grossos que o seu z; o fator é relativo ao tile_z de cada linha.
     const result = await conn.execute(
       `INSERT INTO ${ctx.t('geo_map_density')}
         (tenant_id,tile_z,tile_x,tile_y,feature_count,resource_count,site_count,lng,lat)
-        SELECT tenant_id,${zoom},FLOOR(tile_x/${factor}),FLOOR(tile_y/${factor}),COUNT(DISTINCT entity_id),
+        SELECT tenant_id,${zoom},FLOOR(tile_x/POWER(2,tile_z-${zoom})),FLOOR(tile_y/POWER(2,tile_z-${zoom})),COUNT(DISTINCT entity_id),
                COUNT(DISTINCT CASE WHEN feature_kind='resource' THEN entity_id END),
                COUNT(DISTINCT CASE WHEN feature_kind='site' THEN entity_id END),AVG(lng),AVG(lat)
           FROM ${ctx.t('geo_map_feature')}
-         WHERE tenant_id=:tenantId AND tile_z=${MAP_TILE_ZOOM}
-         GROUP BY tenant_id,FLOOR(tile_x/${factor}),FLOOR(tile_y/${factor})`,
+         WHERE tenant_id=:tenantId AND tile_z>=${zoom}
+         GROUP BY tenant_id,FLOOR(tile_x/POWER(2,tile_z-${zoom})),FLOOR(tile_y/POWER(2,tile_z-${zoom}))`,
       { tenantId: ctx.options.tenantId },
     );
     densityCells += result.rowsAffected ?? 0;
@@ -814,6 +862,8 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
   const conn = await ctx.getTargetReadConnection();
   try {
     console.log('\n=== Fase 3.A: Índices de mapa e densidade ===');
+    lineTiling = await loadPublishedLineTiling(conn, ctx.t, ctx.options.tenantId);
+    console.log(`[Mapa] ${lineTiling.size} camada(s) de linha com perfis de LOD do Studio.`);
     await ensureResourceScanIndex(conn, ctx);
     await recoverUnusableMapIndexes(conn, ctx);
     await reportStatistics(conn, ctx);
@@ -835,7 +885,14 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
     let scan: CandidateScan;
     let densityCells: number;
     if (!ctx.options.apply) {
-      scan = await scanCandidates(conn, ctx, 'validação', specifications, undefined, expectedCandidates);
+      scan = await scanCandidates(
+        conn,
+        ctx,
+        'validação',
+        specifications,
+        undefined,
+        expectedCandidates,
+      );
       densityCells = scan.densityTiles.size;
     } else {
       // Commit por página: uma queda de conexão no meio do rebuild deixa de descartar horas de

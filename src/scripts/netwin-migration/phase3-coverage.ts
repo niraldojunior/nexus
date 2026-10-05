@@ -43,7 +43,9 @@ const SPEC_CODE = 'GPON_COVERAGE';
 const SPEC_ID = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${SPEC_CODE}`);
 
 function clean(value: unknown): string {
-  return String(value ?? '').replace(/\s+/gu, ' ').trim();
+  return String(value ?? '')
+    .replace(/\s+/gu, ' ')
+    .trim();
 }
 
 function neighborhoodOf(row: CdoRow): string {
@@ -256,9 +258,7 @@ function parseCdo(row: CdoRow): CdoPoint | null {
 
 function componentSortKey(component: CoverageComponent): string {
   const areaBounds = bounds(component.geometry);
-  const firstCell = [...component.cells].sort(
-    (a, b) => a.gridX - b.gridX || a.gridY - b.gridY,
-  )[0];
+  const firstCell = [...component.cells].sort((a, b) => a.gridX - b.gridX || a.gridY - b.gridY)[0];
   return [
     component.neighborhoodKey,
     firstCell?.gridX ?? 0,
@@ -308,7 +308,10 @@ function generateCoverage(
     const statCells =
       level === 'neighborhood'
         ? fineCells
-        : fineCells.map((cell) => ({ ...cell, neighborhoodKey: config.keyOf(cell.neighborhoodKey) }));
+        : fineCells.map((cell) => ({
+            ...cell,
+            neighborhoodKey: config.keyOf(cell.neighborhoodKey),
+          }));
     const statByKey = new Map(
       neighborhoodStats(levelCdos, statCells, COVERAGE_CELL_METERS).map((stat) => [stat.key, stat]),
     );
@@ -404,7 +407,11 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
     while (true) {
       const queryResult: oracledb.Result<CdoRow> = await conn.execute<CdoRow>(
         pageSql,
-        { tenantId: ctx.options.tenantId, lastId: lastId ?? null, batchSize: ctx.options.batchSize },
+        {
+          tenantId: ctx.options.tenantId,
+          lastId: lastId ?? null,
+          batchSize: ctx.options.batchSize,
+        },
         { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: ctx.options.batchSize },
       );
       const cdoPage: CdoRow[] = queryResult.rows ?? [];
@@ -425,7 +432,11 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       `[Cobertura] CDOs=${cdos.length}; polígonos=${generated.locations.length}; células=${generated.cells.length}.`,
     );
     if (!ctx.options.apply) {
-      return { cdos: cdos.length, polygons: generated.locations.length, cells: generated.cells.length };
+      return {
+        cdos: cdos.length,
+        polygons: generated.locations.length,
+        cells: generated.cells.length,
+      };
     }
 
     try {
@@ -442,14 +453,26 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       });
       await conn.execute(
         `DELETE FROM ${ctx.t('geo_coverage_area')} WHERE tenant_id=:tenantId AND source_type=:sourceType AND source_id=:sourceId`,
-        { tenantId: ctx.options.tenantId, sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION', sourceId: SPEC_CODE },
+        {
+          tenantId: ctx.options.tenantId,
+          sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+          sourceId: SPEC_CODE,
+        },
       );
       await bulkMergeRows(
         conn,
         ctx.t,
         'tmf_geographic_location',
         ['id'],
-        ['id', 'tenant_id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
+        [
+          'id',
+          'tenant_id',
+          'geometry_type',
+          'geometry',
+          'spatial_ref',
+          'reference_point',
+          'characteristics',
+        ],
         generated.locations,
         ctx.options.batchSize,
       );
@@ -521,7 +544,11 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       await conn.execute('ROLLBACK');
       throw error;
     }
-    return { cdos: cdos.length, polygons: generated.locations.length, cells: generated.cells.length };
+    return {
+      cdos: cdos.length,
+      polygons: generated.locations.length,
+      cells: generated.cells.length,
+    };
   } finally {
     await conn.close();
   }

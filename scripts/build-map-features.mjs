@@ -50,6 +50,10 @@ import {
   tileForPoint,
   tileSegmentsForLineLods,
 } from '../dist/src/modules/geo/map-tile.js';
+import {
+  diagnoseLineIndex,
+  summarizeLineManifest,
+} from '../dist/src/modules/geo/map-line-manifest.js';
 import { excludeInternalResourceTypesSql } from '../dist/src/modules/geo/map-visibility.js';
 
 loadEnv();
@@ -103,6 +107,44 @@ async function ensureMapFeaturePrimaryKey(client) {
     'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)',
   );
   console.log('Chave primária de geo_map_feature atualizada para incluir lod_key e rank.');
+}
+
+async function ensureLineIndexTable(client) {
+  try {
+    await client.query(`CREATE TABLE geo_map_line_index (
+      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+      source_model_id VARCHAR2(255 CHAR) NOT NULL,
+      lod_key VARCHAR2(64 CHAR) NOT NULL,
+      tile_z NUMBER(10) NOT NULL,
+      simplify_tolerance_meters BINARY_DOUBLE DEFAULT 0 NOT NULL,
+      fragments NUMBER(10) DEFAULT 0 NOT NULL,
+      vertices NUMBER(10) DEFAULT 0 NOT NULL,
+      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (tenant_id, source_model_id, lod_key)
+    )`);
+    console.log('Tabela geo_map_line_index criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+  }
+}
+
+async function readLineManifest(client) {
+  try {
+    const { rows } = await client.query(
+      'SELECT source_model_id, lod_key, tile_z, simplify_tolerance_meters, fragments, vertices FROM geo_map_line_index WHERE tenant_id = $1',
+      [TENANT],
+    );
+    return rows.map((r) => ({
+      sourceModelId: r.source_model_id,
+      lodKey: r.lod_key,
+      tileZoom: Number(r.tile_z),
+      simplifyToleranceMeters: Number(r.simplify_tolerance_meters),
+      fragments: Number(r.fragments),
+      vertices: Number(r.vertices),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function ensureMapFeatureTable(client) {
@@ -433,6 +475,23 @@ async function main() {
     }
     for (const [key, count] of [...perZoom].sort()) console.log(`  linhas ${key}: ${count}`);
 
+    const lineManifest = summarizeLineManifest(
+      features.filter((f) => f.shape === 'line'),
+      LINE_TILING,
+    );
+    const diagnostics = diagnoseLineIndex(LINE_TILING, await readLineManifest(client));
+    console.log('\nÍndice de linhas (publicado × manifesto gravado):');
+    for (const d of diagnostics) {
+      console.log(
+        `  ${d.sourceModelId}/${d.lodKey}: ${d.status}${d.reason ? ` — ${d.reason}` : ''}`,
+      );
+    }
+    for (const e of lineManifest) {
+      console.log(
+        `  a gravar ${e.sourceModelId}/${e.lodKey}: ${e.fragments} fragmentos, ${e.vertices} vértices`,
+      );
+    }
+
     if (!APPLY) {
       console.log('\n— DRY-RUN. Nada foi gravado. Use --apply para executar. —');
       return;
@@ -440,6 +499,7 @@ async function main() {
 
     await ensureMapFeatureTable(client);
     await ensureMapFeaturePrimaryKey(client);
+    await ensureLineIndexTable(client);
 
     const entityIds = [...new Set(features.map((f) => f.entity_id))];
     await client.query('BEGIN');
@@ -459,6 +519,31 @@ async function main() {
         removed = await deleteByEntityIds(client, entityIds);
       }
       const inserted = await client.bulkInsert('geo_map_feature', FEATURE_COLUMNS, features);
+      // Manifesto só em rebuild do tenant inteiro: recorte por UF/cidade não representa a camada toda.
+      if (!CITY && !UF) {
+        await client.query('DELETE FROM geo_map_line_index WHERE tenant_id = $1', [TENANT]);
+        await client.bulkInsert(
+          'geo_map_line_index',
+          [
+            'tenant_id',
+            'source_model_id',
+            'lod_key',
+            'tile_z',
+            'simplify_tolerance_meters',
+            'fragments',
+            'vertices',
+          ],
+          lineManifest.map((e) => ({
+            tenant_id: TENANT,
+            source_model_id: e.sourceModelId,
+            lod_key: e.lodKey,
+            tile_z: e.tileZoom,
+            simplify_tolerance_meters: e.simplifyToleranceMeters,
+            fragments: e.fragments,
+            vertices: e.vertices,
+          })),
+        );
+      }
       await client.query('COMMIT');
       console.log('\nGravado:');
       console.log(`  removidos (regeneração): ${removed}`);

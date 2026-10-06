@@ -18,7 +18,14 @@ export type MapLineResult = {
   features: MapTileFeature[];
   truncated: boolean;
   /** Diagnóstico por seleção: fragmentos devolvidos. Não contém geometria. */
-  selections: Array<MapLineSelection & { tileZoom: number | null; fragments: number }>;
+  selections: Array<
+    MapLineSelection & {
+      tileZoom: number | null;
+      fragments: number;
+      /** Índice desatualizado: o manifesto não tem este perfil (rebuild pendente). */
+      stale: boolean;
+    }
+  >;
 };
 
 type LineRow = MapFeatureRow & { tile_z: number };
@@ -36,12 +43,15 @@ export class GeoMapLineService {
     const features: MapTileFeature[] = [];
     const diagnostics: MapLineResult['selections'] = [];
     let truncated = false;
+    const manifest = await this.manifestKeys(tenantId);
+    const isStale = (selection: MapLineSelection): boolean =>
+      manifest !== null && !manifest.has(`${selection.sourceModelId}\u0000${selection.lodKey}`);
 
     for (const selection of selections) {
       const remaining = limit - features.length;
       if (remaining <= 0) {
         truncated = true;
-        diagnostics.push({ ...selection, tileZoom: null, fragments: 0 });
+        diagnostics.push({ ...selection, tileZoom: null, fragments: 0, stale: isStale(selection) });
         continue;
       }
       // O zoom de armazenamento é propriedade do perfil: descobre-o no próprio índice.
@@ -54,7 +64,7 @@ export class GeoMapLineService {
       );
       const tileZoom = zoomRow?.tile_z ?? null;
       if (tileZoom === null) {
-        diagnostics.push({ ...selection, tileZoom: null, fragments: 0 });
+        diagnostics.push({ ...selection, tileZoom: null, fragments: 0, stale: isStale(selection) });
         continue;
       }
       const nw = lngLatToTile(bounds.minLng, bounds.maxLat, tileZoom);
@@ -84,8 +94,28 @@ export class GeoMapLineService {
       if (rows.length > remaining) truncated = true;
       const kept = rows.slice(0, remaining);
       features.push(...kept.map(toMapTileFeature));
-      diagnostics.push({ ...selection, tileZoom, fragments: kept.length });
+      diagnostics.push({
+        ...selection,
+        tileZoom,
+        fragments: kept.length,
+        stale: isStale(selection),
+      });
     }
     return { features, truncated, selections: diagnostics };
+  }
+
+  // Chaves camada×LOD do manifesto; null se ele não existe (V28 não migrada ou nunca gerado) —
+  // aí não há como afirmar que o índice está desatualizado.
+  private async manifestKeys(tenantId: string): Promise<Set<string> | null> {
+    try {
+      const rows = await this.db.all<{ source_model_id: string; lod_key: string }>(
+        'SELECT source_model_id, lod_key FROM geo_map_line_index WHERE tenant_id = ?',
+        [tenantId],
+      );
+      if (rows.length === 0) return null;
+      return new Set(rows.map((row) => `${row.source_model_id}\u0000${row.lod_key}`));
+    } catch {
+      return null;
+    }
   }
 }

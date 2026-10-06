@@ -262,6 +262,37 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
 
   const nodeIdOf = (feature: MapTileFeature): string => `${feature.kind}:${feature.entityId}`;
 
+  // Filtro, rank de camada e ordenação só dependem do dataset e do catálogo — não da viewport.
+  // Pan/zoom redesenham dezenas de vezes por segundo; recalcular isto por frame (nodeForMapFeature +
+  // sort de dezenas de milhares de features) era custo puro. Invalidado em setData.
+  type DrawItem = { feature: MapTileFeature; visualRank: number };
+  let drawOrder: DrawItem[] | null = null;
+
+  function orderedForDraw(): DrawItem[] {
+    if (drawOrder) return drawOrder;
+    // O primeiro item no Studio é o mais frontal. Canvas desenha do fundo para a frente,
+    // portanto o rank maior entra primeiro. Empates preservam uma ordem determinística por id.
+    drawOrder = data
+      .filter((feature) => nodeIdOf(feature) !== excludeNodeId)
+      .map((feature) => {
+        // Feature sem entidade publicada fica atrás de toda camada governada pelo Studio.
+        // `mapLayerVisualRank` usa -1 como sentinela de ausência, que não pode significar
+        // "mais à frente" neste consumidor.
+        let visualRank = Number.MAX_SAFE_INTEGER;
+        if (catalog) {
+          const rank = mapLayerVisualRank(nodeForMapFeature(feature, catalog, roleByCode), catalog);
+          if (rank >= 0) visualRank = rank;
+        }
+        return { feature, visualRank };
+      })
+      .sort(
+        (left, right) =>
+          right.visualRank - left.visualRank ||
+          nodeIdOf(left.feature).localeCompare(nodeIdOf(right.feature)),
+      );
+    return drawOrder;
+  }
+
   class InfraOverlayView extends maps.OverlayView {
     private canvas: HTMLCanvasElement | null = null;
 
@@ -343,29 +374,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const project = fast ?? toLocal;
       lastProject = project;
 
-      // O primeiro item no Studio é o mais frontal. Canvas desenha do fundo para a frente,
-      // portanto o rank maior entra primeiro. Empates preservam uma ordem determinística por id.
-      const featuresForDraw = data
-        .filter((feature) => nodeIdOf(feature) !== excludeNodeId)
-        .map((feature) => ({
-          feature,
-          // Feature sem entidade publicada fica atrás de toda camada governada pelo Studio.
-          // `mapLayerVisualRank` usa -1 como sentinela de ausência, que não pode significar
-          // "mais à frente" neste consumidor.
-          visualRank: (() => {
-            if (!catalog) return Number.MAX_SAFE_INTEGER;
-            const rank = mapLayerVisualRank(
-              nodeForMapFeature(feature, catalog, roleByCode),
-              catalog,
-            );
-            return rank >= 0 ? rank : Number.MAX_SAFE_INTEGER;
-          })(),
-        }))
-        .sort(
-          (left, right) =>
-            right.visualRank - left.visualRank ||
-            nodeIdOf(left.feature).localeCompare(nodeIdOf(right.feature)),
-        );
+      const featuresForDraw = orderedForDraw();
       for (const { feature, visualRank } of featuresForDraw) {
         if (feature.shape === 'line') this.drawLine(context, feature, project, visualRank);
         else if (feature.kind === 'resource')
@@ -508,6 +517,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       catalog = options.catalog;
       scaleMeters = options.scaleMeters;
       data = features;
+      drawOrder = null;
       overlay.draw();
     },
     hitTest: (lng, lat) => {

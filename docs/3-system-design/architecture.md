@@ -172,8 +172,17 @@ resposta traz `truncated: true`, nunca corte silencioso — e gzip para resposta
 bbox expandida, promise em voo) faz a chamada.
 
 **Operação.** Alterar a definição de um perfil exige reindexar (`build-map-features`); publicar só
-estilo/visibilidade, não. V27 precisa ser migrada (`db:migrate`) em cada schema antes de novas
-cargas. A densidade (`geo_map_density`) agrega apenas `lod_key='base'`.
+estilo/visibilidade, não. V27 e V28 precisam ser migradas (`db:migrate`) em cada schema antes de
+novas cargas. A densidade (`geo_map_density`) agrega apenas `lod_key='base'`.
+
+**Manifesto do índice (#318).** `geo_map_line_index` (V28) guarda, por camada × LOD, o `tile_z`, a
+tolerância, o número de fragmentos e de vértices gerados. `build-map-features` o grava na mesma
+transação do rebuild do tenant inteiro (recortes por UF/cidade não o tocam) e o dry-run compara
+perfis publicados × manifesto (`ok`/`stale`/`missing`, `map-line-manifest.ts`). O endpoint marca
+`selections[].stale = true` quando o manifesto existe mas não contém o perfil pedido — a `GeoPage`
+mostra "índice desatualizado" em vez de um mapa de linhas vazio. Sem manifesto (V28 não migrada ou
+nunca gerado) `stale` é sempre `false`. Os perfis são editados no Studio (aba Tamanho): lista de
+perfis (id, zoom, simplificação) e seletor de perfil por faixa de escala.
 
 ---
 

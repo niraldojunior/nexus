@@ -720,10 +720,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     () => visibleMapLineSelections(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
     [mapLayers.layers, mapLayerCatalog.catalog, scaleMeters],
   );
-  const { features: lineFeaturesRaw } = useMapLines(
-    mapLayerCatalog.loading ? null : viewportBounds,
-    lineSelections,
-  );
+  const {
+    features: lineFeaturesRaw,
+    truncated: linesTruncated,
+    stale: linesStale,
+  } = useMapLines(mapLayerCatalog.loading ? null : viewportBounds, lineSelections);
   const lineFeatures = useMemo(
     () =>
       lineFeaturesRaw.filter((feature) =>
@@ -1912,6 +1913,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         {error ? (
           <div className="absolute left-5 top-5 z-40 rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-[0.88rem] text-red-700 shadow-soft">
             {error}
+          </div>
+        ) : null}
+        {linesStale ? (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-5 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.78rem] font-semibold text-app-text shadow-map-control"
+          >
+            Índice de linhas desatualizado — reindexe o mapa para ver as linhas.
+          </div>
+        ) : linesTruncated ? (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-5 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.78rem] font-semibold text-app-text shadow-map-control"
+          >
+            Linhas parciais — aproxime o mapa para ver todas.
           </div>
         ) : null}
         <div className="relative flex h-full min-h-0">

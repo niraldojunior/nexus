@@ -18,11 +18,11 @@ staging, sem jobs.
 https://sigel.aneel.gov.br/arcgis/rest/services/PORTAL/Transmissão/MapServer
 ```
 
-| Layer | Conteúdo                        | Geometria     | Escopo atual |
-| ----- | ------------------------------- | ------------- | ------------ |
-| `3`   | Subestações                     | Point         | Por UF       |
-| `5`   | Sistemas Isolados               | Point         | Por UF       |
-| `1`   | Linhas de transmissão           | LineString    | Por UF       |
+| Layer | Conteúdo              | Geometria  | Escopo atual |
+| ----- | --------------------- | ---------- | ------------ |
+| `3`   | Subestações           | Point      | Por UF       |
+| `5`   | Sistemas Isolados     | Point      | Por UF       |
+| `1`   | Linhas de transmissão | LineString | Por UF       |
 
 > As contagens do SIGEL são dinâmicas. Use o dry-run para registrar os números atuais antes de uma
 > carga `--apply`, especialmente ao selecionar múltiplas UFs.
@@ -55,15 +55,15 @@ npm run seed-demo-infra -- --apply --states RJ,SP
 npm run seed-demo-infra -- --apply --build-features
 ```
 
-| Flag               | Default       | O que faz                                                 |
-| ------------------ | ------------- | --------------------------------------------------------- |
-| `--apply`          | _ausente_     | Sem ela é **dry-run**: nada é gravado                     |
-| `--limit N`        | _sem limite_  | Teto de features baixadas por layer                       |
-| `--states RJ,SP`   | `RJ,SP`       | UFs do escopo (aceita as 27 UFs brasileiras)              |
-| `--all-states`     | _ausente_     | Seleciona as 27 UFs; rode dry-run primeiro                |
-| `--tenant-id`      | _do ambiente_ | Tenant de destino — default lido de `nexus_environment`   |
-| `--owner-party-id` | `=tenantId`   | `Organization` do `relatedParty`                          |
-| `--build-features` | _ausente_     | Dispara `build-map-features.mjs --apply` ao final         |
+| Flag               | Default       | O que faz                                               |
+| ------------------ | ------------- | ------------------------------------------------------- |
+| `--apply`          | _ausente_     | Sem ela é **dry-run**: nada é gravado                   |
+| `--limit N`        | _sem limite_  | Teto de features baixadas por layer                     |
+| `--states RJ,SP`   | `RJ,SP`       | UFs do escopo (aceita as 27 UFs brasileiras)            |
+| `--all-states`     | _ausente_     | Seleciona as 27 UFs; rode dry-run primeiro              |
+| `--tenant-id`      | _do ambiente_ | Tenant de destino — default lido de `nexus_environment` |
+| `--owner-party-id` | `=tenantId`   | `Organization` do `relatedParty`                        |
+| `--build-features` | _ausente_     | Dispara `build-map-features.mjs --apply` ao final       |
 
 Ambiente (`.env`): `ORACLE_CONNECTION_STRING`, `ORACLE_USER`, `ORACLE_PASSWORD` e
 `ORACLE_OBJECT_PREFIX` (ex.: `NX_DEMO_`). Oracle-only (C10).
@@ -107,11 +107,11 @@ instância.
 
 **Instâncias** (fase 4):
 
-| Item              | Linhas gravadas                                                                              |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| Subestação        | `GeographicLocation` (Point) → `GeographicSite` → `PhysicalResource` (`place_type` Site, C2) |
-| Sistema Isolado   | `GeographicLocation` (Point) → `GeographicSite` → `PhysicalResource` (`place_type` Site, C2) |
-| Linha             | `GeographicLocation` (LineString **completa**) → `PhysicalResource` (`place_type` Location)  |
+| Item            | Linhas gravadas                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| Subestação      | `GeographicLocation` (Point) → `GeographicSite` → `PhysicalResource` (`place_type` Site, C2) |
+| Sistema Isolado | `GeographicLocation` (Point) → `GeographicSite` → `PhysicalResource` (`place_type` Site, C2) |
+| Linha           | `GeographicLocation` (LineString **completa**) → `PhysicalResource` (`place_type` Location)  |
 
 **Characteristics** — `tensaoKv`, `extensaoKm`, `capacidadeMw`, `operador`, `uf`, mais `_origin.*`
 (`system=ANEEL_SIGEL`, `entity`, `id`). Nenhuma coluna nova foi criada para esses atributos (C1).
@@ -175,19 +175,21 @@ npm run seed-demo-infra -- --domains energy,gas,rail --apply        # carga real
 Fonte: WFS público do IBGE (`geoservicos.ibge.gov.br/geoserver/wfs`, workspace `CCAR`), filtrado por
 UF no cliente (a ordem dos eixos de `bbox` varia entre versões do WFS).
 
-| Camada Nexus | Geometria | Camada IBGE | `_origin.system` | Grupo no Studio |
-| --- | --- | --- | --- | --- |
-| Gasoduto (`GasPipeline`) | Linha | `BC250_2023_Trecho_Duto_L` | `IBGE_BC250` | Gás |
-| Trecho Ferroviário (`RailSegment`) | Linha | `BC250_2023_Trecho_Ferroviario_L` | `IBGE_BC250` | Ferrovia |
-| Estação Ferroviária (`RailStation`, spec `RAIL_STATION`) | Ponto → Site | `BCIM_Edif_Metro_Ferroviaria_P` | `IBGE_BCIM` | Ferrovia |
+| Camada Nexus                                             | Geometria    | Camada IBGE                       | `_origin.system` | Grupo no Studio |
+| -------------------------------------------------------- | ------------ | --------------------------------- | ---------------- | --------------- |
+| Gasoduto (`GasPipeline`)                                 | Linha        | `BC250_2023_Trecho_Duto_L`        | `IBGE_BC250`     | Gás             |
+| Trecho Ferroviário (`RailSegment`)                       | Linha        | `BC250_2023_Trecho_Ferroviario_L` | `IBGE_BC250`     | Ferrovia        |
+| Estação Ferroviária (`RailStation`, spec `RAIL_STATION`) | Ponto → Site | `BCIM_Edif_Metro_Ferroviaria_P`   | `IBGE_BCIM`      | Ferrovia        |
 
 Limitações: **Estação de Compressão e Ponto de Entrega de gás não existem** — não há fonte acessível.
 O nome das estações ferroviárias é frequentemente nulo na BCIM (fallback `Estação Ferroviária <id>`),
 e a BCIM tem menos detalhe que a BC250. Valores nulos ou "Desconhecido" não viram characteristic.
 
----
+### Indexação das linhas (perfis de LOD)
 
-
-## Confidencialidade
-
-V.tal Nexus — Documento Confidencial — Uso Interno — PÚBLICA
+As camadas de linha (transmissão, gasoduto, trecho ferroviário) são publicadas com quatro perfis de
+LOD — `overview` z6/500 m, `regional` z8/150 m, `urban` z10/30 m e `detail` z12/5 m — e cada faixa
+de escala escolhe um (`scaleBands[*].lodProfileId`). Em z16 cada linha virava ~1.100 linhas de
+`geo_map_feature`. Ajuste no Studio GEO → Tamanho → "Perfis de LOD no mapa". Depois de republicar o
+catálogo, **reindexe**: `node scripts/build-map-features.mjs --environment NX_DEMO_ --tenant vtal
+--apply` (o dry-run já lista as linhas por `lod_key` e `tile_z`).

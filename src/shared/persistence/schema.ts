@@ -54,6 +54,7 @@ export const TABLE_NAMES = [
   'geo_coverage_area',
   'geo_map_feature',
   'geo_map_density',
+  'geo_map_line_index',
   'studio_workspace',
   'studio_version',
   'studio_audit_log',
@@ -2086,6 +2087,24 @@ const MIGRATIONS_SQL_V26_GEO_MAP_FEATURE_SITE_BBOX_INDEX = `
     ON geo_map_feature(tenant_id, feature_kind, shape, source_model_type, source_model_id, lng, lat);
 `;
 
+// V28: manifesto do índice de linhas do mapa (issue #318). Uma linha por camada/LOD gerado por
+// build-map-features, gravada na mesma transação do rebuild. O endpoint de linhas compara o perfil
+// pedido com o manifesto e responde "índice desatualizado" em vez de devolver vazio em silêncio.
+// `tile_z` e `simplify_tolerance_meters` registram o perfil publicado no momento da geração.
+const MIGRATIONS_SQL_V28_GEO_MAP_LINE_INDEX = `
+  CREATE TABLE IF NOT EXISTS geo_map_line_index (
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    source_model_id TEXT NOT NULL,
+    lod_key TEXT NOT NULL,
+    tile_z INTEGER NOT NULL,
+    simplify_tolerance_meters DOUBLE PRECISION NOT NULL DEFAULT 0,
+    fragments INTEGER NOT NULL DEFAULT 0,
+    vertices INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, source_model_id, lod_key)
+  );
+`;
+
 // V27: LOD multirresolução das linhas do mapa (issue #317). `lod_key` identifica o perfil do Studio
 // GEO que gerou o fragmento ('base' = pontos; 'legacy' = camada de perfil único; senão o id do
 // perfil). A PK passa a incluí-lo por adapter (ver oracle-database.ts) — uma mesma entidade/tile
@@ -2208,6 +2227,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 27,
     name: 'geo-map-feature-lod',
     sql: MIGRATIONS_SQL_V27_GEO_MAP_FEATURE_LOD,
+  },
+  {
+    version: 28,
+    name: 'geo-map-line-index',
+    sql: MIGRATIONS_SQL_V28_GEO_MAP_LINE_INDEX,
   },
 ];
 

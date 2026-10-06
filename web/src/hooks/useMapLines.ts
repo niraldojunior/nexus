@@ -38,7 +38,7 @@ const requestKey = (bounds: MapBounds, selections: string): string =>
 export function useMapLines(
   bounds: MapBounds | null,
   selections: readonly MapLineSelection[],
-): { features: MapTileFeature[]; loading: boolean; truncated: boolean } {
+): { features: MapTileFeature[]; loading: boolean; truncated: boolean; stale: boolean } {
   const [response, setResponse] = useState<MapLineResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -118,5 +118,6 @@ export function useMapLines(
     features: response?.features ?? EMPTY,
     loading,
     truncated: response?.truncated ?? false,
+    stale: response?.selections.some((selection) => selection.stale) ?? false,
   };
 }

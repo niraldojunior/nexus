@@ -12,7 +12,10 @@ export type MapLineResponse = {
   features: MapTileFeature[];
   // Verdadeiro quando o servidor cortou no teto de fragmentos; nunca é silencioso.
   truncated: boolean;
-  selections: Array<MapLineSelection & { tileZoom: number | null; fragments: number }>;
+  // `stale`: o manifesto do índice não tem o perfil pedido (rebuild pendente).
+  selections: Array<
+    MapLineSelection & { tileZoom: number | null; fragments: number; stale?: boolean }
+  >;
 };
 
 export const fetchMapLines = (

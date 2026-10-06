@@ -181,6 +181,29 @@ UF no cliente (a ordem dos eixos de `bbox` varia entre versões do WFS).
 | Trecho Ferroviário (`RailSegment`)                       | Linha        | `BC250_2023_Trecho_Ferroviario_L` | `IBGE_BC250`     | Ferrovia        |
 | Estação Ferroviária (`RailStation`, spec `RAIL_STATION`) | Ponto → Site | `BCIM_Edif_Metro_Ferroviaria_P`   | `IBGE_BCIM`      | Ferrovia        |
 
+A camada de dutos do IBGE mistura materiais (gás, minério, água, desconhecido). `classifyDuct`
+decide: `mattransp` conhecido manda (só `Gás` vira `GasPipeline`); sem material, o nome decide, e
+oleoduto/poliduto/mineroduto/adutora nunca viram gasoduto. Em 2026-10-05, 49 das 108 feições são gás.
+
+### Enriquecimento ANP (gasodutos)
+
+Fonte: autorizações de construção e operação de gás natural da ANP, CSV de dados abertos (UTF-8,
+vírgula, aspas duplas, campos com quebra de linha), sem autenticação:
+
+```text
+https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos/arquivos/autorizacoes-gas-natural/autorizacoes-construcao-operacao-gas-natural.csv
+```
+
+A ANP não publica geometria nem o OID do IBGE; a única chave comum é o **nome**. A junção é por
+nome normalizado **exato** (sem acento nem pontuação) contra instalações de duto (`Gasoduto de
+Transporte` / `Transferência`). Casos ambíguos ou com campo em conflito nunca são aplicados. Um gasoduto
+casado ganha `operador`, `tipoInstalacao` e `_origin.extra.sources`; o id continua o do IBGE.
+
+Cobertura em 2026-10-06: **8 de 49** gasodutos (todos Gasoduto Bolívia-Brasil), 41 sem correspondência,
+0 ambíguos. É baixa porque os nomes do IBGE ("Gasoduto Rio-Campinas", "Gasfor") quase não coincidem com
+os da ANP. Ampliar exigiria tabela de aliases revisada à mão. Se a ANP estiver fora do ar, o seed avisa e
+segue só com o IBGE. **ANTT** não é usada: os conjuntos públicos não trazem geometria nem chave de junção.
+
 Limitações: **Estação de Compressão e Ponto de Entrega de gás não existem** — não há fonte acessível.
 O nome das estações ferroviárias é frequentemente nulo na BCIM (fallback `Estação Ferroviária <id>`),
 e a BCIM tem menos detalhe que a BC250. Valores nulos ou "Desconhecido" não viram characteristic.

@@ -3,6 +3,7 @@ import { OracleGeoRepository } from '../../modules/geo/oracle-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { GeoTreeService } from '../../modules/geo/tree-service.js';
 import { GeoMapTileService } from '../../modules/geo/map-tile-service.js';
+import { GeoMapLineService } from '../../modules/geo/map-line-service.js';
 import { GeoMapSiteService } from '../../modules/geo/map-site-service.js';
 import { GeoMapDensityService } from '../../modules/geo/map-density-service.js';
 import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
@@ -117,6 +118,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const geoTreeService = new GeoTreeService(db);
   const geoMapTileService = new GeoMapTileService(db);
   const geoMapSiteService = new GeoMapSiteService(db);
+  const geoMapLineService = new GeoMapLineService(db);
   const geoMapDensityService = new GeoMapDensityService(db);
   const geoCoverageService = new GeoCoverageService(db);
   const geonetAddressGateway = options.geonet ? new GeonetAddressGateway(options.geonet) : null;
@@ -358,6 +360,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoTreeService,
     geoMapTileService,
     geoMapSiteService,
+    geoMapLineService,
     geoMapDensityService,
     geoCoverageService,
     geonetAddressGateway,

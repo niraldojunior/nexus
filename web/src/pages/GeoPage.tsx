@@ -37,6 +37,7 @@ import {
 import { useCoverage } from '../hooks/useCoverage';
 import { useMapTiles } from '../hooks/useMapTiles';
 import { useMapSites } from '../hooks/useMapSites';
+import { useMapLines } from '../hooks/useMapLines';
 import { mapTileFeatureNodeId, type MapTileFeature } from '../services/geoMapTileApi';
 import { fetchTreeNode } from '../services/geoTreeApi';
 import { useMapLayers } from '../hooks/useMapLayers';
@@ -47,6 +48,7 @@ import {
   mapLayerEntities,
   mapLayerVisualRank,
   viewportInclude,
+  visibleMapLineSelections,
   visibleMapSiteSourceIds,
   isMapFeatureVisible,
   ALL_MAP_LAYERS_VISIBLE,
@@ -713,9 +715,32 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       ),
     [siteFeaturesRaw, mapLayers.layers, siteRoleByCode, mapLayerCatalog.catalog, scaleMeters],
   );
+  // Linhas: uma leitura agregada por viewport, um LOD por camada/faixa (issue #317).
+  const lineSelections = useMemo(
+    () => visibleMapLineSelections(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
+    [mapLayers.layers, mapLayerCatalog.catalog, scaleMeters],
+  );
+  const {
+    features: lineFeaturesRaw,
+    truncated: linesTruncated,
+    stale: linesStale,
+  } = useMapLines(mapLayerCatalog.loading ? null : viewportBounds, lineSelections);
+  const lineFeatures = useMemo(
+    () =>
+      lineFeaturesRaw.filter((feature) =>
+        isMapFeatureVisible(
+          feature,
+          mapLayers.layers,
+          siteRoleByCode,
+          mapLayerCatalog.catalog,
+          scaleMeters,
+        ),
+      ),
+    [lineFeaturesRaw, mapLayers.layers, siteRoleByCode, mapLayerCatalog.catalog, scaleMeters],
+  );
   const infraFeatures = useMemo(
-    () => [...siteFeatures, ...resourceFeatures],
-    [siteFeatures, resourceFeatures],
+    () => [...siteFeatures, ...resourceFeatures, ...lineFeatures],
+    [siteFeatures, resourceFeatures, lineFeatures],
   );
   const siteMarkerSize = siteIconSizeForScale(scaleMeters);
   const resourceMarkerSize = resourceIconSizeForScale(scaleMeters);
@@ -765,7 +790,11 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // desligada corta a busca inteira: bounds nulo já limpa `coverage` e zera o dedupe interno do
   // hook, então religar refaz o fetch sem precisar mexer no mapa. Com duas camadas COVERAGE
   // ligadas ao mesmo tempo, ganha a primeira em ordem de desenho — só uma mancha por vez.
-  const coverageLayer = visibleCoverageLayer(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters);
+  const coverageLayer = visibleCoverageLayer(
+    mapLayers.layers,
+    mapLayerCatalog.catalog,
+    scaleMeters,
+  );
   const coverageVisible = Boolean(coverageLayer);
   const coverageLayerRef = useMemo(
     () =>
@@ -902,9 +931,13 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         .map((spec) => spec.id);
       // Sem spec-container nenhuma não existe local pai válido para o seletor — desistir é a
       // resposta certa (ver comentário acima de loadGeo), não um fallback para buscar tudo.
-      const siteData = containerSpecIds.length > 0
-        ? await listGeoSites({ siteSpecificationIds: containerSpecIds, limit: GEO_CONTAINER_SITE_LIMIT })
-        : [];
+      const siteData =
+        containerSpecIds.length > 0
+          ? await listGeoSites({
+              siteSpecificationIds: containerSpecIds,
+              limit: GEO_CONTAINER_SITE_LIMIT,
+            })
+          : [];
       setSites(siteData);
       setSpecs(specData);
     } catch (err) {
@@ -1880,6 +1913,21 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
         {error ? (
           <div className="absolute left-5 top-5 z-40 rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-[0.88rem] text-red-700 shadow-soft">
             {error}
+          </div>
+        ) : null}
+        {linesStale ? (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-5 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.78rem] font-semibold text-app-text shadow-map-control"
+          >
+            Índice de linhas desatualizado — reindexe o mapa para ver as linhas.
+          </div>
+        ) : linesTruncated ? (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-5 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-app-panel px-3 py-2 text-[0.78rem] font-semibold text-app-text shadow-map-control"
+          >
+            Linhas parciais — aproxime o mapa para ver todas.
           </div>
         ) : null}
         <div className="relative flex h-full min-h-0">

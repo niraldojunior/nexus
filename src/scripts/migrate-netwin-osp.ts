@@ -33,7 +33,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import oracledb, { type Connection } from 'oracledb';
-import { lngLatToTile, MAP_TILE_ZOOM, tileSegmentsForLine } from '../modules/geo/map-tile.js';
+import {
+  lngLatToTile,
+  MAP_BASE_LOD_KEY,
+  MAP_TILE_ZOOM,
+  tileSegmentsForLineLods,
+} from '../modules/geo/map-tile.js';
+import { loadPublishedLineTiling } from './netwin-migration/line-tiling.js';
 import { excludeInternalResourceTypesSql } from '../modules/geo/map-visibility.js';
 import { parseWktLineString, parseWktPoint } from '../shared/utils/wkt.js';
 import type { GeoJSONGeometry } from '../modules/geo/domain.js';
@@ -1142,6 +1148,7 @@ async function refreshMapFeatures(
 ): Promise<number> {
   const touch = t('netwin_mig_touch');
   const identities = t('netwin_mig_identity');
+  const lineTiling = await loadPublishedLineTiling(target, t, tenantId);
   await target.execute(
     `DELETE FROM ${t('geo_map_feature')} feature
       WHERE feature.tenant_id=:1
@@ -1206,10 +1213,11 @@ async function refreshMapFeatures(
           lng,
           lat,
           null,
+          MAP_BASE_LOD_KEY,
           0,
         ]);
       } else if (c.GEOMETRY_TYPE === 'LineString' && geometry.type === 'LineString') {
-        const segments = tileSegmentsForLine(geometry, MAP_TILE_ZOOM);
+        const segments = tileSegmentsForLineLods(geometry, lineTiling.get(c.RESOURCE_TYPE));
         for (const segment of segments) {
           const anchor = segment.coordinates[Math.floor(segment.coordinates.length / 2)];
           if (!anchor) continue;
@@ -1232,6 +1240,7 @@ async function refreshMapFeatures(
             anchor[0],
             anchor[1],
             JSON.stringify({ type: 'LineString', coordinates: segment.coordinates }),
+            segment.lodKey,
             segment.rank,
           ]);
         }
@@ -1247,7 +1256,7 @@ async function refreshMapFeatures(
 
 // MERGE em vez de INSERT: idempotente por construção — uma reexecução (ou uma reindexação que
 // se sobrepõe a features já gravadas por outra rota) nunca esbarra na PK composta
-// (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,rank), só atualiza o mesmo trecho.
+// (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,lod_key,rank), só atualiza o mesmo trecho.
 async function upsertMapFeatureRows(
   target: Connection,
   t: TablePrefixer,
@@ -1257,23 +1266,23 @@ async function upsertMapFeatureRows(
     USING (SELECT :1 tenant_id, :2 tile_z, :3 tile_x, :4 tile_y, :5 entity_id, :6 shape,
                   :7 feature_kind, :8 entity_type, :9 type_code, :10 site_category,
                   :11 source_model_type, :12 source_model_id, :13 status, :14 label,
-                  :15 sublabel, :16 lng, :17 lat, :18 geometry, :19 rank FROM DUAL) src
+                  :15 sublabel, :16 lng, :17 lat, :18 geometry, :19 lod_key, :20 rank FROM DUAL) src
     ON (tgt.tenant_id=src.tenant_id AND tgt.tile_z=src.tile_z AND tgt.tile_x=src.tile_x
         AND tgt.tile_y=src.tile_y AND tgt.entity_id=src.entity_id AND tgt.shape=src.shape
-        AND tgt.rank=src.rank)
+        AND tgt.lod_key=src.lod_key AND tgt.rank=src.rank)
     WHEN MATCHED THEN UPDATE SET
       tgt.feature_kind=src.feature_kind, tgt.entity_type=src.entity_type, tgt.type_code=src.type_code,
       tgt.site_category=src.site_category, tgt.source_model_type=src.source_model_type,
       tgt.source_model_id=src.source_model_id, tgt.status=src.status, tgt.label=src.label,
       tgt.sublabel=src.sublabel, tgt.lng=src.lng, tgt.lat=src.lat, tgt.geometry=src.geometry,
-      tgt.rank=src.rank, tgt.generated_at=SYSTIMESTAMP
+      tgt.generated_at=SYSTIMESTAMP
     WHEN NOT MATCHED THEN INSERT
       (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
        type_code,site_category,source_model_type,source_model_id,status,label,sublabel,lng,lat,
-       geometry,rank,generated_at)
+       geometry,lod_key,rank,generated_at)
       VALUES (src.tenant_id,src.tile_z,src.tile_x,src.tile_y,src.entity_id,src.shape,src.feature_kind,
               src.entity_type,src.type_code,src.site_category,src.source_model_type,src.source_model_id,
-              src.status,src.label,src.sublabel,src.lng,src.lat,src.geometry,src.rank,SYSTIMESTAMP)`;
+              src.status,src.label,src.sublabel,src.lng,src.lat,src.geometry,src.lod_key,src.rank,SYSTIMESTAMP)`;
   const batchSize = 1000;
   for (let offset = 0; offset < rows.length; offset += batchSize) {
     await target.executeMany(mergeSql, rows.slice(offset, offset + batchSize));
@@ -1337,6 +1346,7 @@ async function reindexPointFeatures(
           lng,
           lat,
           null,
+          MAP_BASE_LOD_KEY,
           0,
         ]);
       } catch {

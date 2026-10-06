@@ -54,6 +54,7 @@ export const TABLE_NAMES = [
   'geo_coverage_area',
   'geo_map_feature',
   'geo_map_density',
+  'geo_map_line_index',
   'studio_workspace',
   'studio_version',
   'studio_audit_log',
@@ -527,8 +528,9 @@ export const MIGRATIONS_SQL = `
     lat DOUBLE PRECISION NOT NULL,
     geometry TEXT,
     rank INTEGER NOT NULL DEFAULT 0,
+    lod_key TEXT NOT NULL DEFAULT 'base',
     generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)
   );
   CREATE INDEX IF NOT EXISTS idx_geo_map_feature_tile
     ON geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank);
@@ -2085,6 +2087,35 @@ const MIGRATIONS_SQL_V26_GEO_MAP_FEATURE_SITE_BBOX_INDEX = `
     ON geo_map_feature(tenant_id, feature_kind, shape, source_model_type, source_model_id, lng, lat);
 `;
 
+// V28: manifesto do índice de linhas do mapa (issue #318). Uma linha por camada/LOD gerado por
+// build-map-features, gravada na mesma transação do rebuild. O endpoint de linhas compara o perfil
+// pedido com o manifesto e responde "índice desatualizado" em vez de devolver vazio em silêncio.
+// `tile_z` e `simplify_tolerance_meters` registram o perfil publicado no momento da geração.
+const MIGRATIONS_SQL_V28_GEO_MAP_LINE_INDEX = `
+  CREATE TABLE IF NOT EXISTS geo_map_line_index (
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    source_model_id TEXT NOT NULL,
+    lod_key TEXT NOT NULL,
+    tile_z INTEGER NOT NULL,
+    simplify_tolerance_meters DOUBLE PRECISION NOT NULL DEFAULT 0,
+    fragments INTEGER NOT NULL DEFAULT 0,
+    vertices INTEGER NOT NULL DEFAULT 0,
+    generated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, source_model_id, lod_key)
+  );
+`;
+
+// V27: LOD multirresolução das linhas do mapa (issue #317). `lod_key` identifica o perfil do Studio
+// GEO que gerou o fragmento ('base' = pontos; 'legacy' = camada de perfil único; senão o id do
+// perfil). A PK passa a incluí-lo por adapter (ver oracle-database.ts) — uma mesma entidade/tile
+// coexiste em vários LODs. O índice atende a leitura agregada por viewport: igualdades
+// (tenant, tipo, forma, camada, LOD, z) e o intervalo de x/y.
+const MIGRATIONS_SQL_V27_GEO_MAP_FEATURE_LOD = `
+  ALTER TABLE geo_map_feature ADD COLUMN IF NOT EXISTS lod_key TEXT NOT NULL DEFAULT 'base';
+  CREATE INDEX IF NOT EXISTS idx_geo_map_feature_line_lod
+    ON geo_map_feature(tenant_id, feature_kind, shape, source_model_id, lod_key, tile_z, tile_x, tile_y);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2191,6 +2222,16 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 26,
     name: 'geo-map-feature-site-bbox-index',
     sql: MIGRATIONS_SQL_V26_GEO_MAP_FEATURE_SITE_BBOX_INDEX,
+  },
+  {
+    version: 27,
+    name: 'geo-map-feature-lod',
+    sql: MIGRATIONS_SQL_V27_GEO_MAP_FEATURE_LOD,
+  },
+  {
+    version: 28,
+    name: 'geo-map-line-index',
+    sql: MIGRATIONS_SQL_V28_GEO_MAP_LINE_INDEX,
   },
 ];
 

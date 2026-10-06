@@ -303,10 +303,10 @@ test('repositório de Resource não consulta a coluna textual resource_type remo
 
 test('rebuild preserva o rank dos trechos de cabo e a chave inclui o ordinal', async () => {
   const script = await readFile(resolve(rootDir, 'scripts/build-map-features.mjs'), 'utf8');
-  assert.match(script, /segments\.map\(\(\{ tile, coordinates, rank \}\)/);
+  assert.match(script, /segments\.map\(\(\{ tile, coordinates, rank, lodKey \}\)/);
   assert.match(
     script,
-    /geometry: JSON\.stringify\(\{ type: 'LineString', coordinates \}\),\s*rank,/,
+    /geometry: JSON\.stringify\(\{ type: 'LineString', coordinates \}\),\s*lod_key: lodKey,\s*rank,/,
   );
-  assert.match(script, /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank\)/);
+  assert.match(script, /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank\)/);
 });

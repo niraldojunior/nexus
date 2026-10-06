@@ -698,14 +698,34 @@ function mapIbgeLines(
   });
 }
 
-/** Trecho de duto (BC250 `Trecho_Duto_L`) → recurso Gasoduto. */
+export type DuctClass = 'gas' | 'oil' | 'other';
+
+const NON_GAS_DUCT_NAME = /\b(oleoduto|poliduto|mineroduto|adutora|aqueduto|emissário|emissario)\b/i;
+const GAS_DUCT_NAME = /\b(gasoduto|gás|gas|gnl|gasbol)\b/i;
+
+/**
+ * A camada `Trecho_Duto_L` mistura gás, minério, água e duto sem material declarado. O material
+ * transportado (`mattransp`) é a autoridade quando conhecido; só na ausência dele o nome decide —
+ * e nome de oleoduto/poliduto/mineroduto/adutora nunca vira gasoduto.
+ */
+export function classifyDuct(properties: Record<string, unknown>): DuctClass {
+  const material = knownText(properties.mattransp)?.toLowerCase();
+  if (material !== undefined) return material === 'gás' || material === 'gas' ? 'gas' : 'other';
+  const name = knownText(properties.nome) ?? '';
+  if (NON_GAS_DUCT_NAME.test(name)) return /\b(oleoduto|poliduto)\b/i.test(name) ? 'oil' : 'other';
+  return GAS_DUCT_NAME.test(name) ? 'gas' : 'other';
+}
+
+/** Trecho de duto (BC250 `Trecho_Duto_L`) → recurso Gasoduto. Só dutos de gás entram. */
 export const mapGasPipeline = (feature: SigelFeature, states: readonly string[]): MappedLine[] =>
-  mapIbgeLines(feature, states, {
-    entity: GAS_PIPELINE_ENTITY,
-    system: IBGE_BC250_ORIGIN_SYSTEM,
-    attributes: GAS_PIPELINE_ATTRIBUTES,
-    fallbackName: 'Gasoduto',
-  });
+  classifyDuct(feature.properties) !== 'gas'
+    ? []
+    : mapIbgeLines(feature, states, {
+        entity: GAS_PIPELINE_ENTITY,
+        system: IBGE_BC250_ORIGIN_SYSTEM,
+        attributes: GAS_PIPELINE_ATTRIBUTES,
+        fallbackName: 'Gasoduto',
+      });
 
 /** Trecho ferroviário (BC250 `Trecho_Ferroviario_L`). */
 export const mapRailSegment = (feature: SigelFeature, states: readonly string[]): MappedLine[] =>

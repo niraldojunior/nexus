@@ -52,6 +52,7 @@ import {
   countIbgeFeatures,
   fetchIbgeFeatures,
 } from './ibge.js';
+import { enrichGasPipelines, fetchAnpGasAuthorizations } from './anp.js';
 import {
   DEMO_INFRA_NAMESPACE,
   GAS_PIPELINE_RESOURCE_TYPE_CODE,
@@ -739,7 +740,9 @@ async function runSeed(options: CliOptions): Promise<void> {
         if (mapped) isolatedSystems.push(mapped);
         else isolatedSystemsSkipped += 1;
       } catch (error) {
-        console.warn(`    ! sistema isolado OID ${String(feature.properties.OID)}: ${String(error)}`);
+        console.warn(
+          `    ! sistema isolado OID ${String(feature.properties.OID)}: ${String(error)}`,
+        );
         isolatedSystemsSkipped += 1;
       }
     }
@@ -788,7 +791,9 @@ async function runSeed(options: CliOptions): Promise<void> {
         if (mapped) railStations.push(mapped);
         else railStationsSkipped += 1;
       } catch (error) {
-        console.warn(`    ! estação ferroviária ${String(feature.properties.OID)}: ${String(error)}`);
+        console.warn(
+          `    ! estação ferroviária ${String(feature.properties.OID)}: ${String(error)}`,
+        );
         railStationsSkipped += 1;
       }
     }
@@ -796,7 +801,21 @@ async function runSeed(options: CliOptions): Promise<void> {
     const uniqueSubstations = dedupeById(substations);
     const uniqueIsolatedSystems = dedupeById(isolatedSystems);
     const uniqueLines = dedupeById(lines);
-    const uniqueGas = dedupeById(gas.items);
+    let uniqueGas = dedupeById(gas.items);
+    if (wants('gas') && uniqueGas.length > 0) {
+      try {
+        console.log('    Fetching ANP autorizações de gás natural...');
+        const enrichment = enrichGasPipelines(uniqueGas, await fetchAnpGasAuthorizations());
+        uniqueGas = enrichment.lines;
+        const r = enrichment.report;
+        console.log(
+          `    ANP: ${r.authorizations} autorizações (${r.pipelineAuthorizations} de duto) · enriquecidos: ${r.enriched} · sem correspondência: ${r.noMatch} · ambíguos: ${r.ambiguous} · campos em conflito: ${r.conflictingFields}`,
+        );
+      } catch (error) {
+        // Enriquecimento é opcional: sem a ANP o gasoduto segue só com atributos do IBGE.
+        console.warn(`    ! ANP indisponível, gasodutos sem enriquecimento: ${String(error)}`);
+      }
+    }
     const uniqueRailSegments = dedupeById(railSegments.items);
     const uniqueRailStations = dedupeById(railStations);
     const countVertices = (items: readonly MappedLine[]): number =>
@@ -993,7 +1012,14 @@ async function runIndexer(tenantId: string, environment: string): Promise<void> 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ['scripts/build-map-features.mjs', '--environment', environment, '--apply', '--tenant', tenantId],
+      [
+        'scripts/build-map-features.mjs',
+        '--environment',
+        environment,
+        '--apply',
+        '--tenant',
+        tenantId,
+      ],
       { stdio: 'inherit' },
     );
     child.on('error', reject);

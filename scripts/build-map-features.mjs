@@ -45,9 +45,15 @@ import { config as loadEnv } from 'dotenv';
 import { openLoaderDb, resolveLoaderEnvironment } from './loader-db.mjs';
 import {
   MAP_TILE_ZOOM,
+  MAP_BASE_LOD_KEY,
+  studioGeoLineLodIndex,
   tileForPoint,
-  tileSegmentsForLine,
+  tileSegmentsForLineLods,
 } from '../dist/src/modules/geo/map-tile.js';
+import {
+  diagnoseLineIndex,
+  summarizeLineManifest,
+} from '../dist/src/modules/geo/map-line-manifest.js';
 import { excludeInternalResourceTypesSql } from '../dist/src/modules/geo/map-visibility.js';
 
 loadEnv();
@@ -66,7 +72,16 @@ const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
 
 async function ensureMapFeaturePrimaryKey(client) {
-  const expected = ['TENANT_ID', 'TILE_Z', 'TILE_X', 'TILE_Y', 'ENTITY_ID', 'SHAPE', 'RANK'];
+  const expected = [
+    'TENANT_ID',
+    'TILE_Z',
+    'TILE_X',
+    'TILE_Y',
+    'ENTITY_ID',
+    'SHAPE',
+    'LOD_KEY',
+    'RANK',
+  ];
   const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geo_map_feature`.toUpperCase();
   const primaryKey = (
     await client.query(
@@ -89,9 +104,47 @@ async function ensureMapFeaturePrimaryKey(client) {
   if (columns.join(',') === expected.join(',')) return;
   await client.query('ALTER TABLE geo_map_feature DROP PRIMARY KEY');
   await client.query(
-    'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)',
+    'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)',
   );
-  console.log('Chave primária de geo_map_feature atualizada para incluir rank.');
+  console.log('Chave primária de geo_map_feature atualizada para incluir lod_key e rank.');
+}
+
+async function ensureLineIndexTable(client) {
+  try {
+    await client.query(`CREATE TABLE geo_map_line_index (
+      tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
+      source_model_id VARCHAR2(255 CHAR) NOT NULL,
+      lod_key VARCHAR2(64 CHAR) NOT NULL,
+      tile_z NUMBER(10) NOT NULL,
+      simplify_tolerance_meters BINARY_DOUBLE DEFAULT 0 NOT NULL,
+      fragments NUMBER(10) DEFAULT 0 NOT NULL,
+      vertices NUMBER(10) DEFAULT 0 NOT NULL,
+      generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (tenant_id, source_model_id, lod_key)
+    )`);
+    console.log('Tabela geo_map_line_index criada no Oracle.');
+  } catch (error) {
+    if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
+  }
+}
+
+async function readLineManifest(client) {
+  try {
+    const { rows } = await client.query(
+      'SELECT source_model_id, lod_key, tile_z, simplify_tolerance_meters, fragments, vertices FROM geo_map_line_index WHERE tenant_id = $1',
+      [TENANT],
+    );
+    return rows.map((r) => ({
+      sourceModelId: r.source_model_id,
+      lodKey: r.lod_key,
+      tileZoom: Number(r.tile_z),
+      simplifyToleranceMeters: Number(r.simplify_tolerance_meters),
+      fragments: Number(r.fragments),
+      vertices: Number(r.vertices),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function ensureMapFeatureTable(client) {
@@ -114,9 +167,10 @@ async function ensureMapFeatureTable(client) {
     lng BINARY_DOUBLE NOT NULL,
     lat BINARY_DOUBLE NOT NULL,
     geometry CLOB,
+    lod_key VARCHAR2(64 CHAR) DEFAULT 'base' NOT NULL,
     rank NUMBER(10) DEFAULT 0 NOT NULL,
     generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)
+    PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)
   )`;
   try {
     await client.query(ddl);
@@ -244,13 +298,36 @@ function pointRow({
     lng,
     lat,
     geometry: null,
+    lod_key: MAP_BASE_LOD_KEY,
     rank: 0,
   };
 }
 
+let LINE_TILING = new Map();
+
+// Perfis de LOD (zoom/simplificação) por camada vêm do catálogo publicado do Studio GEO; sem camada, z16 sem simplificar.
+async function loadLineTiling(client) {
+  const row = (
+    await client.query(
+      `SELECT v.snapshot
+         FROM studio_workspace w
+         JOIN studio_version v ON v.id = w.published_version_id
+        WHERE w.domain = 'studio-geo' AND w.tenant_id = $1`,
+      [TENANT],
+    )
+  ).rows[0];
+  if (!row?.snapshot) return new Map();
+  try {
+    const snapshot = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot;
+    return studioGeoLineLodIndex(snapshot);
+  } catch {
+    return new Map();
+  }
+}
+
 function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
-  const segments = tileSegmentsForLine(geometry, MAP_TILE_ZOOM);
-  return segments.map(({ tile, coordinates, rank }) => {
+  const segments = tileSegmentsForLineLods(geometry, LINE_TILING.get(typeCode));
+  return segments.map(({ tile, coordinates, rank, lodKey }) => {
     const anchor = coordinates[Math.floor(coordinates.length / 2)];
     return {
       tenant_id: TENANT,
@@ -271,6 +348,7 @@ function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
       lng: anchor[0],
       lat: anchor[1],
       geometry: JSON.stringify({ type: 'LineString', coordinates }),
+      lod_key: lodKey,
       rank,
     };
   });
@@ -295,12 +373,14 @@ const FEATURE_COLUMNS = [
   'lng',
   'lat',
   'geometry',
+  'lod_key',
   'rank',
 ];
 
 async function main() {
   const client = await openLoaderDb();
   try {
+    LINE_TILING = await loadLineTiling(client);
     const params = [TENANT];
     const scopeWhere = scopeFilter(params);
     const scopeLabel =
@@ -387,6 +467,31 @@ async function main() {
       `Features : ${features.length} linhas de geo_map_feature${skippedGeometry ? ` (${skippedGeometry} descartadas por geometria inválida)` : ''}`,
     );
 
+    const perZoom = new Map();
+    for (const f of features) {
+      if (f.shape !== 'line') continue;
+      const key = `${f.type_code} lod=${f.lod_key} z${f.tile_z}`;
+      perZoom.set(key, (perZoom.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of [...perZoom].sort()) console.log(`  linhas ${key}: ${count}`);
+
+    const lineManifest = summarizeLineManifest(
+      features.filter((f) => f.shape === 'line'),
+      LINE_TILING,
+    );
+    const diagnostics = diagnoseLineIndex(LINE_TILING, await readLineManifest(client));
+    console.log('\nÍndice de linhas (publicado × manifesto gravado):');
+    for (const d of diagnostics) {
+      console.log(
+        `  ${d.sourceModelId}/${d.lodKey}: ${d.status}${d.reason ? ` — ${d.reason}` : ''}`,
+      );
+    }
+    for (const e of lineManifest) {
+      console.log(
+        `  a gravar ${e.sourceModelId}/${e.lodKey}: ${e.fragments} fragmentos, ${e.vertices} vértices`,
+      );
+    }
+
     if (!APPLY) {
       console.log('\n— DRY-RUN. Nada foi gravado. Use --apply para executar. —');
       return;
@@ -394,18 +499,51 @@ async function main() {
 
     await ensureMapFeatureTable(client);
     await ensureMapFeaturePrimaryKey(client);
+    await ensureLineIndexTable(client);
 
     const entityIds = [...new Set(features.map((f) => f.entity_id))];
     await client.query('BEGIN');
     try {
       let removed;
       if (!CITY && !UF) {
-        await client.query(`DELETE FROM geo_map_feature WHERE tenant_id = $1`, [TENANT]);
+        // Em lotes (ROWNUM) para não estourar o UNDO; o índice é derivado e regenerável.
+        let batch;
+        do {
+          batch = await client.query(
+            `DELETE FROM geo_map_feature WHERE tenant_id = $1 AND ROWNUM <= 50000`,
+            [TENANT],
+          );
+        } while ((batch.rowCount ?? 0) > 0);
         removed = 'tenant inteiro';
       } else {
         removed = await deleteByEntityIds(client, entityIds);
       }
       const inserted = await client.bulkInsert('geo_map_feature', FEATURE_COLUMNS, features);
+      // Manifesto só em rebuild do tenant inteiro: recorte por UF/cidade não representa a camada toda.
+      if (!CITY && !UF) {
+        await client.query('DELETE FROM geo_map_line_index WHERE tenant_id = $1', [TENANT]);
+        await client.bulkInsert(
+          'geo_map_line_index',
+          [
+            'tenant_id',
+            'source_model_id',
+            'lod_key',
+            'tile_z',
+            'simplify_tolerance_meters',
+            'fragments',
+            'vertices',
+          ],
+          lineManifest.map((e) => ({
+            tenant_id: TENANT,
+            source_model_id: e.sourceModelId,
+            lod_key: e.lodKey,
+            tile_z: e.tileZoom,
+            simplify_tolerance_meters: e.simplifyToleranceMeters,
+            fragments: e.fragments,
+            vertices: e.vertices,
+          })),
+        );
+      }
       await client.query('COMMIT');
       console.log('\nGravado:');
       console.log(`  removidos (regeneração): ${removed}`);

@@ -5,6 +5,9 @@
 // direta (GeoTreeService.resourcesInViewport continua servindo useAddressViability e qualquer
 // chamador que ainda não fala tile).
 //
+// Linhas NÃO saem daqui: só `base` (pontos). Toda linha, inclusive o perfil único `legacy`,
+// é lida por GeoMapLineService (/v1/geo/map/lines), um LOD por camada/faixa.
+//
 // A consulta é só uma igualdade de 4 colunas contra a PK de geo_map_feature — não há filtro,
 // JOIN, parse de JSON ou grafo no caminho de leitura; o custo não cresce com o tamanho da base,
 // só com a densidade do próprio tile (ver EXPLAIN ANALYZE no bench de performance da issue).
@@ -61,7 +64,8 @@ export class GeoMapTileService {
               source_model_type, source_model_id, status, label, sublabel, lng, lat, geometry
          FROM geo_map_feature
         WHERE tenant_id = ? AND tile_z = ? AND tile_x = ? AND tile_y = ?
-          AND feature_kind = 'resource'`,
+          AND feature_kind = 'resource'
+          AND lod_key = 'base'`,
       [tenantId, tile.z, tile.x, tile.y],
     );
     return rows.map(toMapTileFeature);

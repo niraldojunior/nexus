@@ -97,13 +97,38 @@ const pointVisualConfig = (color: string): StudioGeoPointVisualConfig => ({
   ) as StudioGeoPointVisualConfig['scaleBands'],
 });
 
+/** Perfis de LOD das camadas lineares (calibração inicial da transmissão; ver #317). */
+export const LINE_LOD_PROFILES = [
+  { id: 'overview', tileZoom: 6, simplifyToleranceMeters: 500 },
+  { id: 'regional', tileZoom: 8, simplifyToleranceMeters: 150 },
+  { id: 'urban', tileZoom: 10, simplifyToleranceMeters: 30 },
+  { id: 'detail', tileZoom: 12, simplifyToleranceMeters: 5 },
+] as const;
+
+const LINE_LOD_BAND_PROFILE: Record<(typeof SCALE_BAND_KEYS)[number], string> = {
+  gt1km: 'overview',
+  le1km: 'regional',
+  le500m: 'regional',
+  le100m: 'urban',
+  le50m: 'urban',
+  le20m: 'detail',
+  le10m: 'detail',
+  le5m: 'detail',
+};
+
 const lineVisualConfig = (color: string): StudioGeoLineVisualConfig => ({
   geometryKind: 'LINE',
   stroke: { mode: 'fixed', defaultColor: color, statusColors: { ...RESOURCE_STATUS_COLORS } },
   strokeStyle: 'solid',
   opacity: 1,
+  // Infraestrutura longa: pirâmide de LOD (#317/#318). Cada faixa de escala usa um perfil; senão
+  // cada linha viraria ~1.100 linhas de geo_map_feature em z16. Ajustável no Studio (exige reindexar).
+  lodProfiles: LINE_LOD_PROFILES.map((profile) => ({ ...profile })),
   scaleBands: Object.fromEntries(
-    SCALE_BAND_KEYS.map((key) => [key, { visible: true, strokeWidth: 2 }]),
+    SCALE_BAND_KEYS.map((key) => [
+      key,
+      { visible: true, strokeWidth: 2, lodProfileId: LINE_LOD_BAND_PROFILE[key] },
+    ]),
   ) as StudioGeoLineVisualConfig['scaleBands'],
 });
 
@@ -306,7 +331,9 @@ export async function publishDomainLayers(
   domains: readonly Domain[] = ['energy'],
 ): Promise<PublishResult> {
   const status = await studioService.getStatus('studio-geo', context);
-  const current = (status.publishedVersion?.snapshot ?? { nodes: [] }) as { nodes?: StudioGeoNode[] };
+  const current = (status.publishedVersion?.snapshot ?? { nodes: [] }) as {
+    nodes?: StudioGeoNode[];
+  };
   const snapshot = mergeDomainNodes(current.nodes ?? [], domains);
 
   const draft = await studioService.saveDraft(

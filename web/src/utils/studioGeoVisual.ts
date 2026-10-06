@@ -2,6 +2,7 @@ import type {
   StudioGeoColorRule,
   StudioGeoEntityCategory,
   StudioGeoEntityReference,
+  StudioGeoLineLodProfile,
   StudioGeoLineVisualConfig,
   StudioGeoPointVisualConfig,
   StudioGeoPolygonVisualConfig,
@@ -67,6 +68,9 @@ export function normalizeStudioGeoVisualConfig(
     fill?: unknown;
     fillOpacity?: unknown;
     scaleBands?: Record<string, Record<string, unknown>>;
+    tileZoom?: unknown;
+    simplifyToleranceMeters?: unknown;
+    lodProfiles?: unknown;
   };
   const kind =
     candidate.geometryKind === 'POINT' ||
@@ -107,10 +111,29 @@ export function normalizeStudioGeoVisualConfig(
           {
             visible: typeof band?.visible === 'boolean' ? band.visible : fallback.visible,
             strokeWidth: finiteNumber(band?.strokeWidth, legacyWidth),
+            ...(typeof band?.lodProfileId === 'string' && band.lodProfileId
+              ? { lodProfileId: band.lodProfileId }
+              : {}),
           },
         ];
       }),
     ) as StudioGeoLineVisualConfig['scaleBands'];
+    const lodProfiles = Array.isArray(candidate.lodProfiles)
+      ? candidate.lodProfiles.flatMap((raw): StudioGeoLineLodProfile[] => {
+          const profile = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+          if (typeof profile.id !== 'string' || !profile.id) return [];
+          return [
+            {
+              id: profile.id,
+              tileZoom: Math.min(16, Math.max(6, Math.round(finiteNumber(profile.tileZoom, 16)))),
+              simplifyToleranceMeters: Math.min(
+                500,
+                Math.max(0, finiteNumber(profile.simplifyToleranceMeters, 0)),
+              ),
+            },
+          ];
+        })
+      : [];
     const legacyColor =
       typeof candidate.strokeColor === 'string'
         ? { ...defaults.stroke, defaultColor: candidate.strokeColor }
@@ -120,6 +143,14 @@ export function normalizeStudioGeoVisualConfig(
       stroke: colorRule(candidate.stroke, legacyColor),
       strokeStyle: strokeStyle(candidate.strokeStyle, defaults.strokeStyle),
       opacity: opacity(candidate.opacity, defaults.opacity),
+      ...(typeof candidate.tileZoom === 'number' && Number.isFinite(candidate.tileZoom)
+        ? { tileZoom: Math.min(16, Math.max(6, Math.round(candidate.tileZoom))) }
+        : {}),
+      ...(typeof candidate.simplifyToleranceMeters === 'number' &&
+      Number.isFinite(candidate.simplifyToleranceMeters)
+        ? { simplifyToleranceMeters: Math.min(500, Math.max(0, candidate.simplifyToleranceMeters)) }
+        : {}),
+      ...(lodProfiles.length ? { lodProfiles } : {}),
       scaleBands,
     };
   }

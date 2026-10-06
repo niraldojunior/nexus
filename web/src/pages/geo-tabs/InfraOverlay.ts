@@ -168,19 +168,26 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     else grid.set(key, [point]);
   }
 
-  function insertLine(grid: Map<string, DrawnLine[]>, line: DrawnLine): void {
+  function insertLine(
+    grid: Map<string, DrawnLine[]>,
+    line: DrawnLine,
+    width: number,
+    height: number,
+  ): void {
     // Uma linha entra em toda célula tocada pelo bbox de cada um de seus segmentos — barato
     // (poucos segmentos por cabo no recorte de tile) e evita falso-negativo em segmentos longos.
+    // As células são limitadas ao canvas: um segmento de dezenas de km num zoom alto tem bbox de
+    // milhões de pixels fora da tela e varrê-lo inteiro trava a thread principal.
     const seen = new Set<string>();
+    const lastCx = Math.floor(width / HIT_GRID_CELL_PX);
+    const lastCy = Math.floor(height / HIT_GRID_CELL_PX);
     for (let i = 0; i < line.points.length - 1; i += 1) {
       const a = line.points[i]!;
       const b = line.points[i + 1]!;
-      const [minCx, maxCx] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])].map((v) =>
-        Math.floor(v / HIT_GRID_CELL_PX),
-      );
-      const [minCy, maxCy] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])].map((v) =>
-        Math.floor(v / HIT_GRID_CELL_PX),
-      );
+      const minCx = Math.max(0, Math.floor(Math.min(a[0], b[0]) / HIT_GRID_CELL_PX));
+      const maxCx = Math.min(lastCx, Math.floor(Math.max(a[0], b[0]) / HIT_GRID_CELL_PX));
+      const minCy = Math.max(0, Math.floor(Math.min(a[1], b[1]) / HIT_GRID_CELL_PX));
+      const maxCy = Math.min(lastCy, Math.floor(Math.max(a[1], b[1]) / HIT_GRID_CELL_PX));
       for (let cx = minCx; cx <= maxCx; cx += 1) {
         for (let cy = minCy; cy <= maxCy; cy += 1) {
           const key = cellKey(cx, cy);
@@ -254,6 +261,37 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   }
 
   const nodeIdOf = (feature: MapTileFeature): string => `${feature.kind}:${feature.entityId}`;
+
+  // Filtro, rank de camada e ordenação só dependem do dataset e do catálogo — não da viewport.
+  // Pan/zoom redesenham dezenas de vezes por segundo; recalcular isto por frame (nodeForMapFeature +
+  // sort de dezenas de milhares de features) era custo puro. Invalidado em setData.
+  type DrawItem = { feature: MapTileFeature; visualRank: number };
+  let drawOrder: DrawItem[] | null = null;
+
+  function orderedForDraw(): DrawItem[] {
+    if (drawOrder) return drawOrder;
+    // O primeiro item no Studio é o mais frontal. Canvas desenha do fundo para a frente,
+    // portanto o rank maior entra primeiro. Empates preservam uma ordem determinística por id.
+    drawOrder = data
+      .filter((feature) => nodeIdOf(feature) !== excludeNodeId)
+      .map((feature) => {
+        // Feature sem entidade publicada fica atrás de toda camada governada pelo Studio.
+        // `mapLayerVisualRank` usa -1 como sentinela de ausência, que não pode significar
+        // "mais à frente" neste consumidor.
+        let visualRank = Number.MAX_SAFE_INTEGER;
+        if (catalog) {
+          const rank = mapLayerVisualRank(nodeForMapFeature(feature, catalog, roleByCode), catalog);
+          if (rank >= 0) visualRank = rank;
+        }
+        return { feature, visualRank };
+      })
+      .sort(
+        (left, right) =>
+          right.visualRank - left.visualRank ||
+          nodeIdOf(left.feature).localeCompare(nodeIdOf(right.feature)),
+      );
+    return drawOrder;
+  }
 
   class InfraOverlayView extends maps.OverlayView {
     private canvas: HTMLCanvasElement | null = null;
@@ -336,29 +374,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       const project = fast ?? toLocal;
       lastProject = project;
 
-      // O primeiro item no Studio é o mais frontal. Canvas desenha do fundo para a frente,
-      // portanto o rank maior entra primeiro. Empates preservam uma ordem determinística por id.
-      const featuresForDraw = data
-        .filter((feature) => nodeIdOf(feature) !== excludeNodeId)
-        .map((feature) => ({
-          feature,
-          // Feature sem entidade publicada fica atrás de toda camada governada pelo Studio.
-          // `mapLayerVisualRank` usa -1 como sentinela de ausência, que não pode significar
-          // "mais à frente" neste consumidor.
-          visualRank: (() => {
-            if (!catalog) return Number.MAX_SAFE_INTEGER;
-            const rank = mapLayerVisualRank(
-              nodeForMapFeature(feature, catalog, roleByCode),
-              catalog,
-            );
-            return rank >= 0 ? rank : Number.MAX_SAFE_INTEGER;
-          })(),
-        }))
-        .sort(
-          (left, right) =>
-            right.visualRank - left.visualRank ||
-            nodeIdOf(left.feature).localeCompare(nodeIdOf(right.feature)),
-        );
+      const featuresForDraw = orderedForDraw();
       for (const { feature, visualRank } of featuresForDraw) {
         if (feature.shape === 'line') this.drawLine(context, feature, project, visualRank);
         else if (feature.kind === 'resource')
@@ -367,7 +383,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       }
 
       for (const point of drawnPoints) insertPoint(pointGrid, point);
-      for (const line of drawnLines) insertLine(lineGrid, line);
+      for (const line of drawnLines) insertLine(lineGrid, line, width, height);
       syncAnimation();
     }
 
@@ -501,6 +517,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       catalog = options.catalog;
       scaleMeters = options.scaleMeters;
       data = features;
+      drawOrder = null;
       overlay.draw();
     },
     hitTest: (lng, lat) => {

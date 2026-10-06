@@ -153,6 +153,37 @@ e similares foram removidos como regra de visibilidade; cálculo de escala/LOD d
 permanece como otimização de desempenho, não como ocultação). `web/src/utils/mapLayers.ts`
 centraliza essa decisão; nenhum outro ponto do frontend reimplementa a lógica.
 
+**Indexação de linhas por camada (LOD multirresolução, #317).** Cada camada LINE de RESOURCE_TYPE
+declara no Studio GEO `visualConfig.lodProfiles` (`id`, `tileZoom` 6–16, `simplifyToleranceMeters`
+0–500 m) e cada faixa de escala escolhe um perfil via `scaleBands[*].lodProfileId`. Camada sem
+perfis usa o perfil único `legacy` (par `tileZoom`/tolerância antigo). O índice `geo_map_feature`
+materializa uma vez cada perfil referenciado, gravado em `lod_key` (PK V27:
+`tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank`); pontos usam `lod_key='base'`.
+Todo escritor (`build-map-features.mjs`, migradores Netwin) lê a mesma configuração publicada via
+`studioGeoLineLodIndex` / `tileSegmentsForLineLods` (`src/modules/geo/map-tile.ts`). A geometria
+canônica em `tmf_geographic_location` não é alterada — o LOD é só read-model derivado.
+
+**Leitura.** `GET /v1/geo/map/tile` devolve somente pontos. As linhas vêm de
+`GET /v1/geo/map/lines` (`line=<sourceModelId>:<lodKey>`, repetível, até 50 seleções, bbox): uma
+requisição por viewport, que converte a bbox em intervalo de tiles no `tile_z` do perfil e devolve
+só os fragmentos ocupados (sem enumerar tiles vazios). Há teto de 20.000 fragmentos — acima dele a
+resposta traz `truncated: true`, nunca corte silencioso — e gzip para respostas ≥ 8 KB. No cliente,
+`visibleMapLineSelections` escolhe exatamente um LOD por camada/faixa e `useMapLines` (debounce,
+bbox expandida, promise em voo) faz a chamada.
+
+**Operação.** Alterar a definição de um perfil exige reindexar (`build-map-features`); publicar só
+estilo/visibilidade, não. V27 e V28 precisam ser migradas (`db:migrate`) em cada schema antes de
+novas cargas. A densidade (`geo_map_density`) agrega apenas `lod_key='base'`.
+
+**Manifesto do índice (#318).** `geo_map_line_index` (V28) guarda, por camada × LOD, o `tile_z`, a
+tolerância, o número de fragmentos e de vértices gerados. `build-map-features` o grava na mesma
+transação do rebuild do tenant inteiro (recortes por UF/cidade não o tocam) e o dry-run compara
+perfis publicados × manifesto (`ok`/`stale`/`missing`, `map-line-manifest.ts`). O endpoint marca
+`selections[].stale = true` quando o manifesto existe mas não contém o perfil pedido — a `GeoPage`
+mostra "índice desatualizado" em vez de um mapa de linhas vazio. Sem manifesto (V28 não migrada ou
+nunca gerado) `stale` é sempre `false`. Os perfis são editados no Studio (aba Tamanho): lista de
+perfis (id, zoom, simplificação) e seletor de perfil por faixa de escala.
+
 ---
 
 ## 5. Modelo de concorrência — a mudança que destrava tudo

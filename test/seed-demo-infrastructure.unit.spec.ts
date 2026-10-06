@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   StudioGeoEntityNode,
+  StudioGeoLineVisualConfig,
   StudioGeoNode,
 } from '../src/modules/studio/adapters/studio-geo-adapter.js';
 import {
@@ -19,6 +20,7 @@ import {
   ISOLATED_SYSTEM_ENTITY,
   RAIL_SEGMENT_RESOURCE_TYPE_CODE,
   RAIL_STATION_SITE_SPEC_CODE,
+  classifyDuct,
   mapGasPipeline,
   mapRailSegment,
   mapRailStation,
@@ -558,6 +560,15 @@ describe('snapshot do Studio GEO', () => {
     expect(line?.entity.sourceId).toBe(TRANSMISSION_LINE_RESOURCE_TYPE_CODE);
     expect(line?.entity.sourceType).toBe('RESOURCE_TYPE');
     expect(line?.visualConfig?.geometryKind).toBe('LINE');
+    const config = line?.visualConfig as StudioGeoLineVisualConfig;
+    expect(config.lodProfiles?.map((profile) => profile.id)).toEqual([
+      'overview',
+      'regional',
+      'urban',
+      'detail',
+    ]);
+    expect(config.scaleBands.gt1km.lodProfileId).toBe('overview');
+    expect(config.scaleBands.le5m.lodProfileId).toBe('detail');
     // A subestação desenha como ponto (via site), não como linha.
     const substation = entityNodes().find((node) => node.id === SUBSTATION_NODE_ID);
     expect(substation?.visualConfig?.geometryKind).toBe('POINT');
@@ -656,7 +667,13 @@ describe('IBGE: gás e ferrovia', () => {
   it('mapeia gasoduto com origem IBGE_BC250 e descarta atributos desconhecidos', () => {
     const [mapped] = mapGasPipeline(
       {
-        properties: { OID: '95', nome: 'Gasbol', tipotrechoduto: 'Gasoduto', operacional: 'Desconhecido', situacaofisica: null },
+        properties: {
+          OID: '95',
+          nome: 'Gasbol',
+          tipotrechoduto: 'Gasoduto',
+          operacional: 'Desconhecido',
+          situacaofisica: null,
+        },
         geometry: line,
       },
       STATES,
@@ -669,23 +686,58 @@ describe('IBGE: gás e ferrovia', () => {
   });
 
   it('usa nome de fallback e filtra por geometria', () => {
-    const [mapped] = mapRailSegment({ properties: { OID: '7', nome: null }, geometry: line }, STATES);
+    const [mapped] = mapRailSegment(
+      { properties: { OID: '7', nome: null }, geometry: line },
+      STATES,
+    );
     expect(mapped?.name).toBe('Trecho Ferroviário 7');
-    const far = { type: 'LineString', coordinates: [[-60, -3], [-59, -3]] };
+    const far = {
+      type: 'LineString',
+      coordinates: [
+        [-60, -3],
+        [-59, -3],
+      ],
+    };
     expect(mapRailSegment({ properties: { OID: '8' }, geometry: far }, STATES)).toEqual([]);
     expect(mapRailSegment({ properties: { OID: '9' }, geometry: null }, STATES)).toEqual([]);
   });
 
   it('divide multipart com sufixo de parte', () => {
     const multi = { type: 'MultiLineString', coordinates: [line.coordinates, line.coordinates] };
-    const parts = mapGasPipeline({ properties: { OID: '1', nome: 'X' }, geometry: multi }, STATES);
+    const parts = mapGasPipeline(
+      { properties: { OID: '1', nome: 'X', mattransp: 'Gás' }, geometry: multi },
+      STATES,
+    );
     expect(parts).toHaveLength(2);
     expect(new Set(parts.map((p) => p.resourceId)).size).toBe(2);
   });
 
+  it('classifica dutos: só gás vira GasPipeline', () => {
+    expect(classifyDuct({ mattransp: 'Gás', nome: 'Oleoduto X' })).toBe('gas');
+    expect(classifyDuct({ mattransp: 'Minério' })).toBe('other');
+    expect(classifyDuct({ mattransp: 'Água' })).toBe('other');
+    expect(classifyDuct({ mattransp: 'Desconhecido', nome: 'Oleoduto Urucu-Tefé' })).toBe('oil');
+    expect(classifyDuct({ mattransp: null, nome: 'Gasbol' })).toBe('gas');
+    expect(classifyDuct({ mattransp: 'Desconhecido', nome: 'Mineroduto Minas-Rio' })).toBe('other');
+    expect(classifyDuct({ mattransp: 'Desconhecido', nome: null })).toBe('other');
+  });
+
+  it('não mapeia duto que não é de gás', () => {
+    const geometry = { type: 'LineString' as const, coordinates: [[-43.2, -22.9], [-43.1, -22.8]] };
+    expect(
+      mapGasPipeline(
+        { properties: { OID: '7', nome: 'Oleoduto Urucu-Tefé', mattransp: 'Desconhecido' }, geometry },
+        STATES,
+      ),
+    ).toEqual([]);
+  });
+
   it('mapeia estação com origem IBGE_BCIM e fallback de nome', () => {
     const mapped = mapRailStation(
-      { properties: { OID: '3', nome: null }, geometry: { type: 'Point', coordinates: [-43.2, -22.9] } },
+      {
+        properties: { OID: '3', nome: null },
+        geometry: { type: 'Point', coordinates: [-43.2, -22.9] },
+      },
       STATES,
     );
     expect(mapped?.name).toBe('Estação Ferroviária 3');
@@ -714,7 +766,11 @@ describe('IBGE: gás e ferrovia', () => {
       (n): n is StudioGeoEntityNode => n.kind === 'ENTITY',
     );
     expect(entities.map((n) => n.entity.sourceId).sort()).toEqual(
-      [GAS_PIPELINE_RESOURCE_TYPE_CODE, RAIL_SEGMENT_RESOURCE_TYPE_CODE, RAIL_STATION_SITE_SPEC_CODE].sort(),
+      [
+        GAS_PIPELINE_RESOURCE_TYPE_CODE,
+        RAIL_SEGMENT_RESOURCE_TYPE_CODE,
+        RAIL_STATION_SITE_SPEC_CODE,
+      ].sort(),
     );
     const snapshot = mergeDomainNodes([], ['energy', 'gas', 'rail']);
     const roots = snapshot.nodes.filter((n) => n.parentNodeId === null).map((n) => n.sortOrder);
@@ -729,7 +785,11 @@ describe('cliente WFS do IBGE', () => {
 
   it('pagina por startIndex e extrai o id numérico', async () => {
     const mk = (n: number) =>
-      Array.from({ length: n }, (_, i) => ({ id: `L.${i}`, properties: { nome: 'a' }, geometry: null }));
+      Array.from({ length: n }, (_, i) => ({
+        id: `L.${i}`,
+        properties: { nome: 'a' },
+        geometry: null,
+      }));
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ features: mk(1000) }) })

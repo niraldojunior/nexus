@@ -3036,10 +3036,23 @@ const routeGeoRequest = async ({
           .map((value) => value.trim())
           .filter((value) => value.length > 0)
       : undefined;
+    // Origem de proximidade opcional: só vale como par completo e dentro do WGS84.
+    const originLat = parseOptionalNumber(url.searchParams.get('lat'));
+    const originLng = parseOptionalNumber(url.searchParams.get('lng'));
+    const origin =
+      originLat !== undefined &&
+      originLng !== undefined &&
+      originLat >= -90 &&
+      originLat <= 90 &&
+      originLng >= -180 &&
+      originLng <= 180
+        ? { lat: originLat, lng: originLng }
+        : undefined;
     return sendJson(
       response,
       200,
       geoTreeService.search(term, {
+        ...(origin ? { origin } : {}),
         ...(limit !== undefined ? { limit } : {}),
         ...(kinds && kinds.length > 0 ? { kinds } : {}),
         ...(resourceTypes && resourceTypes.length > 0 ? { resourceTypes } : {}),

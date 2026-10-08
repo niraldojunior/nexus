@@ -1739,6 +1739,59 @@ test.skipIf(!oracleConfigured)(
         '/v1/geo/tree/search?q=icara&kinds=resource&types=Pole',
       );
       assert.deepEqual(wrongType.body, []);
+
+      // Ordenação por proximidade: duas CDOEs homônimas — "ZZ" fica longe (São Paulo) e o
+      // nome dela vem DEPOIS no alfabeto legado; a de Niterói (origem) deve vir primeiro.
+      const farPlace = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-46.633, -23.55] },
+      });
+      const createBox = (name: string, placeId: string) =>
+        requestJson(port, 'POST', '/tmf-api/resourceInventoryManagement/v4/resource', {
+          '@type': 'PhysicalResource',
+          name,
+          resourceSpecificationId: idOf(resourceSpec),
+          placeId,
+          placeType: 'GeographicLocation',
+        });
+      assert.equal((await createBox('CDOE-8020', idOf(farPlace))).statusCode, 201);
+      assert.equal((await createBox('CDOE-8020', idOf(boxPlace))).statusCode, 201);
+
+      const nearNiteroi = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=CDOE-8020&lat=-22.907&lng=-43.108',
+      );
+      assert.equal(nearNiteroi.statusCode, 200);
+      const nearCoords = (nearNiteroi.body as GeoTreeResponseNode[]).map(
+        (item) => (item.geometry as { coordinates: number[] }).coordinates[0],
+      );
+      assert.deepEqual(nearCoords, [-43.108, -46.633]);
+
+      const nearSaoPaulo = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=CDOE-8020&lat=-23.55&lng=-46.633',
+      );
+      const spCoords = (nearSaoPaulo.body as GeoTreeResponseNode[]).map(
+        (item) => (item.geometry as { coordinates: number[] }).coordinates[0],
+      );
+      assert.deepEqual(spCoords, [-46.633, -43.108]);
+
+      // Par incompleto/inválido é ignorado (ranking legado) e filtros continuam valendo.
+      const badOrigin = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=CDOE-8020&lat=999&lng=-43.108',
+      );
+      assert.equal(badOrigin.statusCode, 200);
+      assert.equal((badOrigin.body as GeoTreeResponseNode[]).length, 2);
+      const nearWrongType = await requestJson(
+        port,
+        'GET',
+        '/v1/geo/tree/search?q=CDOE-8020&lat=-22.907&lng=-43.108&kinds=resource&types=Pole',
+      );
+      assert.deepEqual(nearWrongType.body, []);
     } finally {
       await server.stop();
       const client = await getOracleTestClient();

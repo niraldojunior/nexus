@@ -173,6 +173,18 @@ type MapBalloon = {
   rows: Array<[string, string]>;
 };
 
+// Quantiza o centro da câmera em células cujo tamanho cresce quando o zoom diminui: pans
+// pequenos não trocam a origem da busca (nem refazem a consulta), e o ruído de ponto flutuante
+// some. Sem câmera válida, não há origem (a busca segue com o ranking legado).
+function snapSearchOrigin(camera: MapCamera): { lat: number; lng: number } | null {
+  const { lat, lng, zoom } = camera;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  const step = zoom >= 15 ? 0.01 : zoom >= 12 ? 0.05 : zoom >= 9 ? 0.2 : 1;
+  const snap = (value: number) => Number((Math.round(value / step) * step).toFixed(4));
+  return { lat: snap(lat), lng: snap(lng) };
+}
+
 // Balão de hover de uma camada de cobertura (qualquer uma — GPON é hoje a única, mas o balão não
 // sabe disso): a área sob o cursor, com os números da rede. Não é um item pontual (não tem ícone
 // de local/recurso), então usa um swatch da cor de disponibilidade. O título e a linha de
@@ -635,6 +647,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Região visível atual (identidade só muda no `idle`) — alimenta a busca de cobertura,
   // que roda acima de 100 m, não na de detalhe.
   const [viewportBounds, setViewportBounds] = useState<MapBounds | null>(null);
+  // Centro do mapa quantizado por faixa de zoom — origem de proximidade da busca. Só muda
+  // quando o centro cruza para outra célula, evitando refetch por jitter de pan.
+  const [searchOrigin, setSearchOrigin] = useState<{ lat: number; lng: number } | null>(null);
 
   // O catálogo resolve a identidade persistida do namespace. Nunca restauramos viewport sob
   // `pending`: o painel só é montado depois que o environmentId real estiver disponível.
@@ -652,6 +667,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
     (bounds: MapBounds, meters: number, camera: MapCamera) => {
       setScaleMeters(meters);
       setViewportBounds(bounds);
+      const next = snapSearchOrigin(camera);
+      setSearchOrigin((current) =>
+        current && next && current.lat === next.lat && current.lng === next.lng ? current : next,
+      );
       viewState.reportCamera(camera);
     },
     [viewState.reportCamera],
@@ -2194,6 +2213,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
             query={query}
             selection={searchSelection}
             selectedNodeIcon={selectedNodeIcon}
+            searchOrigin={searchOrigin}
             onEditSelection={() => setSearchSelection(null)}
             onQueryChange={setQuery}
             onSelectNode={selectNodeFromSearch}

@@ -243,6 +243,17 @@ Campos e blocos são polígonos (Location → Resource, `place_type=GeographicLo
 O indexador (`build-map-features.mjs`) grava polígonos com `shape='polygon'`, anel simplificado
 (200 m) em z9 e perfil único `legacy`; o cliente desenha cada entidade uma vez.
 
-Limitações: a cobertura de oleodutos vem só do IBGE (poucas feições). **Licença da ANP: CC BY-ND 3.0**
-(sem derivações) — confirmar se o uso na DEMO é compatível antes de qualquer uso além dela.
-Depois de carregar, reindexe o mapa (comando da seção anterior).
+Limitações: a cobertura de oleodutos vem só do IBGE (poucas feições).
+
+### Licença e atribuição (ANP)
+
+O portal de dados abertos da ANP declara que todo o conteúdo é publicado sob **Creative Commons
+Atribuição-SemDerivações 3.0 Não Adaptada** (conferido em 2026-10-08 em
+`gov.br/anp/pt-br/centrais-de-conteudo/dados-abertos`; o WFS não declara licença própria).
+
+- **Atribuição (BY):** o grupo "Óleo e Gás" do Studio cita a ANP como fonte no `hint`.
+- **Sem derivações (ND):** o seed normaliza atributos em `characteristic`, divide `MultiPolygon` em
+  partes e o índice do mapa guarda uma cópia simplificada (200 m). Se isso configura "adaptação" é
+  questão jurídica, não técnica — **manter o dado apenas na DEMO (`NX_DEMO_`), fora de produção e de
+  apresentações externas, até parecer do jurídico/dados da V.tal.**
+  Depois de carregar, reindexe o mapa (comando da seção anterior).

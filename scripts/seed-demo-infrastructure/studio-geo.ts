@@ -377,7 +377,7 @@ export function oilNodes(sortOrderBase = 130): StudioGeoNode[] {
       kind: 'GROUP',
       parentNodeId: null,
       label: 'Óleo e Gás',
-      hint: 'Infraestrutura de petróleo, gás e derivados (ANP, IBGE)',
+      hint: 'Infraestrutura de petróleo, gás e derivados. Fontes: ANP (CC BY-ND 3.0) e IBGE',
       sortOrder: sortOrderBase,
       active: true,
     },

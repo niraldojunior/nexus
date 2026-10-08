@@ -9,7 +9,7 @@ export type MapTileFeature = {
   entityId: string;
   kind: 'resource' | 'site';
   entityType: string;
-  shape: 'point' | 'line';
+  shape: 'point' | 'line' | 'polygon';
   typeCode?: string;
   siteCategory?: string;
   sourceModelType?: 'GEOGRAPHIC_SITE_SPECIFICATION' | 'RESOURCE_TYPE';

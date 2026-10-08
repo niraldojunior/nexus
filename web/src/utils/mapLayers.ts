@@ -401,6 +401,11 @@ export function visibleMapLineSelections(
     if (node.entity.sourceType !== 'RESOURCE_TYPE') continue;
     if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
     const visual = node.visualConfig;
+    if (visual?.geometryKind === 'POLYGON') {
+      // Polígono tem um único perfil de índice (`legacy`), sem LOD por faixa.
+      selections.set(node.entity.sourceId, 'legacy');
+      continue;
+    }
     if (visual?.geometryKind !== 'LINE') continue;
     const profiles = visual.lodProfiles ?? [];
     const wanted = visual.scaleBands[band]?.lodProfileId;

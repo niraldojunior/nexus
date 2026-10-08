@@ -216,3 +216,33 @@ de escala escolhe um (`scaleBands[*].lodProfileId`). Em z16 cada linha virava ~1
 `geo_map_feature`. Ajuste no Studio GEO → Tamanho → "Perfis de LOD no mapa". Depois de republicar o
 catálogo, **reindexe**: `node scripts/build-map-features.mjs --environment NX_DEMO_ --tenant vtal
 --apply` (o dry-run já lista as linhas por `lod_key` e `tile_z`).
+
+## Óleo e Gás (ANP GISHUB + IBGE)
+
+```bash
+npm run seed-demo-infra -- --domains oil --all-states          # dry-run
+npm run seed-demo-infra -- --domains oil --all-states --apply  # carga real
+```
+
+Fonte: WFS público da ANP (`gishub.anp.gov.br/geoserver/ows`, camadas `BD_ANP:*`, EPSG:4674).
+Toda página usa `sortBy` — o GeoServer falha com NullPointerException em `startIndex > 0` sem ele.
+
+| Camada ANP                        | Vira                | Forma    | Chave       |
+| --------------------------------- | ------------------- | -------- | ----------- |
+| `REFINARIAS_SIRGAS`               | Site + Refinaria    | ponto    | `SIGLA`     |
+| `UPGN`                            | Site + UPGN         | ponto    | `NOME`      |
+| `TERMINAIS_LIQ`                   | Site + Terminal     | ponto    | `SIMP`      |
+| `Terminais_GNL`                   | Site + Terminal GNL | ponto    | `NOME`      |
+| `POCOS_SIRGAS` (~31 mil)          | Site + Poço         | ponto    | `CADASTRO`  |
+| `CAMPOS_PRODUCAO_SIRGAS`          | Campo de Produção   | polígono | `COD_CAMPO` |
+| `BLOCOS_EXPLORATORIOS_SIRGAS`     | Bloco Exploratório  | polígono | `COD_BLOCO` |
+| dutos IBGE BC250 (`classifyDuct`) | Oleoduto            | linha    | id IBGE     |
+
+Campos e blocos são polígonos (Location → Resource, `place_type=GeographicLocation`); uma
+`MultiPolygon` vira um registro por parte (`:part`). Blocos e poços nascem **ocultos** no Studio.
+O indexador (`build-map-features.mjs`) grava polígonos com `shape='polygon'`, anel simplificado
+(200 m) em z9 e perfil único `legacy`; o cliente desenha cada entidade uma vez.
+
+Limitações: a cobertura de oleodutos vem só do IBGE (poucas feições). **Licença da ANP: CC BY-ND 3.0**
+(sem derivações) — confirmar se o uso na DEMO é compatível antes de qualquer uso além dela.
+Depois de carregar, reindexe o mapa (comando da seção anterior).

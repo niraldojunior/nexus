@@ -36,6 +36,11 @@
  *   node scripts/build-map-features.mjs --environment NX_DEMO_ --apply         # base inteira
  *   node scripts/build-map-features.mjs --environment NX_DEMO_ --city "Niterói" --apply
  *   node scripts/build-map-features.mjs --environment NX_DEMO_ --uf RJ --apply
+ *   node scripts/build-map-features.mjs --environment NX_DEMO_ --only-lines --apply   # só linhas + manifesto (iterar LOD)
+ *
+ * Gravação em lotes commitados (--commit-every N, padrão 50000), em ordem da PK: o UNDO não acumula
+ * a carga inteira (ORA-30036) e o progresso aparece no log. Sem transação única: se cair no meio, o
+ * índice fica parcial — rode de novo (idempotente).
  *
  * `--environment` prevalece sobre ORACLE_OBJECT_PREFIX; sem a flag, a variável de ambiente
  * continua sendo usada por compatibilidade.
@@ -47,6 +52,8 @@ import {
   MAP_TILE_ZOOM,
   MAP_BASE_LOD_KEY,
   studioGeoLineLodIndex,
+  lngLatToTile,
+  simplifyLine,
   tileForPoint,
   tileSegmentsForLineLods,
 } from '../dist/src/modules/geo/map-tile.js';
@@ -70,6 +77,11 @@ const APPLY = has('--apply');
 const CITY = argOf('--city', null);
 const UF = argOf('--uf', null);
 const TENANT = argOf('--tenant', 'default');
+// Só linhas (shape='line') e o manifesto: use ao iterar perfis de LOD — pontos (sites e recursos
+// pontuais, a maior parte do índice) ficam intocados.
+const ONLY_LINES = has('--only-lines');
+// Linhas por COMMIT: limita o UNDO (ORA-30036) e dá progresso observável na carga.
+const COMMIT_EVERY = Number(argOf('--commit-every', '50000'));
 
 async function ensureMapFeaturePrimaryKey(client) {
   const expected = [
@@ -212,7 +224,7 @@ function resourceSource(entity, scopeWhere) {
        AND r.status <> 'terminated'
        AND ${excludeInternalResourceTypesSql('rt')}
        AND COALESCE(rt.map_presence, 1) = 1
-       AND l.geometry_type IN ('Point', 'LineString')${scopeWhere}`;
+       AND l.geometry_type IN (${ONLY_LINES ? `'LineString', 'Polygon'` : `'Point', 'LineString', 'Polygon'`})${scopeWhere}`;
 }
 
 // Sites de categoria 'Site' fora de um projeto em curso — mesmo recorte de
@@ -259,6 +271,7 @@ async function deleteByEntityIds(client, entityIds) {
       [TENANT, ...chunk],
     );
     removed += result.rowCount ?? 0;
+    await client.query('COMMIT');
   }
   return removed;
 }
@@ -323,6 +336,61 @@ async function loadLineTiling(client) {
   } catch {
     return new Map();
   }
+}
+
+// Polígonos (campos, blocos): um único perfil `legacy`, anel externo simplificado, repetido em cada
+// tile que a caixa envolvente toca (z9 ≈ 78 km). O cliente deduplica por entidade ao desenhar.
+const POLYGON_TILE_ZOOM = 9;
+const POLYGON_TOLERANCE_METERS = 200;
+const POLYGON_MAX_TILES = 400;
+const POLYGON_TYPE_CODES = new Set();
+
+function polygonRows({ entityId, entityType, typeCode, status, label, geometry }) {
+  const rings = (geometry.coordinates ?? [])
+    .map((ring) => {
+      const simplified = simplifyLine(ring, POLYGON_TOLERANCE_METERS);
+      return simplified.length >= 4 ? simplified : ring;
+    })
+    .filter((ring) => Array.isArray(ring) && ring.length >= 4);
+  if (rings.length === 0) return [];
+  const outer = rings[0];
+  const lngs = outer.map((c) => c[0]);
+  const lats = outer.map((c) => c[1]);
+  const nw = lngLatToTile(Math.min(...lngs), Math.max(...lats), POLYGON_TILE_ZOOM);
+  const se = lngLatToTile(Math.max(...lngs), Math.min(...lats), POLYGON_TILE_ZOOM);
+  if ((se.x - nw.x + 1) * (se.y - nw.y + 1) > POLYGON_MAX_TILES) return [];
+  POLYGON_TYPE_CODES.add(typeCode);
+  const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+  const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const serialized = JSON.stringify({ type: 'Polygon', coordinates: rings });
+  const rows = [];
+  for (let x = nw.x; x <= se.x; x += 1) {
+    for (let y = nw.y; y <= se.y; y += 1) {
+      rows.push({
+        tenant_id: TENANT,
+        tile_z: POLYGON_TILE_ZOOM,
+        tile_x: x,
+        tile_y: y,
+        entity_id: entityId,
+        shape: 'polygon',
+        feature_kind: 'resource',
+        entity_type: entityType,
+        type_code: typeCode ?? null,
+        site_category: null,
+        source_model_type: 'RESOURCE_TYPE',
+        source_model_id: typeCode ?? null,
+        status: status ?? null,
+        label,
+        sublabel: null,
+        lng,
+        lat,
+        geometry: serialized,
+        lod_key: 'legacy',
+        rank: 0,
+      });
+    }
+  }
+  return rows;
 }
 
 function lineRows({ entityId, entityType, typeCode, status, label, geometry }) {
@@ -393,9 +461,11 @@ async function main() {
     const resourceRows = (
       await client.query(resourceSource('PhysicalResource', scopeWhere), params)
     ).rows;
-    const siteRows = (await client.query(SITE_SOURCE(scopeWhere), params)).rows;
+    const siteRows = ONLY_LINES ? [] : (await client.query(SITE_SOURCE(scopeWhere), params)).rows;
 
-    console.log(`Recursos : ${resourceRows.length} candidatos (Point + LineString)`);
+    console.log(
+      `Recursos : ${resourceRows.length} candidatos (${ONLY_LINES ? 'LineString + Polygon — --only-lines' : 'Point + LineString + Polygon'})`,
+    );
     console.log(`Sites    : ${siteRows.length} candidatos`);
 
     const features = [];
@@ -437,6 +507,21 @@ async function main() {
             geometry,
           }),
         );
+      } else if (row.geometry_type === 'Polygon') {
+        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length < 1) {
+          skippedGeometry += 1;
+          continue;
+        }
+        const polygon = polygonRows({
+          entityId: row.id,
+          entityType: row.entity_type,
+          typeCode: row.resource_type,
+          status: row.status,
+          label: row.name,
+          geometry,
+        });
+        if (polygon.length === 0) skippedGeometry += 1;
+        features.push(...polygon);
       }
     }
     for (const row of siteRows) {
@@ -469,17 +554,25 @@ async function main() {
 
     const perZoom = new Map();
     for (const f of features) {
-      if (f.shape !== 'line') continue;
+      if (f.shape === 'point') continue;
       const key = `${f.type_code} lod=${f.lod_key} z${f.tile_z}`;
       perZoom.set(key, (perZoom.get(key) ?? 0) + 1);
     }
     for (const [key, count] of [...perZoom].sort()) console.log(`  linhas ${key}: ${count}`);
 
+    // Polígonos entram no manifesto com perfil único `legacy`, para a leitura agregada não os
+    // marcar como índice desatualizado.
+    const INDEXED_TILING = new Map(LINE_TILING);
+    for (const code of POLYGON_TYPE_CODES) {
+      INDEXED_TILING.set(code, [
+        { key: 'legacy', tileZoom: POLYGON_TILE_ZOOM, toleranceMeters: POLYGON_TOLERANCE_METERS },
+      ]);
+    }
     const lineManifest = summarizeLineManifest(
-      features.filter((f) => f.shape === 'line'),
-      LINE_TILING,
+      features.filter((f) => f.shape !== 'point'),
+      INDEXED_TILING,
     );
-    const diagnostics = diagnoseLineIndex(LINE_TILING, await readLineManifest(client));
+    const diagnostics = diagnoseLineIndex(INDEXED_TILING, await readLineManifest(client));
     console.log('\nÍndice de linhas (publicado × manifesto gravado):');
     for (const d of diagnostics) {
       console.log(
@@ -502,23 +595,47 @@ async function main() {
     await ensureLineIndexTable(client);
 
     const entityIds = [...new Set(features.map((f) => f.entity_id))];
-    await client.query('BEGIN');
+    // Sem transação única: cada lote é commitado para o UNDO não acumular a carga inteira
+    // (ORA-30036). O índice é derivado e regenerável — se cair no meio, basta rodar de novo.
     try {
       let removed;
       if (!CITY && !UF) {
-        // Em lotes (ROWNUM) para não estourar o UNDO; o índice é derivado e regenerável.
+        const shapeFilter = ONLY_LINES ? ` AND shape IN ('line', 'polygon')` : '';
+        let total = 0;
         let batch;
         do {
           batch = await client.query(
-            `DELETE FROM geo_map_feature WHERE tenant_id = $1 AND ROWNUM <= 50000`,
+            `DELETE FROM geo_map_feature WHERE tenant_id = $1${shapeFilter} AND ROWNUM <= ${COMMIT_EVERY}`,
             [TENANT],
           );
+          await client.query('COMMIT');
+          total += batch.rowCount ?? 0;
+          if (batch.rowCount) console.log(`  removidas ${total}…`);
         } while ((batch.rowCount ?? 0) > 0);
-        removed = 'tenant inteiro';
+        removed = ONLY_LINES ? `${total} (só linhas)` : `${total} (tenant inteiro)`;
       } else {
         removed = await deleteByEntityIds(client, entityIds);
       }
-      const inserted = await client.bulkInsert('geo_map_feature', FEATURE_COLUMNS, features);
+
+      // Ordem da PK: inserções sequenciais no índice em vez de espalhadas (menos undo/redo e I/O).
+      features.sort(
+        (a, b) =>
+          a.tile_z - b.tile_z ||
+          a.tile_x - b.tile_x ||
+          a.tile_y - b.tile_y ||
+          (a.entity_id < b.entity_id ? -1 : a.entity_id > b.entity_id ? 1 : 0) ||
+          a.rank - b.rank,
+      );
+      let inserted = 0;
+      for (let i = 0; i < features.length; i += COMMIT_EVERY) {
+        inserted += await client.bulkInsert(
+          'geo_map_feature',
+          FEATURE_COLUMNS,
+          features.slice(i, i + COMMIT_EVERY),
+        );
+        await client.query('COMMIT');
+        console.log(`  inseridas ${inserted}/${features.length}`);
+      }
       // Manifesto só em rebuild do tenant inteiro: recorte por UF/cidade não representa a camada toda.
       if (!CITY && !UF) {
         await client.query('DELETE FROM geo_map_line_index WHERE tenant_id = $1', [TENANT]);
@@ -550,6 +667,9 @@ async function main() {
       console.log(`  inseridos               : ${inserted}`);
     } catch (error) {
       await client.query('ROLLBACK');
+      console.error(
+        '\nFalha no meio da gravação: o índice pode estar parcial. Rode novamente para regenerar.',
+      );
       throw error;
     }
 

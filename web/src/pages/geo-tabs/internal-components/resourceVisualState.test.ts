@@ -47,4 +47,46 @@ describe('getResourceVisualState', () => {
       borderStyleClassName: 'border-dashed',
     });
   });
+
+  it('marks a non-port node with busy usage as amber "Ocupado"', () => {
+    const state = getResourceVisualState({
+      ...resource,
+      status: 'active',
+      usageState: 'busy',
+    });
+    expect(state).toMatchObject({
+      id: 'busy',
+      label: 'Ocupado',
+      indicatorClassName: 'bg-status-amber',
+    });
+    expect(state.indicatorClassName).not.toBe(
+      getResourceVisualState({ ...resource, status: 'active', usageState: 'idle' }).indicatorClassName,
+    );
+  });
+
+  it('maps node-level active usage to green "Em uso" and idle to "Disponível"', () => {
+    expect(getResourceVisualState({ ...resource, usageState: 'active' })).toMatchObject({
+      id: 'in-use',
+      indicatorClassName: 'bg-status-green',
+    });
+    expect(getResourceVisualState({ ...resource, status: 'active', usageState: 'idle' })).toMatchObject({
+      id: 'available',
+    });
+  });
+
+  it('lets failure, disabled and lock take precedence over busy usage', () => {
+    expect(getResourceVisualState({ ...resource, status: 'failed', usageState: 'busy' }).id).toBe('fault');
+    expect(getResourceVisualState({ ...resource, operationalState: 'disabled', usageState: 'busy' }).id).toBe(
+      'fault',
+    );
+    expect(getResourceVisualState({ ...resource, administrativeState: 'locked', usageState: 'busy' }).id).toBe(
+      'blocked',
+    );
+  });
+
+  it('prefers the port usage state over the node usage state', () => {
+    expect(
+      getResourceVisualState({ ...resource, usageState: 'idle', portInfo: { usageState: 'busy' } }).id,
+    ).toBe('busy');
+  });
 });

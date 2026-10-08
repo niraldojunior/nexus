@@ -475,6 +475,8 @@ test('ResourceService: getResourceComponentsView traverses containsAsChild tree 
   assert.ok(splitterNode);
   assert.equal(splitterNode.depth, 1);
   assert.equal(splitterNode.parentId, cto.id);
+  assert.ok(splitter.usageState);
+  assert.equal(splitterNode.usageState, splitter.usageState);
 
   const portNode = view.components.find((c) => c.id === port.id);
   assert.ok(portNode);

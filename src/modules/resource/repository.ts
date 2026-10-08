@@ -740,6 +740,7 @@ export class ResourceRepository implements IResourceRepository {
         depth: item.depth,
         ...(res.administrativeState ? { administrativeState: res.administrativeState } : {}),
         ...(res.operationalState ? { operationalState: res.operationalState } : {}),
+        ...(res.usageState ? { usageState: res.usageState } : {}),
         ...(spec
           ? {
               specification: {

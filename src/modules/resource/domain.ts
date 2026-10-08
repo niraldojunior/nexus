@@ -616,6 +616,7 @@ export type ResourceComponentNode = {
   depth: number;
   administrativeState?: AdministrativeState;
   operationalState?: OperationalState;
+  usageState?: UsageState;
   specification?: ResourceDetailReference;
   manufacturer?: ResourceDetailReference;
   model?: string;

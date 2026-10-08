@@ -790,6 +790,7 @@ export type ResourceComponentNode = {
   depth: number;
   administrativeState?: ResourceBase['administrativeState'];
   operationalState?: ResourceBase['operationalState'];
+  usageState?: ResourceBase['usageState'];
   specification?: { id: string; name?: string; '@referredType': string };
   manufacturer?: { id: string; name?: string; '@referredType': string };
   model?: string;

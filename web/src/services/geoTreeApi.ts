@@ -112,12 +112,29 @@ export const fetchViewportResources = (
 // caminho quente segue com a URL limpa.
 export const fetchTreeSearch = (
   q: string,
-  options: { limit?: number; signal?: AbortSignal; scope?: GeoSearchScopeId } = {},
+  options: {
+    limit?: number;
+    signal?: AbortSignal;
+    scope?: GeoSearchScopeId;
+    // Centro do mapa: ordena os resultados por proximidade. Só serializa par WGS84 válido.
+    origin?: { lat: number; lng: number };
+  } = {},
 ): Promise<GeoTreeNode[]> => {
   const term = q.trim();
   if (!term) return Promise.resolve([]);
   const params = new URLSearchParams({ q: term });
   if (options.limit !== undefined) params.set('limit', String(options.limit));
+  const { origin } = options;
+  if (
+    origin &&
+    Number.isFinite(origin.lat) &&
+    Number.isFinite(origin.lng) &&
+    Math.abs(origin.lat) <= 90 &&
+    Math.abs(origin.lng) <= 180
+  ) {
+    params.set('lat', String(origin.lat));
+    params.set('lng', String(origin.lng));
+  }
   if (options.scope && options.scope !== 'all') {
     params.set('kinds', scopeKinds(options.scope).join(','));
     const resourceTypes = resourceTypesForScope(options.scope);

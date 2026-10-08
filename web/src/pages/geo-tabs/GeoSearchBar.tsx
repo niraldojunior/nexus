@@ -70,6 +70,11 @@ export type GeoSearchBarProps = {
   isMobile?: boolean;
   /** Ícone composto no contexto do mapa apenas para o chip da seleção confirmada. */
   selectedNodeIcon?: (node: GeoTreeNode) => ResolvedOperationalIcon | undefined;
+  /**
+   * Centro estabilizado (já quantizado) do mapa. Só ordena os resultados do inventário por
+   * proximidade; não afeta o histórico (campo vazio) nem o Google Places.
+   */
+  searchOrigin?: { lat: number; lng: number } | null;
 };
 
 type SearchOption =
@@ -138,7 +143,9 @@ export function GeoSearchBar({
   onOpenMainMenu,
   isMobile,
   selectedNodeIcon,
+  searchOrigin,
 }: GeoSearchBarProps) {
+  const originKey = searchOrigin ? `${searchOrigin.lat},${searchOrigin.lng}` : 'none';
   const [open, setOpen] = useState(false);
   const [nodeResults, setNodeResults] = useState<GeoTreeNode[]>([]);
   const [addressResults, setAddressResults] = useState<AddressPrediction[]>([]);
@@ -209,7 +216,8 @@ export function GeoSearchBar({
         const cache = nodeSearchCacheRef.current;
         // Cache chaveado por escopo — o mesmo termo tem resultado diferente em cada
         // modo, então o cache de um não pode vazar para o outro.
-        const cacheKey = `${scope}|${term}`;
+        // e pelo bucket espacial: a ordem por proximidade muda com a região do mapa.
+        const cacheKey = `${scope}|${originKey}|${term}`;
         const cached = cache.get(cacheKey);
         if (cached) {
           nodeSearchAbortRef.current = null;
@@ -218,7 +226,11 @@ export function GeoSearchBar({
         } else {
           const abortController = new AbortController();
           nodeSearchAbortRef.current = abortController;
-          void fetchTreeSearch(term, { scope, signal: abortController.signal })
+          void fetchTreeSearch(term, {
+            scope,
+            signal: abortController.signal,
+            ...(searchOrigin ? { origin: searchOrigin } : {}),
+          })
             .then((results) => {
               if (requestTokenRef.current !== token) return;
               cache.delete(cacheKey);
@@ -257,7 +269,7 @@ export function GeoSearchBar({
       nodeSearchAbortRef.current?.abort();
       requestTokenRef.current += 1;
     };
-  }, [query, selection, scope]);
+  }, [query, selection, scope, originKey]);
 
   useEffect(
     () => () => {

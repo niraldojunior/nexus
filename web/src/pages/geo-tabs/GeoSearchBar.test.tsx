@@ -355,6 +355,57 @@ describe('GeoSearchBar', () => {
     expect(mocks.fetchTreeSearch).not.toHaveBeenCalled();
   });
 
+  it('envia a origem do mapa ao inventário e refaz a busca quando o bucket muda', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+    const props = {
+      query: 'CDOE-8020',
+      onQueryChange: vi.fn(),
+      onSelectNode: vi.fn(),
+      onAddressFound: vi.fn(),
+      onAddressError: vi.fn(),
+    };
+
+    const { rerender } = render(
+      <GeoSearchBar {...props} searchOrigin={{ lat: -20.4, lng: -40.5 }} />,
+    );
+    await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1));
+    expect(mocks.fetchTreeSearch).toHaveBeenLastCalledWith(
+      'CDOE-8020',
+      expect.objectContaining({ origin: { lat: -20.4, lng: -40.5 } }),
+    );
+
+    // Mesma célula (nova identidade de objeto): sem nova consulta.
+    rerender(<GeoSearchBar {...props} searchOrigin={{ lat: -20.4, lng: -40.5 }} />);
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 300)));
+    expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1);
+
+    // Outra célula: refaz a consulta de inventário.
+    rerender(<GeoSearchBar {...props} searchOrigin={{ lat: -23.5, lng: -46.6 }} />);
+    await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(2));
+    expect(mocks.fetchTreeSearch).toHaveBeenLastCalledWith(
+      'CDOE-8020',
+      expect.objectContaining({ origin: { lat: -23.5, lng: -46.6 } }),
+    );
+  });
+
+  it('sem câmera mantém a chamada antiga, sem origem', async () => {
+    mocks.fetchTreeSearch.mockResolvedValue([node]);
+    mocks.fetchAddressPredictions.mockResolvedValue([]);
+
+    render(
+      <GeoSearchBar
+        query="CDOE-8020"
+        onQueryChange={vi.fn()}
+        onSelectNode={vi.fn()}
+        onAddressFound={vi.fn()}
+        onAddressError={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.fetchTreeSearch).toHaveBeenCalledTimes(1));
+    expect(mocks.fetchTreeSearch.mock.calls[0]?.[1]).not.toHaveProperty('origin');
+  });
+
   it('descarta endereço resolvido depois que o usuário limpa a busca', async () => {
     let resolveAddress!: (outcome: {
       ok: true;

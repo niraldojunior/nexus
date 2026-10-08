@@ -3,6 +3,7 @@ import type { ResourceComponentNode } from '../../../services/resourceApi';
 export type ResourceVisualState = {
   id:
     | 'in-use'
+    | 'busy'
     | 'available'
     | 'planned'
     | 'blocked'
@@ -20,10 +21,18 @@ export type ResourceVisualState = {
 
 type ResourceStateSource = Pick<
   ResourceComponentNode,
-  'id' | 'status' | 'administrativeState' | 'operationalState' | 'portInfo'
+  'id' | 'status' | 'administrativeState' | 'operationalState' | 'usageState' | 'portInfo'
 >;
 
 const VISUAL_STATES: Record<ResourceVisualState['id'], ResourceVisualState> = {
+  busy: {
+    id: 'busy',
+    label: 'Ocupado',
+    surfaceClassName: 'bg-status-amber-soft',
+    borderClassName: 'border-status-amber/70',
+    indicatorClassName: 'bg-status-amber',
+    borderStyleClassName: 'border-solid',
+  },
   'in-use': {
     id: 'in-use',
     label: 'Em uso',
@@ -51,10 +60,10 @@ const VISUAL_STATES: Record<ResourceVisualState['id'], ResourceVisualState> = {
   blocked: {
     id: 'blocked',
     label: 'Bloqueado',
-    surfaceClassName: 'bg-status-amber-soft',
-    borderClassName: 'border-status-amber/70',
-    indicatorClassName: 'bg-status-amber',
-    borderStyleClassName: 'border-solid',
+    surfaceClassName: 'bg-status-red-soft',
+    borderClassName: 'border-status-red/60',
+    indicatorClassName: 'bg-status-red',
+    borderStyleClassName: 'border-dashed',
   },
   attention: {
     id: 'attention',
@@ -104,21 +113,27 @@ const VISUAL_STATES: Record<ResourceVisualState['id'], ResourceVisualState> = {
  */
 export function getResourceVisualState(resource: ResourceStateSource): ResourceVisualState {
   const status = resource.status?.toLowerCase();
-  const usageState = resource.portInfo?.usageState?.toLowerCase();
+  const usageState = (resource.portInfo?.usageState ?? resource.usageState)?.toLowerCase();
   const operationalState = (resource.portInfo?.operationalState ?? resource.operationalState)?.toLowerCase();
   const administrativeState = (
     resource.portInfo?.administrativeState ?? resource.administrativeState
   )?.toLowerCase();
 
-  if (status === 'terminated' || status === 'inactive' || operationalState === 'disabled') {
-    return VISUAL_STATES.disabled;
+  if (status === 'terminated' || status === 'inactive') return VISUAL_STATES.disabled;
+  if (
+    status === 'fault' ||
+    status === 'failed' ||
+    status === 'offline' ||
+    operationalState === 'disabled'
+  ) {
+    return VISUAL_STATES.fault;
   }
-  if (status === 'fault' || status === 'failed' || status === 'offline') return VISUAL_STATES.fault;
   if (administrativeState === 'locked') return VISUAL_STATES.blocked;
   if (status === 'maintenance') return VISUAL_STATES.maintenance;
   if (status === 'planned' || status === 'design') return VISUAL_STATES.planned;
   if (administrativeState === 'shuttingdown' || status === 'suspended') return VISUAL_STATES.attention;
-  if (usageState === 'active' || usageState === 'busy') return VISUAL_STATES['in-use'];
+  if (usageState === 'busy') return VISUAL_STATES.busy;
+  if (usageState === 'active') return VISUAL_STATES['in-use'];
   if (status === 'active' || operationalState === 'enabled' || administrativeState === 'unlocked') {
     return VISUAL_STATES.available;
   }

@@ -1871,6 +1871,13 @@ export class OracleResourceRepository implements IResourceRepository {
                 row.operational_state as NonNullable<ResourceComponentNode['operationalState']>,
             }
           : {}),
+        ...(row.usage_state
+          ? {
+              usageState: row.usage_state.toLowerCase() as NonNullable<
+                ResourceComponentNode['usageState']
+              >,
+            }
+          : {}),
         ...(specificationInfo
           ? {
               specification: {

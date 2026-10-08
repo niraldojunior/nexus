@@ -14,6 +14,7 @@ import {
   merge,
   netwinOriginCharacteristics,
   resolveLifecycleStatus,
+  resolveNetwinPlantState,
 } from '../netwin-migration-kit.js';
 import {
   enqueueNativeRelationships,
@@ -274,12 +275,33 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         EXCHANGE_ID: number | null;
         CAT_LIFE_CYCLE_STATE_ID: number | null;
         EXTERNAL_CODE: string | null;
+        BAIRRO: string | null;
+        MUNICIPIO: string | null;
+        UF: string | null;
+        ISP_CICLO_VIDA: string | number | null;
+        ISP_OPERACIONAL: string | null;
       }>(
         source,
         equipmentIds,
+        // O estado real do CDO mora no equipamento ISP espelhado (CAT_LIFE_CYCLE_STATE_ID do OSP
+        // é nulo). Agrega por equipamento OSP para o espelho não gerar fan-out.
         (inClause) => `SELECT e.ID, e.NAME, e.CAT_SUBTYPE_ID, e.INFRANODE_ID, e.EXCHANGE_ID,
-                              e.CAT_LIFE_CYCLE_STATE_ID, e.EXTERNAL_CODE
+                              e.CAT_LIFE_CYCLE_STATE_ID, e.EXTERNAL_CODE,
+                              i.BAIRRO AS BAIRRO, i.BADDR_MUNICIPIO AS MUNICIPIO,
+                              i.BADDR_UF_ABRV AS UF,
+                              st.CICLO_VIDA AS ISP_CICLO_VIDA, st.OPERACIONAL AS ISP_OPERACIONAL
                          FROM NETWIN.OSP_EQUIPMENT e
+                         LEFT JOIN NETWINOI.DL_INFRANODE i ON i.PI_ID = e.INFRANODE_ID
+                         LEFT JOIN (
+                           SELECT nm.ID_BD_ENTITY_OSP AS OSP_ID,
+                                  MIN(ie.ESTADO_CICLO_VIDA) AS CICLO_VIDA,
+                                  MIN(ie.ESTADO_OPERACIONAL) AS OPERACIONAL
+                             FROM NETWIN.NS_RES_INS_NODE_MIRROR nm
+                             JOIN NETWIN.ISP_INS_EQUIPAMENTO ie ON ie.ID_BD_EQUIPAMENTO = nm.ID_BD_ENTITY_ISP
+                            WHERE nm.ENTITY_ISP = 'AC_GEN_INS_EQUIPAMENTO'
+                              AND nm.ID_BD_ENTITY_OSP IN (${inClause})
+                            GROUP BY nm.ID_BD_ENTITY_OSP
+                         ) st ON st.OSP_ID = e.ID
                         WHERE e.ID IN (${inClause})`,
       );
       const { wktById, failedIds } = await hydrateWktByIds(
@@ -298,6 +320,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
 
       const locations: Array<Record<string, unknown>> = [];
       const resources: Array<Record<string, unknown>> = [];
+      const addresses: Array<Record<string, unknown>> = [];
       const seenEqIds = new Set<number>();
 
       for (const eq of rows) {
@@ -321,6 +344,24 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               reference_point: name,
               characteristics: '[]',
             });
+            // Bairro/município/UF do DL_INFRANODE: a cobertura GPON (fase 3.B) agrupa e rotula
+            // as CDOs pelo endereço ligado à localização do equipamento.
+            const locality = (eq.BAIRRO ?? '').trim();
+            const city = (eq.MUNICIPIO ?? '').trim();
+            const uf = (eq.UF ?? '').trim();
+            if (locality || city || uf) {
+              addresses.push({
+                id: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `EQUIPMENT:ADDR:${eq.ID}`),
+                tenant_id: ctx.options.tenantId,
+                street_name: name,
+                locality: locality ? locality.slice(0, 100) : null,
+                city: city ? city.slice(0, 100) : null,
+                state_or_province: uf ? uf.toUpperCase().slice(0, 50) : null,
+                country: 'BR',
+                geographic_location_id: resId,
+                characteristics: '[]',
+              });
+            }
           } catch {
             // Geometria inválida/nula
           }
@@ -330,7 +371,16 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           eq.CAT_LIFE_CYCLE_STATE_ID !== null
             ? lifecycleMap.get(eq.CAT_LIFE_CYCLE_STATE_ID)
             : undefined;
-        const { status, substatus } = resolveLifecycleStatus(designation);
+        const lifecycle = resolveLifecycleStatus(designation);
+        const hasIspState = eq.ISP_CICLO_VIDA !== null || eq.ISP_OPERACIONAL !== null;
+        const ispState = hasIspState
+          ? resolveNetwinPlantState({
+              cicloVida: eq.ISP_CICLO_VIDA,
+              operacional: eq.ISP_OPERACIONAL,
+            })
+          : null;
+        const { substatus } = lifecycle;
+        const status = ispState?.status ?? lifecycle.status;
 
         let specName = 'Netwin CDOE';
         if (eq.CAT_SUBTYPE_ID === 517) {
@@ -350,12 +400,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           name,
           resource_specification_id: finalSpecId,
           status,
+          status_code: ispState?.statusCode ?? null,
           place_id: resId,
           place_type: 'GeographicLocation',
           serving_site_id: eq.EXCHANGE_ID ? netwinLocationId(eq.EXCHANGE_ID) : null,
-          administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
-          operational_state: status === 'active' ? 'enabled' : 'disabled',
-          usage_state: 'idle',
+          administrative_state:
+            ispState?.administrative_state ?? (status === 'terminated' ? 'locked' : 'unlocked'),
+          operational_state:
+            ispState?.operational_state ?? (status === 'active' ? 'enabled' : 'disabled'),
+          usage_state: ispState?.usage_state ?? 'idle',
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
@@ -390,6 +443,25 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             locations,
             batchSize,
           );
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'tmf_geographic_address',
+            ['id'],
+            [
+              'id',
+              'tenant_id',
+              'street_name',
+              'locality',
+              'city',
+              'state_or_province',
+              'country',
+              'geographic_location_id',
+              'characteristics',
+            ],
+            addresses,
+            batchSize,
+          );
           locationMergeMs = Date.now() - startedAt;
           startedAt = Date.now();
           await bulkMergeRows(
@@ -403,6 +475,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'name',
               'resource_specification_id',
               'status',
+              'status_code',
               'place_id',
               'place_type',
               'serving_site_id',

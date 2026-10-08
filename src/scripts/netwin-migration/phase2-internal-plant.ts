@@ -21,7 +21,7 @@ import {
 import {
   bulkMergeRows,
   netwinOriginCharacteristics,
-  resolveLifecycleStatus,
+  resolveNetwinPlantState,
 } from '../netwin-migration-kit.js';
 import {
   enqueueNativeRelationships,
@@ -367,6 +367,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       'name',
       'resource_specification_id',
       'status',
+      'status_code',
       'place_id',
       'place_type',
       'serving_site_id',
@@ -474,6 +475,10 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
         }
         const ratio = parseSplitterRatio(card.TIPO_NOME, card.TIPO_SIGLA, card.NOME);
         const splitterId = netwinInternalCardId(card.ID_BD_CARTA);
+        const cardState = resolveNetwinPlantState({
+          cicloVida: card.ESTADO_CICLO_VIDA,
+          operacional: card.ESTADO_OPERACIONAL,
+        });
         pageResources.push({
           id: splitterId,
           tenant_id: ctx.options.tenantId,
@@ -484,13 +489,14 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           ),
           resource_specification_id:
             splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!,
-          status: resolveLifecycleStatus(undefined).status,
+          status: cardState.status,
+          status_code: cardState.statusCode ?? null,
           place_id: netwinLocationId(cdo.ID_BD_LOCAL),
           place_type: 'GeographicSite',
           serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
-          administrative_state: 'unlocked',
-          operational_state: card.ESTADO_OPERACIONAL === null ? 'unknown' : 'enabled',
-          usage_state: 'idle',
+          administrative_state: cardState.administrative_state,
+          operational_state: cardState.operational_state,
+          usage_state: cardState.usage_state,
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
@@ -532,6 +538,12 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           : parent.resourceId;
         const portId = netwinInternalPhysicalPortId(port.ID_BD_PORTO_FISICO);
         const portCard = port.ID_BD_CARTA ? cardById.get(port.ID_BD_CARTA) : undefined;
+        const portState = resolveNetwinPlantState({
+          cicloVida: port.ESTADO_CICLO_VIDA,
+          operacional: port.ESTADO_OPERACIONAL,
+          provisao: port.ESTADO_PROVISAO,
+          hasService: port.ID_SERVICO !== null && port.ID_SERVICO !== undefined,
+        });
         pageResources.push({
           id: portId,
           tenant_id: ctx.options.tenantId,
@@ -540,13 +552,14 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
             port.CODIFICACAO_PORTO || `Porta ${port.ID_BD_PORTO_FISICO}`,
           ),
           resource_specification_id: portSpecId,
-          status: resolveLifecycleStatus(undefined).status,
+          status: portState.status,
+          status_code: portState.statusCode ?? null,
           place_id: netwinLocationId(cdo.ID_BD_LOCAL),
           place_type: 'GeographicSite',
           serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
-          administrative_state: 'unlocked',
-          operational_state: port.ESTADO_OPERACIONAL === null ? 'unknown' : 'enabled',
-          usage_state: 'idle',
+          administrative_state: portState.administrative_state,
+          operational_state: portState.operational_state,
+          usage_state: portState.usage_state,
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
@@ -556,6 +569,9 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
               ['portId', port.ID_PORTO],
               ['coding', port.CODIFICACAO_PORTO],
               ['occupancy', port.OCUPACAO],
+              ['occupancyType', port.TIPO_OCUPACAO],
+              ['provisionState', port.ESTADO_PROVISAO],
+              ['serviceId', port.ID_SERVICO],
               ['circuit', port.CIRCUITO],
               ['bandwidth', port.DEBITO],
             ]),

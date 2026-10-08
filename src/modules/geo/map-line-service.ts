@@ -58,7 +58,7 @@ export class GeoMapLineService {
       const zoomRow = await this.db.get<{ tile_z: number }>(
         `SELECT MIN(tile_z) AS tile_z
            FROM geo_map_feature
-          WHERE tenant_id = ? AND feature_kind = 'resource' AND shape = 'line'
+          WHERE tenant_id = ? AND feature_kind = 'resource' AND shape IN ('line', 'polygon')
             AND source_model_id = ? AND lod_key = ?`,
         [tenantId, selection.sourceModelId, selection.lodKey],
       );
@@ -74,7 +74,7 @@ export class GeoMapLineService {
                 source_model_type, source_model_id, status, label, sublabel, lng, lat, geometry,
                 tile_z
            FROM geo_map_feature
-          WHERE tenant_id = ? AND feature_kind = 'resource' AND shape = 'line'
+          WHERE tenant_id = ? AND feature_kind = 'resource' AND shape IN ('line', 'polygon')
             AND source_model_id = ? AND lod_key = ? AND tile_z = ?
             AND tile_x >= ? AND tile_x <= ? AND tile_y >= ? AND tile_y <= ?
           ORDER BY tile_x, tile_y, entity_id, rank

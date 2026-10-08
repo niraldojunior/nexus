@@ -12,9 +12,11 @@ export const ORIGIN_SYSTEM = 'ANEEL_SIGEL';
 /** Origens IBGE (WFS `CCAR:`): trechos vêm da BC250 2023, estações ferroviárias da BCIM. */
 export const IBGE_BC250_ORIGIN_SYSTEM = 'IBGE_BC250';
 export const IBGE_BCIM_ORIGIN_SYSTEM = 'IBGE_BCIM';
+/** Origem ANP (GISHUB, WFS `BD_ANP:`). Licença CC BY-ND 3.0: conteúdo reproduzido sem alteração. */
+export const ANP_GEO_ORIGIN_SYSTEM = 'ANP_GISHUB';
 
 /** Domínios de infraestrutura que o seed sabe carregar (`--domains`). */
-export const ALL_DOMAINS = ['energy', 'gas', 'rail'] as const;
+export const ALL_DOMAINS = ['energy', 'gas', 'rail', 'oil'] as const;
 export type Domain = (typeof ALL_DOMAINS)[number];
 
 /**
@@ -262,11 +264,8 @@ export function lineInScope(
  * `Name`, nem no `PopupInfo`), então aqui o critério é necessariamente espacial — 14 das 145 que o
  * envelope devolve caem fora das caixas de RJ e SP.
  */
-export const substationInScope = (
-  states: readonly string[],
-  lon: number,
-  lat: number,
-): boolean => ufsContaining(states, lon, lat).length > 0;
+export const substationInScope = (states: readonly string[], lon: number, lat: number): boolean =>
+  ufsContaining(states, lon, lat).length > 0;
 
 // ---------------------------------------------------------------------------
 // Geometria
@@ -274,6 +273,7 @@ export const substationInScope = (
 
 export type Point = { type: 'Point'; coordinates: [number, number] };
 export type LineString = { type: 'LineString'; coordinates: Array<[number, number]> };
+export type Polygon = { type: 'Polygon'; coordinates: Array<Array<[number, number]>> };
 
 const isFinitePair = (value: unknown): value is [number, number] =>
   Array.isArray(value) &&
@@ -312,11 +312,38 @@ export function toGeoJsonLines(geometry: unknown): LineString[] {
   const lines: LineString[] = [];
   for (const part of parts) {
     if (!Array.isArray(part)) continue;
-    const coordinates = part.filter(isFinitePair).map(([lon, lat]) => [lon, lat] as [number, number]);
+    const coordinates = part
+      .filter(isFinitePair)
+      .map(([lon, lat]) => [lon, lat] as [number, number]);
     if (coordinates.length < 2) continue;
     lines.push({ type: 'LineString', coordinates });
   }
   return lines;
+}
+
+/**
+ * Normaliza `Polygon`/`MultiPolygon` em polígonos simples (a Location só aceita `Polygon`).
+ * Anéis com menos de 4 posições são descartados; polígono sem anel válido some.
+ */
+export function toGeoJsonPolygons(geometry: unknown): Polygon[] {
+  const geo = geometry as { type?: unknown; coordinates?: unknown } | null | undefined;
+  if (!geo || typeof geo.type !== 'string' || !Array.isArray(geo.coordinates)) return [];
+  const parts: unknown[] =
+    geo.type === 'Polygon' ? [geo.coordinates] : geo.type === 'MultiPolygon' ? geo.coordinates : [];
+  const polygons: Polygon[] = [];
+  for (const part of parts) {
+    if (!Array.isArray(part)) continue;
+    const rings = part
+      .map((ring: unknown) =>
+        Array.isArray(ring)
+          ? ring.filter(isFinitePair).map(([lon, lat]) => [lon, lat] as [number, number])
+          : [],
+      )
+      .filter((ring) => ring.length >= 4);
+    if (rings.length === 0) continue;
+    polygons.push({ type: 'Polygon', coordinates: rings });
+  }
+  return polygons;
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +496,18 @@ export type MappedLine = {
   characteristics: Characteristic[];
 };
 
+export type MappedPolygon = {
+  sourceId: string;
+  originId: string;
+  locationId: string;
+  resourceId: string;
+  name: string;
+  polygon: Polygon;
+  uf?: string | undefined;
+  originSystem?: string | undefined;
+  characteristics: Characteristic[];
+};
+
 const oidOf = (properties: Record<string, unknown>): string | undefined => {
   const raw = properties.OID ?? properties.oid ?? properties.FID ?? properties.objectid;
   if (raw === null || raw === undefined || raw === '') return undefined;
@@ -492,7 +531,10 @@ export function mapSubstation(
   const fields = parsePopupInfo(feature.properties.PopupInfo as string | undefined);
   // `Name` vem como "Subestação B. FLUMINENSE"; o popup traz só "B. FLUMINENSE". O `Name` é mais
   // informativo na tela, com o popup como reserva quando ele falta.
-  const name = normalizeName(feature.properties.Name as string | undefined) || fields.nome || `Subestação ${sourceId}`;
+  const name =
+    normalizeName(feature.properties.Name as string | undefined) ||
+    fields.nome ||
+    `Subestação ${sourceId}`;
   const uf = ufsContaining(states, lon, lat).join('/') || undefined;
 
   return {
@@ -621,10 +663,10 @@ const pickKnown = (
     return value === undefined ? [] : [{ name: key, value, valueType: 'string' } as Characteristic];
   });
 
-const ufCharacteristic = (uf: string | undefined): Characteristic[] =>
+export const ufCharacteristic = (uf: string | undefined): Characteristic[] =>
   uf === undefined ? [] : [{ name: 'uf', value: uf, valueType: 'string' }];
 
-const GAS_PIPELINE_ATTRIBUTES = [
+export const GAS_PIPELINE_ATTRIBUTES = [
   'tipotrechoduto',
   'mattransp',
   'setor',
@@ -650,14 +692,14 @@ const RAIL_STATION_ATTRIBUTES = [
   'situacaofisica',
 ] as const;
 
-type IbgeLinearSpec = {
+export type IbgeLinearSpec = {
   entity: string;
   system: string;
   attributes: readonly string[];
   fallbackName: string;
 };
 
-function mapIbgeLines(
+export function mapIbgeLines(
   feature: SigelFeature,
   states: readonly string[],
   spec: IbgeLinearSpec,
@@ -700,7 +742,8 @@ function mapIbgeLines(
 
 export type DuctClass = 'gas' | 'oil' | 'other';
 
-const NON_GAS_DUCT_NAME = /\b(oleoduto|poliduto|mineroduto|adutora|aqueduto|emissário|emissario)\b/i;
+const NON_GAS_DUCT_NAME =
+  /\b(oleoduto|poliduto|mineroduto|adutora|aqueduto|emissário|emissario)\b/i;
 const GAS_DUCT_NAME = /\b(gasoduto|gás|gas|gnl|gasbol)\b/i;
 
 /**

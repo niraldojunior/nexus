@@ -375,8 +375,14 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       lastProject = project;
 
       const featuresForDraw = orderedForDraw();
+      // Um polígono é indexado em todos os tiles que sua caixa toca: desenha uma vez por entidade.
+      const drawnPolygons = new Set<string>();
       for (const { feature, visualRank } of featuresForDraw) {
-        if (feature.shape === 'line') this.drawLine(context, feature, project, visualRank);
+        if (feature.shape === 'polygon') {
+          if (drawnPolygons.has(feature.entityId)) continue;
+          drawnPolygons.add(feature.entityId);
+          this.drawPolygon(context, feature, project);
+        } else if (feature.shape === 'line') this.drawLine(context, feature, project, visualRank);
         else if (feature.kind === 'resource')
           this.drawResourcePoint(context, feature, project, visualRank);
         else if (feature.kind === 'site') this.drawSitePoint(context, feature, project, visualRank);
@@ -385,6 +391,42 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
       for (const point of drawnPoints) insertPoint(pointGrid, point);
       for (const line of drawnLines) insertLine(lineGrid, line, width, height);
       syncAnimation();
+    }
+
+    private drawPolygon(
+      context: CanvasRenderingContext2D,
+      feature: MapTileFeature,
+      project: Project,
+    ): void {
+      const geometry = feature.geometry;
+      if (!geometry || geometry.type !== 'Polygon') return;
+      const style = styleFor(feature);
+      const polygonStyle = style?.geometryKind === 'POLYGON' ? style : undefined;
+      if (!polygonStyle || !polygonStyle.visible) return;
+
+      context.beginPath();
+      let drawn = false;
+      for (const ring of geometry.coordinates) {
+        const points = ring
+          .map(([lng, lat]) => project(lng, lat))
+          .filter((point): point is [number, number] => point !== null);
+        if (points.length < 3) continue;
+        context.moveTo(points[0]![0], points[0]![1]);
+        for (let i = 1; i < points.length; i += 1) context.lineTo(points[i]![0], points[i]![1]);
+        context.closePath();
+        drawn = true;
+      }
+      if (!drawn) return;
+      context.globalAlpha = polygonStyle.fillOpacity;
+      context.fillStyle = polygonStyle.fillColor;
+      context.fill('evenodd');
+      context.globalAlpha = polygonStyle.strokeOpacity;
+      context.strokeStyle = polygonStyle.strokeColor;
+      context.lineWidth = polygonStyle.strokeWidth;
+      context.setLineDash(strokeDashPattern(polygonStyle.strokeStyle, polygonStyle.strokeWidth));
+      context.stroke();
+      context.setLineDash([]);
+      context.globalAlpha = 1;
     }
 
     private drawLine(

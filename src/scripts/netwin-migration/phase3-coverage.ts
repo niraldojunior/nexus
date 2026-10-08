@@ -177,13 +177,16 @@ export function phase3CdoSourceSql(t: (table: string) => string): string {
               ON l.id = COALESCE(place_site.geographic_location_id,place_address.geographic_location_id,r.place_id)
              AND l.tenant_id = r.tenant_id
             LEFT JOIN ${t('tmf_geographic_address')} a
-              ON a.id = (
-                SELECT address.id
-                  FROM ${t('tmf_geographic_address')} address
-                 WHERE address.geographic_location_id = l.id
-                   AND address.tenant_id = r.tenant_id
-                 ORDER BY address.id
-                 FETCH FIRST 1 ROWS ONLY
+              ON a.id = COALESCE(
+                place_site.geographic_address_id,
+                (
+                  SELECT address.id
+                    FROM ${t('tmf_geographic_address')} address
+                   WHERE address.geographic_location_id = l.id
+                     AND address.tenant_id = r.tenant_id
+                   ORDER BY address.id
+                   FETCH FIRST 1 ROWS ONLY
+                )
               )
            WHERE r.tenant_id=:tenantId
              AND r.status<>'terminated'

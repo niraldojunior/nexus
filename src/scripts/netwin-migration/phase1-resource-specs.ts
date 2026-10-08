@@ -18,10 +18,7 @@ export type ResourceTypeItem = {
   resourceTypeCharacteristic?: MigrationCharacteristic[];
 };
 
-const instanceCharacteristic = (
-  name: string,
-  description: string,
-): MigrationCharacteristic => ({
+const instanceCharacteristic = (name: string, description: string): MigrationCharacteristic => ({
   name,
   description,
   value: '',

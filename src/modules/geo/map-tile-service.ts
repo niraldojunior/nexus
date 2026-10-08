@@ -13,14 +13,14 @@
 // só com a densidade do próprio tile (ver EXPLAIN ANALYZE no bench de performance da issue).
 
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
-import type { GeoJSONLineString } from './domain.js';
+import type { GeoJSONLineString, GeoJSONPolygon } from './domain.js';
 import type { Tile } from './map-tile.js';
 
 export type MapTileFeature = {
   entityId: string;
   kind: 'resource' | 'site';
   entityType: string;
-  shape: 'point' | 'line';
+  shape: 'point' | 'line' | 'polygon';
   typeCode?: string;
   siteCategory?: string;
   // Identidade da entidade de catálogo que originou a feature. O cliente a usa para
@@ -32,15 +32,16 @@ export type MapTileFeature = {
   sublabel?: string;
   lng: number;
   lat: number;
-  // Só em shape 'line' — o trecho da rota já recortado (com margem) para este tile.
-  geometry?: GeoJSONLineString;
+  // Só em shape 'line' — o trecho da rota já recortado (com margem) para este tile. Em shape
+  // 'polygon' vem o polígono inteiro (simplificado), repetido em cada tile que a caixa toca.
+  geometry?: GeoJSONLineString | GeoJSONPolygon;
 };
 
 export type MapFeatureRow = {
   entity_id: string;
   feature_kind: 'resource' | 'site';
   entity_type: string;
-  shape: 'point' | 'line';
+  shape: 'point' | 'line' | 'polygon';
   type_code: string | null;
   site_category: string | null;
   source_model_type: 'GEOGRAPHIC_SITE_SPECIFICATION' | 'RESOURCE_TYPE' | null;
@@ -88,9 +89,9 @@ export function toMapTileFeature(row: MapFeatureRow): MapTileFeature {
   if (row.source_model_id) feature.sourceModelId = row.source_model_id;
   if (row.status) feature.status = row.status;
   if (row.sublabel) feature.sublabel = row.sublabel;
-  if (row.shape === 'line' && row.geometry) {
+  if ((row.shape === 'line' || row.shape === 'polygon') && row.geometry) {
     try {
-      feature.geometry = JSON.parse(row.geometry) as GeoJSONLineString;
+      feature.geometry = JSON.parse(row.geometry) as GeoJSONLineString | GeoJSONPolygon;
     } catch {
       // Geometria corrompida no índice — devolve o ponto-âncora sem a rota; um rebuild do
       // índice (build-map-features.mjs) resolve na próxima execução.

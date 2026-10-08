@@ -14,10 +14,21 @@ import type {
   StudioGeoLineVisualConfig,
   StudioGeoNode,
   StudioGeoPointVisualConfig,
+  StudioGeoPolygonVisualConfig,
   StudioGeoSnapshot,
 } from '../../src/modules/studio/adapters/studio-geo-adapter.js';
 import type { StudioService } from '../../src/modules/studio/service.js';
 import type { RequestContext } from '../../src/shared/http/request-context.js';
+import {
+  OIL_BLOCK_RESOURCE_TYPE_CODE,
+  OIL_FIELD_RESOURCE_TYPE_CODE,
+  OIL_GAS_PROCESSING_SITE_SPEC_CODE,
+  OIL_LIQUID_TERMINAL_SITE_SPEC_CODE,
+  OIL_LNG_TERMINAL_SITE_SPEC_CODE,
+  OIL_PIPELINE_RESOURCE_TYPE_CODE,
+  OIL_REFINERY_SITE_SPEC_CODE,
+  OIL_WELL_SITE_SPEC_CODE,
+} from './anp-oil.js';
 import {
   GAS_PIPELINE_RESOURCE_TYPE_CODE,
   ISOLATED_SYSTEM_SITE_SPEC_CODE,
@@ -39,6 +50,19 @@ export const GAS_PIPELINE_NODE_ID = 'gas-gasoduto';
 export const RAIL_GROUP_NODE_ID = 'ferrovia';
 export const RAIL_STATION_NODE_ID = 'ferrovia-estacao';
 export const RAIL_SEGMENT_NODE_ID = 'ferrovia-trecho';
+
+export const OIL_GROUP_NODE_ID = 'oleo-gas';
+
+const OIL_COLORS = {
+  liquidTerminal: '#0f766e',
+  lngTerminal: '#0284c7',
+  refinery: '#dc2626',
+  gasProcessing: '#ea580c',
+  well: '#78350f',
+  pipeline: '#7c2d12',
+  field: '#16a34a',
+  block: '#8b5cf6',
+} as const;
 
 const GAS_PIPELINE_COLOR = '#0891b2';
 const RAIL_STATION_COLOR = '#475569';
@@ -130,6 +154,19 @@ const lineVisualConfig = (color: string): StudioGeoLineVisualConfig => ({
       { visible: true, strokeWidth: 2, lodProfileId: LINE_LOD_BAND_PROFILE[key] },
     ]),
   ) as StudioGeoLineVisualConfig['scaleBands'],
+});
+
+/** Polígono (campo/bloco): contorno cheio, preenchimento translúcido, visível em todas as escalas. */
+const polygonVisualConfig = (color: string, fillOpacity: number): StudioGeoPolygonVisualConfig => ({
+  geometryKind: 'POLYGON',
+  stroke: { mode: 'fixed', defaultColor: color, statusColors: { ...RESOURCE_STATUS_COLORS } },
+  strokeStyle: 'solid',
+  strokeOpacity: 1,
+  fill: { mode: 'fixed', defaultColor: color, statusColors: { ...RESOURCE_STATUS_COLORS } },
+  fillOpacity,
+  scaleBands: Object.fromEntries(
+    SCALE_BAND_KEYS.map((key) => [key, { visible: true, strokeWidth: 1.5 }]),
+  ) as StudioGeoPolygonVisualConfig['scaleBands'],
 });
 
 /**
@@ -281,10 +318,128 @@ export function railNodes(sortOrderBase = 120): StudioGeoNode[] {
   ];
 }
 
+const siteNode = (
+  id: string,
+  label: string,
+  sortOrder: number,
+  specCode: string,
+  color: string,
+  defaultVisible = true,
+): StudioGeoNode => ({
+  id,
+  kind: 'ENTITY',
+  parentNodeId: OIL_GROUP_NODE_ID,
+  label,
+  sortOrder,
+  active: true,
+  defaultVisible,
+  entity: {
+    category: 'LOCAL',
+    sourceDomain: 'location-model',
+    sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
+    sourceId: specCode,
+  },
+  visualConfig: pointVisualConfig(color),
+});
+
+const resourceNode = (
+  id: string,
+  label: string,
+  sortOrder: number,
+  typeCode: string,
+  visualConfig: StudioGeoLineVisualConfig | StudioGeoPolygonVisualConfig,
+  defaultVisible = true,
+): StudioGeoNode => ({
+  id,
+  kind: 'ENTITY',
+  parentNodeId: OIL_GROUP_NODE_ID,
+  label,
+  sortOrder,
+  active: true,
+  defaultVisible,
+  entity: {
+    category: 'RESOURCE',
+    sourceDomain: 'resource-model',
+    sourceType: 'RESOURCE_TYPE',
+    sourceId: typeCode,
+  },
+  visualConfig,
+});
+
+/**
+ * Nós do grupo ÓLEO E GÁS (ANP + IBGE). Poços (~31 mil) e blocos nascem desligados por padrão:
+ * são camadas de contexto, e ligá-las todas de saída poluiria o mapa.
+ */
+export function oilNodes(sortOrderBase = 130): StudioGeoNode[] {
+  return [
+    {
+      id: OIL_GROUP_NODE_ID,
+      kind: 'GROUP',
+      parentNodeId: null,
+      label: 'Óleo e Gás',
+      hint: 'Infraestrutura de petróleo, gás e derivados. Fontes: ANP (CC BY-ND 3.0) e IBGE',
+      sortOrder: sortOrderBase,
+      active: true,
+    },
+    siteNode(
+      'oleo-gas-refinaria',
+      'Refinarias',
+      10,
+      OIL_REFINERY_SITE_SPEC_CODE,
+      OIL_COLORS.refinery,
+    ),
+    siteNode(
+      'oleo-gas-upgn',
+      'UPGN',
+      20,
+      OIL_GAS_PROCESSING_SITE_SPEC_CODE,
+      OIL_COLORS.gasProcessing,
+    ),
+    siteNode(
+      'oleo-gas-terminal',
+      'Terminais de líquidos',
+      30,
+      OIL_LIQUID_TERMINAL_SITE_SPEC_CODE,
+      OIL_COLORS.liquidTerminal,
+    ),
+    siteNode(
+      'oleo-gas-terminal-gnl',
+      'Terminais de GNL',
+      40,
+      OIL_LNG_TERMINAL_SITE_SPEC_CODE,
+      OIL_COLORS.lngTerminal,
+    ),
+    resourceNode(
+      'oleo-gas-oleoduto',
+      'Oleodutos e polidutos',
+      50,
+      OIL_PIPELINE_RESOURCE_TYPE_CODE,
+      lineVisualConfig(OIL_COLORS.pipeline),
+    ),
+    resourceNode(
+      'oleo-gas-campo',
+      'Campos de produção',
+      60,
+      OIL_FIELD_RESOURCE_TYPE_CODE,
+      polygonVisualConfig(OIL_COLORS.field, 0.25),
+    ),
+    resourceNode(
+      'oleo-gas-bloco',
+      'Blocos exploratórios',
+      70,
+      OIL_BLOCK_RESOURCE_TYPE_CODE,
+      polygonVisualConfig(OIL_COLORS.block, 0.12),
+      false,
+    ),
+    siteNode('oleo-gas-poco', 'Poços', 80, OIL_WELL_SITE_SPEC_CODE, OIL_COLORS.well, false),
+  ];
+}
+
 const DOMAIN_NODES: Record<Domain, (sortOrderBase: number) => StudioGeoNode[]> = {
   energy: energyNodes,
   gas: gasNodes,
   rail: railNodes,
+  oil: oilNodes,
 };
 
 /**

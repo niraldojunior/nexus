@@ -1,7 +1,11 @@
 import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { deterministicUuid, netwinLocationId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
-import { bulkMergeRows, netwinOriginCharacteristics } from '../netwin-migration-kit.js';
+import {
+  bulkMergeRows,
+  netwinOriginCharacteristics,
+  resolveNetwinSiteStatus,
+} from '../netwin-migration-kit.js';
 import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import {
@@ -273,7 +277,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           tenant_id: ctx.options.tenantId,
           name: siteName.slice(0, 255),
           site_specification_id: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${specCode}`),
-          status: 'Active',
+          status: resolveNetwinSiteStatus(row.STATE_LIFECYCLE),
           geographic_location_id: hasPoint ? locationId : null,
           geographic_address_id: addressId,
           parent_site_id: null,

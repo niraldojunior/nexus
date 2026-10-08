@@ -54,6 +54,43 @@ import {
 } from './ibge.js';
 import { enrichGasPipelines, fetchAnpGasAuthorizations } from './anp.js';
 import {
+  ANP_BLOCK_LAYER,
+  ANP_FIELD_LAYER,
+  ANP_GAS_PROCESSING_LAYER,
+  ANP_LIQUID_TERMINAL_LAYER,
+  ANP_LNG_TERMINAL_LAYER,
+  ANP_REFINERY_LAYER,
+  ANP_WELL_LAYER,
+  countAnpFeatures,
+  fetchAnpFeatures,
+} from './anp-geo.js';
+import {
+  ANP_BLOCK_SPEC,
+  ANP_FIELD_SPEC,
+  ANP_GAS_PROCESSING_SPEC,
+  ANP_LIQUID_TERMINAL_SPEC,
+  ANP_LNG_TERMINAL_SPEC,
+  ANP_REFINERY_SPEC,
+  ANP_WELL_SPEC,
+  OIL_BLOCK_RESOURCE_TYPE_CODE,
+  OIL_FIELD_RESOURCE_TYPE_CODE,
+  OIL_GAS_PROCESSING_RESOURCE_TYPE_CODE,
+  OIL_GAS_PROCESSING_SITE_SPEC_CODE,
+  OIL_LIQUID_TERMINAL_RESOURCE_TYPE_CODE,
+  OIL_LIQUID_TERMINAL_SITE_SPEC_CODE,
+  OIL_LNG_TERMINAL_RESOURCE_TYPE_CODE,
+  OIL_LNG_TERMINAL_SITE_SPEC_CODE,
+  OIL_PIPELINE_RESOURCE_TYPE_CODE,
+  OIL_REFINERY_RESOURCE_TYPE_CODE,
+  OIL_REFINERY_SITE_SPEC_CODE,
+  OIL_WELL_RESOURCE_TYPE_CODE,
+  OIL_WELL_SITE_SPEC_CODE,
+  mapAnpPointSite,
+  mapAnpPolygons,
+  mapOilPipeline,
+  type AnpPointSpec,
+} from './anp-oil.js';
+import {
   DEMO_INFRA_NAMESPACE,
   GAS_PIPELINE_RESOURCE_TYPE_CODE,
   ISOLATED_SYSTEM_RESOURCE_TYPE_CODE,
@@ -77,6 +114,7 @@ import {
   type Domain,
   type MappedLine,
   type MappedPointSite,
+  type MappedPolygon,
   type MappedSubstation,
   type SigelFeature,
 } from './mapper.js';
@@ -99,7 +137,7 @@ type ResourceTypeDef = {
   code: string;
   name: string;
   description: string;
-  geometryKind: 'POINT' | 'LINE';
+  geometryKind: 'POINT' | 'LINE' | 'POLYGON';
   domain: Domain;
 };
 
@@ -128,6 +166,36 @@ const SITE_SPECS: SiteSpecDef[] = [
     name: 'Estação Ferroviária',
     description: 'Estação ferroviária ou metroviária (IBGE BCIM).',
     domain: 'rail',
+  },
+  {
+    code: OIL_REFINERY_SITE_SPEC_CODE,
+    name: 'Refinaria',
+    description: 'Refinaria de petróleo (ANP).',
+    domain: 'oil',
+  },
+  {
+    code: OIL_GAS_PROCESSING_SITE_SPEC_CODE,
+    name: 'UPGN',
+    description: 'Unidade de Processamento de Gás Natural (ANP).',
+    domain: 'oil',
+  },
+  {
+    code: OIL_LIQUID_TERMINAL_SITE_SPEC_CODE,
+    name: 'Terminal de Líquidos',
+    description: 'Terminal autorizado de petróleo e derivados (ANP).',
+    domain: 'oil',
+  },
+  {
+    code: OIL_LNG_TERMINAL_SITE_SPEC_CODE,
+    name: 'Terminal de GNL',
+    description: 'Terminal de gás natural liquefeito (ANP).',
+    domain: 'oil',
+  },
+  {
+    code: OIL_WELL_SITE_SPEC_CODE,
+    name: 'Poço de Petróleo e Gás',
+    description: 'Poço de petróleo e gás natural (ANP).',
+    domain: 'oil',
   },
 ];
 
@@ -174,6 +242,62 @@ const RESOURCE_TYPES: ResourceTypeDef[] = [
     geometryKind: 'POINT',
     domain: 'rail',
   },
+  {
+    code: OIL_REFINERY_RESOURCE_TYPE_CODE,
+    name: 'Refinaria',
+    description: 'Refinaria de petróleo (ANP).',
+    geometryKind: 'POINT',
+    domain: 'oil',
+  },
+  {
+    code: OIL_GAS_PROCESSING_RESOURCE_TYPE_CODE,
+    name: 'UPGN',
+    description: 'Unidade de Processamento de Gás Natural (ANP).',
+    geometryKind: 'POINT',
+    domain: 'oil',
+  },
+  {
+    code: OIL_LIQUID_TERMINAL_RESOURCE_TYPE_CODE,
+    name: 'Terminal de Líquidos',
+    description: 'Terminal autorizado de petróleo e derivados (ANP).',
+    geometryKind: 'POINT',
+    domain: 'oil',
+  },
+  {
+    code: OIL_LNG_TERMINAL_RESOURCE_TYPE_CODE,
+    name: 'Terminal de GNL',
+    description: 'Terminal de gás natural liquefeito (ANP).',
+    geometryKind: 'POINT',
+    domain: 'oil',
+  },
+  {
+    code: OIL_WELL_RESOURCE_TYPE_CODE,
+    name: 'Poço de Petróleo e Gás',
+    description: 'Poço de petróleo e gás natural (ANP).',
+    geometryKind: 'POINT',
+    domain: 'oil',
+  },
+  {
+    code: OIL_PIPELINE_RESOURCE_TYPE_CODE,
+    name: 'Oleoduto',
+    description: 'Trecho de oleoduto ou poliduto (IBGE BC250).',
+    geometryKind: 'LINE',
+    domain: 'oil',
+  },
+  {
+    code: OIL_FIELD_RESOURCE_TYPE_CODE,
+    name: 'Campo de Produção',
+    description: 'Campo de produção de petróleo e gás (ANP).',
+    geometryKind: 'POLYGON',
+    domain: 'oil',
+  },
+  {
+    code: OIL_BLOCK_RESOURCE_TYPE_CODE,
+    name: 'Bloco Exploratório',
+    description: 'Bloco exploratório de petróleo e gás (ANP).',
+    geometryKind: 'POLYGON',
+    domain: 'oil',
+  },
 ];
 
 /** Grupo do catálogo de recursos por domínio — faz a árvore aparecer no Inventário. */
@@ -181,6 +305,7 @@ const CATALOG_GROUPS: Record<Domain, { code: string; name: string; sortOrder: nu
   energy: { code: 'grp-energia', name: 'Energia', sortOrder: 100 },
   gas: { code: 'grp-gas', name: 'Gás', sortOrder: 110 },
   rail: { code: 'grp-ferrovia', name: 'Ferrovia', sortOrder: 120 },
+  oil: { code: 'grp-oleo-gas', name: 'Óleo e Gás', sortOrder: 130 },
 };
 
 async function idByColumns(
@@ -562,6 +687,43 @@ function lineResourceRows(
   return plan;
 }
 
+/** Recurso em polígono (campo, bloco): Location → Resource, mesmo desenho do recurso linear. */
+function polygonResourceRows(
+  items: readonly MappedPolygon[],
+  context: { tenantId: string; ownerPartyId: string; resourceSpecId: string },
+): LoadPlan {
+  const plan: LoadPlan = { locations: [], sites: [], resources: [] };
+  for (const item of items) {
+    const characteristics = JSON.stringify(item.characteristics);
+    plan.locations.push({
+      id: item.locationId,
+      tenant_id: context.tenantId,
+      geometry_type: 'Polygon',
+      geometry: JSON.stringify(item.polygon),
+      spatial_ref: 'EPSG:4326',
+      reference_point: item.name,
+      characteristics,
+      source_system: item.originSystem ?? ORIGIN_SYSTEM,
+      source_ref: item.originId,
+    });
+    plan.resources.push({
+      id: item.resourceId,
+      tenant_id: context.tenantId,
+      name: item.name,
+      resource_specification_id: context.resourceSpecId,
+      status: 'active',
+      place_id: item.locationId,
+      place_type: 'GeographicLocation',
+      administrative_state: 'unlocked',
+      operational_state: 'enabled',
+      usage_state: 'idle',
+      related_party: relatedPartyJson(context.ownerPartyId),
+      characteristics,
+    });
+  }
+  return plan;
+}
+
 // ---------------------------------------------------------------------------
 // Orquestração
 // ---------------------------------------------------------------------------
@@ -709,12 +871,38 @@ async function runSeed(options: CliOptions): Promise<void> {
       return features;
     };
 
+    const fetchAnp = async (
+      label: string,
+      typeName: string,
+      sortBy: string,
+    ): Promise<SigelFeature[]> => {
+      if (!wants('oil')) return [];
+      console.log(`    Fetching ANP ${label}...`);
+      const count = await countAnpFeatures(typeName);
+      const features = await fetchAnpFeatures({ typeName, sortBy, ...limitOption });
+      console.log(`    Found: ${features.length} (nacional: ${count})`);
+      return features;
+    };
+
     const substationFeatures = await fetchAneel('substations', SUBSTATION_LAYER_ID);
     const isolatedSystemFeatures = await fetchAneel('isolated systems', ISOLATED_SYSTEM_LAYER_ID);
     const lineFeatures = await fetchAneel('transmission lines', TRANSMISSION_LINE_LAYER_ID);
     const gasFeatures = await fetchIbge('gas pipelines', IBGE_GAS_PIPELINE_LAYER, 'gas');
     const railSegmentFeatures = await fetchIbge('rail segments', IBGE_RAIL_SEGMENT_LAYER, 'rail');
     const railStationFeatures = await fetchIbge('rail stations', IBGE_RAIL_STATION_LAYER, 'rail');
+
+    const oilPipelineFeatures = await fetchIbge('oil pipelines', IBGE_GAS_PIPELINE_LAYER, 'oil');
+    const refineryFeatures = await fetchAnp('refinarias', ANP_REFINERY_LAYER, 'SIGLA');
+    const gasProcessingFeatures = await fetchAnp('UPGN', ANP_GAS_PROCESSING_LAYER, 'NOME');
+    const liquidTerminalFeatures = await fetchAnp(
+      'terminais de líquidos',
+      ANP_LIQUID_TERMINAL_LAYER,
+      'SIMP',
+    );
+    const lngTerminalFeatures = await fetchAnp('terminais de GNL', ANP_LNG_TERMINAL_LAYER, 'NOME');
+    const fieldFeatures = await fetchAnp('campos de produção', ANP_FIELD_LAYER, 'COD_CAMPO');
+    const blockFeatures = await fetchAnp('blocos exploratórios', ANP_BLOCK_LAYER, 'COD_BLOCO');
+    const wellFeatures = await fetchAnp('poços', ANP_WELL_LAYER, 'CADASTRO');
 
     // --- [3] Mapeamento -----------------------------------------------------
     console.log('[3] Mapeamento');
@@ -798,6 +986,63 @@ async function runSeed(options: CliOptions): Promise<void> {
       }
     }
 
+    // Óleo e gás: mesmo laço tolerante a erro por registro.
+    const mapAnpPoints = (
+      features: SigelFeature[],
+      spec: AnpPointSpec,
+      label: string,
+    ): { items: MappedPointSite[]; skipped: number } => {
+      const items: MappedPointSite[] = [];
+      let skipped = 0;
+      for (const feature of features) {
+        try {
+          const mapped = mapAnpPointSite(feature, options.states, spec);
+          if (mapped) items.push(mapped);
+          else skipped += 1;
+        } catch (error) {
+          console.warn(`    ! ${label}: ${String(error)}`);
+          skipped += 1;
+        }
+      }
+      return { items: dedupeById(items), skipped };
+    };
+    const mapAnpPolygonSet = (
+      features: SigelFeature[],
+      spec: Parameters<typeof mapAnpPolygons>[2],
+      label: string,
+    ): { items: MappedPolygon[]; skipped: number } => {
+      const items: MappedPolygon[] = [];
+      let skipped = 0;
+      for (const feature of features) {
+        try {
+          const mapped = mapAnpPolygons(feature, options.states, spec);
+          if (mapped.length === 0) skipped += 1;
+          else items.push(...mapped);
+        } catch (error) {
+          console.warn(`    ! ${label}: ${String(error)}`);
+          skipped += 1;
+        }
+      }
+      return { items: dedupeById(items), skipped };
+    };
+    const oilPipelines = mapLinear(oilPipelineFeatures, mapOilPipeline, 'oleoduto');
+    const refineries = mapAnpPoints(refineryFeatures, ANP_REFINERY_SPEC, 'refinaria');
+    const gasProcessing = mapAnpPoints(gasProcessingFeatures, ANP_GAS_PROCESSING_SPEC, 'UPGN');
+    const liquidTerminals = mapAnpPoints(
+      liquidTerminalFeatures,
+      ANP_LIQUID_TERMINAL_SPEC,
+      'terminal de líquidos',
+    );
+    const lngTerminals = mapAnpPoints(
+      lngTerminalFeatures,
+      ANP_LNG_TERMINAL_SPEC,
+      'terminal de GNL',
+    );
+    const wells = mapAnpPoints(wellFeatures, ANP_WELL_SPEC, 'poço');
+    const fields = mapAnpPolygonSet(fieldFeatures, ANP_FIELD_SPEC, 'campo');
+    const blocks = mapAnpPolygonSet(blockFeatures, ANP_BLOCK_SPEC, 'bloco');
+    const uniqueOilPipelines = dedupeById(oilPipelines.items);
+
     const uniqueSubstations = dedupeById(substations);
     const uniqueIsolatedSystems = dedupeById(isolatedSystems);
     const uniqueLines = dedupeById(lines);
@@ -845,6 +1090,19 @@ async function runSeed(options: CliOptions): Promise<void> {
       );
     }
 
+    if (wants('oil')) {
+      const report = (label: string, kept: number, skipped: number): void =>
+        console.log(`    ${label} no escopo: ${kept} (fora: ${skipped})`);
+      report('Refinarias', refineries.items.length, refineries.skipped);
+      report('UPGN', gasProcessing.items.length, gasProcessing.skipped);
+      report('Terminais de líquidos', liquidTerminals.items.length, liquidTerminals.skipped);
+      report('Terminais de GNL', lngTerminals.items.length, lngTerminals.skipped);
+      report('Oleodutos', uniqueOilPipelines.length, oilPipelines.skipped);
+      report('Campos de produção', fields.items.length, fields.skipped);
+      report('Blocos exploratórios', blocks.items.length, blocks.skipped);
+      report('Poços', wells.items.length, wells.skipped);
+    }
+
     // --- [4] Carga ----------------------------------------------------------
     console.log('[4] Carga');
     const substationPlan = pointSiteRows(uniqueSubstations, {
@@ -875,7 +1133,48 @@ async function runSeed(options: CliOptions): Promise<void> {
       resourceSpecId: resourceSpecIdByCode.get(RAIL_STATION_RESOURCE_TYPE_CODE) ?? '',
     });
 
+    const pointPlanFor = (
+      items: readonly MappedPointSite[],
+      siteSpecCode: string,
+      typeCode: string,
+    ): LoadPlan =>
+      pointSiteRows(items, {
+        tenantId,
+        ownerPartyId,
+        siteSpecId: siteSpecIdByCode.get(siteSpecCode) ?? '',
+        resourceSpecId: resourceSpecIdByCode.get(typeCode) ?? '',
+      });
+    const polygonPlanFor = (items: readonly MappedPolygon[], typeCode: string): LoadPlan =>
+      polygonResourceRows(items, {
+        tenantId,
+        ownerPartyId,
+        resourceSpecId: resourceSpecIdByCode.get(typeCode) ?? '',
+      });
+    const oilPlans = [
+      pointPlanFor(refineries.items, OIL_REFINERY_SITE_SPEC_CODE, OIL_REFINERY_RESOURCE_TYPE_CODE),
+      pointPlanFor(
+        gasProcessing.items,
+        OIL_GAS_PROCESSING_SITE_SPEC_CODE,
+        OIL_GAS_PROCESSING_RESOURCE_TYPE_CODE,
+      ),
+      pointPlanFor(
+        liquidTerminals.items,
+        OIL_LIQUID_TERMINAL_SITE_SPEC_CODE,
+        OIL_LIQUID_TERMINAL_RESOURCE_TYPE_CODE,
+      ),
+      pointPlanFor(
+        lngTerminals.items,
+        OIL_LNG_TERMINAL_SITE_SPEC_CODE,
+        OIL_LNG_TERMINAL_RESOURCE_TYPE_CODE,
+      ),
+      pointPlanFor(wells.items, OIL_WELL_SITE_SPEC_CODE, OIL_WELL_RESOURCE_TYPE_CODE),
+      linePlanFor(uniqueOilPipelines, OIL_PIPELINE_RESOURCE_TYPE_CODE),
+      polygonPlanFor(fields.items, OIL_FIELD_RESOURCE_TYPE_CODE),
+      polygonPlanFor(blocks.items, OIL_BLOCK_RESOURCE_TYPE_CODE),
+    ];
+
     const plans = [
+      ...oilPlans,
       substationPlan,
       isolatedSystemPlan,
       linePlan,

@@ -111,6 +111,104 @@ export function resolveLifecycleStatus(designation: string | undefined): Lifecyc
   return { status: 'suspended', substatus: designation ?? '', assumed: false };
 }
 
+// ---- estados da planta interna ISP (ESTADO_CICLO_VIDA / ESTADO_OPERACIONAL / ESTADO_PROVISAO) ----
+//
+// Catálogos da origem: ISP_CAT_ESTADO_CICLO_VIDA (1 Instalado, 2 Projetado, 3 Removido, 4 Em
+// Projeto, 5 Extraviado), ISP_CAT_ESTADO_OPERACIONAL (S Em Serviço, A Fora de Serviço, M Em
+// Manutenção, O Bloqueado, H Bloqueado SAP, V Com Defeito, X/D/P/T Avariado) e
+// ISP_CAT_ESTADO_PROVISAO (L Livre, O Ocupado, R Reservado, C Cativo).
+export type NetwinPlantStateInput = {
+  cicloVida?: string | number | null;
+  operacional?: string | number | null;
+  provisao?: string | number | null;
+  /** Serviço associado (ID_SERVICO): a porta está em uso mesmo que a provisão não diga. */
+  hasService?: boolean;
+};
+
+export type NetwinPlantState = {
+  status: 'active' | 'inactive' | 'suspended' | 'terminated';
+  administrative_state: 'unlocked' | 'locked';
+  operational_state: 'enabled' | 'disabled' | 'unknown';
+  usage_state: 'idle' | 'active' | 'busy';
+  /** Código do catálogo de estados granulares (status-catalog.ts), quando há equivalente. */
+  statusCode?: string;
+};
+
+const stateKey = (value: string | number | null | undefined): string =>
+  value === null || value === undefined ? '' : String(value).trim().toUpperCase();
+
+export function resolveNetwinPlantState(input: NetwinPlantStateInput): NetwinPlantState {
+  const ciclo = stateKey(input.cicloVida);
+  const oper = stateKey(input.operacional);
+  const prov = stateKey(input.provisao);
+
+  // Uso. Ocupado/Cativo ou serviço associado = busy; Reservado = active (alocado, sem tráfego).
+  let usage: NetwinPlantState['usage_state'] = 'idle';
+  if (prov === 'O' || prov === 'C' || input.hasService) usage = 'busy';
+  else if (prov === 'R') usage = 'active';
+
+  // Ciclo de vida. Removido/Extraviado encerram o recurso (C6: terminated → locked).
+  if (ciclo === '3' || ciclo === '5') {
+    return {
+      status: 'terminated',
+      administrative_state: 'locked',
+      operational_state: 'disabled',
+      usage_state: 'idle',
+    };
+  }
+  const planned = ciclo === '2' || ciclo === '4';
+
+  let operational: NetwinPlantState['operational_state'] = oper === '' ? 'unknown' : 'enabled';
+  let status: NetwinPlantState['status'] = planned ? 'inactive' : 'active';
+  let locked = false;
+  if (oper === 'M') {
+    operational = 'disabled';
+    if (!planned) status = 'suspended';
+  } else if (oper === 'O' || oper === 'H') {
+    operational = 'disabled';
+    if (!planned) status = 'suspended';
+    locked = true;
+  } else if (oper !== '' && oper !== 'S') {
+    // A (Fora de Serviço), V (Com Defeito) e os Avariados X/D/P/T.
+    operational = 'disabled';
+    if (!planned) status = 'suspended';
+  }
+
+  // RN-002: não se vai de unlocked para locked com usageState != idle. Com uso real, o bloqueio
+  // não é gravado no eixo administrativo (o recurso segue suspenso/desabilitado).
+  const administrative: NetwinPlantState['administrative_state'] =
+    locked && usage === 'idle' ? 'locked' : 'unlocked';
+
+  return {
+    status,
+    administrative_state: administrative,
+    operational_state: operational,
+    usage_state: usage,
+    ...(planned ? { statusCode: ciclo === '2' ? 'designed' : 'planned' } : {}),
+  };
+}
+
+// ---- ciclo de vida do local (NETWIN.LOCATION.STATE_LIFECYCLE -> GeoSiteStatus) ----
+//
+// STATE_LIFECYCLE referencia NETWIN.CAT_STATE (não NI_CAT_STATE): 1000001 PROJECTING,
+// 1000002 PROJECTED, 1000003 INSTALLED, 1000004 REMOVED. Ausente ou desconhecido = Active, para
+// não esconder do mapa um local por falta de informação.
+export type NetwinSiteStatus = 'Planned' | 'Active' | 'Retired';
+
+export function resolveNetwinSiteStatus(
+  stateLifecycle: string | number | null | undefined,
+): NetwinSiteStatus {
+  switch (Number(stateLifecycle)) {
+    case 1000001:
+    case 1000002:
+      return 'Planned';
+    case 1000004:
+      return 'Retired';
+    default:
+      return 'Active';
+  }
+}
+
 export type TablePrefixer = (name: string) => string;
 
 export type MigrationCharacteristic = {
@@ -122,7 +220,9 @@ export type MigrationCharacteristic = {
   [key: string]: unknown;
 };
 
-const characteristicDefinitionKey = (characteristic: Pick<MigrationCharacteristic, 'group' | 'name'>) =>
+const characteristicDefinitionKey = (
+  characteristic: Pick<MigrationCharacteristic, 'group' | 'name'>,
+) =>
   `${characteristic.group?.trim().toLowerCase() ?? ''}:${characteristic.name.trim().toLowerCase()}`;
 
 /**
@@ -156,7 +256,9 @@ export function mergeCharacteristicDefinitions(
   const existingKeys = new Set(existing.map(characteristicDefinitionKey));
   return [
     ...existing,
-    ...canonical.filter((characteristic) => !existingKeys.has(characteristicDefinitionKey(characteristic))),
+    ...canonical.filter(
+      (characteristic) => !existingKeys.has(characteristicDefinitionKey(characteristic)),
+    ),
   ];
 }
 
@@ -180,10 +282,10 @@ export async function reconcileCatalogCharacteristics(
   const next = mergeCharacteristicDefinitions(current, canonical);
   const serialized = JSON.stringify(next);
   if (serialized !== current) {
-    await target.execute(
-      `UPDATE ${t(table)} SET characteristics=:characteristics WHERE id=:id`,
-      { characteristics: serialized, id },
-    );
+    await target.execute(`UPDATE ${t(table)} SET characteristics=:characteristics WHERE id=:id`, {
+      characteristics: serialized,
+      id,
+    });
   }
 }
 

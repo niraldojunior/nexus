@@ -41,6 +41,9 @@ export type InternalPortRow = {
   DEBITO: string | null;
   ESTADO_CICLO_VIDA: number | null;
   ESTADO_OPERACIONAL: number | null;
+  ESTADO_PROVISAO: string | null;
+  ID_SERVICO: number | string | null;
+  TIPO_OCUPACAO: string | null;
   TIPO_NOME: string | null;
   DIRECCIONALIDADE: string | null;
 };
@@ -273,6 +276,7 @@ export async function loadInternalPorts(
       `SELECT p.ID_BD_PORTO_FISICO, p.ID_BD_EQUIPAMENTO, p.ID_BD_SUBBASTIDOR, p.ID_BD_CARTA,
               p.NOME, p.NOME_ALTERNATIVO, p.ID_PORTO, p.CODIFICACAO_PORTO, p.OCUPACAO, p.CIRCUITO, p.DEBITO,
               p.ESTADO_CICLO_VIDA, p.ESTADO_OPERACIONAL,
+              p.ESTADO_PROVISAO, p.ID_SERVICO, p.TIPO_OCUPACAO,
               cp.TIPO AS TIPO_NOME, cp.DIRECCIONALIDADE
          FROM NETWIN.ISP_INS_PORTO_FISICO p
          LEFT JOIN NETWIN.ISP_CAT_PORTO_FISICO cp ON cp.ID_BD_TIPO_PORTO_FISICO = p.ID_BD_TIPO_PORTO_FISICO

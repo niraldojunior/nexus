@@ -153,6 +153,9 @@ const VIEWPORT_MAX_RESULTS = 10000;
 // Teto da busca por nome (barra de pesquisa) — é autocomplete, não listagem; poucos
 // resultados bastam para o usuário reconhecer o item e clicar.
 const SEARCH_MAX_RESULTS = 20;
+// Pool de candidatos por prefixo (por fonte) na busca com origem: maior que o limite final
+// para a instância próxima não ser cortada pelo alfabético antes do ranking por distância.
+const SEARCH_NEAR_NAME_CAP = 60;
 
 type SiteRow = {
   id: string;
@@ -439,12 +442,10 @@ export class GeoTreeService {
   /**
    * Busca ordenada por proximidade do centro do mapa. O corte alfabético do caminho legado
    * descartaria a instância próxima (ex.: a `CDOE-8020` de Viana entre dezenas homônimas)
-   * antes de conhecermos a geometria — por isso os candidatos vêm primeiro de caixas
-   * crescentes em torno da origem (`SEARCH_NEAR_RADII_DEG`), sem varrer o acervo global.
-   * Dentro de cada caixa: prefixo antes de substring, e Physical/Logical × ponto/rota em
-   * consultas separadas (nunca UNION ALL antes do `LIMIT`, ver `searchResourceCandidates`).
-   * Se a vizinhança não enche o `limit`, completa com o caminho textual legado (resultados
-   * distantes ou sem geometria vêm depois). O ranking final é por distância, em memória.
+   * antes de conhecermos a geometria — por isso o pool de recursos é maior
+   * (`SEARCH_NEAR_NAME_CAP`) e o corte final é por distância, em memória. Recurso só por
+   * prefixo (`termo%`, índice de nome): a substring varre milhões de linhas (dezenas de
+   * segundos) e, com o backend atendendo em série, derrubava a busca (503).
    */
   private async searchNearOrigin(
     term: string,
@@ -459,37 +460,17 @@ export class GeoTreeService {
     const siteNodes = new Map<string, GeoTreeNode>();
     const resourceIds = new Set<string>();
 
-    for (const radius of SEARCH_NEAR_RADII_DEG) {
-      const bbox = [
-        origin.lng - radius / Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.1),
-        origin.lng + radius / Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.1),
-        origin.lat - radius,
-        origin.lat + radius,
-      ];
-      const [sites, resources] = await Promise.all([
-        scope.searchSites ? this.searchSitesInBox(term, bbox) : Promise.resolve([]),
-        scope.searchResources
-          ? this.searchResourceIdsInBox(term, bbox, scope.resourceTypes)
-          : Promise.resolve([]),
-      ]);
-      for (const node of sites) siteNodes.set(node.id, node);
-      for (const id of resources) resourceIds.add(id);
-      if (siteNodes.size + resourceIds.size >= limit) break;
+    const [siteRows, nameIds] = await Promise.all([
+      scope.searchSites ? this.searchSiteRowsByName(term, limit) : Promise.resolve([]),
+      scope.searchResources
+        ? this.searchResourceCandidatesPass(`${term}%`, SEARCH_NEAR_NAME_CAP, scope.resourceTypes)
+        : Promise.resolve([]),
+    ]);
+    for (const row of siteRows) {
+      const node = this.toSiteNode(row, { hasChildren: true });
+      siteNodes.set(node.id, node);
     }
-
-    if (siteNodes.size + resourceIds.size < limit) {
-      const [siteRows, fallbackIds] = await Promise.all([
-        scope.searchSites ? this.searchSiteRowsByName(term, limit) : Promise.resolve([]),
-        scope.searchResources
-          ? this.searchResourceCandidates(term, limit, scope.resourceTypes)
-          : Promise.resolve([]),
-      ]);
-      for (const row of siteRows) {
-        const node = this.toSiteNode(row, { hasChildren: true });
-        if (!siteNodes.has(node.id)) siteNodes.set(node.id, node);
-      }
-      for (const id of fallbackIds) resourceIds.add(id);
-    }
+    for (const row of nameIds) resourceIds.add(row.id);
 
     const resourceNodes = await this.resourcesByIds([...resourceIds]);
     const ranked = [...siteNodes.values(), ...resourceNodes].map((node) => ({
@@ -504,52 +485,6 @@ export class GeoTreeService {
         compareText(left.node.refId ?? left.node.id, right.node.refId ?? right.node.id),
     );
     return ranked.slice(0, limit).map((entry) => entry.node);
-  }
-
-  // Sites (substring, como no caminho legado) com Point dentro da caixa. A distância é
-  // calculada depois, sobre o nó hidratado; aqui o teto só protege contra caixas densas.
-  private async searchSitesInBox(term: string, bbox: number[]): Promise<GeoTreeNode[]> {
-    const rows = await this.db.all<SiteRow>(
-      `${SITE_SELECT}
-       WHERE ${SITE_VIEWPORT_POINT_WHERE}
-         AND LOWER(s.name) LIKE LOWER(?)
-       ${PROJECT_SITE_EXCLUSION_SQL}
-       LIMIT ?`,
-      [...bbox, `%${term}%`, SEARCH_NEAR_BOX_CAP],
-    );
-    return rows.map((row) => this.toSiteNode(row, { hasChildren: true }));
-  }
-
-  // Ids de recurso dentro da caixa: prefixo primeiro; substring só se o prefixo sozinho não
-  // enche o `limit` da busca. Quatro consultas independentes (entidade × forma), cada uma
-  // com seu próprio `ORDER BY LOWER(name) LIMIT` — mesma razão do JSDoc de
-  // `searchResourceCandidates`.
-  private async searchResourceIdsInBox(
-    term: string,
-    bbox: number[],
-    resourceTypes?: string[],
-  ): Promise<string[]> {
-    const run = async (pattern: string): Promise<string[]> => {
-      const shapes = [VIEWPORT_POINT_WHERE, VIEWPORT_LINE_WHERE];
-      const entities = ['PhysicalResource', 'LogicalResource'] as const;
-      const groups = await Promise.all(
-        entities.flatMap((entity) =>
-          shapes.map((shape) =>
-            this.db.all<{ id: string }>(
-              `SELECT id FROM (${searchResourceBoxBlock(entity, shape, resourceTypes)}) AS t ORDER BY LOWER(name) LIMIT ?`,
-              [pattern, ...(resourceTypes ?? []), ...bbox, SEARCH_NEAR_BOX_CAP],
-            ),
-          ),
-        ),
-      );
-      return groups.flat().map((row) => row.id);
-    };
-
-    const ids = new Set(await run(`${term}%`));
-    if (ids.size < SEARCH_MAX_RESULTS) {
-      for (const id of await run(`%${term}%`)) ids.add(id);
-    }
-    return [...ids];
   }
 
   /**
@@ -1779,35 +1714,6 @@ const searchResourceIdBlock = (
 // Raios (em graus de latitude; ~11 km, ~55 km, ~220 km, ~1.100 km, recorte nacional) das
 // caixas em torno da origem da busca por proximidade, e teto de linhas por consulta/caixa —
 // válvula de segurança, não um limite de resultado (o ranking final corta em 20).
-const SEARCH_NEAR_RADII_DEG = [0.1, 0.5, 2, 10, 40];
-const SEARCH_NEAR_BOX_CAP = 200;
-
-// Variante espacial de `searchResourceIdBlock`: mesmos predicados da busca (status, item
-// interno, tipo) mais a resolução do place canônico de `viewportBlock` (Location direta,
-// Site ou Address) e o predicado de forma (ponto/rota) já usado pelo viewport. Ordem dos
-// binds: LIKE, `resourceTypes`, depois o bbox (minLng, maxLng, minLat, maxLat).
-const searchResourceBoxBlock = (
-  entity: 'PhysicalResource' | 'LogicalResource',
-  shapeWhere: string,
-  resourceTypes?: string[],
-): string => {
-  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
-  const typeFilter =
-    resourceTypes && resourceTypes.length > 0
-      ? ` AND rt.code IN (${placeholders(resourceTypes)})`
-      : '';
-  return `SELECT r.id, r.name FROM ${table} r
-    LEFT JOIN tmf_geographic_site place_site
-      ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
-    LEFT JOIN tmf_geographic_address place_address
-      ON place_address.id = r.place_id
-    JOIN tmf_geographic_location l
-      ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
-   WHERE r.status <> 'terminated' AND LOWER(r.name) LIKE LOWER(?)${typeFilter} AND (${shapeWhere})`;
-};
-
 // Colunas (na ordem) que RESOURCE_CHILD_SOURCE / RESOURCE_CHILD_TREE_SOURCE projetam. Listadas
 // explicitamente para o dedup por ROW_NUMBER em childrenOfResource poder descartar a coluna `rn`
 // sem SELECT DISTINCT * (que Oracle recusa sobre o CLOB `geometry`).

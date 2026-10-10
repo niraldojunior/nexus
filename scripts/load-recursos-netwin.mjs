@@ -73,6 +73,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { linkAdministrativeCities } from './administrative-city-loader.mjs';
 import { resolveStatusCode } from '../dist/src/modules/resource/status-catalog.js';
 import { loaderRangesForUf } from './uf-geo.mjs';
 
@@ -744,6 +745,7 @@ async function main() {
       ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
       locations,
     );
+    await linkAdministrativeCities(client, addresses);
     await bulkInsert(
       client,
       'tmf_geographic_address',
@@ -757,6 +759,7 @@ async function main() {
         'country',
         'postcode',
         'geographic_location_id',
+        'administrative_city_id',
         'characteristics',
       ],
       addresses,

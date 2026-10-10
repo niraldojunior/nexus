@@ -33,6 +33,7 @@ describe('parseAppRoute', () => {
 
   test('static pages', () => {
     expect(parseAppRoute('/geo', desktop)).toEqual({ page: 'geo' });
+    expect(parseAppRoute('/internal-plant', desktop)).toEqual({ page: 'internal-plant' });
     expect(parseAppRoute('/orders', desktop)).toEqual({ page: 'order' });
     expect(parseAppRoute('/conversations', desktop)).toEqual({ page: 'conversas' });
     expect(parseAppRoute('/new-conversation', desktop)).toEqual({ page: 'research' });
@@ -89,6 +90,7 @@ describe('parseAppRoute', () => {
 describe('appRoutePath round-trips', () => {
   test('static and category paths', () => {
     expect(appRoutePath({ page: 'geo' })).toBe('/geo');
+    expect(appRoutePath({ page: 'internal-plant' })).toBe('/internal-plant');
     expect(appRoutePath({ page: 'order' })).toBe('/orders');
     expect(appRoutePath({ page: 'conversas' })).toBe('/conversations');
     expect(appRoutePath({ page: 'assistant' })).toBe('/assistant');
@@ -109,6 +111,7 @@ describe('appRoutePath round-trips', () => {
   test('parse ∘ path is identity for canonical routes', () => {
     for (const path of [
       '/geo',
+      '/internal-plant',
       '/orders',
       '/conversations',
       '/new-conversation',

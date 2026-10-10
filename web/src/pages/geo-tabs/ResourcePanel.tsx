@@ -238,7 +238,7 @@ export function ResourcePanel({
 
   const body = (
     <div className="grid gap-4">
-      <PanelTabBar activeTab={tab} className="border-b border-app-border pb-3">
+      <PanelTabBar activeTab={tab} className="border-b border-app-border">
         <PanelBarButton
           icon={InfoIcon}
           label="Geral"

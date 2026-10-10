@@ -1,4 +1,10 @@
 import oracledb from 'oracledb';
+import {
+  administrativeCityNaturalKey,
+  normalizeAdministrativeCity,
+  normalizeStateCode,
+  type AdministrativeCityTuple,
+} from '../../modules/geo/administrative-city.js';
 import type { MigrationContext } from './context.js';
 import {
   deterministicUuid,
@@ -11,6 +17,7 @@ import {
 import { parseWktLineString, parseWktPoint } from '../../shared/utils/wkt.js';
 import {
   bulkMergeRows,
+  resolveAdministrativeCityIds,
   merge,
   netwinOriginCharacteristics,
   resolveLifecycleStatus,
@@ -321,6 +328,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       const locations: Array<Record<string, unknown>> = [];
       const resources: Array<Record<string, unknown>> = [];
       const addresses: Array<Record<string, unknown>> = [];
+      const addressCityTuples = new Map<string, AdministrativeCityTuple>();
       const seenEqIds = new Set<number>();
 
       for (const eq of rows) {
@@ -348,15 +356,26 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             // as CDOs pelo endereço ligado à localização do equipamento.
             const locality = (eq.BAIRRO ?? '').trim();
             const city = (eq.MUNICIPIO ?? '').trim();
-            const uf = (eq.UF ?? '').trim();
+            const uf = normalizeStateCode(eq.UF);
             if (locality || city || uf) {
+              const addressId = deterministicUuid(
+                NEXUS_NETWIN_NAMESPACE,
+                `EQUIPMENT:ADDR:${eq.ID}`,
+              );
+              const cityTuple = normalizeAdministrativeCity({
+                country: 'BR',
+                stateOrProvince: uf,
+                city,
+              });
+              if (cityTuple) addressCityTuples.set(addressId, cityTuple);
               addresses.push({
-                id: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `EQUIPMENT:ADDR:${eq.ID}`),
+                id: addressId,
+                administrative_city_id: null,
                 tenant_id: ctx.options.tenantId,
                 street_name: name,
                 locality: locality ? locality.slice(0, 100) : null,
-                city: city ? city.slice(0, 100) : null,
-                state_or_province: uf ? uf.toUpperCase().slice(0, 50) : null,
+                city: (cityTuple?.cityName ?? city).slice(0, 100) || null,
+                state_or_province: uf,
                 country: 'BR',
                 geographic_location_id: resId,
                 characteristics: '[]',
@@ -403,7 +422,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           status_code: ispState?.statusCode ?? null,
           place_id: resId,
           place_type: 'GeographicLocation',
-          serving_site_id: eq.EXCHANGE_ID ? netwinLocationId(eq.EXCHANGE_ID) : null,
+          // Site onde o equipamento está instalado: poste (CDOE/CEO), edificação ou sala (CDOI).
+          // É a LOCATION do INFRANODE do equipamento, a mesma que a Fase 2.A grava como Site.
+          // Não cai para a estação (EXCHANGE_ID): ela é outra relação e misturaria o significado.
+          serving_site_id: eq.INFRANODE_ID ? netwinLocationId(eq.INFRANODE_ID) : null,
           administrative_state:
             ispState?.administrative_state ?? (status === 'terminated' ? 'locked' : 'unlocked'),
           operational_state:
@@ -443,6 +465,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             locations,
             batchSize,
           );
+          const cityIds = await resolveAdministrativeCityIds(target, ctx.t, [
+            ...addressCityTuples.values(),
+          ]);
+          for (const address of addresses) {
+            const tuple = addressCityTuples.get(String(address.id));
+            address.administrative_city_id = tuple
+              ? (cityIds.get(administrativeCityNaturalKey(tuple)) ?? null)
+              : null;
+          }
           await bulkMergeRows(
             target,
             ctx.t,
@@ -457,6 +488,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'state_or_province',
               'country',
               'geographic_location_id',
+              'administrative_city_id',
               'characteristics',
             ],
             addresses,

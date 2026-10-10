@@ -246,7 +246,7 @@ export function SitePanel({
     <div className="px-2 py-6 text-center text-[0.86rem] text-app-muted">Carregando local…</div>
   ) : detail.site ? (
     <div className="grid gap-4">
-      <PanelTabBar activeTab={tab} className="border-b border-app-border pb-3">
+      <PanelTabBar activeTab={tab} className="border-b border-app-border">
         <PanelBarButton
           icon={InfoIcon}
           label="Geral"

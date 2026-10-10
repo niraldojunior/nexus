@@ -1,4 +1,5 @@
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
+import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { dialectFor } from '../../shared/persistence/sql-dialect.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import type {
@@ -46,6 +47,7 @@ import type {
   GeographicSiteSpecVisualIdentityRow,
   GeographicSiteStatusHistoryRow,
 } from './rows.js';
+import { cityKeyOf, normalizeAdministrativeCity } from './administrative-city.js';
 import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 // Tamanho de bloco para listBlockedSiteIds/bulkTransitionSites (issue #58): grande o bastante
@@ -190,12 +192,20 @@ export class OracleGeoRepository implements IGeoRepository {
     address: GeographicAddress,
     now: string,
   ): Promise<void> {
+    // Dual-write do diretório (issue #329): tupla completa vincula o município canônico e
+    // sincroniza os campos TMF textuais; incompleta mantém o legado e deixa a FK nula.
+    const tuple = normalizeAdministrativeCity({
+      country: address.country,
+      stateOrProvince: address.stateOrProvince,
+      city: address.city,
+    });
+    const administrativeCityId = tuple ? await this.resolveAdministrativeCityId(tuple) : null;
     await this.db.run(
       `INSERT INTO tmf_geographic_address
        (id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
-        country, geographic_location_id, sub_address, source_system, source_ref,
+        country, geographic_location_id, administrative_city_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        street_type = excluded.street_type,
        street_name = excluded.street_name,
@@ -205,6 +215,7 @@ export class OracleGeoRepository implements IGeoRepository {
        postcode = excluded.postcode,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
+       administrative_city_id = excluded.administrative_city_id,
        sub_address = excluded.sub_address,
        source_system = excluded.source_system,
        source_ref = excluded.source_ref,
@@ -218,11 +229,12 @@ export class OracleGeoRepository implements IGeoRepository {
         null,
         address.street,
         address.streetNr || null,
-        address.city || null,
-        address.stateOrProvince || null,
+        tuple?.cityName ?? (address.city || null),
+        tuple?.stateCode ?? (address.stateOrProvince || null),
         address.postcode || null,
-        address.country || null,
+        tuple?.countryCode ?? (address.country || null),
         address.geographicLocationId || null,
+        administrativeCityId,
         address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
@@ -235,6 +247,45 @@ export class OracleGeoRepository implements IGeoRepository {
     );
   }
 
+  private async resolveAdministrativeCityId(
+    tuple: NonNullable<ReturnType<typeof normalizeAdministrativeCity>>,
+  ): Promise<string> {
+    const lookup = async (): Promise<string | undefined> =>
+      (
+        await this.db.get<{ id: string }>(
+          `SELECT id FROM geo_administrative_city
+           WHERE country_code = ? AND state_code = ? AND city_key = ?`,
+          [tuple.countryCode, tuple.stateCode, tuple.cityKey],
+        )
+      )?.id;
+    const existing = await lookup();
+    if (existing) return existing;
+    const id = createCanonicalId();
+    try {
+      await this.db.run(
+        `INSERT INTO geo_administrative_city
+         (id, country_code, country_name, state_code, city_name, city_key, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          tuple.countryCode,
+          tuple.countryName,
+          tuple.stateCode,
+          tuple.cityName,
+          tuple.cityKey,
+          new Date().toISOString(),
+          new Date().toISOString(),
+        ],
+      );
+      return id;
+    } catch (error) {
+      // Corrida com outro escritor na chave natural única: o vencedor já gravou, reaproveita.
+      const raced = await lookup();
+      if (raced) return raced;
+      throw error;
+    }
+  }
+
   // Mesmo racional de getLocation acima: GeographicAddress é compartilhado entre tenants
   // (issue #244), `scope` é ignorado na leitura por id.
   public async getAddress(
@@ -242,9 +293,15 @@ export class OracleGeoRepository implements IGeoRepository {
     _scope?: GeoTenantScope,
   ): Promise<GeographicAddress | undefined> {
     const row = await this.db.get<GeographicAddressRow>(
-      `SELECT id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
-              geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end, characteristics
-       FROM tmf_geographic_address WHERE id = ?`,
+      `SELECT a.id, a.tenant_id, a.street_type, a.street_name, a.street_nr,
+              COALESCE(c.city_name, a.city) AS city,
+              COALESCE(c.state_code, a.state_or_province) AS state_or_province,
+              a.postcode, COALESCE(c.country_code, a.country) AS country,
+              a.geographic_location_id, a.sub_address, a.source_system, a.source_ref,
+              a.valid_for_start, a.valid_for_end, a.characteristics
+       FROM tmf_geographic_address a
+       LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
+       WHERE a.id = ?`,
       [id],
     );
 
@@ -278,15 +335,18 @@ export class OracleGeoRepository implements IGeoRepository {
     }
     const city = normalizeAddressText(query?.city);
     if (city) {
-      conditions.push(`LOWER(TRANSLATE(COALESCE(city, ''),
+      // Diretório (issue #329) para endereços vinculados; texto legado só para os sem vínculo.
+      conditions.push(`(administrative_city_id IN (SELECT id FROM geo_administrative_city WHERE city_key = ?)
+              OR (administrative_city_id IS NULL AND LOWER(TRANSLATE(COALESCE(city, ''),
               'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
-              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')) = ?`);
-      params.push(city);
+              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')) = ?))`);
+      params.push(cityKeyOf(city), city);
     }
     const state = normalizeAddressText(query?.stateOrProvince);
     if (state) {
-      conditions.push('LOWER(state_or_province) = LOWER(?)');
-      params.push(state);
+      conditions.push(`(administrative_city_id IN (SELECT id FROM geo_administrative_city WHERE state_code = UPPER(?))
+              OR (administrative_city_id IS NULL AND LOWER(state_or_province) = LOWER(?)))`);
+      params.push(state, state);
     }
     const postcode = normalizePostcodeSearch(query?.postcode);
     if (postcode) {

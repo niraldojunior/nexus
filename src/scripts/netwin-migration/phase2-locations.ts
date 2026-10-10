@@ -4,8 +4,15 @@ import { deterministicUuid, netwinLocationId, NEXUS_NETWIN_NAMESPACE } from './i
 import {
   bulkMergeRows,
   netwinOriginCharacteristics,
+  resolveAdministrativeCityIds,
   resolveNetwinSiteStatus,
 } from '../netwin-migration-kit.js';
+import {
+  administrativeCityNaturalKey,
+  normalizeAdministrativeCity,
+  normalizeStateCode,
+  type AdministrativeCityTuple,
+} from '../../modules/geo/administrative-city.js';
 import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import {
@@ -17,6 +24,13 @@ import {
   structuredInfranodePredicates,
 } from './source-batches.js';
 import type { PhaseStats } from './types.js';
+
+/**
+ * Normaliza a UF vinda do texto do Netwin para a sigla de 2 letras. O sufixo do endereço pode
+ * trazer lixo colado à sigla ("ES 7585677", "PR 0 FOZ DO IGUACU"); só a sigla inicial válida
+ * é aceita. Qualquer outra coisa vira `null` em vez de poluir a árvore de Locais.
+ */
+export const normalizeUf = normalizeStateCode;
 
 // Parser de endereço brasileiro do Netwin
 // Ex: "RUA ATAULPHO COUTINHO, 80, BLOCO 1, BARRA DA TIJUCA, RIO DE JANEIRO - RJ 22793520"
@@ -39,7 +53,7 @@ export function parseAddressString(raw: string | null | undefined) {
       parts.length > 1 ? (parts[1] === 'SN' || parts[1] === 'S/N' ? 'S/N' : parts[1]) : null,
     locality: parts.length > 3 ? (parts[parts.length - 2] ?? null) : null,
     city: cityRaw?.trim() || null,
-    stateOrProvince: ufRaw?.trim().toUpperCase() || null,
+    stateOrProvince: normalizeUf(ufRaw),
     postcode: postcodeMatch?.[1] ?? null,
   };
 }
@@ -214,6 +228,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       startedAt = Date.now();
       const locations: Array<Record<string, unknown>> = [];
       const addresses: Array<Record<string, unknown>> = [];
+      const addressCityTuples = new Map<string, AdministrativeCityTuple>();
       const sites: Array<Record<string, unknown>> = [];
       for (const row of rows) {
         const lat = row.LATITUDE === null ? null : Number(row.LATITUDE);
@@ -237,20 +252,30 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
         const addressId = parsed
           ? deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:ADDR:${row.ID}`)
           : null;
-        if (parsed && addressId)
+        const cityTuple = parsed
+          ? normalizeAdministrativeCity({
+              country: 'BR',
+              stateOrProvince: parsed.stateOrProvince,
+              city: parsed.city,
+            })
+          : null;
+        if (parsed && addressId) {
+          if (cityTuple) addressCityTuples.set(addressId, cityTuple);
           addresses.push({
             id: addressId,
             tenant_id: ctx.options.tenantId,
             street_name: parsed.street.slice(0, 255),
             street_nr: parsed.streetNr?.slice(0, 50) ?? null,
             locality: parsed.locality?.slice(0, 100) ?? null,
-            city: parsed.city?.slice(0, 100) ?? null,
+            city: (cityTuple?.cityName ?? parsed.city)?.slice(0, 100) ?? null,
             state_or_province: parsed.stateOrProvince?.slice(0, 50) ?? null,
             country: 'BR',
             postcode: parsed.postcode,
             geographic_location_id: hasPoint ? locationId : null,
+            administrative_city_id: null,
             characteristics: '[]',
           });
+        }
         const catName = (row.CAT_NAME ?? '').toUpperCase();
         const catDesc = (row.CAT_DESC ?? '').toUpperCase();
         let specCode = 'BUILDING';
@@ -317,6 +342,16 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           );
           timing.locationMergeMs = elapsed(startedAt);
           startedAt = Date.now();
+          // Diretório geográfico (issue #329): resolve os municípios do lote antes do merge.
+          const cityIds = await resolveAdministrativeCityIds(target, ctx.t, [
+            ...addressCityTuples.values(),
+          ]);
+          for (const address of addresses) {
+            const tuple = addressCityTuples.get(String(address.id));
+            address.administrative_city_id = tuple
+              ? (cityIds.get(administrativeCityNaturalKey(tuple)) ?? null)
+              : null;
+          }
           await bulkMergeRows(
             target,
             ctx.t,
@@ -333,6 +368,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               'country',
               'postcode',
               'geographic_location_id',
+              'administrative_city_id',
               'characteristics',
             ],
             addresses,

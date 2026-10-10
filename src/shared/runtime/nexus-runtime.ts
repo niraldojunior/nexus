@@ -14,6 +14,8 @@ import { PartyService } from '../../modules/party/service.js';
 import { OraclePartyRepository } from '../../modules/party/oracle-repository.js';
 import { ResourceService } from '../../modules/resource/service.js';
 import { OracleResourceRepository } from '../../modules/resource/oracle-repository.js';
+import { OracleInternalPlantRepository } from '../../modules/resource/internal-plant-oracle-repository.js';
+import { InternalPlantService } from '../../modules/resource/internal-plant-service.js';
 import { SearchService } from '../../modules/search/service.js';
 import { OracleSearchRepository as OracleResearchRepository } from '../../modules/search/oracle-repository.js';
 import { ServiceService } from '../../modules/service/service.js';
@@ -116,6 +118,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     await geoService.ensureBootstrapRelationshipTypes();
   }
   const geoTreeService = new GeoTreeService(db);
+  const internalPlantService = new InternalPlantService(new OracleInternalPlantRepository(db));
   const geoMapTileService = new GeoMapTileService(db);
   const geoMapSiteService = new GeoMapSiteService(db);
   const geoMapLineService = new GeoMapLineService(db);
@@ -373,6 +376,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     referenceDataRepository,
     resourceRepository,
     resourceService,
+    internalPlantService,
     serviceRepository,
     serviceService,
     orderRepository,

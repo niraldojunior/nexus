@@ -12,6 +12,7 @@ import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
 import PageHead from './components/ui/PageHead';
 import GeoPage from './pages/GeoPage';
+import InternalPlantPage from './pages/InternalPlantPage';
 import LoginPage from './pages/LoginPage';
 import NewResearchPage from './pages/NewResearchPage';
 import ServicePage from './pages/ServicePage';
@@ -47,7 +48,13 @@ const assistantChips = [
 const domainMeta: Record<
   Exclude<
     PageId,
-    'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'
+    | 'assistant'
+    | 'conversation'
+    | 'research'
+    | 'conversas'
+    | 'configuracoes'
+    | 'studio'
+    | 'internal-plant'
   >,
   { title: string; subtitle: string; icon: typeof MapPin }
 > = {
@@ -125,7 +132,13 @@ function DomainPage({
 }: {
   page: Exclude<
     PageId,
-    'assistant' | 'conversation' | 'research' | 'conversas' | 'configuracoes' | 'studio'
+    | 'assistant'
+    | 'conversation'
+    | 'research'
+    | 'conversas'
+    | 'configuracoes'
+    | 'studio'
+    | 'internal-plant'
   >;
   onOpenMainMenu?: () => void;
 }) {
@@ -359,7 +372,12 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       setSidebarCollapsed(true);
       return;
     }
-    if (currentPage === 'geo' || currentPage === 'configuracoes' || currentPage === 'studio') {
+    if (
+      currentPage === 'geo' ||
+      currentPage === 'internal-plant' ||
+      currentPage === 'configuracoes' ||
+      currentPage === 'studio'
+    ) {
       setSidebarCollapsed(true);
     }
   }, [currentPage, isMobile]);
@@ -620,7 +638,9 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         isMobile={isMobile}
         // Em Locais no mobile, a marca do Nexus dentro da barra de pesquisa abre o menu;
         // o botão flutuante do drawer some para não duplicar a entrada (ver GeoPage).
-        showMobileToggle={!(isMobile && currentPage === 'geo')}
+        showMobileToggle={
+          !(isMobile && (currentPage === 'geo' || currentPage === 'internal-plant'))
+        }
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}
@@ -669,6 +689,10 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         ) : currentPage === 'geo' ? (
           <div className="h-full min-h-0 overflow-hidden">
             <DomainPage page="geo" onOpenMainMenu={() => setSidebarCollapsed(false)} />
+          </div>
+        ) : currentPage === 'internal-plant' ? (
+          <div className="h-full min-h-0 overflow-hidden">
+            <InternalPlantPage onOpenMainMenu={() => setSidebarCollapsed(false)} />
           </div>
         ) : currentPage === 'configuracoes' ? (
           // Mesmo tratamento full-bleed de 'geo' (h-full/overflow-hidden gerenciado pela

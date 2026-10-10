@@ -97,6 +97,8 @@ export function parseAppRoute(pathname: string, options: { isMobile: boolean }):
   const [, head, tail] = path.match(/^\/([^/]+)(?:\/([^/]+))?$/) ?? [];
 
   switch (head) {
+    case 'internal-plant':
+      return { page: 'internal-plant' };
     case 'geo':
       return { page: 'geo' };
     case 'services':
@@ -131,6 +133,8 @@ export function appRoutePath(route: AppRoute): string {
   switch (route.page) {
     case 'geo':
       return '/geo';
+    case 'internal-plant':
+      return '/internal-plant';
     case 'service':
       return `/services/${categorySlug(route.serviceCategory ?? DEFAULT_SERVICE_CATEGORY_CODE)}`;
     case 'order':

@@ -45,3 +45,15 @@ export type { IResourceRepository } from './resource-repository-interface.js';
 export { ResourceRepository } from './repository.js';
 export { OracleResourceRepository } from './oracle-repository.js';
 export { ResourceService } from './service.js';
+export type {
+  InternalPlantLocationChildrenPage,
+  InternalPlantLocationNode,
+  InternalPlantLocationNodeKind,
+  InternalPlantLocationRootNode,
+  InternalPlantResourcePage,
+  InternalPlantResourceQuery,
+  InternalPlantResourceRow,
+} from './internal-plant-domain.js';
+export type { IInternalPlantRepository } from './internal-plant-repository-interface.js';
+export { OracleInternalPlantRepository } from './internal-plant-oracle-repository.js';
+export { InternalPlantService } from './internal-plant-service.js';

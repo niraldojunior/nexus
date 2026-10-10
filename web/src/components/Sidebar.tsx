@@ -9,6 +9,7 @@ import {
   PanelLeftOpen,
   Plus,
   Presentation,
+  Server,
   Settings,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -19,7 +20,8 @@ import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
 import { listServiceCategories } from '../data/serviceCategoryViews';
 import NexusMark from './NexusMark';
 
-type PrimaryItemId = 'conversations' | 'research' | 'geo' | 'service' | 'order' | 'studio';
+type PrimaryItemId =
+  'conversations' | 'research' | 'geo' | 'internal-plant' | 'service' | 'order' | 'studio';
 
 /**
  * Item de submenu de categoria (usado por Service).
@@ -63,7 +65,8 @@ interface SidebarProps {
 const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
   { id: 'research', label: 'Nova Conversa', icon: Plus },
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
-  { id: 'geo', label: 'Recursos', icon: MapPinned },
+  { id: 'geo', label: 'Planta Externa', icon: MapPinned },
+  { id: 'internal-plant', label: 'Planta Interna', icon: Server },
   { id: 'service', label: 'Serviços', icon: Briefcase },
   { id: 'order', label: 'Ordens', icon: FolderTree },
   { id: 'studio', label: 'Studio', icon: Presentation },
@@ -284,7 +287,11 @@ export default function Sidebar({
                   const isActive =
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
-                    ((id === 'geo' || id === 'service' || id === 'order' || id === 'studio') &&
+                    ((id === 'geo' ||
+                      id === 'internal-plant' ||
+                      id === 'service' ||
+                      id === 'order' ||
+                      id === 'studio') &&
                       currentPage === id);
 
                   const categoryMenu = categoryMenus[id];

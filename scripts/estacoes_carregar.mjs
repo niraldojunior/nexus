@@ -86,6 +86,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { linkAdministrativeCities } from './administrative-city-loader.mjs';
 import { UF_BBOX } from './uf-geo.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 
@@ -1169,6 +1170,7 @@ async function mainFast() {
         ],
         newLocations,
       );
+      await linkAdministrativeCities(client, newAddresses);
       await bulkInsert(
         client,
         'tmf_geographic_address',
@@ -1182,6 +1184,7 @@ async function mainFast() {
           'country',
           'postcode',
           'geographic_location_id',
+          'administrative_city_id',
           'characteristics',
         ],
         newAddresses,

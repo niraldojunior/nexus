@@ -386,6 +386,14 @@ Por padrão o valor é relativo (`/tmf-api/...`). Quando o gateway público dife
 
 ---
 
+## 9.1 Diretório geográfico canônico
+
+`geo_administrative_city` (tabela interna de apoio, não é entidade TMF) guarda país, UF e município normalizados: `country_code`, `country_name`, `state_code`, `city_name`, `city_key`. A chave natural é `(country_code, state_code, city_key)`, onde `city_key` é caixa única, sem acentos e sem espaços repetidos. O diretório é global (sem `tenant_id`); o isolamento continua nos Sites, Resources e Addresses.
+
+`tmf_geographic_address.administrative_city_id` (nullable, FK) liga cada endereço completo ao município. Os campos TMF673 `country`, `stateOrProvince` e `city` permanecem e são servidos pelo diretório quando há vínculo; endereço com UF inválida ou município ausente mantém o texto legado e fica sem FK.
+
+Sincronização: `OracleGeoRepository.upsertAddress`, as fases 2.A, 2.B e 2.E do migrador Netwin e os loaders diretos em `scripts/` resolvem ou criam o município pela chave natural, sem duplicar. Endereços anteriores à migration v29 são ligados por `scripts/backfill-administrative-city.mjs` (dry-run por padrão; `--apply` exige `--target-prefix`).
+
 ## 10. Referências
 
 | Onde                                                                 | O quê                                         |

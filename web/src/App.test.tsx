@@ -20,6 +20,10 @@ vi.mock('./pages/GeoPage', () => ({
   default: () => <div>GeoPage</div>,
 }));
 
+vi.mock('./pages/InternalPlantPage', () => ({
+  default: () => <div>InternalPlantPage</div>,
+}));
+
 vi.mock('./pages/ResearchHistoryPage', () => ({
   ResearchHistoryPage: () => <div />,
 }));
@@ -80,7 +84,7 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-test('mobile opens Recursos (Geo) at the root and canonicalizes the URL to /geo', () => {
+test('mobile opens Planta Externa (Geo) at the root and canonicalizes the URL to /geo', () => {
   setViewport(true);
   window.history.replaceState({}, '', '/');
   render(<App />);
@@ -93,7 +97,7 @@ test('navigating via the menu updates the URL path', async () => {
   const user = userEvent.setup();
   render(<App />);
 
-  await user.click(screen.getByRole('button', { name: 'Recursos' }));
+  await user.click(screen.getByRole('button', { name: 'Planta Externa' }));
   expect(window.location.pathname).toBe('/geo');
 
   await user.click(screen.getByRole('button', { name: 'Ordens' }));
@@ -108,4 +112,12 @@ test('Serviços e Ordens somem do sidebar e ficam bloqueadas por URL sem papel o
   expect(screen.queryByRole('button', { name: 'Serviços' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Ordens' })).not.toBeInTheDocument();
   expect(screen.getByText('Você não tem permissão para acessar Ordens.')).toBeInTheDocument();
+});
+
+test('Planta Interna abre pela rota própria sem alterar Planta Externa', async () => {
+  const user = userEvent.setup();
+  render(<App />);
+
+  await user.click(screen.getByRole('button', { name: 'Planta Interna' }));
+  expect(window.location.pathname).toBe('/internal-plant');
 });

@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Button from './Button';
 
@@ -22,6 +23,8 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   emptyMessage?: ReactNode;
   footer?: ReactNode;
+  /** Classe extra na casca da tabela, para ajustes locais de tipografia. */
+  className?: string;
 }
 
 export default function DataTable<T>({
@@ -31,9 +34,13 @@ export default function DataTable<T>({
   onRowClick,
   emptyMessage = 'Nenhum item encontrado.',
   footer,
+  className,
 }: DataTableProps<T>) {
   return (
-    <div className="vt-card vt-table-card" style={{ overflow: 'hidden', padding: 0 }}>
+    <div
+      className={`vt-card vt-table-card ${className ?? ''}`}
+      style={{ overflow: 'hidden', padding: 0 }}
+    >
       <table className="vt-table">
         <thead>
           <tr>
@@ -88,37 +95,93 @@ export default function DataTable<T>({
   );
 }
 
-/** Rodapé padrão de paginação — contagem à esquerda, Anterior/Próximo ghost à direita. */
+/** Janela de páginas: primeira, última e vizinhas da atual, com reticências nos saltos. */
+export function pageWindow(current: number, last: number): (number | 'gap')[] {
+  const keep = new Set(
+    [1, last, current - 1, current, current + 1].filter((n) => n >= 1 && n <= last),
+  );
+  const out: (number | 'gap')[] = [];
+  let prev = 0;
+  for (const n of [...keep].sort((a, b) => a - b)) {
+    if (n - prev > 1) out.push('gap');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
+/** Barra de paginação (fora da tabela) — contagem à esquerda, páginas numeradas à direita. */
 export function DataTablePagination({
   count,
   total,
   label,
-  onPrevious,
-  onNext,
-  hasPrevious,
-  hasNext,
+  offset,
+  pageSize,
+  onOffsetChange,
 }: {
   count: number;
   total: number;
   label: string;
-  onPrevious: () => void;
-  onNext: () => void;
-  hasPrevious: boolean;
-  hasNext: boolean;
+  offset: number;
+  pageSize: number;
+  onOffsetChange: (offset: number) => void;
 }) {
+  const last = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.floor(offset / pageSize) + 1, last);
+  const go = (page: number) => onOffsetChange((page - 1) * pageSize);
   return (
-    <>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        padding: '3px 4px',
+      }}
+    >
       <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-tertiary)' }}>
-        {count} de {total} {label}
+        {count.toLocaleString('pt-BR')} de {total.toLocaleString('pt-BR')} {label}
       </span>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <Button variant="ghost" size="sm" disabled={!hasPrevious} onClick={onPrevious}>
-          Anterior
+      <nav aria-label="Paginação" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Página anterior"
+          title="Página anterior"
+          disabled={current <= 1}
+          onClick={() => go(current - 1)}
+        >
+          <ChevronLeft size={16} aria-hidden="true" />
         </Button>
-        <Button variant="ghost" size="sm" disabled={!hasNext} onClick={onNext}>
-          Próximo
+        {pageWindow(current, last).map((item, index) =>
+          item === 'gap' ? (
+            <span key={`gap-${index}`} aria-hidden="true" style={{ color: 'var(--text-tertiary)' }}>
+              …
+            </span>
+          ) : (
+            <Button
+              key={item}
+              variant={item === current ? 'secondary' : 'ghost'}
+              size="sm"
+              aria-current={item === current ? 'page' : undefined}
+              aria-label={`Página ${item}`}
+              onClick={() => go(item)}
+            >
+              {item.toLocaleString('pt-BR')}
+            </Button>
+          ),
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={current >= last}
+          onClick={() => go(current + 1)}
+          aria-label="Próxima página"
+          title="Próxima página"
+        >
+          <ChevronRight size={16} aria-hidden="true" />
         </Button>
-      </div>
-    </>
+      </nav>
+    </div>
   );
 }

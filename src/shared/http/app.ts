@@ -55,6 +55,7 @@ import {
 } from '../runtime/nexus-runtime.js';
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
+import type { InternalPlantService } from '../../modules/resource/internal-plant-service.js';
 import type { ServiceService } from '../../modules/service/service.js';
 import type { StudioService } from '../../modules/studio/service.js';
 import { isStudioDomain, type StudioDomain } from '../../modules/studio/domain.js';
@@ -330,8 +331,15 @@ const routeRequest = async ({
   const authService = runtime.authService;
   const searchRepository = runtime.searchRepository;
   const researchRepository = runtime.researchRepository;
-  const { geoService, eventService, partyService, resourceService, serviceService, orderService } =
-    runtime;
+  const {
+    geoService,
+    eventService,
+    partyService,
+    resourceService,
+    internalPlantService,
+    serviceService,
+    orderService,
+  } = runtime;
   const apiKey = process.env.OPENAI_API_KEY;
   const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
   const chatGptProvider = apiKey ? new ChatGPTProvider(apiKey, apiEndpoint) : null;
@@ -820,6 +828,7 @@ const routeRequest = async ({
     url.pathname.startsWith('/v1/resource-types/') ||
     url.pathname.startsWith('/v1/resources/') ||
     url.pathname === '/v1/resource-statuses' ||
+    url.pathname.startsWith('/v1/resource/internal-plant/') ||
     // Catálogo governado de RelationshipTypes (§3.6/§3.8 do plano de modelagem): rota singular
     // `/v1/resource/relationship-types`, distinta de `/v1/resource-*` acima — sem esta condição
     // o dispatcher nunca chega em `routeResourceRequest` e cai direto no fallback 404 genérico.
@@ -834,7 +843,15 @@ const routeRequest = async ({
     url.pathname.startsWith('/tmf-api/resourceInventoryManagement/v4/resource') ||
     url.pathname.startsWith('/tmf-api/resourceFunctionActivation/v4/resourceFunction')
   ) {
-    await routeResourceRequest({ request, response, config, resourceService, serviceService, url });
+    await routeResourceRequest({
+      request,
+      response,
+      config,
+      resourceService,
+      internalPlantService,
+      serviceService,
+      url,
+    });
     return;
   }
 
@@ -3830,6 +3847,7 @@ const routeResourceRequest = async ({
   response,
   config,
   resourceService,
+  internalPlantService,
   serviceService,
   url,
 }: {
@@ -3837,10 +3855,61 @@ const routeResourceRequest = async ({
   response: ServerResponse;
   config: AppConfig;
   resourceService: ResourceService;
+  internalPlantService: InternalPlantService;
   serviceService: ServiceService;
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
+
+  // Planta Interna: read model paginado no servidor (árvore de locais + lista de recursos).
+  if (request.method === 'GET' && url.pathname.startsWith('/v1/resource/internal-plant/')) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    const intParam = (name: string): number | undefined => {
+      const raw = url.searchParams.get(name);
+      if (raw === null || raw.trim() === '') return undefined;
+      const value = Number(raw);
+      return Number.isFinite(value) ? value : undefined;
+    };
+    if (url.pathname === '/v1/resource/internal-plant/locations/roots') {
+      return sendJson(response, 200, await internalPlantService.roots(context));
+    }
+    if (url.pathname === '/v1/resource/internal-plant/locations/children') {
+      const limit = intParam('limit');
+      const offset = intParam('offset');
+      return sendJson(
+        response,
+        200,
+        await internalPlantService.children(
+          url.searchParams.get('nodeId') ?? '',
+          {
+            ...(limit !== undefined ? { limit } : {}),
+            ...(offset !== undefined ? { offset } : {}),
+          },
+          context,
+        ),
+      );
+    }
+    if (url.pathname === '/v1/resource/internal-plant/resources') {
+      const limit = intParam('limit');
+      const offset = intParam('offset');
+      const q = url.searchParams.get('q') ?? undefined;
+      const siteId = url.searchParams.get('siteId') ?? undefined;
+      return sendJson(
+        response,
+        200,
+        await internalPlantService.listResources(
+          {
+            ...(q ? { q } : {}),
+            ...(siteId ? { siteId } : {}),
+            resourceTypeIdIn: url.searchParams.getAll('resourceTypeId'),
+            ...(limit !== undefined ? { limit } : {}),
+            ...(offset !== undefined ? { offset } : {}),
+          },
+          context,
+        ),
+      );
+    }
+  }
 
   // Rotas de painel (não-TMF): agregados de leitura do Nexus sobre o inventário canônico.
   // Mantidas no módulo Resource; a árvore Geo continua responsável só pela navegação.

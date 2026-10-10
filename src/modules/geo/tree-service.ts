@@ -603,13 +603,14 @@ export class GeoTreeService {
       `SELECT s.id, s.name, s.status, s.geographic_location_id, s.site_specification_id,
               sp.code AS spec_code, sp.name AS spec_name, sp.category AS spec_category,
               l.geometry_type, l.geometry,
-              a.city, a.state_or_province AS uf, a.street_name AS street,
+              COALESCE(c.city_name, a.city) AS city, COALESCE(c.state_code, a.state_or_province) AS uf, a.street_name AS street,
               ps.note, ps.geonet_address_id,
               count(*) OVER () AS total_count
          FROM tmf_geographic_site s
          JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
          LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
          LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+         LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
          JOIN geo_project_site ps ON ps.site_id = s.id
          JOIN geo_project p ON p.id = ps.project_id
         WHERE p.tenant_id = ? AND ps.project_id = ?
@@ -1220,6 +1221,7 @@ export class GeoTreeService {
          FROM tmf_geographic_site s
          JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
          LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+         LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
         WHERE ${STATION_WHERE}
         ${PROJECT_SITE_EXCLUSION_SQL}
         ${extra}
@@ -1261,10 +1263,11 @@ export class GeoTreeService {
     for (let depth = 0; currentId !== null && depth <= PATH_MAX_DEPTH; depth++) {
       const row: StationAncestorRow | undefined = await this.db.get<StationAncestorRow>(
         `SELECT s.id, s.parent_site_id, sp.code,
-                a.city, a.state_or_province AS uf
+                COALESCE(c.city_name, a.city) AS city, COALESCE(c.state_code, a.state_or_province) AS uf
            FROM tmf_geographic_site s
            JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
            LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+           LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
           WHERE s.id = ?`,
         [currentId],
       );
@@ -1458,11 +1461,12 @@ const SITE_SELECT = `
   SELECT s.id, s.name, s.status, s.geographic_location_id, s.site_specification_id,
          sp.code AS spec_code, sp.name AS spec_name, sp.category AS spec_category,
          l.geometry_type, l.geometry,
-         a.city, a.state_or_province AS uf, a.street_name AS street
+         COALESCE(c.city_name, a.city) AS city, COALESCE(c.state_code, a.state_or_province) AS uf, a.street_name AS street
     FROM tmf_geographic_site s
     JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
     LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
-    LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id`;
+    LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+    LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id`;
 
 // Exclui da navegação (árvore, mapa de Estações e busca) qualquer Site vinculado a um
 // Projeto de trabalho EM CURSO (REQ-MOD01-015): local criado para um recorte de trabalho
@@ -1491,8 +1495,8 @@ const STATION_WHERE = `sp.code IN ('CO', 'POP') AND s.status NOT IN ('Retired', 
 // sem trazer a linha inteira. `TRIM(x) IS NULL OR TRIM(x) = ''` cobre os dois dialetos:
 // Postgres distingue NULL de string vazia (TRIM('') = ''), Oracle colapsa string vazia em
 // NULL (TRIM('') vira NULL) — a dupla checagem pega os dois casos em ambos.
-const STATION_UF_SQL = `CASE WHEN TRIM(a.state_or_province) IS NULL OR TRIM(a.state_or_province) = '' THEN '${SEM_UF}' ELSE TRIM(a.state_or_province) END`;
-const STATION_CITY_SQL = `CASE WHEN TRIM(a.city) IS NULL OR TRIM(a.city) = '' THEN '${SEM_MUNICIPIO}' ELSE TRIM(a.city) END`;
+const STATION_UF_SQL = `COALESCE(c.state_code, CASE WHEN TRIM(a.state_or_province) IS NULL OR TRIM(a.state_or_province) = '' THEN '${SEM_UF}' ELSE TRIM(a.state_or_province) END)`;
+const STATION_CITY_SQL = `COALESCE(c.city_name, CASE WHEN TRIM(a.city) IS NULL OR TRIM(a.city) = '' THEN '${SEM_MUNICIPIO}' ELSE TRIM(a.city) END)`;
 
 // Site (categoria 'Site', nunca Region/SubSite) dentro de um bbox do mapa —
 // fonte de `sitesInViewport`, o par de `resourcesInViewport` para o Site: CO/Estação é o

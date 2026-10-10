@@ -61,6 +61,7 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
+import { linkAdministrativeCities } from './administrative-city-loader.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 import {
   normalizeAddressText,
@@ -843,8 +844,10 @@ async function main() {
             'postcode',
             'country',
             'geographic_location_id',
+            'administrative_city_id',
             'characteristics',
           ];
+          await linkAdministrativeCities(client, addressRows);
           await client.bulkInsert('tmf_geographic_address', columns, addressRows);
         }
         for (const upd of chunk.addressLocationUpdates) {

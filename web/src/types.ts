@@ -1,6 +1,7 @@
 export type PageId =
   | 'assistant'
   | 'geo'
+  | 'internal-plant'
   | 'service'
   | 'order'
   | 'conversation'

@@ -25,8 +25,12 @@ export const PanelBarButton = forwardRef<
       // `data-tab-active` é o alvo que PanelTabBar localiza para o auto-scroll (scrollIntoView)
       // quando a aba muda — sem isso, a faixa não tem como saber qual botão trazer à vista.
       data-tab-active={active ? 'true' : undefined}
-      className={`flex w-[72px] shrink-0 flex-col items-center gap-1 rounded-[14px] px-2 py-1.5 text-center transition ${
-        active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
+      // Aba ativa ganha a barra amarela na base (estilo Google Maps). É um pseudo-elemento porque
+      // o reset global `button { border: 0 }` (fora de @layer) vence as utilidades `border-*`.
+      className={`relative flex w-[72px] shrink-0 flex-col items-center gap-1 rounded-t-[14px] px-2 pb-2 pt-1.5 text-center transition after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-t-full ${
+        active
+          ? 'text-app-text after:bg-app-accent'
+          : 'text-app-muted after:bg-transparent hover:text-app-text'
       }`}
     >
       <span

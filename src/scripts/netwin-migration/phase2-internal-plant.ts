@@ -15,7 +15,6 @@ import {
   netwinEquipmentId,
   netwinInternalCardId,
   netwinInternalPhysicalPortId,
-  netwinLocationId,
   NEXUS_NETWIN_NAMESPACE,
 } from './identity.js';
 import {
@@ -491,9 +490,11 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
             splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!,
           status: cardState.status,
           status_code: cardState.statusCode ?? null,
-          place_id: netwinLocationId(cdo.ID_BD_LOCAL),
-          place_type: 'GeographicSite',
-          serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
+          // Recurso interno: sem place/serving. O lugar dele é resolvido pelo recurso que o
+          // contém (`containsAsChild`), nunca pelo Site da CDO.
+          place_id: null,
+          place_type: null,
+          serving_site_id: null,
           administrative_state: cardState.administrative_state,
           operational_state: cardState.operational_state,
           usage_state: cardState.usage_state,
@@ -554,9 +555,11 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           resource_specification_id: portSpecId,
           status: portState.status,
           status_code: portState.statusCode ?? null,
-          place_id: netwinLocationId(cdo.ID_BD_LOCAL),
-          place_type: 'GeographicSite',
-          serving_site_id: netwinLocationId(cdo.ID_BD_LOCAL),
+          // Recurso interno: sem place/serving. O lugar dele é resolvido pelo recurso que o
+          // contém (`containsAsChild`), nunca pelo Site da CDO.
+          place_id: null,
+          place_type: null,
+          serving_site_id: null,
           administrative_state: portState.administrative_state,
           operational_state: portState.operational_state,
           usage_state: portState.usage_state,

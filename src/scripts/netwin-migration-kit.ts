@@ -8,6 +8,10 @@
 import { randomUUID } from 'node:crypto';
 import oracledb, { type Connection, type BindDefinition } from 'oracledb';
 import { createCanonicalId } from '../shared/utils/canonical-id.js';
+import {
+  administrativeCityNaturalKey,
+  type AdministrativeCityTuple,
+} from '../modules/geo/administrative-city.js';
 import { prefixed } from '../shared/persistence/oracle-object-names.js';
 import { CLOB_COLUMNS } from '../shared/persistence/oracle-schema.js';
 
@@ -444,6 +448,47 @@ export async function bulkMergeRows(
     }
   }
   return executed;
+}
+
+/**
+ * Resolve em lote o município canônico (issue #329) de um conjunto de tuplas: insere as ausentes
+ * (idempotente pela chave natural única) e devolve o id por chave natural. Sem COMMIT próprio —
+ * participa da transação do lote do chamador.
+ */
+export async function resolveAdministrativeCityIds(
+  target: Connection,
+  t: TablePrefixer,
+  tuples: AdministrativeCityTuple[],
+): Promise<Map<string, string>> {
+  const unique = new Map<string, AdministrativeCityTuple>();
+  for (const tuple of tuples) unique.set(administrativeCityNaturalKey(tuple), tuple);
+  const ids = new Map<string, string>();
+  if (unique.size === 0) return ids;
+  const table = t('geo_administrative_city');
+  const select = `SELECT id AS "ID" FROM ${table}
+     WHERE country_code=:countryCode AND state_code=:stateCode AND city_key=:cityKey`;
+  for (const [key, tuple] of unique) {
+    const binds = {
+      countryCode: tuple.countryCode,
+      stateCode: tuple.stateCode,
+      cityKey: tuple.cityKey,
+    };
+    const found = await target.execute<{ ID: string }>(select, binds, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+    let id = found.rows?.[0]?.ID;
+    if (!id) {
+      id = createCanonicalId();
+      await target.execute(
+        `INSERT INTO ${table} (id, country_code, country_name, state_code, city_name, city_key)
+         VALUES (:id, :countryCode, :countryName, :stateCode, :cityName, :cityKey)`,
+        { id, ...binds, countryName: tuple.countryName, cityName: tuple.cityName },
+        { autoCommit: false },
+      );
+    }
+    ids.set(key, id);
+  }
+  return ids;
 }
 
 // ---- catálogo (Category / ResourceType / ResourceSpecification / SiteSpecification) ----

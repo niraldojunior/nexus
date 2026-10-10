@@ -213,6 +213,11 @@ button {
     border-bottom-color: var(--border-input-strong);
   }
 
+  /* Resultados de Planta Interna: linhas um passo abaixo do corpo padrão (14px → 13px). */
+  .internal-plant-table .vt-table td {
+    font-size: 0.8125rem;
+  }
+
   /* Dark mode: campos de formulário (input/select/textarea) do Studio (Papéis e Organizações)
      — pedido explícito para remover o anel/glow de foco e deixar só a borda amarela já aplicada
      via `focus:border-app-accent` inline nesses componentes. */

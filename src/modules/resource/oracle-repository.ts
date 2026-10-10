@@ -2507,8 +2507,13 @@ export class OracleResourceRepository implements IResourceRepository {
       postcode: string | null;
       source_system: string | null;
     }>(
-      `SELECT street_type, street_name, street_nr, locality, city, state_or_province, postcode, source_system
-         FROM tmf_geographic_address WHERE id = ?`,
+      `SELECT a.street_type, a.street_name, a.street_nr, a.locality,
+              COALESCE(c.city_name, a.city) AS city,
+              COALESCE(c.state_code, a.state_or_province) AS state_or_province,
+              a.postcode, a.source_system
+         FROM tmf_geographic_address a
+         LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
+        WHERE a.id = ?`,
       [addressId],
     );
     if (!address) return undefined;

@@ -10,10 +10,13 @@ export default function PageHead({
   title,
   subtitle,
   actions,
+  marginBottom = 'var(--space-5)',
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  /** Espaço abaixo do cabeçalho; o padrão é o do design system. */
+  marginBottom?: string;
 }) {
   return (
     <div
@@ -22,7 +25,7 @@ export default function PageHead({
         alignItems: 'flex-start',
         justifyContent: 'space-between',
         gap: 24,
-        marginBottom: 'var(--space-5)',
+        marginBottom,
       }}
     >
       <div style={{ minWidth: 0 }}>

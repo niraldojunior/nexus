@@ -26,6 +26,10 @@ import {
   normalizeStreetNumberSearch,
   normalizeStreetSearch,
 } from './address-normalization.js';
+import {
+  administrativeCityNaturalKey,
+  normalizeAdministrativeCity,
+} from './administrative-city.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
@@ -38,6 +42,7 @@ type ContainmentRule = {
 export class GeoRepository implements IGeoRepository {
   private readonly locations = new Map<string, GeographicLocation>();
   private readonly addresses = new Map<string, GeographicAddress>();
+  private readonly canonicalCityNames = new Map<string, string>();
   private readonly sites = new Map<string, GeographicSite>();
   private readonly specs = new Map<string, GeographicSiteSpecification>();
   // Extensão tenant-scoped de identidade visual (issue #264): `${tenantId}:${specId}`.
@@ -85,6 +90,20 @@ export class GeoRepository implements IGeoRepository {
 
   public upsertAddress(address: GeographicAddress): GeographicAddress {
     const stored = cloneAddress(address);
+    // Espelha o diretório canônico do Oracle: grafia canônica = a primeira vista da chave natural.
+    const tuple = normalizeAdministrativeCity({
+      country: stored.country,
+      stateOrProvince: stored.stateOrProvince,
+      city: stored.city,
+    });
+    if (tuple) {
+      const key = administrativeCityNaturalKey(tuple);
+      const cityName = this.canonicalCityNames.get(key) ?? tuple.cityName;
+      this.canonicalCityNames.set(key, cityName);
+      stored.city = cityName;
+      stored.stateOrProvince = tuple.stateCode;
+      stored.country = tuple.countryCode;
+    }
     this.addresses.set(stored.id, stored);
     return cloneAddress(stored);
   }

@@ -39,6 +39,12 @@ const TONE_COLORS: Record<Tone, { color: string; bg: string }> = {
   neutral: { color: 'var(--text-secondary)', bg: 'var(--surface-muted)' },
 };
 
+/** Rótulo pt-BR e tom de um status, para quem mostra o estado sem a pílula (ex.: farol). */
+export function describeStatus(status: string): { label: string; tone: Tone } {
+  const known = STATUS[status.toLowerCase()];
+  return { label: known?.label ?? sentenceCase(status), tone: known?.tone ?? 'neutral' };
+}
+
 interface StatusPillProps extends HTMLAttributes<HTMLSpanElement> {
   status: string;
   label?: string;

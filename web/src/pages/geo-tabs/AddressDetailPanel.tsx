@@ -164,7 +164,7 @@ export function AddressDetailPanel({
     <>
       {/* Barra de ações abaixo do título, mesmo padrão dos painéis de Site e
           Recurso. O Street View fica ao lado da coordenada, como nos demais campos. */}
-      <PanelTabBar activeTab={tab} className="mb-4 border-b border-app-border pb-3">
+      <PanelTabBar activeTab={tab} className="mb-4 border-b border-app-border">
         <PanelBarButton
           icon={InfoIcon}
           label="Geral"

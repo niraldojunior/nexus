@@ -5,6 +5,7 @@ export const TABLE_NAMES = [
   'searches',
   'geo_search_history',
   'tmf_geographic_location',
+  'geo_administrative_city',
   'tmf_geographic_address',
   'tmf_geographic_site_specification',
   'tmf_geographic_site_spec_containment_rule',
@@ -714,6 +715,20 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_location_valid_for ON tmf_geographic_location(valid_for_start, valid_for_end);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_location_tenant ON tmf_geographic_location(tenant_id);
 
+      -- Diretório geográfico canônico (país + UF + município): índice de apoio ao TMF673, não é entidade TMF.
+      CREATE TABLE IF NOT EXISTS geo_administrative_city (
+        id TEXT PRIMARY KEY,
+        country_code TEXT NOT NULL,
+        country_name TEXT NOT NULL,
+        state_code TEXT NOT NULL,
+        city_name TEXT NOT NULL,
+        city_key TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_geo_administrative_city_key ON geo_administrative_city(country_code, state_code, city_key);
+      CREATE INDEX IF NOT EXISTS idx_geo_administrative_city_nav ON geo_administrative_city(country_code, state_code, city_name, id);
+
       -- TMF673: Geographic Address (endereço postal estruturado)
       CREATE TABLE IF NOT EXISTS tmf_geographic_address (
         id TEXT PRIMARY KEY,
@@ -731,13 +746,15 @@ export const SCHEMA_SQL = `
         postcode TEXT,
         postcode_search TEXT,
         geographic_location_id TEXT,
+        administrative_city_id TEXT,
         sub_address TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (geographic_location_id) REFERENCES tmf_geographic_location(id)
+        FOREIGN KEY (geographic_location_id) REFERENCES tmf_geographic_location(id),
+        FOREIGN KEY (administrative_city_id) REFERENCES geo_administrative_city(id)
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_location ON tmf_geographic_address(geographic_location_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_city_postcode ON tmf_geographic_address(city, postcode);
@@ -2116,6 +2133,28 @@ const MIGRATIONS_SQL_V27_GEO_MAP_FEATURE_LOD = `
     ON geo_map_feature(tenant_id, feature_kind, shape, source_model_id, lod_key, tile_z, tile_x, tile_y);
 `;
 
+// V29: diretório geográfico canônico (issue #329). Somente aditivo: o backfill dos milhões de
+// endereços roda em script próprio (scripts/backfill-administrative-city.mjs), nunca no boot.
+const MIGRATIONS_SQL_V29_GEO_ADMINISTRATIVE_CITY = `
+  CREATE TABLE IF NOT EXISTS geo_administrative_city (
+    id TEXT PRIMARY KEY,
+    country_code TEXT NOT NULL,
+    country_name TEXT NOT NULL,
+    state_code TEXT NOT NULL,
+    city_name TEXT NOT NULL,
+    city_key TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_geo_administrative_city_key
+    ON geo_administrative_city(country_code, state_code, city_key);
+  CREATE INDEX IF NOT EXISTS idx_geo_administrative_city_nav
+    ON geo_administrative_city(country_code, state_code, city_name, id);
+  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS administrative_city_id TEXT REFERENCES geo_administrative_city(id);
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_admin_city
+    ON tmf_geographic_address(administrative_city_id);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2232,6 +2271,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 28,
     name: 'geo-map-line-index',
     sql: MIGRATIONS_SQL_V28_GEO_MAP_LINE_INDEX,
+  },
+  {
+    version: 29,
+    name: 'geo-administrative-city',
+    sql: MIGRATIONS_SQL_V29_GEO_ADMINISTRATIVE_CITY,
   },
 ];
 

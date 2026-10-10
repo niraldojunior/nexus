@@ -4,7 +4,8 @@
  *
  * Arquitetura em três fases com suporte a alto volume:
  * - Fase 1: Carga do Studio (Papéis, Organizações, Tipos de Locais, Tipos de Recursos)
- * - Fase 2: Carga de Dados (Locais, Hierarquias, Recursos, Topologia e Conectividade)
+ * - Fase 2: Carga de Dados (Locais, Hierarquias, Recursos, Diretório país/UF/município,
+ *   Topologia e Conectividade)
  * - Fase 3: Projeções geoespaciais derivadas no destino (mapa, densidade e cobertura GPON)
  *
  * Suporte a escopos:
@@ -37,6 +38,7 @@ import { runPhase1SiteSpecs } from './phase1-site-specs.js';
 import { runPhase1ResourceSpecs } from './phase1-resource-specs.js';
 import { runPhase2Locations } from './phase2-locations.js';
 import { runPhase2Resources } from './phase2-resources.js';
+import { runPhase2AdministrativeCity } from './phase2-administrative-city.js';
 import { runPhase2InternalPlant } from './phase2-internal-plant.js';
 import { runPhase2StationInternalPlantDiscovery } from './phase2-station-internal-plant.js';
 import { runPhase3Coverage } from './phase3-coverage.js';
@@ -195,6 +197,8 @@ async function main() {
         await pauseNativeMigrationJob(ctx);
         console.log(`\n>>> Fase 2 pausada; retome com --resume --job-id ${options.jobId}. <<<`);
       } else {
+        // Fecha o diretório país/UF/município (#329) com tudo que esta execução importou.
+        await runPhase2AdministrativeCity(ctx);
         await runPhase2InternalPlant(ctx);
         const stationPlantDiscovery = await runPhase2StationInternalPlantDiscovery(ctx);
         if (stationPlantDiscovery.blocked) {

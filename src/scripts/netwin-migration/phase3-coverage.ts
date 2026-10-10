@@ -164,7 +164,7 @@ function levelConfig(level: Level) {
 
 export function phase3CdoSourceSql(t: (table: string) => string): string {
   return `SELECT r.id AS "ID", r.name AS "NAME", r.status AS "STATUS", l.geometry AS "GEOMETRY",
-                 a.locality AS "LOCALITY", a.city AS "CITY", a.state_or_province AS "UF", a.street_nr AS "STREET_NR"
+                 a.locality AS "LOCALITY", COALESCE(dc.city_name, a.city) AS "CITY", COALESCE(dc.state_code, a.state_or_province) AS "UF", a.street_nr AS "STREET_NR"
             FROM ${t('tmf_physical_resource')} r
             JOIN ${t('tmf_resource_specification')} rs
               ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
@@ -188,6 +188,7 @@ export function phase3CdoSourceSql(t: (table: string) => string): string {
                    FETCH FIRST 1 ROWS ONLY
                 )
               )
+            LEFT JOIN ${t('geo_administrative_city')} dc ON dc.id = a.administrative_city_id
            WHERE r.tenant_id=:tenantId
              AND r.status<>'terminated'
              AND l.geometry_type='Point'

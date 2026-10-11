@@ -30,18 +30,16 @@ test('escapeLike escapa metacaracteres', () => {
   assert.equal(escapeLike('a%b_c!'), 'a!%b!_c!!');
 });
 
-test('roots monta Brasil/UF/município do diretório e a ramificação sintética', async () => {
-  const { db, calls } = fakeDb([
-    [
-      {
-        id: 'c1',
-        country_code: 'BR',
-        country_name: 'Brasil',
-        state_code: 'RJ',
-        city_name: 'Niterói',
-      },
-    ],
-  ]);
+const cityRow = {
+  id: 'c1',
+  country_code: 'BR',
+  country_name: 'Brasil',
+  state_code: 'RJ',
+  city_name: 'Niterói',
+};
+
+test('roots monta Brasil/UF/município só com Sites ativos e omite o ramo sem município', async () => {
+  const { db, calls } = fakeDb([[cityRow], [{ n: 4 }], [{ n: 4 }]]);
   const nodes = await new OracleInternalPlantRepository(db).roots('tenant-a');
   assert.deepEqual(
     nodes.map((node) => [node.id, node.parentId]),
@@ -49,12 +47,28 @@ test('roots monta Brasil/UF/município do diretório e a ramificação sintétic
       ['country:BR', null],
       ['uf:BR|RJ', 'country:BR'],
       ['city:c1', 'uf:BR|RJ'],
+    ],
+  );
+  assert.match(calls[0]!.sql, /geo_administrative_city_site_count/);
+  assert.match(calls[0]!.sql, /active_site_count > 0/);
+  assert.deepEqual(calls[0]!.params, ['tenant-a']);
+});
+
+test('roots inclui o ramo sintético quando há Site raiz ativo sem município', async () => {
+  const { db } = fakeDb([[cityRow], [{ n: 5 }], [{ n: 4 }]]);
+  const nodes = await new OracleInternalPlantRepository(db).roots('tenant-a');
+  assert.deepEqual(
+    nodes.map((node) => [node.id, node.parentId]).slice(3),
+    [
       ['uf:none', 'country:BR'],
       ['city:none', 'uf:none'],
     ],
   );
-  assert.equal(calls.length, 1, 'uma única leitura, só do diretório');
-  assert.doesNotMatch(calls[0]!.sql, /tmf_geographic_(address|site)/);
+});
+
+test('roots sem nenhum Site ativo devolve árvore vazia', async () => {
+  const { db } = fakeDb([[], [{ n: 0 }], [{ n: 0 }]]);
+  assert.deepEqual(await new OracleInternalPlantRepository(db).roots('tenant-a'), []);
 });
 
 test('city devolve tipos de Site raiz com volume, isolado por tenant', async () => {
@@ -63,7 +77,8 @@ test('city devolve tipos de Site raiz com volume, isolado por tenant', async () 
   assert.equal(result.nodes[0]?.id, 'site-type:c1|sp1');
   assert.equal(result.nodes[0]?.childCount, 1234);
   assert.equal(result.total, 1);
-  assert.deepEqual(calls[0]?.params.slice(0, 2), ['tenant-a', 'c1']);
+  assert.deepEqual(calls[0]?.params.slice(0, 5), ['tenant-a', 'tenant-a', 'c1', 'tenant-a', 'c1']);
+  assert.match(calls[0]!.sql, /geo_site_administrative_city/);
   assert.match(calls[0]!.sql, /parent_site_id IS NULL/);
 });
 
@@ -103,7 +118,7 @@ test('país e UF não consultam o banco', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('listResources filtra serving_site_id exato, sem CONNECT BY', async () => {
+test('listResources filtra place_id exato, sem CONNECT BY', async () => {
   const { db, calls } = fakeDb([[]]);
   await new OracleInternalPlantRepository(db).listResources({
     tenantId: 'tenant-a',
@@ -111,7 +126,7 @@ test('listResources filtra serving_site_id exato, sem CONNECT BY', async () => {
     limit: 50,
     offset: 0,
   });
-  assert.match(calls[0]!.sql, /serving_site_id = \?/);
+  assert.match(calls[0]!.sql, /\bplace_id = \?/);
   assert.doesNotMatch(calls[0]!.sql, /CONNECT BY/);
   assert.ok(calls[0]!.params.includes('site-1'));
 });

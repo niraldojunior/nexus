@@ -13,6 +13,8 @@ import {
   normalizeStateCode,
   type AdministrativeCityTuple,
 } from '../../modules/geo/administrative-city.js';
+import { reconcileAdministrativeCitySiteCounts } from './administrative-city-site-count.js';
+import { composeNetwinSiteName } from './site-name.js';
 import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
 import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
@@ -62,6 +64,7 @@ export function parseAddressString(raw: string | null | undefined) {
 type NetwinLocationRow = {
   ID: number;
   NAME: string | null;
+  DESCRIPTION: string | null;
   LATITUDE: number | null;
   LONGITUDE: number | null;
   ID_CAT_ENTITY: number | null;
@@ -99,7 +102,11 @@ type CatalogEntry = { CAT_NAME: string | null; CAT_DESC: string | null };
 
 /** Catálogo pequeno de categorias: lido uma vez por execução, recomposto em memória (LEFT JOIN). */
 async function loadCategoryCatalog(source: SourceConnection): Promise<Map<number, CatalogEntry>> {
-  const result = await source.execute<{ ID: number; NAME: string | null; DESCRIPTION: string | null }>(
+  const result = await source.execute<{
+    ID: number;
+    NAME: string | null;
+    DESCRIPTION: string | null;
+  }>(
     'SELECT ID, NAME, DESCRIPTION FROM NETWIN.CAT_ENTITY',
     {},
     { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 2000, prefetchRows: 2001 },
@@ -120,7 +127,7 @@ async function hydrateLocations(
     const result = await source.execute<
       Omit<NetwinLocationRow, 'ADDRESS_TEXT' | 'CAT_NAME' | 'CAT_DESC'>
     >(
-      `SELECT l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE
+      `SELECT l.ID, l.NAME, l.DESCRIPTION, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE
          FROM NETWIN.LOCATION l
         WHERE l.ID IN (${clause})`,
       binds,
@@ -131,7 +138,9 @@ async function hydrateLocations(
       },
     );
     for (const row of result.rows ?? []) {
-      const category = (row.ID_CAT_ENTITY !== null ? catalog.get(row.ID_CAT_ENTITY) : undefined) ?? {
+      const category = (row.ID_CAT_ENTITY !== null
+        ? catalog.get(row.ID_CAT_ENTITY)
+        : undefined) ?? {
         CAT_NAME: null,
         CAT_DESC: null,
       };
@@ -187,6 +196,85 @@ async function hydrateAssociations(
     associations.push(...(result.rows ?? []));
   }
   return associations;
+}
+
+/** `PI_PISO` das salas: o Netwin não tem LOCATION de pavimento, só este atributo de agrupamento. */
+async function hydrateFloors(
+  source: SourceConnection,
+  ids: number[],
+): Promise<Array<{ PI_ID: number; PI_PISO: string; PI_PARENT_ID: number | null }>> {
+  const rows: Array<{ PI_ID: number; PI_PISO: string; PI_PARENT_ID: number | null }> = [];
+  for (const chunk of chunksOf(ids)) {
+    const { clause, binds } = namedInBinds(chunk, 'pi');
+    const result = await source.execute<{
+      PI_ID: number;
+      PI_PISO: string;
+      PI_PARENT_ID: number | null;
+    }>(
+      `SELECT PI_ID, PI_PISO, PI_PARENT_ID
+         FROM NETWINOI.DL_INFRANODE
+        WHERE PI_ID IN (${clause}) AND PI_PISO IS NOT NULL`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    rows.push(...(result.rows ?? []));
+  }
+  return rows;
+}
+
+export type NetwinSiteMunicipality = {
+  tuple: AdministrativeCityTuple;
+  sourceRef: string | null;
+};
+
+type InfranodeMunicipalityRow = {
+  PI_ID: number;
+  MUNICIPIO_ID: number | string | null;
+  MUNICIPIO: string | null;
+  UF_ABRV: string | null;
+};
+
+/**
+ * Município estruturado do `DL_INFRANODE` (BADDR_* com fallback para as colunas base). Alimenta a
+ * projeção Site→município de Sites sem endereço postal; nunca fabrica endereço.
+ */
+export function municipalityFromInfranodeRow(
+  row: InfranodeMunicipalityRow,
+): NetwinSiteMunicipality | null {
+  const tuple = normalizeAdministrativeCity({
+    country: 'BR',
+    stateOrProvince: normalizeUf(row.UF_ABRV),
+    city: row.MUNICIPIO,
+  });
+  if (!tuple) return null;
+  const sourceRef =
+    row.MUNICIPIO_ID === null || row.MUNICIPIO_ID === undefined ? null : String(row.MUNICIPIO_ID);
+  return { tuple, sourceRef };
+}
+
+async function hydrateMunicipalities(
+  source: SourceConnection,
+  ids: number[],
+): Promise<Map<number, NetwinSiteMunicipality>> {
+  const municipalities = new Map<number, NetwinSiteMunicipality>();
+  for (const chunk of chunksOf(ids)) {
+    const { clause, binds } = namedInBinds(chunk, 'pi');
+    const result = await source.execute<InfranodeMunicipalityRow>(
+      `SELECT PI_ID,
+              COALESCE(BADDR_MUNICIPIO_ID, MUNICIPIO_ID) AS MUNICIPIO_ID,
+              COALESCE(BADDR_MUNICIPIO, MUNICIPIO) AS MUNICIPIO,
+              COALESCE(BADDR_UF_ABRV, UF_ABRV) AS UF_ABRV
+         FROM NETWINOI.DL_INFRANODE
+        WHERE PI_ID IN (${clause})`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    for (const row of result.rows ?? []) {
+      const municipality = municipalityFromInfranodeRow(row);
+      if (municipality) municipalities.set(row.PI_ID, municipality);
+    }
+  }
+  return municipalities;
 }
 
 export type PhaseRunStats = PhaseStats & { paused: boolean };
@@ -320,6 +408,9 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
         ]);
       }
 
+      const floorRows = await hydrateFloors(source, ids);
+      const municipalityByLocation = await hydrateMunicipalities(source, ids);
+
       startedAt = Date.now();
       const locations: Array<Record<string, unknown>> = [];
       const addresses: Array<Record<string, unknown>> = [];
@@ -332,7 +423,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           lat !== null && lng !== null && lng >= -75 && lng <= -32 && lat >= -35 && lat <= 6;
         const siteId = netwinLocationId(row.ID);
         const locationId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:GEO:${row.ID}`);
-        const siteName = (row.NAME ?? `Local ${row.ID}`).trim();
+        const siteName = composeNetwinSiteName(row.ID, row.NAME, row.DESCRIPTION);
         if (hasPoint)
           locations.push({
             id: locationId,
@@ -412,6 +503,43 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           ]),
         });
       }
+      // Pavimento sintético: um Floor por (prédio, piso); a sala passa a ser filha do Floor.
+      const floorHierarchy: Array<{ parentId: string; childId: string }> = [];
+      const floorSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'SITE_SPEC:FLOOR');
+      const seenFloors = new Set<string>();
+      for (const floorRow of floorRows) {
+        const piso = floorRow.PI_PISO.trim();
+        const buildingSource =
+          associations.find((a) => a.ID_CHILD === floorRow.PI_ID)?.ID_PARENT ??
+          floorRow.PI_PARENT_ID;
+        if (!piso || buildingSource === null || buildingSource === undefined) continue;
+        const buildingId = netwinLocationId(buildingSource);
+        const floorId = deterministicUuid(
+          NEXUS_NETWIN_NAMESPACE,
+          `NETWIN:FLOOR:${buildingSource}:${piso.toUpperCase()}`,
+        );
+        if (!seenFloors.has(floorId)) {
+          seenFloors.add(floorId);
+          sites.push({
+            id: floorId,
+            tenant_id: ctx.options.tenantId,
+            name: piso.slice(0, 255),
+            site_specification_id: floorSpecId,
+            status: 'Active',
+            geographic_location_id: null,
+            geographic_address_id: null,
+            parent_site_id: null,
+            related_party: JSON.stringify([
+              { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+            ]),
+            characteristics: JSON.stringify([
+              ...netwinOriginCharacteristics('DL_INFRANODE.PI_PISO', `${buildingSource}:${piso}`),
+            ]),
+          });
+          floorHierarchy.push({ parentId: buildingId, childId: floorId });
+        }
+        floorHierarchy.push({ parentId: floorId, childId: netwinLocationId(floorRow.PI_ID) });
+      }
       timing.transformMs = elapsed(startedAt);
 
       const nextTotalProcessed = totalProcessed + ids.length;
@@ -440,6 +568,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           // Diretório geográfico (issue #329): resolve os municípios do lote antes do merge.
           const cityIds = await resolveAdministrativeCityIds(target, ctx.t, [
             ...addressCityTuples.values(),
+            ...[...municipalityByLocation.values()].map((municipality) => municipality.tuple),
           ]);
           for (const address of addresses) {
             const tuple = addressCityTuples.get(String(address.id));
@@ -490,6 +619,40 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             sites,
             ctx.options.batchSize,
           );
+          // Projeção Site→município (não-TMF): só Locations reais com município estruturado.
+          // Fallback para Sites sem endereço postal; o migrador só administra `NETWIN`.
+          const projections: Array<Record<string, unknown>> = [];
+          let unresolvedMunicipalities = 0;
+          for (const row of rows) {
+            const municipality = municipalityByLocation.get(row.ID);
+            if (!municipality) continue;
+            const cityId = cityIds.get(administrativeCityNaturalKey(municipality.tuple));
+            if (!cityId) {
+              unresolvedMunicipalities += 1;
+              continue;
+            }
+            projections.push({
+              tenant_id: ctx.options.tenantId,
+              site_id: netwinLocationId(row.ID),
+              administrative_city_id: cityId,
+              source_system: 'NETWIN',
+              source_ref: municipality.sourceRef,
+            });
+          }
+          if (unresolvedMunicipalities > 0) {
+            console.warn(
+              `[Município] ${unresolvedMunicipalities} Site(s) com município não resolvido no diretório; sem projeção.`,
+            );
+          }
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'geo_site_administrative_city',
+            ['tenant_id', 'site_id'],
+            ['tenant_id', 'site_id', 'administrative_city_id', 'source_system', 'source_ref'],
+            projections,
+            ctx.options.batchSize,
+          );
           timing.siteMergeMs = elapsed(startedAt);
           startedAt = Date.now();
           // Binds nomeados, não posicionais: node-oracledb liga binds por ordem de aparição e
@@ -502,6 +665,19 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
                 parentId: netwinLocationId(association.ID_PARENT),
                 childId: netwinLocationId(association.ID_CHILD),
               })),
+              {
+                autoCommit: false,
+                bindDefs: {
+                  parentId: { type: oracledb.STRING, maxSize: 36 },
+                  childId: { type: oracledb.STRING, maxSize: 36 },
+                },
+              },
+            );
+          // Depois das associações: sala → Floor → prédio sobrescreve sala → prédio.
+          if (floorHierarchy.length > 0)
+            await target.executeMany(
+              `UPDATE ${ctx.t('tmf_geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} parent WHERE parent.id=:parentId)`,
+              floorHierarchy,
               {
                 autoCommit: false,
                 bindDefs: {
@@ -532,6 +708,16 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       );
     }
     stats.paused = Boolean(ctx.options.maxRecords && processedThisRun >= ctx.options.maxRecords);
+    if (target) {
+      // Concluída ou pausada, a projeção municipal fica coerente com os Sites já gravados.
+      try {
+        await reconcileAdministrativeCitySiteCounts(ctx, target);
+        await target.execute('COMMIT');
+      } catch (error) {
+        await target.execute('ROLLBACK');
+        throw error;
+      }
+    }
     progress.finish();
     console.log(
       stats.paused

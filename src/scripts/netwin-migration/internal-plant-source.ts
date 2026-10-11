@@ -422,6 +422,54 @@ export async function loadInternalSubracks(
   return result.rows ?? [];
 }
 
+export type InternalRackByPlaceRow = InternalRackRow & { ID_BD_PI: number };
+
+/** Racks instalados diretamente em um local (ISP_INS_BASTIDOR.ID_BD_PI = DL_INFRANODE.PI_ID). */
+export async function loadInternalRacksByPlaceIds(
+  source: Connection,
+  placeIds: number[],
+): Promise<InternalRackByPlaceRow[]> {
+  const rows: InternalRackByPlaceRow[] = [];
+  for (let offset = 0; offset < placeIds.length; offset += 900) {
+    const { clause, binds } = inBinds(placeIds.slice(offset, offset + 900));
+    const result = await source.execute<InternalRackByPlaceRow>(
+      `SELECT b.ID_BD_BASTIDOR, b.ID_BD_PI, b.NOME, b.NOME_ALTERNATIVO, b.CODIGO, b.FIADA,
+              b.POSICAO, b.ESTADO_CICLO_VIDA, b.ESTADO_OPERACIONAL,
+              cb.NOME_BASTIDOR AS TIPO_NOME, cb.SIGLA_BASTIDOR AS TIPO_SIGLA
+         FROM NETWIN.ISP_INS_BASTIDOR b
+         LEFT JOIN NETWIN.ISP_CAT_BASTIDOR cb ON cb.ID_BD_TIPO_BASTIDOR = b.ID_BD_TIPO_BASTIDOR
+        WHERE b.ID_BD_PI IN (${clause})`,
+      binds,
+      FETCH_OPTIONS,
+    );
+    rows.push(...(result.rows ?? []));
+  }
+  return rows;
+}
+
+/** Subbastidores contidos nos racks informados (ISP_INS_SUBBASTIDOR.ID_BD_BASTIDOR). */
+export async function loadInternalSubracksByRackIds(
+  source: Connection,
+  rackIds: number[],
+): Promise<InternalSubrackRow[]> {
+  const rows: InternalSubrackRow[] = [];
+  for (let offset = 0; offset < rackIds.length; offset += 900) {
+    const { clause, binds } = inBinds(rackIds.slice(offset, offset + 900));
+    const result = await source.execute<InternalSubrackRow>(
+      `SELECT s.ID_BD_SUBBASTIDOR, s.ID_BD_BASTIDOR, s.NOME, s.NOME_ALTERNATIVO,
+              s.CODIGO, s.CODIGOSB, s.POSICAO, s.ESTADO_CICLO_VIDA, s.ESTADO_OPERACIONAL,
+              cs.NOME_SUBBASTIDOR AS TIPO_NOME, cs.SIGLA_SUBBASTIDOR AS TIPO_SIGLA
+         FROM NETWIN.ISP_INS_SUBBASTIDOR s
+         LEFT JOIN NETWIN.ISP_CAT_SUBBASTIDOR cs ON cs.ID_BD_TIPO_SUBBASTIDOR = s.ID_BD_TIPO_SUBBASTIDOR
+        WHERE s.ID_BD_BASTIDOR IN (${clause})`,
+      binds,
+      FETCH_OPTIONS,
+    );
+    rows.push(...(result.rows ?? []));
+  }
+  return rows;
+}
+
 /**
  * Guarda de existência para `NETWIN.MRD_CONECTOR` (Passo 4 do plano de paginação da Fase 2.C).
  * Confirmado no DR inteiro: a tabela está **vazia**. Chamar isto uma vez antes do estágio de

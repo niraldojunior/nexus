@@ -17,6 +17,8 @@ import type {
   GeographicSiteSpecificationRef,
   GeographicSiteStatusHistoryEntry,
   GeoOutboxMessage,
+  AdministrativeCityRecord,
+  AdministrativeCitySiteCount,
 } from './domain.js';
 import { defaultSiteRoleFor } from './domain.js';
 import type {
@@ -625,6 +627,125 @@ export class OracleGeoRepository implements IGeoRepository {
         [specId, childSpecId, (input.protectedChildSpecIds ?? []).includes(childSpecId) ? 1 : 0],
       );
     }
+  }
+
+  public async listAdministrativeCities(query?: {
+    countryCode?: string;
+    stateCode?: string;
+  }): Promise<AdministrativeCityRecord[]> {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (query?.countryCode) {
+      conditions.push('country_code = ?');
+      params.push(query.countryCode.toUpperCase());
+    }
+    if (query?.stateCode) {
+      conditions.push('state_code = ?');
+      params.push(query.stateCode.toUpperCase());
+    }
+    const rows = await this.db.all<{
+      id: string;
+      country_code: string;
+      country_name: string;
+      state_code: string;
+      city_name: string;
+    }>(
+      `SELECT id, country_code, country_name, state_code, city_name
+       FROM geo_administrative_city
+       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+       ORDER BY country_code, state_code, city_name, id`,
+      params,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      countryCode: row.country_code,
+      countryName: row.country_name,
+      stateCode: row.state_code,
+      cityName: row.city_name,
+    }));
+  }
+
+  public async getAddressAdministrativeCityId(addressId: string): Promise<string | null> {
+    const row = await this.db.get<{ administrative_city_id: string | null }>(
+      'SELECT administrative_city_id FROM tmf_geographic_address WHERE id = ?',
+      [addressId],
+    );
+    return row?.administrative_city_id ?? null;
+  }
+
+  // Recontagem (não incremento): reexecutável em retry/resume. Só Site raiz não `Retired`;
+  // município = endereço real, com fallback na projeção Site→município.
+  public async reconcileAdministrativeCitySiteCounts(
+    tenantId: string,
+    cityIds?: readonly string[],
+  ): Promise<void> {
+    const scoped = cityIds ? [...new Set(cityIds)] : undefined;
+    if (scoped && scoped.length === 0) return;
+    const now = new Date().toISOString();
+    const batches = scoped ? chunk(scoped, 500) : [undefined];
+    for (const batch of batches) {
+      const cityExpr = 'COALESCE(a.administrative_city_id, p.administrative_city_id)';
+      const inClause = batch ? `AND ${cityExpr} IN (${batch.map(() => '?').join(', ')})` : '';
+      const counts = await this.db.all<{ administrative_city_id: string; total: number }>(
+        `SELECT ${cityExpr} AS administrative_city_id, COUNT(*) AS total
+           FROM tmf_geographic_site s
+           LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+           LEFT JOIN geo_site_administrative_city p ON p.tenant_id = s.tenant_id AND p.site_id = s.id
+          WHERE s.tenant_id = ? AND s.parent_site_id IS NULL AND s.status <> 'Retired'
+            AND ${cityExpr} IS NOT NULL ${inClause}
+          GROUP BY ${cityExpr}`,
+        [tenantId, ...(batch ?? [])],
+      );
+      const positive = new Set(counts.map((row) => row.administrative_city_id));
+      for (const row of counts) {
+        await this.db.run(
+          `INSERT INTO geo_administrative_city_site_count
+           (tenant_id, administrative_city_id, active_site_count, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(tenant_id, administrative_city_id) DO UPDATE SET
+           active_site_count = excluded.active_site_count,
+           updated_at = excluded.updated_at`,
+          [tenantId, row.administrative_city_id, Number(row.total), now],
+        );
+      }
+      if (batch) {
+        for (const cityId of batch.filter((id) => !positive.has(id))) {
+          await this.db.run(
+            `DELETE FROM geo_administrative_city_site_count
+              WHERE tenant_id = ? AND administrative_city_id = ?`,
+            [tenantId, cityId],
+          );
+        }
+      } else {
+        // Tenant inteiro: remove as projeções que ficaram sem Sites.
+        const stale = await this.db.all<{ administrative_city_id: string }>(
+          'SELECT administrative_city_id FROM geo_administrative_city_site_count WHERE tenant_id = ?',
+          [tenantId],
+        );
+        for (const row of stale.filter((r) => !positive.has(r.administrative_city_id))) {
+          await this.db.run(
+            `DELETE FROM geo_administrative_city_site_count
+              WHERE tenant_id = ? AND administrative_city_id = ?`,
+            [tenantId, row.administrative_city_id],
+          );
+        }
+      }
+    }
+  }
+
+  public async listAdministrativeCitySiteCounts(
+    tenantId: string,
+  ): Promise<AdministrativeCitySiteCount[]> {
+    const rows = await this.db.all<{ administrative_city_id: string; active_site_count: number }>(
+      `SELECT administrative_city_id, active_site_count
+         FROM geo_administrative_city_site_count
+        WHERE tenant_id = ? AND active_site_count > 0`,
+      [tenantId],
+    );
+    return rows.map((row) => ({
+      administrativeCityId: row.administrative_city_id,
+      activeSiteCount: Number(row.active_site_count),
+    }));
   }
 
   public async upsertSite(site: GeographicSite): Promise<GeographicSite> {

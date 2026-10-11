@@ -121,6 +121,7 @@ test.skipIf(!oracleConfigured)(
     await geo.upsertSite({ ...site('other-tenant', 'sp-co', 'a1'), tenantId: 'tenant-b' });
 
     const repo = new OracleInternalPlantRepository(client);
+    await geo.reconcileAdministrativeCitySiteCounts('tenant-a');
     const roots = await repo.roots('tenant-a');
     const city = roots.find((node) => node.kind === 'city' && node.label === 'Niterói');
     assert.ok(city, 'município do diretório presente');
@@ -176,7 +177,7 @@ test.skipIf(!oracleConfigured)(
       ['res-child', 'child-1'],
     ] as const) {
       await client.run(
-        `INSERT INTO tmf_physical_resource (id, tenant_id, name, resource_specification_id, status, serving_site_id)
+        `INSERT INTO tmf_physical_resource (id, tenant_id, name, resource_specification_id, status, place_id)
          VALUES (?, 'tenant-a', ?, 'rs-1', 'active', ?)`,
         [id, id, placeId],
       );

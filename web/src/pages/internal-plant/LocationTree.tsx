@@ -1,4 +1,14 @@
-import { ChevronDown, ChevronRight, Globe, Loader2, MapPin, Minus, Plus } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Globe,
+  Loader2,
+  MapPin,
+  Minus,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { locationCategoryIcon } from '../studio/location-model/locationCategoryPresentation';
 import { listGeoSiteSpecifications } from '../../services/geoApi';
@@ -24,6 +34,11 @@ const loadRootsOnce = () => {
     throw error;
   });
   return rootsRequest;
+};
+
+/** Descarta o diretório em cache; a próxima montagem/refresh busca de novo. */
+export const invalidateInternalPlantRoots = () => {
+  rootsRequest = null;
 };
 
 // Identidades visuais por especificação de Site — a mesma lista que a Modelagem de Locais exibe.
@@ -84,10 +99,25 @@ type Branch = {
 type Props = {
   onSelectSite: (node: InternalPlantLocationNode) => void;
   selectedSiteId?: string | undefined;
+  canEdit?: boolean;
+  /** `administrativeCityId` quando o "+" é o de um município. */
+  onCreateSite?: (administrativeCityId?: string) => void;
+  onEditSite?: (node: InternalPlantLocationNode) => void;
+  onRemoveSite?: (node: InternalPlantLocationNode) => void;
+  /** Incrementar após mutações (depois de `invalidateInternalPlantRoots`) para recarregar a árvore. */
+  refreshToken?: number;
 };
 
 /** Árvore de Locais: expandir (+/−) só abre o nível; apenas o clique no nome de um Site consulta a tabela. */
-export function LocationTree({ onSelectSite, selectedSiteId }: Props) {
+export function LocationTree({
+  onSelectSite,
+  selectedSiteId,
+  canEdit = false,
+  onCreateSite,
+  onEditSite,
+  onRemoveSite,
+  refreshToken = 0,
+}: Props) {
   const [directory, setDirectory] = useState<InternalPlantLocationRootNode[]>([]);
   const [rootsError, setRootsError] = useState<string | null>(null);
   const [rootsToken, setRootsToken] = useState(0);
@@ -152,7 +182,23 @@ export function LocationTree({ onSelectSite, selectedSiteId }: Props) {
     return () => {
       active = false;
     };
-  }, [rootsToken]);
+  }, [rootsToken, refreshToken]);
+
+  // Após mutações os ramos lazy ficam obsoletos: descarta e recarrega os que estão abertos.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const firstRefresh = useRef(true);
+  useEffect(() => {
+    if (firstRefresh.current) {
+      firstRefresh.current = false;
+      return;
+    }
+    setBranches({});
+    for (const id of expandedRef.current) {
+      if (!id.startsWith('country:') && !id.startsWith('uf:') && id !== 'city:none')
+        void loadBranch(id, 0);
+    }
+  }, [refreshToken, loadBranch]);
 
   const { roots, byParent } = useMemo(() => {
     const grouped = new Map<string, InternalPlantLocationNode[]>();
@@ -194,7 +240,7 @@ export function LocationTree({ onSelectSite, selectedSiteId }: Props) {
           role="treeitem"
           aria-expanded={node.hasChildren ? isOpen : undefined}
           aria-selected={selected}
-          className={`flex items-center gap-1 rounded-lg py-[3px] pr-2 text-[0.8rem] text-app-text ${
+          className={`group/row flex items-center gap-1 rounded-lg py-[3px] pr-2 text-[0.8rem] text-app-text ${
             isSite ? '' : 'font-semibold'
           } ${selected ? 'bg-app-accent-soft' : 'hover:bg-app-hover'}`}
           style={{ paddingLeft: depth * 14 }}
@@ -242,6 +288,36 @@ export function LocationTree({ onSelectSite, selectedSiteId }: Props) {
               : null}
             {node.sublabel ? <span className="ml-2 text-app-muted">{node.sublabel}</span> : null}
           </button>
+          {canEdit && node.kind === 'city' && node.id !== 'city:none' && onCreateSite ? (
+            <button
+              type="button"
+              aria-label={`Novo local em ${node.label}`}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-app-muted hover:text-app-text"
+              onClick={() => onCreateSite(node.id.slice('city:'.length))}
+            >
+              <Plus size={14} />
+            </button>
+          ) : null}
+          {canEdit && isSite ? (
+            <span className="flex shrink-0 items-center gap-0.5 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100">
+              <button
+                type="button"
+                aria-label={`Editar ${node.label}`}
+                className="flex h-5 w-5 items-center justify-center rounded text-app-muted hover:text-app-text"
+                onClick={() => onEditSite?.(node)}
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label={`Remover ${node.label}`}
+                className="flex h-5 w-5 items-center justify-center rounded text-app-muted hover:text-status-red"
+                onClick={() => onRemoveSite?.(node)}
+              >
+                <Trash2 size={13} />
+              </button>
+            </span>
+          ) : null}
         </div>
         {isOpen && branch ? (
           <ul role="group">
@@ -292,8 +368,22 @@ export function LocationTree({ onSelectSite, selectedSiteId }: Props) {
   }
 
   return (
-    <ul role="tree" aria-label="Locais" className="px-3 py-2">
-      {roots.map((node) => renderNode(node, 0))}
-    </ul>
+    <div>
+      {canEdit && onCreateSite ? (
+        <div className="flex justify-end px-3 pt-2">
+          <button
+            type="button"
+            aria-label="Novo local"
+            className="flex h-6 w-6 items-center justify-center rounded-lg text-app-muted hover:bg-app-hover hover:text-app-text"
+            onClick={() => onCreateSite()}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+      ) : null}
+      <ul role="tree" aria-label="Locais" className="px-3 py-2">
+        {roots.map((node) => renderNode(node, 0))}
+      </ul>
+    </div>
   );
 }

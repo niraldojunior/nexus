@@ -191,11 +191,19 @@ export type ResourceEditorModalProps = {
   resourceId?: string | undefined;
   /** Tipo pré-selecionado na criação. */
   initialTypeId?: string | undefined;
+  /** Local Atendido pré-preenchido na criação (Site selecionado na árvore). */
+  initialPlace?: { id: string; name: string } | undefined;
   onClose: () => void;
   onSaved: () => void;
 };
 
-export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSaved }: ResourceEditorModalProps) {
+export function ResourceEditorModal({
+  resourceId,
+  initialTypeId,
+  initialPlace,
+  onClose,
+  onSaved,
+}: ResourceEditorModalProps) {
   const [tab, setTab] = useState<TabId>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -347,8 +355,8 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
             partNumber: '',
             assetReference: '',
             notes: '',
-            placeId: null,
-            placeName: '',
+            placeId: initialPlace?.id ?? null,
+            placeName: initialPlace?.name ?? '',
             geoPlace: { kind: 'none' },
             instanceValues: {},
             children: [],
@@ -366,7 +374,7 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
     return () => {
       cancelled = true;
     };
-  }, [resourceId, initialTypeId, ensureRules]);
+  }, [resourceId, initialTypeId, initialPlace, ensureRules]);
 
   const type = draft ? typeById.get(draft.typeId) : undefined;
   const nature: EditorResourceKind = type?.nature ?? snapshot?.resource['@type'] ?? 'PhysicalResource';

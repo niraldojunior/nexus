@@ -6,6 +6,7 @@ import type {
   PhysicalResource,
   Resource,
   ResourceFunctionSpecification,
+  ResourceStateChangedAt,
   ResourceFunctionSpecificationQuery,
   ResourceQuery,
   ResourceRelationship,
@@ -209,9 +210,42 @@ const servingSiteIdOf = (resource: {
 // divergirem quando uma coluna nova entra (foi o que aconteceu com status_code/label/
 // asset_reference/project_id na issue #171). `serving_site_id` fica fora de propósito: é
 // armazenamento derivado da characteristic `servingSite`, que já viaja em `characteristics`.
+function stateChangedAtParams(resource: {
+  stateChangedAt?: ResourceStateChangedAt | undefined;
+}): [string | null, string | null, string | null, string | null] {
+  const at = resource.stateChangedAt;
+  return [
+    at?.status ?? null,
+    at?.administrative ?? null,
+    at?.operational ?? null,
+    at?.usage ?? null,
+  ];
+}
+
+function stateChangedAtOf(row: {
+  status_changed_at?: string | Date | null;
+  administrative_state_changed_at?: string | Date | null;
+  operational_state_changed_at?: string | Date | null;
+  usage_state_changed_at?: string | Date | null;
+}): ResourceStateChangedAt | undefined {
+  const iso = (value: string | Date | null | undefined): string | undefined =>
+    value ? (value instanceof Date ? value.toISOString() : String(value)) : undefined;
+  const out: ResourceStateChangedAt = {};
+  const status = iso(row.status_changed_at);
+  const administrative = iso(row.administrative_state_changed_at);
+  const operational = iso(row.operational_state_changed_at);
+  const usage = iso(row.usage_state_changed_at);
+  if (status) out.status = status;
+  if (administrative) out.administrative = administrative;
+  if (operational) out.operational = operational;
+  if (usage) out.usage = usage;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 const PHYSICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
        rt.code AS resource_type, r.status, r.status_code, r.place_id, r.place_type,
        r.administrative_state, r.operational_state, r.usage_state,
+       r.status_changed_at, r.administrative_state_changed_at, r.operational_state_changed_at, r.usage_state_changed_at,
        r.serial_number, r.part_number, r.label, r.asset_reference, r.project_id,
        r.valid_for_start, r.valid_for_end, r.related_party, r.characteristics, r.tenant_id,
        r.created_at, r.updated_at`;
@@ -223,7 +257,8 @@ const PHYSICAL_RESOURCE_FROM = `tmf_physical_resource r
 const LOGICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
        rt.code AS resource_type, r.status, r.place_id, r.place_type,
        r.supporting_physical_resource_id, r.administrative_state, r.operational_state,
-       r.usage_state, r.related_party, r.characteristics, r.valid_for_start, r.valid_for_end,
+       r.usage_state, r.status_changed_at, r.administrative_state_changed_at, r.operational_state_changed_at, r.usage_state_changed_at,
+       r.related_party, r.characteristics, r.valid_for_start, r.valid_for_end,
        r.tenant_id`;
 
 const LOGICAL_RESOURCE_FROM = `tmf_logical_resource r
@@ -1391,9 +1426,10 @@ export class OracleResourceRepository implements IResourceRepository {
       `INSERT INTO tmf_physical_resource
        (id, name, resource_specification_id, status, status_code,
         place_id, place_type, serving_site_id, administrative_state, operational_state, usage_state,
+        status_changed_at, administrative_state_changed_at, operational_state_changed_at, usage_state_changed_at,
         serial_number, part_number, label, asset_reference, project_id, valid_for_start, valid_for_end,
         related_party, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        resource_specification_id = excluded.resource_specification_id,
@@ -1405,6 +1441,10 @@ export class OracleResourceRepository implements IResourceRepository {
        administrative_state = excluded.administrative_state,
        operational_state = excluded.operational_state,
        usage_state = excluded.usage_state,
+       status_changed_at = excluded.status_changed_at,
+       administrative_state_changed_at = excluded.administrative_state_changed_at,
+       operational_state_changed_at = excluded.operational_state_changed_at,
+       usage_state_changed_at = excluded.usage_state_changed_at,
        serial_number = excluded.serial_number,
        part_number = excluded.part_number,
        label = excluded.label,
@@ -1427,6 +1467,7 @@ export class OracleResourceRepository implements IResourceRepository {
         resource.administrativeState,
         resource.operationalState,
         resource.usageState,
+        ...stateChangedAtParams(resource),
         resource.serialNumber ?? null,
         resource.partNumber ?? null,
         resource.label ?? null,
@@ -2631,8 +2672,9 @@ export class OracleResourceRepository implements IResourceRepository {
        (id, name, resource_specification_id, status,
         place_id, place_type, serving_site_id, supporting_physical_resource_id,
         administrative_state, operational_state, usage_state,
+        status_changed_at, administrative_state_changed_at, operational_state_changed_at, usage_state_changed_at,
         related_party, characteristics, valid_for_start, valid_for_end, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        resource_specification_id = excluded.resource_specification_id,
@@ -2644,6 +2686,10 @@ export class OracleResourceRepository implements IResourceRepository {
        administrative_state = excluded.administrative_state,
        operational_state = excluded.operational_state,
        usage_state = excluded.usage_state,
+       status_changed_at = excluded.status_changed_at,
+       administrative_state_changed_at = excluded.administrative_state_changed_at,
+       operational_state_changed_at = excluded.operational_state_changed_at,
+       usage_state_changed_at = excluded.usage_state_changed_at,
        related_party = excluded.related_party,
        characteristics = excluded.characteristics,
        valid_for_start = excluded.valid_for_start,
@@ -2661,6 +2707,7 @@ export class OracleResourceRepository implements IResourceRepository {
         resource.administrativeState,
         resource.operationalState,
         resource.usageState,
+        ...stateChangedAtParams(resource),
         JSON.stringify(resource.relatedParty),
         JSON.stringify(resource.characteristic),
         resource.validFor?.startDateTime ?? null,
@@ -2842,9 +2889,7 @@ export class OracleResourceRepository implements IResourceRepository {
         ORDER BY rr.relationship_type, rr.resource_from_id`,
       params,
     );
-    return rows.map((row) =>
-      relationshipFromRow({ ...row, resource_to_id: row.resource_from_id }),
-    );
+    return rows.map((row) => relationshipFromRow({ ...row, resource_to_id: row.resource_from_id }));
   }
 
   public async upsertResourceSiteRelationship(
@@ -3216,6 +3261,8 @@ export class OracleResourceRepository implements IResourceRepository {
       tenantId: row.tenant_id ?? 'default',
     };
 
+    const stateChangedAt = stateChangedAtOf(row);
+    if (stateChangedAt) resource.stateChangedAt = stateChangedAt;
     if (row.place_id) {
       resource.place = {
         id: row.place_id,
@@ -3263,6 +3310,8 @@ export class OracleResourceRepository implements IResourceRepository {
       tenantId: row.tenant_id ?? 'default',
     };
 
+    const stateChangedAt = stateChangedAtOf(row);
+    if (stateChangedAt) resource.stateChangedAt = stateChangedAt;
     if (row.place_id) {
       resource.place = {
         id: row.place_id,

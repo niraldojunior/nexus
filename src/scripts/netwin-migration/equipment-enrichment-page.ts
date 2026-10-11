@@ -7,6 +7,7 @@ import {
   buildEquipmentEnrichment,
   mergeOwnedCharacteristics,
   mergeOwnedRelatedParties,
+  parseNetwinDate,
   resolveSerials,
   servingSiteCharacteristic,
   type PartyReference,
@@ -47,6 +48,11 @@ export interface EnrichedEquipment {
   serial_number: string | null;
   project_id: string | null;
   serving_site_id: string | null;
+  /** Datas (`YYYY-MM-DD`) da última mudança de cada eixo de estado, vindas do ISP. */
+  status_changed_at: string | null;
+  administrative_state_changed_at: string | null;
+  operational_state_changed_at: string | null;
+  usage_state_changed_at: string | null;
   related_party: string;
   characteristics: string;
 }
@@ -233,9 +239,6 @@ export async function enrichEquipmentPage(
       modelSapMaterialCode: isp?.ID_BD_TIPO_EQUIP
         ? caches.modelSap.get(isp.ID_BD_TIPO_EQUIP)
         : null,
-      lifecycleStateDate: isp?.DATA_ESTADO_CICLO_VIDA,
-      operationalStateDate: isp?.DATA_ESTADO_OPERACIONAL,
-      provisionStateDate: isp?.DATA_ESTADO_PROVISAO,
       projectState: isp?.PROJECT_STATE,
       // Projeto estruturado resolvido vira project_id; só o não resolvido cai na characteristic.
       projectName: geoProjectId ? null : projectName,
@@ -263,7 +266,12 @@ export async function enrichEquipmentPage(
       role: 'infrastructure_owner',
     };
 
+    const lifecycleAt = parseNetwinDate(isp?.DATA_ESTADO_CICLO_VIDA);
     rows.set(input.resourceId, {
+      status_changed_at: lifecycleAt,
+      administrative_state_changed_at: lifecycleAt,
+      operational_state_changed_at: parseNetwinDate(isp?.DATA_ESTADO_OPERACIONAL),
+      usage_state_changed_at: parseNetwinDate(isp?.DATA_ESTADO_PROVISAO),
       label: enrichment.label,
       serial_number: serial?.serialNumber ?? null,
       project_id: geoProjectId,

@@ -1,5 +1,7 @@
 import {
   Boxes,
+  ChevronDown,
+  Activity,
   FileText,
   History,
   Link2,
@@ -11,7 +13,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CatalogTreeCombobox, type CatalogResourceTypeRef } from '../../components/CatalogTreePicker';
 import Button from '../../components/ui/Button';
 import {
@@ -20,12 +22,19 @@ import {
   saveResourceAggregate,
   type AggregateChildDraft,
   type EditorCharacteristic,
+  type EditorResource,
   type EditorResourceKind,
   type ResourceEditorSnapshot,
   type SaveResourceAggregatePayload,
 } from '../../services/internalPlantApi';
 import { listGeoSites, getGeoSite, getGeoLocation, getGeoAddress, type GeoSite } from '../../services/geoApi';
-import { GOOGLE_MAPS_KEY, loadGoogleMaps, type GoogleMarkerInstance } from '../../utils/googleMaps';
+import { SitePinMap } from './SitePinMap';
+import {
+  GeoPlaceSection,
+  persistPendingGeoPlace,
+  type GeoPlaceDraft,
+  type GeoPlaceType,
+} from './ResourceAddressSection';
 import { formatAddress } from '../../utils/placeLabel';
 import {
   listResourceStatusCatalog,
@@ -49,10 +58,14 @@ import {
   loadSpecificationsCached,
 } from '../../services/internalPlantCatalogCache';
 
-type TabId = 'general' | 'characteristics' | 'components' | 'relations' | 'places' | 'history';
+import type { StatusTone } from '../../utils/geoLabels';
+import { ADMIN_STATE_TONE, OP_STATE_TONE, USAGE_STATE_TONE } from '../../utils/resourceStateLabels';
+
+type TabId = 'general' | 'characteristics' | 'states' | 'components' | 'relations' | 'places' | 'history';
 const TABS: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
   { id: 'general', label: 'Geral', icon: FileText },
   { id: 'characteristics', label: 'Características', icon: SlidersHorizontal },
+  { id: 'states', label: 'Estados', icon: Activity },
   { id: 'components', label: 'Componentes', icon: Boxes },
   { id: 'relations', label: 'Relações', icon: Link2 },
   { id: 'places', label: 'Locais', icon: MapPin },
@@ -83,6 +96,10 @@ type Draft = {
   typeId: string;
   specId: string;
   statusCode: string;
+  status: string;
+  administrativeState: string;
+  operationalState: string;
+  usageState: string;
   label: string;
   serialNumber: string;
   partNumber: string;
@@ -90,6 +107,7 @@ type Draft = {
   notes: string;
   placeId: string | null;
   placeName: string;
+  geoPlace: GeoPlaceDraft;
   instanceValues: Record<string, string>;
   children: ChildNode[];
   relations: RelationDraft[];
@@ -117,6 +135,12 @@ const notesOf = (characteristic: EditorCharacteristic[] | undefined): string => 
 const placeIsSite = (snap: ResourceEditorSnapshot | null): boolean => {
   const ref = snap?.place?.['@referredType'] ?? snap?.resource.place?.['@referredType'];
   return !ref || ref === 'GeographicSite';
+};
+
+const geoPlaceOf = (snap: ResourceEditorSnapshot): GeoPlaceDraft => {
+  const ref = snap.place ?? snap.resource.place;
+  if (!ref?.id) return { kind: 'none' };
+  return { kind: 'existing', id: ref.id, type: (ref['@referredType'] as GeoPlaceType | undefined) ?? 'GeographicSite' };
 };
 
 const servingSiteOf = (snap: ResourceEditorSnapshot): string | null => {
@@ -282,6 +306,10 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
             typeId,
             specId: snap.resource.resourceSpecificationId,
             statusCode: snap.resource.statusCode ?? '',
+            status: snap.resource.status ?? 'active',
+            administrativeState: snap.resource.administrativeState ?? 'unlocked',
+            operationalState: snap.resource.operationalState ?? 'enabled',
+            usageState: snap.resource.usageState ?? 'idle',
             label: snap.resource.label ?? '',
             serialNumber: snap.resource.serialNumber ?? '',
             partNumber: snap.resource.partNumber ?? '',
@@ -291,6 +319,7 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
               servingSiteOf(snap) ??
               (placeIsSite(snap) ? (snap.place?.id ?? snap.resource.place?.id ?? null) : null),
             placeName: servingSiteOf(snap) ? '' : (snap.place?.name ?? snap.resource.place?.name ?? ''),
+            geoPlace: geoPlaceOf(snap),
             instanceValues,
             children: toTree(snap, typeOfSpec),
             relations,
@@ -309,6 +338,10 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
             typeId: initialTypeId ?? '',
             specId: first?.id ?? '',
             statusCode: '',
+            status: 'active',
+            administrativeState: 'unlocked',
+            operationalState: 'enabled',
+            usageState: 'idle',
             label: '',
             serialNumber: '',
             partNumber: '',
@@ -316,6 +349,7 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
             notes: '',
             placeId: null,
             placeName: '',
+            geoPlace: { kind: 'none' },
             instanceValues: {},
             children: [],
             relations: [],
@@ -453,6 +487,10 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
       name: draft.name.trim(),
       resourceSpecificationId: draft.specId,
       ...(draft.statusCode ? { statusCode: draft.statusCode } : {}),
+      status: draft.status,
+      administrativeState: draft.administrativeState,
+      operationalState: draft.operationalState,
+      usageState: draft.usageState,
       label: draft.label,
       ...(nature === 'PhysicalResource'
         ? {
@@ -478,6 +516,15 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
     setSaving(true);
     setError(null);
     try {
+      const gp = draft.geoPlace;
+      const created = await persistPendingGeoPlace(gp);
+      const geoRef = created ?? (gp.kind === 'existing' && gp.type !== 'GeographicSite' ? gp : undefined);
+      if (geoRef) {
+        payload.placeId = geoRef.id;
+        payload.placeType = geoRef.type;
+      } else if (!placeIsSite(snapshot)) {
+        payload.placeId = null;
+      }
       await saveResourceAggregate(payload);
       setDirty(false);
       onSaved();
@@ -496,8 +543,18 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
         aria-label={resourceId ? 'Editar recurso' : 'Novo recurso'}
         className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[960px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal"
       >
-        <nav aria-label="Recurso" className="flex w-[200px] shrink-0 flex-col gap-1 bg-app-sidebar border-r border-app-border p-4 max-sm:hidden">
-          <p className="mb-2 text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">Recurso</p>
+        <nav aria-label="Recurso" className="flex w-[210px] shrink-0 flex-col gap-1 bg-app-sidebar border-r border-app-border p-4 max-sm:hidden">
+          <div className="mb-3 flex items-center gap-2.5 border-b border-app-border pb-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-app-accent-soft text-app-text">
+              <Boxes size={18} aria-hidden="true" />
+            </span>
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-[0.86rem] font-semibold text-app-text">
+                {resourceId ? (draft?.name || 'Recurso') : 'Novo recurso'}
+              </span>
+              <span className="truncate text-[0.72rem] text-app-muted">{type?.name ?? 'Sem tipo'}</span>
+            </span>
+          </div>
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -517,11 +574,15 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
           ))}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-app-border px-5 py-3">
-            <h2 className="text-[1rem] font-semibold text-app-text">
-              {resourceId ? `Editar recurso${draft?.name ? ` ${draft.name}` : ''}` : 'Novo recurso'}
-              {TABS.find((t) => t.id === tab) ? ` · ${TABS.find((t) => t.id === tab)?.label}` : ''}
-            </h2>
+          <header className="flex items-center justify-between gap-3 border-b border-app-border px-6 py-4">
+            <div className="min-w-0">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
+                {resourceId ? 'Editar recurso' : 'Novo recurso'}
+              </p>
+              <h2 className="truncate text-[1.15rem] font-semibold text-app-text">
+                {draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
+              </h2>
+            </div>
             <button type="button" aria-label="Fechar" onClick={requestClose} className="text-app-muted hover:text-app-text">
               <X size={18} />
             </button>
@@ -538,7 +599,7 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
               </button>
             ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {loading || !draft ? (
               error ? (
                 <p role="alert" className="text-[0.9rem] text-status-red">{error}</p>
@@ -554,7 +615,6 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
                 typeName={type?.name}
                 nature={nature}
                 specs={specsOfDraftType}
-                statuses={statuses}
                 onType={selectType}
                 patch={patch}
               />
@@ -566,6 +626,13 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
                 onChange={(name, value) =>
                   patch({ instanceValues: { ...draft.instanceValues, [name]: value } })
                 }
+              />
+            ) : tab === 'states' ? (
+              <StatesTab
+                draft={draft}
+                statuses={statuses}
+                changedAt={snapshot?.resource.stateChangedAt}
+                patch={patch}
               />
             ) : tab === 'components' ? (
               <ComponentsTab
@@ -603,7 +670,7 @@ export function ResourceEditorModal({ resourceId, initialTypeId, onClose, onSave
               />
             )}
           </div>
-          <footer className="flex items-center justify-between gap-3 border-t border-app-border px-5 py-3">
+          <footer className="flex items-center justify-between gap-3 border-t border-app-border bg-app-sidebar px-6 py-3">
             <p role="alert" className="min-w-0 flex-1 truncate text-[0.82rem] text-status-red" title={error ?? ''}>
               {!loading && error ? error : ''}
             </p>
@@ -630,7 +697,6 @@ function GeneralTab({
   typeName,
   nature,
   specs,
-  statuses,
   onType,
   patch,
 }: {
@@ -641,12 +707,14 @@ function GeneralTab({
   typeName: string | undefined;
   nature: EditorResourceKind;
   specs: ResourceSpecification[];
-  statuses: ResourceStatusCatalogEntry[];
   onType: (ref: CatalogResourceTypeRef) => void;
   patch: (c: Partial<Draft>) => void;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-6">
+      <h3 className="-mb-3 border-b border-app-border pb-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
+        Identificação
+      </h3>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className={labelClass}>
           Nome
@@ -686,19 +754,6 @@ function GeneralTab({
           </select>
         </label>
       </div>
-      <label className={labelClass}>
-        Status
-        <select className={inputClass} value={draft.statusCode} onChange={(e) => patch({ statusCode: e.target.value })}>
-          <option value="">Padrão</option>
-          {statuses
-            .filter((s) => s.active)
-            .map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.name}
-              </option>
-            ))}
-        </select>
-      </label>
       {nature === 'PhysicalResource' ? (
         <div className="grid gap-4 sm:grid-cols-3">
           <label className={labelClass}>
@@ -715,6 +770,10 @@ function GeneralTab({
           </label>
         </div>
       ) : null}
+      <h3 className="-mb-3 border-b border-app-border pb-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
+        Localização e observações
+      </h3>
+      <GeoPlaceSection value={draft.geoPlace} onChange={(geoPlace) => patch({ geoPlace })} />
       <label className={labelClass}>
         Observação
         <textarea
@@ -724,6 +783,199 @@ function GeneralTab({
           onChange={(e) => patch({ notes: e.target.value })}
         />
       </label>
+    </div>
+  );
+}
+
+const STATE_OPTIONS = {
+  status: [
+    ['planned', 'Planejado'],
+    ['active', 'Ativo'],
+    ['suspended', 'Suspenso'],
+    ['terminated', 'Terminado'],
+  ],
+  administrativeState: [
+    ['unlocked', 'Desbloqueado'],
+    ['locked', 'Bloqueado'],
+    ['shuttingDown', 'Em desligamento'],
+  ],
+  operationalState: [
+    ['enabled', 'Habilitado'],
+    ['disabled', 'Desabilitado'],
+  ],
+  usageState: [
+    ['idle', 'Livre'],
+    ['active', 'Em uso parcial'],
+    ['busy', 'Ocupado'],
+    ['unknown', 'Desconhecido'],
+  ],
+} as const;
+
+const STATUS_TONE: Record<string, StatusTone> = {
+  active: 'green',
+  planned: 'amber',
+  suspended: 'red',
+  terminated: 'neutral',
+};
+
+const STATE_TONES: Record<'status' | 'administrativeState' | 'operationalState' | 'usageState', Record<string, StatusTone>> = {
+  status: STATUS_TONE,
+  administrativeState: ADMIN_STATE_TONE,
+  operationalState: OP_STATE_TONE,
+  usageState: USAGE_STATE_TONE,
+};
+
+const formatStateDate = (iso?: string): string => {
+  if (!iso) return 'Sem registro de alteração';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+};
+
+function StatesTab({
+  draft,
+  statuses,
+  changedAt,
+  patch,
+}: {
+  draft: Draft;
+  statuses: ResourceStatusCatalogEntry[];
+  changedAt: NonNullable<EditorResource['stateChangedAt']> | undefined;
+  patch: (p: Partial<Draft>) => void;
+}) {
+  const rows: Array<{
+    key: 'status' | 'administrativeState' | 'operationalState' | 'usageState';
+    label: string;
+    at?: string | undefined;
+  }> = [
+    { key: 'status', label: 'Status', at: changedAt?.status },
+    { key: 'administrativeState', label: 'Estado administrativo', at: changedAt?.administrative },
+    { key: 'operationalState', label: 'Estado operacional', at: changedAt?.operational },
+    { key: 'usageState', label: 'Estado de uso', at: changedAt?.usage },
+  ];
+  const headClass = 'text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted';
+  return (
+    <div className="grid gap-3">
+      <p className="text-[0.82rem] text-app-muted">
+        A data de cada estado é registrada automaticamente quando o valor muda.
+      </p>
+      <div className="grid grid-cols-[minmax(130px,0.8fr)_minmax(200px,1.4fr)_minmax(150px,1fr)] items-center gap-x-4 gap-y-3 max-sm:grid-cols-1">
+        <span className={headClass}>Estado</span>
+        <span className={headClass}>Valor</span>
+        <span className={headClass}>Última alteração</span>
+        {rows.map((r) => (
+          <Fragment key={r.key}>
+            <span className="text-[0.85rem] font-medium text-app-text">{r.label}</span>
+            <StateSelect
+              value={draft[r.key]}
+              options={STATE_OPTIONS[r.key]}
+              tones={STATE_TONES[r.key]}
+              ariaLabel={r.label}
+              onChange={(value) => patch({ [r.key]: value } as Partial<Draft>)}
+            />
+            <span className="text-[0.82rem] text-app-muted">{formatStateDate(r.at)}</span>
+          </Fragment>
+        ))}
+        <span className="text-[0.85rem] font-medium text-app-text">Motivo do status</span>
+        <select
+          aria-label="Motivo do status"
+          className={inputClass}
+          value={draft.statusCode}
+          onChange={(e) => patch({ statusCode: e.target.value })}
+        >
+          <option value="">Padrão</option>
+          {statuses
+            .filter((s) => s.active)
+            .map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+        </select>
+        <span />
+      </div>
+    </div>
+  );
+}
+
+const TONE_DOT: Record<StatusTone, string> = {
+  green: 'bg-status-green',
+  amber: 'bg-status-amber',
+  red: 'bg-status-red',
+  neutral: 'bg-app-muted',
+};
+
+function StateSelect({
+  value,
+  options,
+  tones,
+  ariaLabel,
+  onChange,
+}: {
+  value: string;
+  options: ReadonlyArray<readonly [string, string]>;
+  tones: Record<string, StatusTone>;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const dot = (v: string) => (
+    <span
+      aria-hidden="true"
+      className={`h-2.5 w-2.5 shrink-0 rounded-full ${TONE_DOT[tones[v] ?? 'neutral']}`}
+    />
+  );
+  const current = options.find(([v]) => v === value);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        style={{ borderWidth: 1, borderStyle: 'solid' }}
+        className={`${inputClass} flex w-full items-center gap-2 text-left`}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+      >
+        {dot(value)}
+        <span className="flex-1 truncate">{current?.[1] ?? value}</span>
+        <ChevronDown size={16} aria-hidden="true" className="shrink-0 text-app-muted" />
+      </button>
+      {open ? (
+        <ul
+          role="listbox"
+          className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-app-border bg-app-panel py-1 shadow-lg"
+        >
+          {options.map(([v, label]) => (
+            <li key={v} role="option" aria-selected={v === value}>
+              <button
+                type="button"
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[0.85rem] hover:bg-app-hover ${
+                  v === value ? 'font-semibold' : ''
+                }`}
+                onClick={() => {
+                  onChange(v);
+                  setOpen(false);
+                }}
+              >
+                {dot(v)}
+                {label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -1220,42 +1472,6 @@ function HistoryTab({
   );
 }
 
-function SitePinMap({ point }: { point: { lat: number; lng: number } }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [failed, setFailed] = useState(!GOOGLE_MAPS_KEY);
-  useEffect(() => {
-    if (!GOOGLE_MAPS_KEY || !ref.current) return;
-    let cancelled = false;
-    let marker: GoogleMarkerInstance | undefined;
-    void loadGoogleMaps(GOOGLE_MAPS_KEY)
-      .then(() => {
-        const maps = window.google?.maps;
-        if (cancelled || !ref.current || !maps) return;
-        const map = new maps.Map(ref.current, {
-          center: point,
-          zoom: 16,
-          disableDefaultUI: true,
-          gestureHandling: 'none',
-          clickableIcons: false,
-        });
-        marker = new maps.Marker({ position: point, map });
-      })
-      .catch(() => !cancelled && setFailed(true));
-    return () => {
-      cancelled = true;
-      marker?.setMap(null);
-    };
-  }, [point.lat, point.lng]);
-  if (failed) {
-    return (
-      <p className="text-[0.8rem] text-app-muted">
-        {point.lat.toFixed(6)}, {point.lng.toFixed(6)}
-      </p>
-    );
-  }
-  return <div ref={ref} aria-label="Mapa do local atendido" className="h-44 w-full overflow-hidden rounded-[10px] border border-app-border" />;
-}
-
 function PlacesTab({
   draft,
   siteRules,
@@ -1340,7 +1556,7 @@ function PlacesTab({
               </button>
             </div>
             {servingSite?.address ? <p className="text-app-muted">{servingSite.address}</p> : null}
-            {servingSite?.point ? <SitePinMap point={servingSite.point} /> : null}
+            {servingSite?.point ? <SitePinMap point={servingSite.point} label="Mapa do local atendido" /> : null}
           </div>
         ) : (
           <SiteSearch onPick={(s) => onPlace(s.id, s.name)} />

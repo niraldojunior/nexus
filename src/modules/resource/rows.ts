@@ -21,6 +21,10 @@ type ResourceRowBase = {
   administrative_state: AdministrativeState;
   operational_state: OperationalState;
   usage_state: UsageState;
+  status_changed_at?: string | null;
+  administrative_state_changed_at?: string | null;
+  operational_state_changed_at?: string | null;
+  usage_state_changed_at?: string | null;
   related_party: string | null;
   characteristics: string | null;
   valid_for_start: string | null;

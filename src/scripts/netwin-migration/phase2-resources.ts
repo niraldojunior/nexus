@@ -38,6 +38,7 @@ import {
   SpecCoverage,
 } from './concrete-specs.js';
 import {
+  chunksOf,
   hydrateByIds,
   hydrateWktByIds,
   selectResourceIdsByInfranodes,
@@ -516,6 +517,40 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         });
       }
 
+      // Canon: o `place` do recurso é o GeographicSite (o poste/CO onde ele está pendurado),
+      // derivado de INFRANODE_ID; sem site migrado, mantém a Location própria do equipamento.
+      const siteIdByEquipment = new Map<string, string>();
+      for (const eq of rows) {
+        if (eq.INFRANODE_ID) {
+          siteIdByEquipment.set(netwinEquipmentId(eq.ID), netwinLocationId(eq.INFRANODE_ID));
+        }
+      }
+      const existingSites = new Set<string>();
+      if (target) {
+        for (const chunk of chunksOf([...new Set(siteIdByEquipment.values())])) {
+          const binds: Record<string, string> = {};
+          const clause = chunk
+            .map((id, i) => {
+              binds[`s${i}`] = id;
+              return `:s${i}`;
+            })
+            .join(',');
+          const found = await target.execute<{ ID: string }>(
+            `SELECT id FROM ${ctx.t('tmf_geographic_site')} WHERE id IN (${clause})`,
+            binds,
+            { outFormat: oracledb.OUT_FORMAT_OBJECT },
+          );
+          for (const row of found.rows ?? []) existingSites.add(row.ID);
+        }
+      }
+      for (const resource of resources) {
+        const siteId = siteIdByEquipment.get(String(resource.id));
+        if (siteId && (!target || existingSites.has(siteId))) {
+          resource.place_id = siteId;
+          resource.place_type = 'GeographicSite';
+        }
+      }
+
       const enrichmentStartedAt = Date.now();
       const enrichment = await enrichEquipmentPage(
         ctx,
@@ -606,6 +641,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'administrative_state',
               'operational_state',
               'usage_state',
+              'status_changed_at',
+              'administrative_state_changed_at',
+              'operational_state_changed_at',
+              'usage_state_changed_at',
               'related_party',
               'characteristics',
               'label',

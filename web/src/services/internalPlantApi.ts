@@ -141,6 +141,12 @@ export type EditorResource = {
   administrativeState?: string;
   operationalState?: string;
   usageState?: string;
+  stateChangedAt?: {
+    status?: string;
+    administrative?: string;
+    operational?: string;
+    usage?: string;
+  };
   label?: string;
   serialNumber?: string;
   partNumber?: string;
@@ -207,6 +213,7 @@ export type SaveResourceAggregatePayload = {
   '@type': EditorResourceKind;
   name: string;
   resourceSpecificationId: string;
+  status?: string;
   statusCode?: string;
   administrativeState?: string;
   operationalState?: string;
@@ -217,6 +224,7 @@ export type SaveResourceAggregatePayload = {
   assetReference?: string;
   supportingPhysicalResourceId?: string | null;
   placeId?: string | null;
+  placeType?: 'GeographicSite' | 'GeographicAddress' | 'GeographicLocation';
   characteristic?: EditorCharacteristic[];
   components?: AggregateChildDraft[];
   relationships?: Array<{

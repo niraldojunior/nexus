@@ -249,19 +249,23 @@ describe('netwin-migration: seleção e hidratação em lote', () => {
     );
     const query = scopedInfranodeIdQuery(predicates);
 
-    expect(query).toContain('infranode.BADDR_MUNICIPIO_ID IN (:municipioId0)');
-    expect(query).toContain('NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio');
-    expect(query).toContain('infranode.BADDR_UF_ABRV = :uf');
+    expect(query).toContain(
+      '(infranode.BADDR_MUNICIPIO_ID IN (:municipioId0) OR infranode.MUNICIPIO_ID IN (:municipioId0))',
+    );
+    expect(query).toContain(
+      '(NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio OR NETWIN.LIMPASTRING(infranode.MUNICIPIO) = :municipio)',
+    );
+    expect(query).toContain('(infranode.BADDR_UF_ABRV = :uf OR infranode.UF_ABRV = :uf)');
     expect(query).toContain('infranode.PI_ID > :lastId');
     expect(query).toContain('ORDER BY infranode.PI_ID');
     expect(query).toContain('WHERE ROWNUM <= :batchSize');
     expect(query).not.toMatch(/DISTINCT/i);
   });
 
-  it('mantém a consulta sem pré-filtro igual ao caminho legado', () => {
+  it('sem pré-filtro, aceita endereço (BADDR_*) ou localidade para não perder nós prediais', () => {
     expect(structuredInfranodePredicates({ municipio: 'Niterói', uf: 'RJ' })).toEqual([
-      'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
-      'infranode.BADDR_UF_ABRV = :uf',
+      '(NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio OR NETWIN.LIMPASTRING(infranode.MUNICIPIO) = :municipio)',
+      '(infranode.BADDR_UF_ABRV = :uf OR infranode.UF_ABRV = :uf)',
     ]);
   });
 

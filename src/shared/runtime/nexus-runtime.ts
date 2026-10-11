@@ -145,16 +145,22 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     db,
     lookupActiveVisualAsset: async (tenantId, assetId) =>
       (await studioAssetRepository.get(tenantId, assetId))?.active === true,
-    lookupPlace: async (id) => {
-      const site = await geoService.getSite(id);
+    lookupPlace: async (id, tenantId) => {
+      const geoContext = {
+        actorSub: 'system',
+        tenantId,
+        roles: ['inventory.reader'],
+        traceId: 'resource-place-lookup',
+      };
+      const site = await geoService.getSite(id, geoContext);
       if (site) {
         return { id: site.id, '@referredType': 'GeographicSite', href: site.href, name: site.name };
       }
-      const location = await geoService.getLocation(id);
+      const location = await geoService.getLocation(id, geoContext);
       if (location) {
         return { id: location.id, '@referredType': 'GeographicLocation', href: location.href };
       }
-      const address = await geoService.getAddress(id);
+      const address = await geoService.getAddress(id, geoContext);
       if (address) {
         return { id: address.id, '@referredType': 'GeographicAddress', href: address.href };
       }
@@ -164,6 +170,23 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
       const spec = await geoService.getSpec(id);
       if (!spec) return undefined;
       return { id: spec.id, name: spec.name };
+    },
+    // Leitura escopada ao tenant da sessão: o editor da Planta Interna não pode vincular site de
+    // outro tenant (issue #334).
+    lookupGeoSite: async (id, tenantId) => {
+      const site = await geoService.getSite(id, {
+        actorSub: 'system',
+        tenantId,
+        roles: ['inventory.reader'],
+        traceId: 'resource-editor',
+      });
+      if (!site) return undefined;
+      return {
+        id: site.id,
+        name: site.name,
+        siteSpecificationId: site.siteSpecificationId,
+        status: site.status,
+      };
     },
     lookupParty: async (id) => {
       const party = await partyService.getParty(id);

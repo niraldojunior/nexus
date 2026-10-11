@@ -384,6 +384,22 @@ O `href` (self-link) continua obrigatório nos contratos TMF expostos pelo Nexus
 
 Por padrão o valor é relativo (`/tmf-api/...`). Quando o gateway público difere do host interno, `TMF_PUBLIC_BASE_URL` prefixa o link absoluto no boot. Código novo não deve montar `href` por template literal nem aceitar o valor como fonte de verdade persistível; deve usar `buildHref`.
 
+### 9.0 Enriquecimento de equipamentos Netwin (#332)
+
+A Fase 2.B do migrador hidrata, por lote e somente por SELECT, os dados de `OSP_EQUIPMENT`, do espelho `NS_RES_INS_NODE_MIRROR` / `ISP_INS_EQUIPAMENTO`, dos atributos dinâmicos e dos lookups (`PROJECT`, `OSP_CELL`, `ISP_CAT_MODELO_EQUIP`). Nada disso entra no SELECT paginado.
+
+| Informação Netwin                                                                      | Destino Nexus                                                                                                      |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `LABEL`                                                                                | `physical_resource.label`                                                                                          |
+| `NUM_SERIE`                                                                            | `serial_number` (UNIQUE); colisão ou duplicata vira a characteristic `reportedSerialNumber`, sem abortar o lote    |
+| `OWNER_ID`                                                                             | `relatedParty` com role `infrastructure_owner` (Party importada na Fase 1)                                         |
+| Fabricante do modelo                                                                   | `relatedParty` com role `manufacturer` da ResourceSpecification (nunca da instância)                               |
+| `PROJECT.NAME`                                                                         | `project_id` se casar por nome normalizado exato com `geo_project`; senão a characteristic `implementationProject` |
+| Estação abastecedora (dinâmico `supplierStationId` ou `OSP_CELL.SUPPLIER_LOCATION_ID`) | `serving_site_id` + characteristic `servingSite` (nunca `INFRANODE_ID`, que é o local físico)                      |
+| Dimensões, rede, topologia, flags, controle, datas, observações                        | characteristics tipadas da allowlist (`characteristicLevel: instance`)                                             |
+
+Política de rerun: o merge é por ownership. O migrador substitui apenas a allowlist, `servingSite`, `substatus`, `_origin` e o papel `infrastructure_owner`; characteristics e partes relacionadas de outras origens (Studio, UI, `vendor`) sobrevivem. Atributos dinâmicos fora da allowlist são só contabilizados no relatório. Não há fase de backfill separada: recursos já carregados recebem o enriquecimento ao reexecutar a 2.B.
+
 ---
 
 ## 9.1 Diretório geográfico canônico

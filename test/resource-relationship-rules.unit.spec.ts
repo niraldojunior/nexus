@@ -64,6 +64,15 @@ test('ResourceService.ensureBootstrapResourceRelationshipTypes: seeds canonical 
   assert.ok(first.relationshipTypes.some((t) => t.code === 'fedBy' && t.inverseCode === 'feeds'));
   assert.ok(first.relationshipTypes.some((t) => t.code === 'feeds' && t.inverseCode === 'fedBy'));
   assert.ok(
+    first.relationshipTypes.some(
+      (t) =>
+        t.code === 'feeds' &&
+        t.allowedTargetKinds.includes('RESOURCE_TYPE') &&
+        t.allowedTargetKinds.includes('GEOGRAPHIC_SITE_SPECIFICATION') &&
+        t.cardinality === undefined,
+    ),
+  );
+  assert.ok(
     first.relationshipTypes.some((t) => t.code === 'serves' && t.inverseCode === 'servedBy'),
   );
   assert.ok(

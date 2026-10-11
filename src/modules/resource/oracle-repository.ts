@@ -28,6 +28,7 @@ import type {
   ResourceCatalogQuery,
   ResourceRelationshipType,
   ResourceTypeRelationshipRule,
+  ResourceSiteRelationship,
 } from './domain.js';
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import {
@@ -428,7 +429,7 @@ export class OracleResourceRepository implements IResourceRepository {
     resourceId: string,
     scope?: ResourceTenantScope & { limit?: number },
   ): Promise<ResourceAuditEntry[]> {
-    const conditions = [`entity_type = 'PhysicalResource'`, 'entity_id = ?'];
+    const conditions = [`entity_type IN ('PhysicalResource', 'LogicalResource')`, 'entity_id = ?'];
     const params: Array<string | number> = [resourceId];
     if (scope?.tenantId) {
       conditions.push('tenant_id = ?');
@@ -556,7 +557,6 @@ export class OracleResourceRepository implements IResourceRepository {
   // inteiro (só `listResourceTypes()` é usado; ver `service.ts`).
 
   public async listResourceTypes(scope?: ResourceTenantScope): Promise<ResourceType[]> {
-    await this.seedResourceCatalog();
     // `tmf_resource_type` mistura dois tipos de linha: o vocabulário canônico seedado sempre sob
     // tenant_id='default' (linha ~428) e os tipos criados via API pela folha do tenant real
     // (`ResourceService.createResourceCatalogNode` grava com `tenantOf(context)`). Uma leitura
@@ -1743,7 +1743,7 @@ export class OracleResourceRepository implements IResourceRepository {
 
   public async listResourceComponents(
     resourceId: string,
-    options?: { scope?: ResourceTenantScope; maxDepth?: number },
+    options?: { scope?: ResourceTenantScope; maxDepth?: number; includeConnections?: boolean },
   ): Promise<{
     components: ResourceComponentNode[];
     connections: ResourceComponentConnection[];
@@ -1851,7 +1851,10 @@ export class OracleResourceRepository implements IResourceRepository {
       ],
       tenantId,
     );
-    const connections = await this.listComponentConnections(resourceId, maxDepth, visited);
+    const connections =
+      options?.includeConnections === false
+        ? []
+        : await this.listComponentConnections(resourceId, maxDepth, visited);
     const components = componentRows.map((row): ResourceComponentNode => {
       const portInfo = portInfoById.get(row.id);
       const specificationInfo = row.specification_id
@@ -2810,6 +2813,148 @@ export class OracleResourceRepository implements IResourceRepository {
     return rows.map((row) =>
       relationshipFromRow({ ...row, resource_to_id: row.related_resource_id }),
     );
+  }
+
+  public async listIncomingResourceRelationships(
+    resourceId: string,
+    relationshipType?: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceRelationship[]> {
+    const params: unknown[] = [resourceId];
+    const typeClause = relationshipType ? 'AND rr.relationship_type = ?' : '';
+    if (relationshipType) params.push(relationshipType);
+    const tenantClause = scope?.tenantId
+      ? `AND (EXISTS (SELECT 1 FROM tmf_physical_resource p
+                       WHERE p.id = rr.resource_from_id AND p.tenant_id = ?)
+              OR EXISTS (SELECT 1 FROM tmf_logical_resource l
+                          WHERE l.id = rr.resource_from_id AND l.tenant_id = ?))`
+      : '';
+    if (scope?.tenantId) params.push(scope.tenantId, scope.tenantId);
+    const rows = await this.db.all<{
+      resource_from_id: string;
+      relationship_type: string;
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+    }>(
+      `SELECT rr.resource_from_id, rr.relationship_type, rr.valid_for_start, rr.valid_for_end
+         FROM tmf_resource_relationship rr
+        WHERE rr.resource_to_id = ? ${typeClause} ${tenantClause}
+        ORDER BY rr.relationship_type, rr.resource_from_id`,
+      params,
+    );
+    return rows.map((row) =>
+      relationshipFromRow({ ...row, resource_to_id: row.resource_from_id }),
+    );
+  }
+
+  public async upsertResourceSiteRelationship(
+    relationship: ResourceSiteRelationship,
+  ): Promise<ResourceSiteRelationship> {
+    await this.db.run(
+      `INSERT INTO tmf_resource_site_relationship
+       (id, tenant_id, resource_id, site_id, relationship_type, valid_for_start, valid_for_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(tenant_id, resource_id, site_id, relationship_type) DO UPDATE SET
+       valid_for_start = excluded.valid_for_start,
+       valid_for_end = excluded.valid_for_end,
+       updated_at = CURRENT_TIMESTAMP`,
+      [
+        relationship.id,
+        relationship.tenantId,
+        relationship.resourceId,
+        relationship.site.id,
+        relationship.relationshipType,
+        relationship.validFor?.startDateTime ?? null,
+        relationship.validFor?.endDateTime ?? null,
+      ],
+    );
+    const stored = (
+      await this.listResourceSiteRelationships(relationship.resourceId, {
+        tenantId: relationship.tenantId,
+      })
+    ).find(
+      (item) =>
+        item.site.id === relationship.site.id &&
+        item.relationshipType === relationship.relationshipType,
+    );
+    return stored ?? relationship;
+  }
+
+  public async deleteResourceSiteRelationship(
+    tenantId: string,
+    resourceId: string,
+    siteId: string,
+    relationshipType: string,
+  ): Promise<boolean> {
+    const result = await this.db.run(
+      `DELETE FROM tmf_resource_site_relationship
+       WHERE tenant_id = ? AND resource_id = ? AND site_id = ? AND relationship_type = ?`,
+      [tenantId, resourceId, siteId, relationshipType],
+    );
+    return result.changes > 0;
+  }
+
+  public async listResourceSiteRelationships(
+    resourceId: string,
+    scope?: ResourceTenantScope,
+  ): Promise<ResourceSiteRelationship[]> {
+    const params: unknown[] = [resourceId];
+    const tenantClause = scope?.tenantId ? 'AND r.tenant_id = ?' : '';
+    if (scope?.tenantId) params.push(scope.tenantId);
+    const rows = await this.db.all<{
+      id: string;
+      tenant_id: string;
+      resource_id: string;
+      site_id: string;
+      site_name?: string | null;
+      relationship_type: string;
+      valid_for_start?: string | null;
+      valid_for_end?: string | null;
+    }>(
+      `SELECT r.id, r.tenant_id, r.resource_id, r.site_id, s.name AS site_name,
+              r.relationship_type, r.valid_for_start, r.valid_for_end
+         FROM tmf_resource_site_relationship r
+         LEFT JOIN tmf_geographic_site s ON s.id = r.site_id
+        WHERE r.resource_id = ? ${tenantClause}
+        ORDER BY r.relationship_type, s.name, r.site_id`,
+      params,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      tenantId: row.tenant_id,
+      resourceId: row.resource_id,
+      site: {
+        id: row.site_id,
+        ...(row.site_name ? { name: row.site_name } : {}),
+        '@referredType': 'GeographicSite' as const,
+      },
+      relationshipType: row.relationship_type,
+      ...(row.valid_for_start || row.valid_for_end
+        ? {
+            validFor: {
+              ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+              ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+            },
+          }
+        : {}),
+    }));
+  }
+
+  public async countResourceSiteRelationshipsForSite(
+    siteId: string,
+    relationshipType: string,
+    scope?: ResourceTenantScope,
+  ): Promise<number> {
+    const params: unknown[] = [siteId, relationshipType];
+    const tenantClause = scope?.tenantId ? 'AND tenant_id = ?' : '';
+    if (scope?.tenantId) params.push(scope.tenantId);
+    const row = await this.db.get<{ total: number | string }>(
+      `SELECT COUNT(*) AS total FROM tmf_resource_site_relationship
+        WHERE site_id = ? AND relationship_type = ?
+          AND (valid_for_end IS NULL OR valid_for_end > CURRENT_TIMESTAMP) ${tenantClause}`,
+      params,
+    );
+    return Number(row?.total ?? 0);
   }
 
   private async loadResourceRelationshipsByResourceIds(

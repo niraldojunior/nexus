@@ -34,8 +34,8 @@ const relationshipTypePresentation = [
   ['connectedTo', 'Conectado à', 'Conectado à (ex. Fibra → Fibra)'],
   ['mountedOn', 'Montado em', 'Montado em (ex. CDO → Poste)'],
   ['containedBy', 'É contido por', 'É contido por (ex. Splitter → CDO)'],
-  ['fedBy', 'Alimenta', 'Alimenta (ex. CDO → Fibra)'],
-  ['feeds', 'É Alimentado por', 'É Alimentado por (ex. Fibra → CDO)'],
+  ['fedBy', 'É alimentado por', 'É alimentado por (ex. CDO → Fibra ou Estação)'],
+  ['feeds', 'Alimenta', 'Alimenta (ex. Fibra → CDO)'],
   ['serves', 'Atende', 'Atende (ex. CDO → CDO downstream)'],
   ['servedBy', 'Atendido por', 'Atendido por (ex. CDO → CDO upstream)'],
   ['terminatesOn', 'Termina', 'Termina (ex. Fibra → porta/splitter)'],
@@ -149,7 +149,8 @@ export function ResourceRelationshipRulesPanel({
   const selectRelationshipTypes = useMemo(
     () =>
       relationshipTypes
-        .filter((type) => type.code !== 'terminates')
+        // `fedBySite` é um tipo legado, absorvido por `fedBy` (que aceita recurso ou local).
+        .filter((type) => type.code !== 'terminates' && type.code !== 'fedBySite')
         .sort((a, b) => {
           const aPresentation = relationshipPresentationByCode.get(a.code);
           const bPresentation = relationshipPresentationByCode.get(b.code);

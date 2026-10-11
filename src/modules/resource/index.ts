@@ -40,6 +40,13 @@ export type {
   UpdateResourceFunctionSpecificationInput,
   UpdateResourceSpecificationInput,
   UsageState,
+  ResourceSiteRelationship,
+  ResourceAggregateChildDraft,
+  ResourceAggregateRelationshipDraft,
+  ResourceAggregateSiteRelationshipDraft,
+  SaveResourceAggregateInput,
+  SaveResourceAggregateResult,
+  ResourceEditorSnapshot,
 } from './domain.js';
 export type { IResourceRepository } from './resource-repository-interface.js';
 export { ResourceRepository } from './repository.js';

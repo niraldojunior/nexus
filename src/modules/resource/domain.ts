@@ -757,8 +757,92 @@ export type CreateLogicalResourceInput = {
 };
 
 // Mesmo motivo do UpdatePhysicalResourceInput: `placeId: null` desvincula explicitamente.
-export type UpdateLogicalResourceInput = Omit<Partial<CreateLogicalResourceInput>, 'placeId'> & {
+export type UpdateLogicalResourceInput = Omit<
+  Partial<CreateLogicalResourceInput>,
+  'placeId' | 'supportingPhysicalResourceId'
+> & {
   placeId?: string | null;
+  supportingPhysicalResourceId?: string | null;
+};
+
+// --- Editor de Recursos da Planta Interna (issue #334) -------------------------------------------
+
+/**
+ * Vínculo adicional Resource→GeographicSite tipado por `ResourceTypeRelationshipRule` com destino
+ * `GEOGRAPHIC_SITE_SPECIFICATION`. O `place` continua sendo o serving site principal (único).
+ */
+export type ResourceSiteRelationship = {
+  id: string;
+  resourceId: string;
+  site: { id: string; name?: string; '@referredType': 'GeographicSite' };
+  relationshipType: string;
+  validFor?: TimePeriod;
+  tenantId: string;
+};
+
+/** Filho novo (sem `id`) ou existente (com `id`) na árvore `containsAsChild` do agregado. */
+export type ResourceAggregateChildDraft = {
+  id?: string;
+  name: string;
+  resourceSpecificationId: string;
+  characteristic?: Characteristic[];
+  children?: ResourceAggregateChildDraft[];
+};
+
+export type ResourceAggregateRelationshipDraft = {
+  targetId: string;
+  relationshipType: string;
+  /** `incoming` grava a aresta alvo→raiz; o backend materializa a inversa quando o catálogo pede. */
+  direction?: 'outgoing' | 'incoming';
+};
+
+export type ResourceAggregateSiteRelationshipDraft = {
+  siteId: string;
+  relationshipType: string;
+};
+
+/**
+ * Comando único de criação/edição do editor. Coleções ausentes (`undefined`) não são reconciliadas;
+ * coleções presentes substituem o conjunto atual (filhos removidos são desvinculados, nunca apagados).
+ */
+export type SaveResourceAggregateInput = {
+  id?: string;
+  '@type': ResourceKind;
+  name: string;
+  resourceSpecificationId: string;
+  status?: ResourceStatus;
+  statusCode?: string;
+  administrativeState?: AdministrativeState;
+  operationalState?: OperationalState;
+  usageState?: UsageState;
+  label?: string;
+  serialNumber?: string;
+  partNumber?: string;
+  assetReference?: string;
+  supportingPhysicalResourceId?: string | null;
+  placeId?: string | null;
+  characteristic?: Characteristic[];
+  validFor?: TimePeriod;
+  components?: ResourceAggregateChildDraft[];
+  relationships?: ResourceAggregateRelationshipDraft[];
+  siteRelationships?: ResourceAggregateSiteRelationshipDraft[];
+};
+
+export type SaveResourceAggregateResult = {
+  resource: Resource;
+  createdIds: string[];
+};
+
+export type ResourceEditorSnapshot = {
+  '@type': 'ResourceEditorSnapshot';
+  resource: Resource;
+  specification: ResourceSpecification;
+  resourceType: ResourceType;
+  components: ResourceComponentNode[];
+  /** Relações não estruturais (exclui containsAsChild/containedBy). */
+  relationships: ResourceConnection[];
+  siteRelationships: ResourceSiteRelationship[];
+  place?: { id: string; name?: string; '@referredType': string };
 };
 
 export type ResourceFunctionActivationInput = {

@@ -15,6 +15,7 @@ import {
   Layers,
   MapPin,
   Tag,
+  User,
   Wrench,
 } from 'lucide-react';
 import {
@@ -238,6 +239,18 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch }: ResourceOvervi
     location?.geometryType === 'Point' && location.geometry?.type === 'Point'
       ? formatCoordinatePoint(location.geometry.coordinates)
       : null;
+
+  const owner = resource.relatedParty?.find((party) => party.role === 'infrastructure_owner');
+  // Fallback somente-leitura: projeto da origem que não correspondeu a nenhum geo_project.
+  const implementationProject = resource.characteristic?.find(
+    (c) => c.name === 'implementationProject',
+  )?.value;
+  const projectName =
+    project?.name ??
+    project?.id ??
+    (typeof implementationProject === 'string' && implementationProject
+      ? implementationProject
+      : null);
 
   const originSystem = resource.characteristic?.find(
     (c) => c.name === '_origin.system' || c.name === 'sourceSystem',
@@ -507,12 +520,12 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch }: ResourceOvervi
         />
       ) : null}
 
-      {project ? (
-        <IconInfoRow
-          icon={FolderKanban}
-          hint="Projeto de implantação"
-          value={project.name ?? project.id}
-        />
+      {owner ? (
+        <IconInfoRow icon={User} hint="Proprietário" value={owner.name ?? owner.id} />
+      ) : null}
+
+      {projectName ? (
+        <IconInfoRow icon={FolderKanban} hint="Projeto de implantação" value={projectName} />
       ) : null}
 
       {canEdit ? (

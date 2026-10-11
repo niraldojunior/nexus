@@ -23,19 +23,66 @@ export interface EnrichmentCharacteristicDef {
  * resolvido são campos canônicos de PhysicalResource e, por isso, NÃO aparecem aqui. `manufacturer`
  * e `networkType` são nomes proibidos pelo catálogo (ver `assertCanonicalCharacteristics`).
  */
-export const ENRICHMENT_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] = [
+/**
+ * Atributos de célula de rádio (Célula 2G/3G/4G). Só os ResourceTypes de célula recebem estas
+ * definições de instância (ver `radioCellInstanceDefinitions`); não poluem os demais tipos.
+ * `coverageRadius` é o raio de atendimento em metros: fica como characteristic, sem polígono.
+ */
+export const RADIO_CELL_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] = [
+  { name: 'cellIdentity', valueType: 'string', description: 'CI — identificador da célula.' },
+  { name: 'ossName', valueType: 'string', description: 'Nome da célula no OSS.' },
+  { name: 'sectorNumber', valueType: 'integer', description: 'Nº do setor.' },
+  { name: 'carrierCount', valueType: 'integer', description: 'Nº de portadoras.' },
+  { name: 'frequencyBand', valueType: 'string', description: 'Banda de frequência (MHz).' },
+  { name: 'coverageType', valueType: 'string', description: 'Tipo de cobertura (macro, micro...).' },
+  {
+    name: 'coverageRadius',
+    valueType: 'decimal',
+    description: 'Raio de cobertura em metros.',
+  },
+  { name: 'propagationMedium', valueType: 'string', description: 'Meio de propagação.' },
+  { name: 'mobileCountryCode', valueType: 'string', description: 'MCC.' },
+  { name: 'mobileNetworkCode', valueType: 'string', description: 'MNC.' },
+  { name: 'locationAreaCode', valueType: 'integer', description: 'LAC.' },
+  { name: 'locationAreaClass', valueType: 'string', description: 'Classe do LAC.' },
+  { name: 'routingAreaCode', valueType: 'string', description: 'RAC.' },
+  { name: 'networkColourCode', valueType: 'integer', description: 'NCC.' },
+  { name: 'baseColourCode', valueType: 'integer', description: 'BCC.' },
+  { name: 'bsic', valueType: 'integer', description: 'BSIC.' },
+  { name: 'bcchFrequency', valueType: 'integer', description: 'BCCH.' },
+  { name: 'sdcch', valueType: 'string', description: 'SDCCH.' },
+  { name: 'pdch', valueType: 'string', description: 'PDCH.' },
+  { name: 'edge', valueType: 'boolean', description: 'EDGE habilitado.' },
+  { name: 'taLimit', valueType: 'integer', description: 'Limite de TA.' },
+  { name: 'tiltElectrical', valueType: 'decimal', description: 'Tilt elétrico.' },
+  { name: 'bsPowerNominal', valueType: 'decimal', description: 'Potência BS nominal.' },
+  { name: 'bsPowerBcch', valueType: 'decimal', description: 'Potência BS BCCH.' },
+  { name: 'chargingArea', valueType: 'string', description: 'Charging area.' },
+  { name: 'cgi', valueType: 'string', description: 'CGI — identificador global da célula.' },
+  { name: 'sharingType', valueType: 'string', description: 'Tipo de compartilhamento.' },
+];
+
+const BASE_ENRICHMENT_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] = [
   { name: 'designation', valueType: 'string', description: 'Designação do equipamento na origem.' },
   {
     name: 'alternateDesignation',
     valueType: 'string',
     description: 'Designação alternativa informada pela origem.',
   },
-  { name: 'identification', valueType: 'string', description: 'Identificação informada pela origem.' },
+  {
+    name: 'identification',
+    valueType: 'string',
+    description: 'Identificação informada pela origem.',
+  },
   { name: 'onPatternTag', valueType: 'string', description: 'Etiqueta de padrão em campo.' },
   { name: 'thirdTag', valueType: 'string', description: 'Etiqueta de terceiro.' },
   { name: 'tagOnField', valueType: 'string', description: 'Etiqueta aplicada em campo.' },
   { name: 'campaignName', valueType: 'string', description: 'Campanha que originou o registro.' },
-  { name: 'sicomId', valueType: 'string', description: 'Identificador SICOM estruturado na origem.' },
+  {
+    name: 'sicomId',
+    valueType: 'string',
+    description: 'Identificador SICOM estruturado na origem.',
+  },
   { name: 'accessNetwork', valueType: 'string', description: 'Rede de acesso do equipamento.' },
   { name: 'topology', valueType: 'string', description: 'Topologia do equipamento.' },
   { name: 'nomecNumber', valueType: 'integer', description: 'Número NOMEC.' },
@@ -50,7 +97,11 @@ export const ENRICHMENT_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] 
   { name: 'controlGroup', valueType: 'string', description: 'Grupo de controle de implantação.' },
   { name: 'controlState', valueType: 'string', description: 'Estado de controle de implantação.' },
   { name: 'controlStateDate', valueType: 'date', description: 'Data do estado de controle.' },
-  { name: 'lifecycleStateDate', valueType: 'date', description: 'Data do estado de ciclo de vida.' },
+  {
+    name: 'lifecycleStateDate',
+    valueType: 'date',
+    description: 'Data do estado de ciclo de vida.',
+  },
   { name: 'operationalStateDate', valueType: 'date', description: 'Data do estado operacional.' },
   { name: 'provisionStateDate', valueType: 'date', description: 'Data do estado de provisão.' },
   { name: 'implementationProject', valueType: 'string', description: 'Projeto de implantação.' },
@@ -62,6 +113,11 @@ export const ENRICHMENT_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] 
     description: 'Material SAP da instância quando diverge do modelo.',
   },
   { name: 'reportedSerialNumber', valueType: 'string', description: 'Série não aplicada.' },
+];
+
+export const ENRICHMENT_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] = [
+  ...BASE_ENRICHMENT_CHARACTERISTICS,
+  ...RADIO_CELL_CHARACTERISTICS,
 ];
 
 /** Nomes de characteristic administrados pelo migrador, além de `servingSite` e `_origin.*`. */
@@ -102,10 +158,49 @@ const DYNAMIC_ATTRIBUTE_TO_CHARACTERISTIC = new Map<string, string>([
   ['estadocontrole', 'controlState'],
   ['datoestadocontrole', 'controlStateDate'],
   ['dataestadocontrole', 'controlStateDate'],
+  // Célula de rádio. As chaves são os rótulos da tela Netwin, normalizados; nomes que a origem
+  // use diferente aparecem em `unmappedDynamic` no relatório e entram aqui depois.
+  ['ci', 'cellIdentity'],
+  ['cellid', 'cellIdentity'],
+  ['ossname', 'ossName'],
+  ['nsetor', 'sectorNumber'],
+  ['sectornumber', 'sectorNumber'],
+  ['nportadoras', 'carrierCount'],
+  ['banda', 'frequencyBand'],
+  ['band', 'frequencyBand'],
+  ['tipocobertura', 'coverageType'],
+  ['raiodecobertura', 'coverageRadius'],
+  ['raiocobertura', 'coverageRadius'],
+  ['raiodecoberturam', 'coverageRadius'],
+  ['coverageradius', 'coverageRadius'],
+  ['meiopropagacao', 'propagationMedium'],
+  ['mcc', 'mobileCountryCode'],
+  ['mnc', 'mobileNetworkCode'],
+  ['lac', 'locationAreaCode'],
+  ['lacclasse', 'locationAreaClass'],
+  ['rac', 'routingAreaCode'],
+  ['ncc', 'networkColourCode'],
+  ['bcc', 'baseColourCode'],
+  ['bsic', 'bsic'],
+  ['bcch', 'bcchFrequency'],
+  ['sdcch', 'sdcch'],
+  ['pdch', 'pdch'],
+  ['edge', 'edge'],
+  ['talimit', 'taLimit'],
+  ['tiltletrico', 'tiltElectrical'],
+  ['tilteletrico', 'tiltElectrical'],
+  ['potenciabsnominal', 'bsPowerNominal'],
+  ['potenciabsbcch', 'bsPowerBcch'],
+  ['chargingarea', 'chargingArea'],
+  ['cgi', 'cgi'],
+  ['compartilhamento', 'sharingType'],
 ]);
 
 /** Atributos dinâmicos que não viram characteristic, mas alimentam lookups (célula/estação). */
-export const DYNAMIC_LOOKUP_ATTRIBUTES = { cell: 'cell', supplierStation: 'supplierstationid' } as const;
+export const DYNAMIC_LOOKUP_ATTRIBUTES = {
+  cell: 'cell',
+  supplierStation: 'supplierstationid',
+} as const;
 
 /** Nome da characteristic de destino para um atributo dinâmico, ou `null` se fora da allowlist. */
 export function dynamicAttributeTarget(attributeName: string | null | undefined): string | null {
@@ -117,7 +212,17 @@ export function dynamicAttributeTarget(attributeName: string | null | undefined)
 export const dynamicLookupKey = (attributeName: string | null | undefined): string =>
   normalizeTypeKey(attributeName);
 
-const PLACEHOLDER_TEXT = new Set(['', 'desconhecido', 'n/a', 'na', 'null', 'nulo', '-', '--', 'sem']);
+const PLACEHOLDER_TEXT = new Set([
+  '',
+  'desconhecido',
+  'n/a',
+  'na',
+  'null',
+  'nulo',
+  '-',
+  '--',
+  'sem',
+]);
 
 /** Texto aparado, ou `null` para vazio/placeholder. */
 export function cleanText(value: unknown): string | null {
@@ -209,7 +314,18 @@ export function coerceCharacteristicValue(
 
 /** Definitions de instância a registrar no ResourceType (allowlist tipada). */
 export function enrichmentInstanceDefinitions(): MigrationCharacteristic[] {
-  return ENRICHMENT_CHARACTERISTICS.map((def) => ({
+  return BASE_ENRICHMENT_CHARACTERISTICS.map((def) => ({
+    name: def.name,
+    description: def.description,
+    value: '',
+    valueType: def.valueType,
+    characteristicLevel: 'instance' as const,
+  }));
+}
+
+/** Definitions de instância exclusivas dos tipos de célula de rádio. */
+export function radioCellInstanceDefinitions(): MigrationCharacteristic[] {
+  return RADIO_CELL_CHARACTERISTICS.map((def) => ({
     name: def.name,
     description: def.description,
     value: '',

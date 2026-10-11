@@ -22,6 +22,7 @@ import type {
   ResourceCatalogQuery,
   ResourceRelationshipType,
   ResourceTypeRelationshipRule,
+  ResourceSiteRelationship,
 } from './domain.js';
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import { RESOURCE_TYPES } from './catalog.js';
@@ -42,6 +43,7 @@ export class ResourceRepository implements IResourceRepository {
   private readonly resourceCatalogNodes = new Map<string, ResourceCatalogNode>();
   private readonly resourceRelationshipTypes = new Map<string, ResourceRelationshipType>();
   private readonly resourceTypeRelationshipRules = new Map<string, ResourceTypeRelationshipRule>();
+  private readonly siteRelationships = new Map<string, ResourceSiteRelationship>();
 
   public constructor() {
     for (const type of RESOURCE_TYPES) {
@@ -96,6 +98,12 @@ export class ResourceRepository implements IResourceRepository {
           cloneResourceTypeRelationshipRule(value),
         ]),
       ),
+      siteRelationships: new Map(
+        [...this.siteRelationships].map(([key, value]) => [
+          key,
+          cloneSiteRelationship(value),
+        ]),
+      ),
     };
     try {
       return await fn();
@@ -125,6 +133,9 @@ export class ResourceRepository implements IResourceRepository {
         this.resourceRelationshipTypes.set(key, value);
       for (const [key, value] of snapshot.resourceTypeRelationshipRules)
         this.resourceTypeRelationshipRules.set(key, value);
+      this.siteRelationships.clear();
+      for (const [key, value] of snapshot.siteRelationships)
+        this.siteRelationships.set(key, value);
       throw error;
     }
   }
@@ -666,7 +677,7 @@ export class ResourceRepository implements IResourceRepository {
 
   public listResourceComponents(
     resourceId: string,
-    options?: { scope?: ResourceTenantScope; maxDepth?: number },
+    options?: { scope?: ResourceTenantScope; maxDepth?: number; includeConnections?: boolean },
   ): {
     components: ResourceComponentNode[];
     connections: ResourceComponentConnection[];
@@ -934,18 +945,86 @@ export class ResourceRepository implements IResourceRepository {
   }
 
   public listIncidentResourceRelationships(resourceId: string): ResourceRelationship[] {
-    const outgoing = this.listResourceRelationships(resourceId);
-    const incoming = [...this.relationships.entries()].flatMap(([fromId, relationships]) =>
-      relationships
-        .filter((relationship) => relationship.id === resourceId)
+    return [
+      ...this.listResourceRelationships(resourceId),
+      ...this.listIncomingResourceRelationships(resourceId),
+    ];
+  }
+
+  public listIncomingResourceRelationships(
+    resourceId: string,
+    relationshipType?: string,
+    scope?: ResourceTenantScope,
+  ): ResourceRelationship[] {
+    return [...this.relationships.entries()].flatMap(([fromId, relationships]) => {
+      const source = this.physicalResources.get(fromId) ?? this.logicalResources.get(fromId);
+      if (!source || (scope?.tenantId && source.tenantId !== scope.tenantId)) return [];
+      return relationships
+        .filter(
+          (relationship) =>
+            relationship.id === resourceId &&
+            (!relationshipType || relationship.relationshipType === relationshipType),
+        )
         .map((relationship) => ({
           id: fromId,
           relationshipType: relationship.relationshipType,
           '@referredType': 'Resource' as const,
           ...(relationship.validFor ? { validFor: { ...relationship.validFor } } : {}),
-        })),
+        }));
+    });
+  }
+
+  public upsertResourceSiteRelationship(
+    relationship: ResourceSiteRelationship,
+  ): ResourceSiteRelationship {
+    const key = siteRelationshipKey(
+      relationship.tenantId,
+      relationship.resourceId,
+      relationship.site.id,
+      relationship.relationshipType,
     );
-    return [...outgoing, ...incoming];
+    const current = this.siteRelationships.get(key);
+    // Mesma chave natural mantém o id original, como o ON CONFLICT do Oracle.
+    const stored = cloneSiteRelationship({ ...relationship, id: current?.id ?? relationship.id });
+    this.siteRelationships.set(key, stored);
+    return cloneSiteRelationship(stored);
+  }
+
+  public deleteResourceSiteRelationship(
+    tenantId: string,
+    resourceId: string,
+    siteId: string,
+    relationshipType: string,
+  ): boolean {
+    return this.siteRelationships.delete(
+      siteRelationshipKey(tenantId, resourceId, siteId, relationshipType),
+    );
+  }
+
+  public listResourceSiteRelationships(
+    resourceId: string,
+    scope?: ResourceTenantScope,
+  ): ResourceSiteRelationship[] {
+    return [...this.siteRelationships.values()]
+      .filter(
+        (item) =>
+          item.resourceId === resourceId && (!scope?.tenantId || item.tenantId === scope.tenantId),
+      )
+      .map(cloneSiteRelationship);
+  }
+
+  public countResourceSiteRelationshipsForSite(
+    siteId: string,
+    relationshipType: string,
+    scope?: ResourceTenantScope,
+  ): number {
+    return [...this.siteRelationships.values()].filter(
+      (item) =>
+        item.site.id === siteId &&
+        item.relationshipType === relationshipType &&
+        (!scope?.tenantId || item.tenantId === scope.tenantId) &&
+        periodIsActive(item.validFor),
+    ).length;
   }
 
   public listResources(query?: ResourceQuery): Resource[] {
@@ -986,6 +1065,24 @@ const relationshipIsActive = (relationship: ResourceRelationship): boolean => {
   const end = relationship.validFor?.endDateTime;
   return !end || new Date(end).getTime() > Date.now();
 };
+
+const periodIsActive = (validFor?: { endDateTime?: string }): boolean => {
+  const end = validFor?.endDateTime;
+  return !end || new Date(end).getTime() > Date.now();
+};
+
+const siteRelationshipKey = (
+  tenantId: string,
+  resourceId: string,
+  siteId: string,
+  relationshipType: string,
+): string => `${tenantId}|${resourceId}|${siteId}|${relationshipType}`;
+
+const cloneSiteRelationship = (item: ResourceSiteRelationship): ResourceSiteRelationship => ({
+  ...item,
+  site: { ...item.site },
+  ...(item.validFor ? { validFor: { ...item.validFor } } : {}),
+});
 
 const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): number => {
   if (a.role !== b.role) return a.role === 'FO.I' ? -1 : b.role === 'FO.I' ? 1 : 0;

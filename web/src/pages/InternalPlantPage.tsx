@@ -1,4 +1,4 @@
-import { Layers, MapPin, Search } from 'lucide-react';
+import { Layers, MapPin, Plus, Search, Trash2 } from 'lucide-react';
 import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -9,6 +9,7 @@ import { OverlayScrollArea } from '../components/OverlayScrollArea';
 import { ResourceIcon } from '../components/ResourceIcon';
 import Button from '../components/ui/Button';
 import DataTable, { DataTablePagination, type DataTableColumn } from '../components/ui/DataTable';
+import Modal from '../components/ui/Modal';
 import PageHead from '../components/ui/PageHead';
 import { describeStatus } from '../components/ui/StatusPill';
 import {
@@ -16,8 +17,10 @@ import {
   useInternalPlantResources,
 } from '../hooks/useInternalPlantResources';
 import { useIsMobile } from '../hooks/useIsMobile';
-import type {
-  InternalPlantLocationNode,
+import { useSession } from '../hooks/useSession';
+import {
+  terminateInternalPlantResource,
+  type InternalPlantLocationNode,
   InternalPlantResourceFilter,
   InternalPlantResourceRow,
 } from '../services/internalPlantApi';
@@ -31,6 +34,7 @@ import {
   storeDockWidth,
 } from './internal-plant/dock';
 import { InternalPlantSearchBar } from './internal-plant/InternalPlantSearchBar';
+import { ResourceEditorModal } from './internal-plant/ResourceEditorModal';
 import { LocationTree } from './internal-plant/LocationTree';
 import { TypeTree, type TypeSelection } from './internal-plant/TypeTree';
 
@@ -43,6 +47,8 @@ type Context = {
   filter: InternalPlantResourceFilter;
   icon: ContextIcon;
   key?: string;
+  /** Folha ResourceType selecionada na aba Tipos; habilita a criação. */
+  leafTypeId?: string | undefined;
 };
 
 const TONE_BG: Record<string, string> = {
@@ -78,7 +84,7 @@ function ContextTitleIcon({ icon }: { icon: ContextIcon }) {
   return <Icon size={26} aria-hidden="true" className="shrink-0 text-app-muted" />;
 }
 
-const columns: DataTableColumn<InternalPlantResourceRow>[] = [
+const baseColumns: DataTableColumn<InternalPlantResourceRow>[] = [
   {
     key: 'icon',
     header: <span className="sr-only">Ícone</span>,
@@ -106,6 +112,58 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const [retryToken, setRetryToken] = useState(0);
   const [dockWidth, setDockWidth] = useState(readStoredDockWidth);
   const state = useInternalPlantResources(context?.filter ?? null, offset, retryToken);
+  const { canEdit } = useSession();
+  const [editor, setEditor] = useState<{ resourceId?: string; typeId?: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<InternalPlantResourceRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const columns: DataTableColumn<InternalPlantResourceRow>[] = [
+    ...baseColumns,
+    ...(canEdit
+      ? [
+          {
+            key: 'actions',
+            header: <span className="sr-only">Ações</span>,
+            cellClassName: 'w-10',
+            render: (row: InternalPlantResourceRow) => (
+              <button
+                type="button"
+                aria-label={`Excluir ${row.name}`}
+                title="Excluir"
+                className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDeleteError(null);
+                  setPendingDelete(row);
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+              </button>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await terminateInternalPlantResource(pendingDelete.id);
+      if (state.status === 'ready' && state.page.items.length === 1 && offset > 0) {
+        setOffset(Math.max(0, offset - INTERNAL_PLANT_PAGE_SIZE));
+      }
+      setPendingDelete(null);
+      setRetryToken((n) => n + 1);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'Falha ao excluir o recurso.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const confirm = (next: Context) => {
     setContext(next);
@@ -128,6 +186,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       filter: { resourceTypeIds: selection.resourceTypeIds },
       icon: { kind: 'type', resourceTypeCode: selection.resourceTypeCode },
       key: selection.key,
+      leafTypeId: selection.leafResourceTypeId,
     });
 
   // Arrasto da divisória: pointer capture mantém o gesto mesmo se o cursor sair da alça.
@@ -207,7 +266,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           >
             <span className={tabLabelClass(tab === 'types')}>
               <Layers size={14} aria-hidden="true" />
-              Tipo
+              Tipos
             </span>
           </button>
         </div>
@@ -256,6 +315,19 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 </span>
               }
               marginBottom="12px"
+              actions={
+                canEdit && context.leafTypeId ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    aria-label="Novo recurso"
+                    title="Novo recurso"
+                    onClick={() => setEditor({ typeId: context.leafTypeId })}
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                  </Button>
+                ) : undefined
+              }
             />
             {state.status === 'error' ? (
               <div role="alert" className="grid justify-items-start gap-2 text-[0.92rem]">
@@ -283,6 +355,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   columns={columns}
                   rows={state.page.items}
                   rowKey={(row) => `${row['@type']}:${row.id}`}
+                  {...(canEdit ? { onRowClick: (row: InternalPlantResourceRow) => setEditor({ resourceId: row.id }) } : {})}
                   emptyMessage="Nenhum recurso encontrado."
                 />
                 <DataTablePagination
@@ -298,6 +371,44 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           </section>
         )}
       </main>
+
+      {canEdit && editor ? (
+        <ResourceEditorModal
+          resourceId={editor.resourceId}
+          initialTypeId={editor.typeId}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            setRetryToken((n) => n + 1);
+          }}
+        />
+      ) : null}
+      {pendingDelete ? (
+        <Modal
+          title="Excluir recurso"
+          onClose={() => (deleting ? undefined : setPendingDelete(null))}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+                Cancelar
+              </Button>
+              <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? 'Excluindo...' : 'Excluir'}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[0.92rem] text-app-text">
+            Excluir &ldquo;{pendingDelete.name}&rdquo;? O recurso será encerrado (não é removido
+            fisicamente).
+          </p>
+          {deleteError ? (
+            <p role="alert" className="mt-2 text-[0.85rem] text-status-red">
+              {deleteError}
+            </p>
+          ) : null}
+        </Modal>
+      ) : null}
 
       <InternalPlantSearchBar
         value={draft}

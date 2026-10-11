@@ -29,6 +29,7 @@ export const TABLE_NAMES = [
   'tmf_logical_resource',
   'tmf_resource_relationship',
   'tmf_resource_relationship_generic',
+  'tmf_resource_site_relationship',
   'tmf_service_specification',
   'tmf_service_category',
   'tmf_service_candidate',
@@ -2155,6 +2156,28 @@ const MIGRATIONS_SQL_V29_GEO_ADMINISTRATIVE_CITY = `
     ON tmf_geographic_address(administrative_city_id);
 `;
 
+// V30: relações adicionais Resource→GeographicSite tipadas por ResourceTypeRelationshipRule
+// (issue #334). O `place` (serving site) continua sendo o vínculo principal; esta tabela guarda
+// apenas os vínculos extras (ex.: CDOE "é alimentada por" uma estação). Sem FK física para o site:
+// sites e recursos vivem em módulos distintos e o soft-delete (C6) nunca remove a linha de origem.
+const MIGRATIONS_SQL_V30_RESOURCE_SITE_RELATIONSHIP = `
+  CREATE TABLE IF NOT EXISTS tmf_resource_site_relationship (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    relationship_type TEXT NOT NULL,
+    valid_for_start TIMESTAMPTZ,
+    valid_for_end TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_tmf_resource_site_rel
+    ON tmf_resource_site_relationship(tenant_id, resource_id, site_id, relationship_type);
+  CREATE INDEX IF NOT EXISTS idx_tmf_resource_site_rel_site
+    ON tmf_resource_site_relationship(tenant_id, site_id, relationship_type);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2276,6 +2299,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 29,
     name: 'geo-administrative-city',
     sql: MIGRATIONS_SQL_V29_GEO_ADMINISTRATIVE_CITY,
+  },
+  {
+    version: 30,
+    name: 'resource-site-relationship',
+    sql: MIGRATIONS_SQL_V30_RESOURCE_SITE_RELATIONSHIP,
   },
 ];
 

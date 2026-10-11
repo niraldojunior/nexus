@@ -10,8 +10,11 @@ import {
 } from '../netwin-migration-kit.js';
 import { MODEL_CHARACTERISTIC } from '../../modules/resource/canonical-characteristics.js';
 import {
+  CDO_TYPE_TO_SPEC,
   cardTypeSpecId,
   equipmentModelSpecId,
+  equipmentTypeSpecId,
+  isRadioCellTypeName,
   NETWIN_OTHER_EQUIPMENT_FOLDER,
   netwinEquipmentFolder,
   type NetwinTechnologyUsage,
@@ -21,7 +24,7 @@ import {
   portTypeSpecId,
   uniqueSpecNames,
 } from './concrete-specs.js';
-import { enrichmentInstanceDefinitions } from './equipment-enrichment.js';
+import { enrichmentInstanceDefinitions, radioCellInstanceDefinitions } from './equipment-enrichment.js';
 import { deterministicUuid, netwinPartyId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import type { PhaseStats } from './types.js';
 
@@ -701,6 +704,16 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           row.id as string,
           EQUIPMENT_INSTANCE_CHARACTERISTICS,
         );
+        // Célula de rádio (2G/3G/4G...): atributos de RF só nos tipos de célula.
+        if (isRadioCellTypeName(dynamicTypeNameByCode.get(String(row.code)))) {
+          await reconcileCatalogCharacteristics(
+            target,
+            ctx.t,
+            'tmf_resource_type',
+            row.id as string,
+            radioCellInstanceDefinitions(),
+          );
+        }
       }
       await target.execute('COMMIT');
     }
@@ -718,6 +731,30 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         );
       }
       await target.execute('COMMIT');
+    }
+    // Tipos canônicos que o Netwin usa como equipamento (CDOE, Splitter, Router...) também vão
+    // para a pasta da tecnologia predominante; as pastas antigas ficam só com o que o Netwin não
+    // organiza por tecnologia (cabos, infraestrutura civil, portas, placas).
+    {
+      const usagesByCode = new Map<string, NetwinTechnologyUsage[]>();
+      for (const [tipoNe, code] of typeCodeByTipoNe) {
+        if (!reusedTypeCodes.has(code)) continue;
+        usagesByCode.set(code, [
+          ...(usagesByCode.get(code) ?? []),
+          ...(technologyUsageByTipoNe.get(tipoNe) ?? []),
+        ]);
+      }
+      for (const [code, usages] of usagesByCode) {
+        const merged = new Map<string, NetwinTechnologyUsage>();
+        for (const usage of usages) {
+          const key = `${usage.sigla ?? ''}|${usage.nome ?? ''}`;
+          const current = merged.get(key);
+          merged.set(key, current ? { ...usage, count: current.count + usage.count } : usage);
+        }
+        const folder = netwinEquipmentFolder([...merged.values()]);
+        if (folder.code === NETWIN_OTHER_EQUIPMENT_FOLDER.code && usages.length === 0) continue;
+        dynamicTypeFolderByCode.set(code, folder);
+      }
     }
     {
       const perFolder = new Map<string, string[]>();
@@ -856,6 +893,32 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     console.log(
       `Modelos de equipamento em uso (specs concretas): ${equipmentRows.length}; fabricante resolvido=${manufacturerResolved}, sem correspondência única=${manufacturerUnresolved}`,
     );
+
+    // Spec "de tipo": todo tipo interno em uso ganha uma specification própria, mesmo sem modelo
+    // cadastrado (Célula 2G, antena...). Sem ela o equipamento cairia na genérica `Netwin CDOE`.
+    {
+      const typeRows = [...equipmentTypeRows.values()].filter(
+        (row) => !CDO_TYPE_TO_SPEC.has(row.ID_BD_TIPO_NE),
+      );
+      const typeSpecNames = uniqueSpecNames(
+        typeRows,
+        (row) =>
+          `${text(row.TIPO_NOME) ?? text(row.TIPO_SIGLA) ?? `Equipamento ${row.ID_BD_TIPO_NE}`} (tipo)`,
+        (row) => row.ID_BD_TIPO_NE,
+      );
+      for (const row of typeRows) {
+        const name = typeSpecNames.get(row.ID_BD_TIPO_NE)!;
+        await upsertConcreteSpec(
+          equipmentTypeSpecId(row.ID_BD_TIPO_NE),
+          name,
+          equipmentTypeCode(row.ID_BD_TIPO_NE),
+          `Tipo de equipamento Netwin ${name} (sem modelo específico)`,
+          [...netwinOriginCharacteristics('ISP_CAT_TIPO_EQUIPAMENTO', row.ID_BD_TIPO_NE)],
+        );
+      }
+      await flushConcreteSpecs();
+      console.log(`Specs de tipo de equipamento (sem modelo): ${typeRows.length}`);
+    }
 
     console.log('Consultando tipos de carta/splitter (ISP_CAT_CARTA)...');
     const cardTypes = await source.execute<{
@@ -1096,6 +1159,45 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
               : [];
           }),
       ];
+
+      // Tipos já organizados por pasta Netwin saem das pastas antigas; pasta antiga sem
+      // nenhum tipo restante é desativada (soft, C6) em vez de ficar vazia na árvore.
+      const legacyGroupCodes = new Set([
+        'grp-equipamentos-opticos',
+        'grp-cabos-opticos',
+        'grp-infraestrutura-civil',
+        'grp-equipamentos-core',
+      ]);
+      for (const grp of catalogHierarchy) {
+        if (!legacyGroupCodes.has(grp.groupCode)) continue;
+        grp.types = grp.types.filter(
+          (code) => !dynamicTypeFolderByCode.has(code) && resourceTypeIdByCode.has(code),
+        );
+        if (grp.types.length > 0) continue;
+        const emptyId = existingNodeIdByCode.get(grp.groupCode);
+        if (emptyId) {
+          await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+            id: emptyId,
+            tenant_id: ctx.options.tenantId,
+            catalog_id: catalogId,
+            parent_node_id: null,
+            code: grp.groupCode,
+            name: grp.groupName,
+            kind: 'GROUP',
+            resource_type_id: null,
+            status: 'inactive',
+            sort_order: 999,
+          });
+          console.log(`  [Pasta] ${grp.groupName}: vazia, desativada (padrão Netwin).`);
+        }
+      }
+      catalogHierarchy.splice(
+        0,
+        catalogHierarchy.length,
+        ...catalogHierarchy.filter(
+          (grp) => !legacyGroupCodes.has(grp.groupCode) || grp.types.length > 0,
+        ),
+      );
 
       for (const grp of catalogHierarchy) {
         const grpNodeId =

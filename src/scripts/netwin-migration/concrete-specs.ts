@@ -32,6 +32,14 @@ export const genericSpecId = (name: string): string =>
 export const equipmentModelSpecId = (tipoNe: number, tipoEquip: number): string =>
   deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:EQUIPMENT_MODEL:${tipoNe}:${tipoEquip}`);
 
+/** Spec "de tipo": cobre o tipo interno Netwin que não tem modelo (`ID_BD_TIPO_EQUIP`) cadastrado. */
+export const equipmentTypeSpecId = (tipoNe: number): string =>
+  deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:EQUIPMENT_TYPE:${tipoNe}`);
+
+/** Tipos de célula de rádio (`Célula 2G`, `Célula 3G`...) — recebem os atributos de rádio. */
+export const isRadioCellTypeName = (name: string | null | undefined): boolean =>
+  /^celula(\d+g|lte|nr)$/.test(normalizeTypeKey(name));
+
 export const cardTypeSpecId = (tipoCarta: number): string =>
   deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:CARD_TYPE:${tipoCarta}`);
 

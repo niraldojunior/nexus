@@ -2178,6 +2178,20 @@ const MIGRATIONS_SQL_V30_RESOURCE_SITE_RELATIONSHIP = `
     ON tmf_resource_site_relationship(tenant_id, site_id, relationship_type);
 `;
 
+// V31: data da última alteração de cada eixo de estado do recurso (aba "Estados" da Planta Interna).
+// Substitui as characteristics lifecycleStateDate/operationalStateDate/provisionStateDate que o
+// migrador Netwin gravava: ciclo de vida → status + administrativo; operacional; provisão → uso.
+const MIGRATIONS_SQL_V31_RESOURCE_STATE_CHANGED_AT = `
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS administrative_state_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS operational_state_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_physical_resource ADD COLUMN IF NOT EXISTS usage_state_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS administrative_state_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS operational_state_changed_at TIMESTAMPTZ;
+  ALTER TABLE tmf_logical_resource ADD COLUMN IF NOT EXISTS usage_state_changed_at TIMESTAMPTZ;
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2304,6 +2318,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 30,
     name: 'resource-site-relationship',
     sql: MIGRATIONS_SQL_V30_RESOURCE_SITE_RELATIONSHIP,
+  },
+  {
+    version: 31,
+    name: 'resource-state-changed-at',
+    sql: MIGRATIONS_SQL_V31_RESOURCE_STATE_CHANGED_AT,
   },
 ];
 

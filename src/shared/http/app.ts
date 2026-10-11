@@ -5799,6 +5799,7 @@ const parseSaveResourceAggregateInput = (
     'assetReference',
     'supportingPhysicalResourceId',
     'placeId',
+    'placeType',
     'characteristic',
     'validFor',
     'components',
@@ -5836,6 +5837,17 @@ const parseSaveResourceAggregateInput = (
     throw new AppError('body id does not match the route id', {
       code: 'RESOURCE_AGGREGATE_ID_MISMATCH',
       statusCode: 409,
+    });
+  }
+  if (
+    body.placeType !== undefined &&
+    body.placeType !== 'GeographicSite' &&
+    body.placeType !== 'GeographicAddress' &&
+    body.placeType !== 'GeographicLocation'
+  ) {
+    throw new AppError('placeType must be GeographicSite, GeographicAddress or GeographicLocation', {
+      code: 'RESOURCE_AGGREGATE_PLACE_TYPE_INVALID',
+      statusCode: 400,
     });
   }
   const assertArray = (field: string): void => {

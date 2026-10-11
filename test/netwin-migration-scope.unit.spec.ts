@@ -24,9 +24,11 @@ describe('netwin-migration: bairro scope', () => {
       'NETWIN.LIMPASTRING(infranode.BAIRRO) = :bairro',
     );
     expect(municipalityInfranodePredicate('infranode')).toBe(
-      'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
+      '(NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio OR NETWIN.LIMPASTRING(infranode.MUNICIPIO) = :municipio)',
     );
-    expect(ufInfranodePredicate('infranode')).toBe('infranode.BADDR_UF_ABRV = :uf');
+    expect(ufInfranodePredicate('infranode')).toBe(
+      '(infranode.BADDR_UF_ABRV = :uf OR infranode.UF_ABRV = :uf)',
+    );
   });
 
   it('compara a UF diretamente, sem LIMPASTRING, para preservar o caminho indexado', () => {
@@ -37,7 +39,7 @@ describe('netwin-migration: bairro scope', () => {
 
   it('gera pré-filtro municipal por IDs indexados com binds nomeados', () => {
     expect(municipalityIdInfranodePredicate('infranode', [42, 84])).toBe(
-      'infranode.BADDR_MUNICIPIO_ID IN (:municipioId0, :municipioId1)',
+      '(infranode.BADDR_MUNICIPIO_ID IN (:municipioId0, :municipioId1) OR infranode.MUNICIPIO_ID IN (:municipioId0, :municipioId1))',
     );
     expect(municipalityIdInfranodeBinds([42, 84])).toEqual({
       municipioId0: 42,

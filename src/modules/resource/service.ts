@@ -2019,38 +2019,40 @@ export class ResourceService {
       input.placeId !== undefined
         ? await this.resolvePlace(input.placeId, input.placeType, context)
         : current.place;
-    const updated = await this.repository.upsertPhysicalResource({
-      ...currentWithoutPlace,
-      name: input.name !== undefined ? input.name.trim() : current.name,
-      resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
-      resourceSpecification: {
-        id: input.resourceSpecificationId ?? current.resourceSpecificationId,
-        '@referredType': 'ResourceSpecification',
-      },
-      resourceType: specification?.resourceType.code ?? current.resourceType,
-      status: input.status ?? current.status,
-      administrativeState: input.administrativeState ?? current.administrativeState,
-      operationalState: input.operationalState ?? current.operationalState,
-      usageState: input.usageState ?? current.usageState,
-      relatedParty: input.relatedParty
-        ? await normalizePhysicalResourceRelatedParties(
-            input.relatedParty,
-            this.dependencies.lookupParty,
-            this.dependencies.lookupPartyRoles,
-            tenantOf(context),
-          )
-        : current.relatedParty,
-      resourceRelationship: current.resourceRelationship,
-      characteristic: input.characteristic ?? current.characteristic,
-      ...(place ? { place } : {}),
-      ...(input.serialNumber !== undefined ? { serialNumber: input.serialNumber } : {}),
-      ...(input.partNumber !== undefined ? { partNumber: input.partNumber } : {}),
-      ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
-      ...(input.label !== undefined ? { label: input.label } : {}),
-      ...(input.assetReference !== undefined ? { assetReference: input.assetReference } : {}),
-      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-      ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
-    });
+    const updated = await this.repository.upsertPhysicalResource(
+      stampStateChanges(current, {
+        ...currentWithoutPlace,
+        name: input.name !== undefined ? input.name.trim() : current.name,
+        resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
+        resourceSpecification: {
+          id: input.resourceSpecificationId ?? current.resourceSpecificationId,
+          '@referredType': 'ResourceSpecification',
+        },
+        resourceType: specification?.resourceType.code ?? current.resourceType,
+        status: input.status ?? current.status,
+        administrativeState: input.administrativeState ?? current.administrativeState,
+        operationalState: input.operationalState ?? current.operationalState,
+        usageState: input.usageState ?? current.usageState,
+        relatedParty: input.relatedParty
+          ? await normalizePhysicalResourceRelatedParties(
+              input.relatedParty,
+              this.dependencies.lookupParty,
+              this.dependencies.lookupPartyRoles,
+              tenantOf(context),
+            )
+          : current.relatedParty,
+        resourceRelationship: current.resourceRelationship,
+        characteristic: input.characteristic ?? current.characteristic,
+        ...(place ? { place } : {}),
+        ...(input.serialNumber !== undefined ? { serialNumber: input.serialNumber } : {}),
+        ...(input.partNumber !== undefined ? { partNumber: input.partNumber } : {}),
+        ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
+        ...(input.label !== undefined ? { label: input.label } : {}),
+        ...(input.assetReference !== undefined ? { assetReference: input.assetReference } : {}),
+        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+        ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
+      }),
+    );
 
     await this.syncMapFeature(updated, context);
 
@@ -2073,14 +2075,16 @@ export class ResourceService {
   ): Promise<PhysicalResource> {
     const current = await this.getPhysicalResourceOrThrow(id, context);
     await this.assertResourceCanTerminate(current, context);
-    const terminated = await this.repository.upsertPhysicalResource({
-      ...current,
-      status: 'terminated',
-      administrativeState: 'locked',
-      operationalState: 'disabled',
-      usageState: 'idle',
-      validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
-    });
+    const terminated = await this.repository.upsertPhysicalResource(
+      stampStateChanges(current, {
+        ...current,
+        status: 'terminated',
+        administrativeState: 'locked',
+        operationalState: 'disabled',
+        usageState: 'idle',
+        validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
+      }),
+    );
     await this.syncMapFeature(terminated, context);
     await this.emit(
       'ResourceStateChangeEvent',
@@ -2295,31 +2299,35 @@ export class ResourceService {
         : current.supportingPhysicalResourceId
           ? await this.getPhysicalResourceOrThrow(current.supportingPhysicalResourceId, context)
           : undefined;
-    const { supportingPhysicalResourceId: _currentSupporting, ...currentWithoutPlaceAndSupporting } =
-      currentWithoutPlace;
+    const {
+      supportingPhysicalResourceId: _currentSupporting,
+      ...currentWithoutPlaceAndSupporting
+    } = currentWithoutPlace;
 
-    const updated = await this.repository.upsertLogicalResource({
-      ...currentWithoutPlaceAndSupporting,
-      name: input.name !== undefined ? input.name.trim() : current.name,
-      resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
-      resourceSpecification: {
-        id: input.resourceSpecificationId ?? current.resourceSpecificationId,
-        '@referredType': 'ResourceSpecification',
-      },
-      resourceType: specification?.resourceType.code ?? current.resourceType,
-      status: input.status ?? current.status,
-      administrativeState: input.administrativeState ?? current.administrativeState,
-      operationalState: input.operationalState ?? current.operationalState,
-      usageState: input.usageState ?? current.usageState,
-      relatedParty: input.relatedParty
-        ? await normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
-        : current.relatedParty,
-      resourceRelationship: current.resourceRelationship,
-      characteristic: input.characteristic ?? current.characteristic,
-      ...(place ? { place } : {}),
-      ...(supporting ? { supportingPhysicalResourceId: supporting.id } : {}),
-      ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
-    });
+    const updated = await this.repository.upsertLogicalResource(
+      stampStateChanges(current, {
+        ...currentWithoutPlaceAndSupporting,
+        name: input.name !== undefined ? input.name.trim() : current.name,
+        resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
+        resourceSpecification: {
+          id: input.resourceSpecificationId ?? current.resourceSpecificationId,
+          '@referredType': 'ResourceSpecification',
+        },
+        resourceType: specification?.resourceType.code ?? current.resourceType,
+        status: input.status ?? current.status,
+        administrativeState: input.administrativeState ?? current.administrativeState,
+        operationalState: input.operationalState ?? current.operationalState,
+        usageState: input.usageState ?? current.usageState,
+        relatedParty: input.relatedParty
+          ? await normalizeRelatedParties(input.relatedParty, this.dependencies.lookupParty)
+          : current.relatedParty,
+        resourceRelationship: current.resourceRelationship,
+        characteristic: input.characteristic ?? current.characteristic,
+        ...(place ? { place } : {}),
+        ...(supporting ? { supportingPhysicalResourceId: supporting.id } : {}),
+        ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
+      }),
+    );
 
     await this.emit(
       current.status !== updated.status
@@ -2339,14 +2347,16 @@ export class ResourceService {
   ): Promise<LogicalResource> {
     const current = await this.getLogicalResourceOrThrow(id, context);
     await this.assertResourceCanTerminate(current, context);
-    const terminated = await this.repository.upsertLogicalResource({
-      ...current,
-      status: 'terminated',
-      administrativeState: 'locked',
-      operationalState: 'disabled',
-      usageState: 'idle',
-      validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
-    });
+    const terminated = await this.repository.upsertLogicalResource(
+      stampStateChanges(current, {
+        ...current,
+        status: 'terminated',
+        administrativeState: 'locked',
+        operationalState: 'disabled',
+        usageState: 'idle',
+        validFor: buildTimePeriod(current.validFor?.startDateTime, new Date().toISOString()),
+      }),
+    );
     await this.emit(
       'ResourceStateChangeEvent',
       terminated.id,
@@ -2456,7 +2466,10 @@ export class ResourceService {
       specification.resourceTypeId,
       context,
     );
-    assertEditorCharacteristics(input.characteristic ?? current?.characteristic ?? [], resourceType);
+    assertEditorCharacteristics(
+      input.characteristic ?? current?.characteristic ?? [],
+      resourceType,
+    );
 
     const existingComponentView = current
       ? await this.repository.listResourceComponents(current.id, {
@@ -2597,18 +2610,14 @@ export class ResourceService {
 
     const servingPlace =
       input.placeId !== undefined
-        ? await this.resolvePlace(input.placeId, 'GeographicSite', context)
+        ? await this.resolvePlace(input.placeId, input.placeType ?? 'GeographicSite', context)
         : current?.place;
     const createdIds: string[] = [];
 
     const result = await this.repository.transaction(async () => {
       const root = current
         ? input['@type'] === 'PhysicalResource'
-          ? await this.updatePhysicalResource(
-              current.id,
-              aggregatePhysicalUpdate(input),
-              context,
-            )
+          ? await this.updatePhysicalResource(current.id, aggregatePhysicalUpdate(input), context)
           : await this.updateLogicalResource(current.id, aggregateLogicalUpdate(input), context)
         : input['@type'] === 'PhysicalResource'
           ? await this.createPhysicalResource(aggregatePhysicalCreate(input), context)
@@ -2619,7 +2628,7 @@ export class ResourceService {
         await this.persistAggregateChildren(
           root,
           componentPlans,
-          servingPlace?.id,
+          servingPlace?.['@referredType'] === 'GeographicSite' ? servingPlace.id : undefined,
           createdIds,
           context,
         );
@@ -2735,10 +2744,7 @@ export class ResourceService {
             rootType.id,
             context,
           );
-    if (
-      draft.relationshipType === 'containsAsChild' ||
-      draft.relationshipType === 'containedBy'
-    ) {
+    if (draft.relationshipType === 'containsAsChild' || draft.relationshipType === 'containedBy') {
       throw new AppError('containment relationships belong in the Components tab', {
         code: 'RESOURCE_RELATIONSHIP_CONTAINMENT_NOT_ALLOWED',
         statusCode: 400,
@@ -2917,11 +2923,7 @@ export class ResourceService {
     for (const connection of current) {
       const fromId = connection.direction === 'outgoing' ? root.id : connection.resource.id;
       const toId = connection.direction === 'outgoing' ? connection.resource.id : root.id;
-      await this.repository.deleteResourceRelationship(
-        fromId,
-        toId,
-        connection.relationshipType,
-      );
+      await this.repository.deleteResourceRelationship(fromId, toId, connection.relationshipType);
     }
     for (const plan of plans) {
       const fromId = plan.draft.direction === 'incoming' ? plan.target.id : root.id;
@@ -2987,10 +2989,7 @@ export class ResourceService {
       );
     }
     for (const plan of plans) {
-      const maximum = effectiveCardinality(
-        plan.rule.rule,
-        plan.rule.type,
-      ).maxSourcePerTarget;
+      const maximum = effectiveCardinality(plan.rule.rule, plan.rule.type).maxSourcePerTarget;
       if (maximum !== undefined) {
         const existing = await this.repository.countResourceSiteRelationshipsForSite(
           plan.site.id,
@@ -3181,20 +3180,24 @@ export class ResourceService {
     const status = activationToStatus(input.action);
     const resource =
       current['@type'] === 'PhysicalResource'
-        ? await this.repository.upsertPhysicalResource({
-            ...current,
-            status,
-            administrativeState: status === 'terminated' ? 'locked' : 'unlocked',
-            operationalState: status === 'active' ? 'enabled' : 'disabled',
-            usageState: status === 'active' ? 'busy' : 'idle',
-          })
-        : await this.repository.upsertLogicalResource({
-            ...current,
-            status,
-            administrativeState: status === 'terminated' ? 'locked' : 'unlocked',
-            operationalState: status === 'active' ? 'enabled' : 'disabled',
-            usageState: status === 'active' ? 'busy' : 'idle',
-          });
+        ? await this.repository.upsertPhysicalResource(
+            stampStateChanges(current, {
+              ...current,
+              status,
+              administrativeState: status === 'terminated' ? 'locked' : 'unlocked',
+              operationalState: status === 'active' ? 'enabled' : 'disabled',
+              usageState: status === 'active' ? 'busy' : 'idle',
+            }),
+          )
+        : await this.repository.upsertLogicalResource(
+            stampStateChanges(current, {
+              ...current,
+              status,
+              administrativeState: status === 'terminated' ? 'locked' : 'unlocked',
+              operationalState: status === 'active' ? 'enabled' : 'disabled',
+              usageState: status === 'active' ? 'busy' : 'idle',
+            }),
+          );
 
     await this.emit(
       'ResourceFunctionActivationEvent',
@@ -3363,7 +3366,8 @@ const assertEditorCharacteristics = (
   for (const characteristic of characteristics) {
     // Extensões transversais e dados legados desconhecidos são preservados. O editor só governa as
     // definições explicitamente marcadas como `instance` no ResourceType.
-    if (characteristic.name.startsWith('_') || !instanceDefinitions.has(characteristic.name)) continue;
+    if (characteristic.name.startsWith('_') || !instanceDefinitions.has(characteristic.name))
+      continue;
     const definition = instanceDefinitions.get(characteristic.name)!;
     if (
       definition.valueType &&
@@ -3393,7 +3397,9 @@ const aggregatePhysicalCreate = (
 ): CreatePhysicalResourceInput => ({
   name: input.name,
   resourceSpecificationId: input.resourceSpecificationId,
-  ...(input.placeId ? { placeId: input.placeId, placeType: 'GeographicSite' } : {}),
+  ...(input.placeId
+    ? { placeId: input.placeId, placeType: input.placeType ?? 'GeographicSite' }
+    : {}),
   ...(input.status ? { status: input.status } : {}),
   ...(input.statusCode ? { statusCode: input.statusCode } : {}),
   ...(input.administrativeState ? { administrativeState: input.administrativeState } : {}),
@@ -3414,12 +3420,12 @@ const aggregatePhysicalUpdate = (
   ...(input.placeId === null ? { placeId: null } : {}),
 });
 
-const aggregateLogicalCreate = (
-  input: SaveResourceAggregateInput,
-): CreateLogicalResourceInput => ({
+const aggregateLogicalCreate = (input: SaveResourceAggregateInput): CreateLogicalResourceInput => ({
   name: input.name,
   resourceSpecificationId: input.resourceSpecificationId,
-  ...(input.placeId ? { placeId: input.placeId, placeType: 'GeographicSite' } : {}),
+  ...(input.placeId
+    ? { placeId: input.placeId, placeType: input.placeType ?? 'GeographicSite' }
+    : {}),
   ...(input.supportingPhysicalResourceId
     ? { supportingPhysicalResourceId: input.supportingPhysicalResourceId }
     : {}),
@@ -3431,9 +3437,7 @@ const aggregateLogicalCreate = (
   ...(input.validFor ? { validFor: input.validFor } : {}),
 });
 
-const aggregateLogicalUpdate = (
-  input: SaveResourceAggregateInput,
-): UpdateLogicalResourceInput => ({
+const aggregateLogicalUpdate = (input: SaveResourceAggregateInput): UpdateLogicalResourceInput => ({
   ...aggregateLogicalCreate(input),
   ...(input.placeId === null ? { placeId: null } : {}),
   ...(input.supportingPhysicalResourceId === null ? { supportingPhysicalResourceId: null } : {}),
@@ -3740,3 +3744,14 @@ const activationToStatus = (action: ResourceFunctionActivationInput['action']): 
   if (action === 'terminate') return 'terminated';
   return 'active';
 };
+
+/** Carimba `stateChangedAt` nos eixos cujo valor mudou em relação ao recurso atual. */
+function stampStateChanges<T extends Resource>(current: Resource, next: T): T {
+  const now = new Date().toISOString();
+  const at = { ...(next.stateChangedAt ?? current.stateChangedAt ?? {}) };
+  if (current.status !== next.status) at.status = now;
+  if (current.administrativeState !== next.administrativeState) at.administrative = now;
+  if (current.operationalState !== next.operationalState) at.operational = now;
+  if (current.usageState !== next.usageState) at.usage = now;
+  return Object.keys(at).length > 0 ? { ...next, stateChangedAt: at } : next;
+}

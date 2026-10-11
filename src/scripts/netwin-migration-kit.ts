@@ -362,6 +362,15 @@ export function makeTablePrefixer(targetPrefix?: string): TablePrefixer {
   return (name: string) => quote(prefixed(name, prefix));
 }
 
+// Colunas TIMESTAMP WITH TIME ZONE alimentadas com data `YYYY-MM-DD` da origem: a conversão é
+// explícita para não depender do NLS_TIMESTAMP_TZ_FORMAT da sessão (ORA-01843).
+const DATE_TEXT_COLUMNS = new Set([
+  'status_changed_at',
+  'administrative_state_changed_at',
+  'operational_state_changed_at',
+  'usage_state_changed_at',
+]);
+
 export function mergeSql(
   t: TablePrefixer,
   table: string,
@@ -369,7 +378,13 @@ export function mergeSql(
   columns: string[],
 ): string {
   if (keys.length === 0) throw new Error(`MERGE ${table} exige ao menos uma chave.`);
-  const source = columns.map((column, index) => `:${index + 1} ${quote(column)}`).join(', ');
+  const source = columns
+    .map((column, index) =>
+      DATE_TEXT_COLUMNS.has(column)
+        ? `TO_TIMESTAMP_TZ(:${index + 1}, 'YYYY-MM-DD') ${quote(column)}`
+        : `:${index + 1} ${quote(column)}`,
+    )
+    .join(', ');
   const on = keys.map((key) => `target.${quote(key)}=source.${quote(key)}`).join(' AND ');
   const mutable = columns.filter((column) => !keys.includes(column));
   const matched =

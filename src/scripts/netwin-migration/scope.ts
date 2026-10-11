@@ -24,7 +24,7 @@ export function municipalityInfranodePredicate(
   infranodeAlias: string,
   bindName = 'municipio',
 ): string {
-  return `NETWIN.LIMPASTRING(${infranodeAlias}.BADDR_MUNICIPIO) = :${bindName}`;
+  return `(NETWIN.LIMPASTRING(${infranodeAlias}.BADDR_MUNICIPIO) = :${bindName} OR NETWIN.LIMPASTRING(${infranodeAlias}.MUNICIPIO) = :${bindName})`;
 }
 
 export function municipalityIdInfranodePredicate(
@@ -35,7 +35,7 @@ export function municipalityIdInfranodePredicate(
     throw new Error('O pré-filtro de município exige ao menos um BADDR_MUNICIPIO_ID.');
   }
   const binds = municipalityIds.map((_, index) => `:municipioId${index}`).join(', ');
-  return `${infranodeAlias}.BADDR_MUNICIPIO_ID IN (${binds})`;
+  return `(${infranodeAlias}.BADDR_MUNICIPIO_ID IN (${binds}) OR ${infranodeAlias}.MUNICIPIO_ID IN (${binds}))`;
 }
 
 export function municipalityIdInfranodeBinds(
@@ -47,6 +47,10 @@ export function municipalityIdInfranodeBinds(
 }
 
 /**
+ * Município/UF: o endereço (BADDR_*) vem nulo em parte dos nós prediais (BUILDING, ROOM, FLOOR,
+ * CENTRAL — ~13% em Viana/ES), mas as colunas de localidade (MUNICIPIO*, UF_ABRV) estão sempre
+ * preenchidas. Aceitar as duas evita descartar a estação e todos os seus filhos.
+ *
  * A UF é comparada diretamente, sem LIMPASTRING. A sigla em BADDR_UF_ABRV já é maiúscula, sem
  * acento e sem espaço (verificado no DR: 27 siglas distintas, 1:1 com BADDR_UF_ID), então a
  * normalização não mudava nenhum valor — só impedia o uso de índice e forçava uma chamada
@@ -54,7 +58,7 @@ export function municipalityIdInfranodeBinds(
  * LIMPASTRING(BAIRRO); nunca existiu equivalente para a coluna de UF.
  */
 export function ufInfranodePredicate(infranodeAlias: string, bindName = 'uf'): string {
-  return `${infranodeAlias}.BADDR_UF_ABRV = :${bindName}`;
+  return `(${infranodeAlias}.BADDR_UF_ABRV = :${bindName} OR ${infranodeAlias}.UF_ABRV = :${bindName})`;
 }
 
 export function infranodeScopeBinds(

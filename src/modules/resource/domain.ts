@@ -480,6 +480,13 @@ export type ResourceFunctionSpecification = {
   tenantId?: string | undefined;
 };
 
+export type ResourceStateChangedAt = {
+  status?: string;
+  administrative?: string;
+  operational?: string;
+  usage?: string;
+};
+
 export type ResourceBase = {
   id: string;
   href: string;
@@ -498,6 +505,8 @@ export type ResourceBase = {
   administrativeState: AdministrativeState;
   operationalState: OperationalState;
   usageState: UsageState;
+  /** Quando cada eixo de estado mudou pela última vez (ISO 8601). Preenchido pelo serviço e pelo migrador. */
+  stateChangedAt?: ResourceStateChangedAt;
   place?: { id: string; '@referredType': string };
   relatedParty: RelatedParty[];
   resourceRelationship: ResourceRelationship[];
@@ -821,6 +830,8 @@ export type SaveResourceAggregateInput = {
   assetReference?: string;
   supportingPhysicalResourceId?: string | null;
   placeId?: string | null;
+  /** Tipo referenciado por `placeId`; ausente = GeographicSite (vínculo canônico). */
+  placeType?: 'GeographicSite' | 'GeographicAddress' | 'GeographicLocation';
   characteristic?: Characteristic[];
   validFor?: TimePeriod;
   components?: ResourceAggregateChildDraft[];

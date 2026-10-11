@@ -34,7 +34,11 @@ export const RADIO_CELL_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] 
   { name: 'sectorNumber', valueType: 'integer', description: 'Nº do setor.' },
   { name: 'carrierCount', valueType: 'integer', description: 'Nº de portadoras.' },
   { name: 'frequencyBand', valueType: 'string', description: 'Banda de frequência (MHz).' },
-  { name: 'coverageType', valueType: 'string', description: 'Tipo de cobertura (macro, micro...).' },
+  {
+    name: 'coverageType',
+    valueType: 'string',
+    description: 'Tipo de cobertura (macro, micro...).',
+  },
   {
     name: 'coverageRadius',
     valueType: 'decimal',
@@ -97,13 +101,6 @@ const BASE_ENRICHMENT_CHARACTERISTICS: readonly EnrichmentCharacteristicDef[] = 
   { name: 'controlGroup', valueType: 'string', description: 'Grupo de controle de implantação.' },
   { name: 'controlState', valueType: 'string', description: 'Estado de controle de implantação.' },
   { name: 'controlStateDate', valueType: 'date', description: 'Data do estado de controle.' },
-  {
-    name: 'lifecycleStateDate',
-    valueType: 'date',
-    description: 'Data do estado de ciclo de vida.',
-  },
-  { name: 'operationalStateDate', valueType: 'date', description: 'Data do estado operacional.' },
-  { name: 'provisionStateDate', valueType: 'date', description: 'Data do estado de provisão.' },
   { name: 'implementationProject', valueType: 'string', description: 'Projeto de implantação.' },
   { name: 'projectState', valueType: 'string', description: 'Estado do projeto na origem.' },
   { name: 'notes', valueType: 'string', description: 'Observações do equipamento na origem.' },
@@ -125,6 +122,10 @@ export const OWNED_CHARACTERISTIC_NAMES: ReadonlySet<string> = new Set([
   ...ENRICHMENT_CHARACTERISTICS.map((def) => def.name),
   'servingSite',
   'substatus',
+  // Legado: datas de estado já foram characteristics; hoje são colunas `*_state_changed_at`.
+  'lifecycleStateDate',
+  'operationalStateDate',
+  'provisionStateDate',
   // Legado: já foi characteristic; hoje é campo canônico e deve sair do JSON.
   'serialNumber',
 ]);
@@ -480,9 +481,6 @@ export interface EquipmentEnrichmentInput {
   observations?: unknown;
   sapMaterialCode?: unknown;
   modelSapMaterialCode?: unknown;
-  lifecycleStateDate?: unknown;
-  operationalStateDate?: unknown;
-  provisionStateDate?: unknown;
   projectState?: unknown;
   /** Nome do projeto estruturado (`PROJECT.NAME`), nunca extraído das observações. */
   projectName?: unknown;
@@ -526,9 +524,6 @@ export function buildEquipmentEnrichment(input: EquipmentEnrichmentInput): Equip
   push('identification', redundant(input.identification));
 
   push('notes', input.observations);
-  push('lifecycleStateDate', input.lifecycleStateDate);
-  push('operationalStateDate', input.operationalStateDate);
-  push('provisionStateDate', input.provisionStateDate);
   push('projectState', input.projectState);
   push('implementationProject', input.projectName);
   push('networkCell', input.cellName);

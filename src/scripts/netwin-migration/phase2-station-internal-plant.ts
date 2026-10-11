@@ -8,6 +8,24 @@ import {
   loadInternalSubracks,
 } from './internal-plant-source.js';
 import type { PhaseStats } from './types.js';
+import {
+  deterministicUuid,
+  netwinInternalRackId,
+  netwinInternalSubrackId,
+  netwinLocationId,
+  NEXUS_NETWIN_NAMESPACE,
+} from './identity.js';
+import {
+  bulkMergeRows,
+  netwinOriginCharacteristics,
+  resolveNetwinPlantState,
+} from '../netwin-migration-kit.js';
+import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
+import { chunksOf, selectFullTableIds, selectScopedInfranodeIds } from './source-batches.js';
+import {
+  loadInternalRacksByPlaceIds,
+  loadInternalSubracksByRackIds,
+} from './internal-plant-source.js';
 
 export type StationPlantDiscoveryReport = {
   scopedLocations: number;
@@ -138,7 +156,6 @@ export async function discoverStationInternalPlant(
       subrackTypes: typeNames(subracks),
       rackTypes: typeNames(racks),
       unresolvedContracts: [
-        'A associação direta de ISP_INS_BASTIDOR a GeographicSite/Sala não foi comprovada.',
         'A classificação de equipamento ISP como OLT, DIO ou DGO ainda requer código de catálogo explicitamente validado.',
         'A contenção de equipamento em rack/subrack não foi comprovada por chave relacional direta.',
         'Não há contrato de origem confirmado para instâncias físicas de Splitter, razão de divisão, portas e contêiner.',
@@ -146,6 +163,233 @@ export async function discoverStationInternalPlant(
     };
   } finally {
     await source.close();
+  }
+}
+
+const RACK_SPEC_NAME = 'Netwin Rack';
+const SUBRACK_SPEC_NAME = 'Netwin Shelf';
+
+export type StationRackLoadStats = PhaseStats & { racks: number; subracks: number };
+
+function textCharacteristics(fields: Array<[string, unknown]>) {
+  return fields
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([name, value]) => ({ name, value: String(value), valueType: 'string' }));
+}
+
+/**
+ * Carga de bastidores e subbastidores de estações. O local vem de ISP_INS_BASTIDOR.ID_BD_PI
+ * (= DL_INFRANODE.PI_ID = LOCATION.ID), então `place_id` é o GeographicSite do andar, sala,
+ * torre ou armário (C2). Equipamentos de estação já entram pela Fase 2.B (espelho OSP).
+ */
+export async function runPhase2StationRacks(ctx: MigrationContext): Promise<StationRackLoadStats> {
+  console.log('\n=== Fase 2.D: Bastidores e subbastidores de estações ===');
+  const stats: StationRackLoadStats = {
+    loaded: 0,
+    updated: 0,
+    skipped: 0,
+    rejected: 0,
+    errors: 0,
+    racks: 0,
+    subracks: 0,
+  };
+  const source = await ctx.getSourceConnection();
+  const target = await ctx.getTargetConnection();
+  try {
+    const scope = ctx.options.scope;
+    const structured = Boolean(scope.bairro || scope.municipio || scope.uf);
+    const prefilter = structured
+      ? await resolveMunicipalityScopePrefilter(source, scope)
+      : undefined;
+    const specIds = {
+      rack: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${RACK_SPEC_NAME}`),
+      subrack: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${SUBRACK_SPEC_NAME}`),
+    };
+    if (target) {
+      const found = await target.execute<{ ID: string }>(
+        `SELECT id FROM ${ctx.t('tmf_resource_specification')} WHERE id IN (:1, :2)`,
+        [specIds.rack, specIds.subrack],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      if ((found.rows ?? []).length < 2) {
+        throw new Error('Specs Netwin Rack/Shelf ausentes. Execute a Fase 1 antes.');
+      }
+    }
+    const resourceColumns = [
+      'id',
+      'tenant_id',
+      'name',
+      'resource_specification_id',
+      'status',
+      'status_code',
+      'place_id',
+      'place_type',
+      'administrative_state',
+      'operational_state',
+      'usage_state',
+      'related_party',
+      'characteristics',
+    ];
+    const relationshipColumns = ['resource_from_id', 'resource_to_id', 'relationship_type'];
+    const owner = JSON.stringify([
+      { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+    ]);
+    const maxRecords = ctx.options.maxRecords ?? Infinity;
+    let lastId = 0;
+    for (;;) {
+      const limit = Math.min(900, ctx.options.batchSize);
+      const placeIds = structured
+        ? await selectScopedInfranodeIds(source, scope, lastId, limit, prefilter)
+        : await selectFullTableIds(source, 'NETWIN.LOCATION', lastId, limit);
+      if (placeIds.length === 0) break;
+      lastId = placeIds[placeIds.length - 1]!;
+
+      const racks = await loadInternalRacksByPlaceIds(source, placeIds);
+      if (racks.length === 0) continue;
+      const subracks = await loadInternalSubracksByRackIds(
+        source,
+        racks.map((rack) => rack.ID_BD_BASTIDOR),
+      );
+
+      const existingSites = new Set<string>();
+      if (target) {
+        for (const chunk of chunksOf([
+          ...new Set(racks.map((r) => netwinLocationId(r.ID_BD_PI))),
+        ])) {
+          const clause = chunk.map((_, i) => `:${i + 1}`).join(',');
+          const found = await target.execute<{ ID: string }>(
+            `SELECT id FROM ${ctx.t('tmf_geographic_site')} WHERE id IN (${clause})`,
+            chunk,
+            { outFormat: oracledb.OUT_FORMAT_OBJECT },
+          );
+          for (const row of found.rows ?? []) existingSites.add(row.ID);
+        }
+      }
+
+      const resources: Array<Record<string, unknown>> = [];
+      const relationships: Array<Record<string, unknown>> = [];
+      const rackById = new Map<number, { id: string; siteId: string }>();
+      for (const rack of racks) {
+        const siteId = netwinLocationId(rack.ID_BD_PI);
+        if (target && !existingSites.has(siteId)) {
+          stats.rejected++;
+          continue;
+        }
+        const id = netwinInternalRackId(rack.ID_BD_BASTIDOR);
+        rackById.set(rack.ID_BD_BASTIDOR, { id, siteId });
+        const state = resolveNetwinPlantState({
+          cicloVida: rack.ESTADO_CICLO_VIDA,
+          operacional: rack.ESTADO_OPERACIONAL,
+        });
+        resources.push({
+          id,
+          tenant_id: ctx.options.tenantId,
+          name: (rack.NOME?.trim() || rack.CODIGO?.trim() || `Rack ${rack.ID_BD_BASTIDOR}`).slice(
+            0,
+            255,
+          ),
+          resource_specification_id: specIds.rack,
+          status: state.status,
+          status_code: state.statusCode ?? null,
+          place_id: siteId,
+          place_type: 'GeographicSite',
+          administrative_state: state.administrative_state,
+          operational_state: state.operational_state,
+          usage_state: state.usage_state,
+          related_party: owner,
+          characteristics: JSON.stringify([
+            ...textCharacteristics([
+              ['rackCode', rack.CODIGO],
+              ['rackRow', rack.FIADA],
+              ['rackPosition', rack.POSICAO],
+              ['sourceRackType', rack.TIPO_SIGLA ?? rack.TIPO_NOME],
+            ]),
+            ...netwinOriginCharacteristics('ISP_INS_BASTIDOR', rack.ID_BD_BASTIDOR),
+          ]),
+        });
+      }
+      let pageSubracks = 0;
+      for (const sub of subracks) {
+        const parent = rackById.get(sub.ID_BD_BASTIDOR);
+        if (!parent) continue;
+        const id = netwinInternalSubrackId(sub.ID_BD_SUBBASTIDOR);
+        const state = resolveNetwinPlantState({
+          cicloVida: sub.ESTADO_CICLO_VIDA,
+          operacional: sub.ESTADO_OPERACIONAL,
+        });
+        resources.push({
+          id,
+          tenant_id: ctx.options.tenantId,
+          name: (
+            sub.NOME?.trim() ||
+            sub.CODIGO?.trim() ||
+            `Subrack ${sub.ID_BD_SUBBASTIDOR}`
+          ).slice(0, 255),
+          resource_specification_id: specIds.subrack,
+          status: state.status,
+          status_code: state.statusCode ?? null,
+          place_id: parent.siteId,
+          place_type: 'GeographicSite',
+          administrative_state: state.administrative_state,
+          operational_state: state.operational_state,
+          usage_state: state.usage_state,
+          related_party: owner,
+          characteristics: JSON.stringify([
+            ...textCharacteristics([
+              ['subrackCode', sub.CODIGO ?? sub.CODIGOSB],
+              ['subrackPosition', sub.POSICAO],
+              ['sourceSubrackType', sub.TIPO_SIGLA ?? sub.TIPO_NOME],
+            ]),
+            ...netwinOriginCharacteristics('ISP_INS_SUBBASTIDOR', sub.ID_BD_SUBBASTIDOR),
+          ]),
+        });
+        relationships.push({
+          resource_from_id: parent.id,
+          resource_to_id: id,
+          relationship_type: 'containsAsChild',
+        });
+        pageSubracks++;
+      }
+      stats.racks += rackById.size;
+      stats.subracks += pageSubracks;
+      if (target && resources.length > 0) {
+        try {
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'tmf_physical_resource',
+            ['id'],
+            resourceColumns,
+            resources,
+            ctx.options.batchSize,
+          );
+          if (relationships.length > 0) {
+            await bulkMergeRows(
+              target,
+              ctx.t,
+              'tmf_resource_relationship',
+              relationshipColumns,
+              relationshipColumns,
+              relationships,
+              ctx.options.batchSize,
+            );
+          }
+          await target.execute('COMMIT');
+        } catch (error) {
+          await target.execute('ROLLBACK');
+          throw error;
+        }
+        stats.loaded += resources.length;
+      }
+      if (stats.racks + stats.subracks >= maxRecords) break;
+    }
+    console.log(
+      `[Fase 2.D] ${target ? 'Gravados' : 'DRY-RUN'}: racks=${stats.racks}; subracks=${stats.subracks}; rejeitados(sem site)=${stats.rejected}.`,
+    );
+    return stats;
+  } finally {
+    await source.close();
+    await target?.close();
   }
 }
 

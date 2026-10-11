@@ -342,3 +342,18 @@ export type GeographicSite = {
   note?: string | null;
   characteristic: Characteristic[];
 };
+
+/** Município do diretório master (`geo_administrative_city`), global e sem tenant (issue #329). */
+export type AdministrativeCityRecord = {
+  id: string;
+  countryCode: string;
+  countryName: string;
+  stateCode: string;
+  cityName: string;
+};
+
+/** Projeção tenant-scoped: Sites raiz não `Retired` por município (V32). */
+export type AdministrativeCitySiteCount = {
+  administrativeCityId: string;
+  activeSiteCount: number;
+};

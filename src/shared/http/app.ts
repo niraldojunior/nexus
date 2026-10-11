@@ -3078,6 +3078,54 @@ const routeGeoRequest = async ({
     );
   }
 
+  if (request.method === 'GET' && url.pathname === '/v1/geo/administrative-cities') {
+    const countryCode = url.searchParams.get('countryCode');
+    const stateCode = url.searchParams.get('stateCode');
+    return sendJson(
+      response,
+      200,
+      await geoService.listAdministrativeCities(
+        {
+          ...(countryCode ? { countryCode } : {}),
+          ...(stateCode ? { stateCode } : {}),
+        },
+        geoContext,
+      ),
+    );
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/geo/site-editor') {
+    return sendJson(
+      response,
+      201,
+      await geoService.saveSiteEditor(
+        (await readBody(request)) as Parameters<typeof geoService.saveSiteEditor>[0],
+        undefined,
+        geoContext,
+      ),
+    );
+  }
+
+  const siteEditorMatch = url.pathname.match(/^\/v1\/geo\/site-editor\/([^/]+)$/);
+  if (siteEditorMatch && request.method === 'GET') {
+    return sendJson(
+      response,
+      200,
+      await geoService.getSiteEditor(decodeURIComponent(siteEditorMatch[1] ?? ''), geoContext),
+    );
+  }
+  if (siteEditorMatch && request.method === 'PUT') {
+    return sendJson(
+      response,
+      200,
+      await geoService.saveSiteEditor(
+        (await readBody(request)) as Parameters<typeof geoService.saveSiteEditor>[0],
+        decodeURIComponent(siteEditorMatch[1] ?? ''),
+        geoContext,
+      ),
+    );
+  }
+
   if (request.method === 'POST' && url.pathname === '/v1/geo/workspace/site-at-address') {
     const body = await readBody(request);
     return sendJson(

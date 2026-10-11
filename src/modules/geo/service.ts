@@ -4,6 +4,7 @@ import { GEO_ADMIN_ROLES } from '../../shared/http/request-context.js';
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { buildHref } from '../../shared/tmf/index.js';
 import type {
+  AdministrativeCityRecord,
   Characteristic,
   CharacteristicValueType,
   GeoAccuracyLevel,
@@ -52,6 +53,20 @@ type LocationInput = {
   accuracyLevel?: GeoAccuracyLevel;
   validFor?: TimePeriod;
   characteristic?: Characteristic[];
+};
+
+export type SiteEditorInput = {
+  site: Partial<SiteInput> & { name: string; siteSpecificationId: string };
+  administrativeCityId: string;
+  street: string;
+  streetNr?: string;
+  postcode?: string;
+};
+
+export type SiteEditorSnapshot = {
+  site: GeographicSite;
+  address?: GeographicAddress;
+  administrativeCity?: AdministrativeCityRecord;
 };
 
 export type AddressInput = {
@@ -224,7 +239,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     ],
   },
   {
-    name: 'Central Office',
+    name: 'Estação Predial',
     code: 'CO',
     category: 'Site',
     siteRole: 'network',
@@ -242,7 +257,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     allowedChildCodes: ['FLOOR', 'ROOM'],
   },
   {
-    name: 'Cabinet',
+    name: 'Armário',
     code: 'CABINET',
     category: 'Site',
     siteRole: 'network',
@@ -261,7 +276,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     lifecycleStatus: 'Retired',
   },
   {
-    name: 'Customer Site',
+    name: 'Site Cliente',
     code: 'CUSTOMER_SITE',
     category: 'Site',
     siteRole: 'service',
@@ -288,7 +303,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     allowedChildCodes: [],
   },
   {
-    name: 'Floor',
+    name: 'Pavimento',
     code: 'FLOOR',
     category: 'SubSite',
     siteRole: 'network',
@@ -297,7 +312,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     allowedChildCodes: ['ROOM'],
   },
   {
-    name: 'Room',
+    name: 'Sala',
     code: 'ROOM',
     category: 'SubSite',
     siteRole: 'network',
@@ -1240,6 +1255,7 @@ export class GeoService {
       }
 
       const stored = await this.getSiteOrThrow(site.id, ctx);
+      await this.reconcileSiteCities(ctx, [stored]);
       await this.recordMutation(
         ctx,
         'create',
@@ -1371,6 +1387,7 @@ export class GeoService {
         });
       }
 
+      await this.reconcileSiteCities(ctx, [current, updated]);
       await this.recordMutation(
         ctx,
         current.status !== updated.status ? 'transition' : 'update',
@@ -1386,6 +1403,21 @@ export class GeoService {
     });
     await this.mapFeatureSynchronizer?.syncEntity(updatedSite.id, ctx.tenantId);
     return updatedSite;
+  }
+
+  // Projeção de Sites ativos por município (V32): recontagem dos municípios afetados, na mesma
+  // transação da mutação. Sub-Sites não entram no contador municipal.
+  private async reconcileSiteCities(
+    ctx: { tenantId: string },
+    sites: readonly GeographicSite[],
+  ): Promise<void> {
+    const cityIds = new Set<string>();
+    for (const site of sites) {
+      if (!site.address?.id) continue;
+      const cityId = await this.repository.getAddressAdministrativeCityId(site.address.id);
+      if (cityId) cityIds.add(cityId);
+    }
+    await this.repository.reconcileAdministrativeCitySiteCounts(ctx.tenantId, [...cityIds]);
   }
 
   public async transitionSite(
@@ -1437,6 +1469,7 @@ export class GeoService {
         actorSub: ctx.actorSub,
         traceId: ctx.traceId,
       });
+      await this.reconcileSiteCities(ctx, [current, updated]);
       await this.recordMutation(
         ctx,
         'transition',
@@ -1497,6 +1530,9 @@ export class GeoService {
           actorSub: ctx.actorSub,
           traceId: ctx.traceId,
         });
+        if (result.updated > 0) {
+          await this.repository.reconcileAdministrativeCitySiteCounts(ctx.tenantId);
+        }
         await this.recordMutation(
           ctx,
           'bulk-transition',
@@ -1518,6 +1554,90 @@ export class GeoService {
     }
 
     return { updated, skipped: candidateIds.length - updated, blocked };
+  }
+
+  public async listAdministrativeCities(
+    query: { countryCode?: string; stateCode?: string } | undefined,
+    context?: RequestContext,
+  ): Promise<AdministrativeCityRecord[]> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, READ_ROLE);
+    return await this.repository.listAdministrativeCities(query);
+  }
+
+  public async getSiteEditor(id: string, context?: RequestContext): Promise<SiteEditorSnapshot> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, READ_ROLE);
+    const site = await this.getSiteOrThrow(id, ctx);
+    const address = site.address?.id
+      ? await this.repository.getAddress(site.address.id, { tenantId: ctx.tenantId })
+      : undefined;
+    const cityId = address ? await this.repository.getAddressAdministrativeCityId(address.id) : null;
+    const administrativeCity = cityId
+      ? (await this.repository.listAdministrativeCities()).find((city) => city.id === cityId)
+      : undefined;
+    return {
+      site,
+      ...(address ? { address } : {}),
+      ...(administrativeCity ? { administrativeCity } : {}),
+    };
+  }
+
+  // Salva Endereço + Site na mesma transação. País/UF/município vêm da master (nunca de texto
+  // livre); o endereço compartilhado só é recriado quando a tupla postal muda.
+  public async saveSiteEditor(
+    input: SiteEditorInput,
+    siteId: string | undefined,
+    context?: RequestContext,
+  ): Promise<SiteEditorSnapshot> {
+    const ctx = this.resolveContext(context);
+    this.assertRole(ctx, WRITE_ROLE);
+    assertRequiredString(input.street, 'street');
+    assertRequiredString(input.administrativeCityId, 'administrativeCityId');
+    const city = (await this.repository.listAdministrativeCities()).find(
+      (candidate) => candidate.id === input.administrativeCityId,
+    );
+    if (!city) {
+      throw new AppError('administrative city not found', {
+        code: 'GEO_ADMINISTRATIVE_CITY_NOT_FOUND',
+        statusCode: 422,
+      });
+    }
+    const saved = await this.repository.transaction(async () => {
+      const current = siteId ? await this.getSiteOrThrow(siteId, ctx) : undefined;
+      const currentAddress = current?.address?.id
+        ? await this.repository.getAddress(current.address.id, { tenantId: ctx.tenantId })
+        : undefined;
+      const unchanged =
+        currentAddress &&
+        (await this.repository.getAddressAdministrativeCityId(currentAddress.id)) === city.id &&
+        currentAddress.street === input.street &&
+        (currentAddress.streetNr ?? '') === (input.streetNr ?? '') &&
+        (currentAddress.postcode ?? '') === (input.postcode ?? '');
+      const address = unchanged
+        ? currentAddress
+        : await this.createAddress(
+            {
+              street: input.street,
+              ...(input.streetNr ? { streetNr: input.streetNr } : {}),
+              ...(input.postcode ? { postcode: input.postcode } : {}),
+              city: city.cityName,
+              stateOrProvince: city.stateCode,
+              country: city.countryCode,
+            },
+            ctx,
+          );
+      const payload = { ...input.site, addressId: address.id };
+      const site = current
+        ? await this.updateSite(current.id, payload, ctx)
+        : await this.createSite(payload as SiteInput, ctx);
+      return { site, address };
+    });
+    return {
+      site: saved.site,
+      address: saved.address,
+      administrativeCity: city,
+    };
   }
 
   public async createSiteAtAddress(

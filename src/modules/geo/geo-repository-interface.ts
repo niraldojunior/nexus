@@ -1,6 +1,8 @@
 type Awaitable<T> = T | Promise<T>;
 
 import type {
+  AdministrativeCityRecord,
+  AdministrativeCitySiteCount,
   GeographicAddress,
   GeoAuditLog,
   GeoBulkJob,
@@ -86,6 +88,21 @@ export interface IGeoRepository {
       protectedChildSpecIds?: string[];
     },
   ): Awaitable<void>;
+
+  listAdministrativeCities(query?: {
+    countryCode?: string;
+    stateCode?: string;
+  }): Awaitable<AdministrativeCityRecord[]>;
+  getAddressAdministrativeCityId(addressId: string): Awaitable<string | null>;
+  /**
+   * Recontagem set-based (idempotente) dos Sites raiz não `Retired` por município do tenant.
+   * Sem `cityIds`, reconcilia o tenant inteiro; contagens zeradas são removidas.
+   */
+  reconcileAdministrativeCitySiteCounts(
+    tenantId: string,
+    cityIds?: readonly string[],
+  ): Awaitable<void>;
+  listAdministrativeCitySiteCounts(tenantId: string): Awaitable<AdministrativeCitySiteCount[]>;
 
   upsertSite(site: GeographicSite): Awaitable<GeographicSite>;
   getSite(id: string, scope?: GeoTenantScope): Awaitable<GeographicSite | undefined>;

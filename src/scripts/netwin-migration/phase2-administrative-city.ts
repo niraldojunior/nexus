@@ -6,6 +6,7 @@ import {
   normalizeAdministrativeCity,
   type AdministrativeCityTuple,
 } from '../../modules/geo/administrative-city.js';
+import { reconcileAdministrativeCitySiteCounts } from './administrative-city-site-count.js';
 import { chunksOf } from './source-batches.js';
 import type { PhaseStats } from './types.js';
 
@@ -25,6 +26,9 @@ type AddressRow = {
 
 /**
  * Fase 2.E — diretório geográfico canônico (issue #329).
+ *
+ * A master de municípios nasce na Fase 1 (CITYAREA); aqui só se fecham os vínculos legados dos
+ * endereços e se reconcilia a quantidade de Sites ativos por município.
  *
  * As Fases 2.A/2.B já gravam `administrative_city_id` junto de cada endereço importado. Esta etapa
  * fecha a execução: garante que todo município/UF/país dos endereços do tenant esteja no diretório
@@ -91,7 +95,11 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
       console.log('[Diretório] DRY-RUN: nada gravado.');
       return stats;
     }
-    if (groups.size === 0) return stats;
+    if (groups.size === 0) {
+      await reconcileAdministrativeCitySiteCounts(ctx, target);
+      await target.execute('COMMIT');
+      return stats;
+    }
 
     const before = await target.execute<{ N: number }>(
       `SELECT COUNT(*) AS "N" FROM ${directory}`,
@@ -165,6 +173,8 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
       }
     }
     console.log(`[Diretório] endereços ligados ao município=${stats.updated}.`);
+    await reconcileAdministrativeCitySiteCounts(ctx, target);
+    await target.execute('COMMIT');
     return stats;
   } finally {
     if (target) await target.close();

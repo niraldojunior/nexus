@@ -142,3 +142,59 @@ test('diretório: requisição única compartilhada e retry quando falha', async
   ).toBeGreaterThan(0);
   expect(fetchRoots).toHaveBeenCalledTimes(2);
 });
+
+test('canEdit: "+" geral, "+" do município e editar/remover do Site', async () => {
+  fetchChildren.mockReset();
+  fetchChildren.mockImplementation(async (nodeId: string) => ({
+    nodeId,
+    total: 1,
+    limit: 50,
+    offset: 0,
+    nodes:
+      nodeId === 'city:c1'
+        ? [{ id: 'site-type:c1|t1', kind: 'site-type', label: 'Central', hasChildren: true }]
+        : [
+            {
+              id: 'site:s1',
+              kind: 'site',
+              label: 'CO Icaraí',
+              refId: 's1',
+              hasChildren: false,
+            },
+          ],
+  }));
+  const onCreateSite = vi.fn();
+  const onEditSite = vi.fn();
+  const onRemoveSite = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <LocationTree
+      onSelectSite={vi.fn()}
+      canEdit
+      onCreateSite={onCreateSite}
+      onEditSite={onEditSite}
+      onRemoveSite={onRemoveSite}
+    />,
+  );
+
+  await user.click(await screen.findByRole('button', { name: 'Novo local' }));
+  expect(onCreateSite).toHaveBeenLastCalledWith();
+
+  await expandToCity(user);
+  await user.click(screen.getByRole('button', { name: 'Novo local em Niterói' }));
+  expect(onCreateSite).toHaveBeenLastCalledWith('c1');
+
+  await user.click(await screen.findByRole('button', { name: 'Expandir Central' }));
+  await user.click(await screen.findByRole('button', { name: 'Editar CO Icaraí' }));
+  expect(onEditSite).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole('button', { name: 'Remover CO Icaraí' }));
+  expect(onRemoveSite).toHaveBeenCalledTimes(1);
+});
+
+test('somente leitura: sem ações de manutenção', async () => {
+  const user = userEvent.setup();
+  render(<LocationTree onSelectSite={vi.fn()} onCreateSite={vi.fn()} />);
+  await screen.findByRole('button', { name: 'Expandir RJ' });
+  expect(screen.queryByRole('button', { name: 'Novo local' })).toBeNull();
+  void user;
+});

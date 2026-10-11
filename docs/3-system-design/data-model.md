@@ -410,6 +410,14 @@ Política de rerun: o merge é por ownership. O migrador substitui apenas a allo
 
 Sincronização: `OracleGeoRepository.upsertAddress`, as fases 2.A, 2.B e 2.E do migrador Netwin e os loaders diretos em `scripts/` resolvem ou criam o município pela chave natural, sem duplicar. Endereços anteriores à migration v29 são ligados por `scripts/backfill-administrative-city.mjs` (dry-run por padrão; `--apply` exige `--target-prefix`).
 
+### Projeção Site → município (`geo_site_administrative_city`)
+
+Projeção de plataforma, tenant-scoped e **não-TMF** (PK `(tenant_id, site_id)`; `administrative_city_id`, `source_system`, `source_ref`). Existe para Sites que o Netwin classifica em um município (`DL_INFRANODE.MUNICIPIO_ID/MUNICIPIO/UF_ABRV`) mas que não têm endereço postal nem pai materializado (ex.: ECAC, NFL e OMC em Afonso Cláudio/ES). Nenhum `GeographicAddress` é fabricado, diferente do que TMF673 prescreve para endereços reais.
+
+Precedência única em árvore da Planta Interna, contagem (`geo_administrative_city_site_count`) e detalhe de recurso: município do endereço real → projeção → ramo "Sem município". O migrador (Fase 2.A) administra apenas linhas `source_system='NETWIN'` (`source_ref` = `MUNICIPIO_ID`), por MERGE idempotente no mesmo commit do lote.
+
+Os nomes das `GeographicSiteSpecification` seguem o vocabulário Netwin em português (ex.: `BUILDING` → Edifício; `CENTRAL_OFFICE` → Estação Predial) sem alterar `code`/UUID; `GeographicSite.name` na carga Netwin é `LOCATION.NAME - LOCATION.DESCRIPTION`.
+
 ## 10. Referências
 
 | Onde                                                                 | O quê                                         |

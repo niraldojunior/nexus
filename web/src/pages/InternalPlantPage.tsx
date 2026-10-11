@@ -19,6 +19,12 @@ import {
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSession } from '../hooks/useSession';
 import {
+  fetchSiteReferences,
+  retireSite,
+  SiteEditorApiError,
+  type SiteReferences,
+} from '../services/siteEditorApi';
+import {
   terminateInternalPlantResource,
   type InternalPlantLocationNode,
   InternalPlantResourceFilter,
@@ -35,7 +41,8 @@ import {
 } from './internal-plant/dock';
 import { InternalPlantSearchBar } from './internal-plant/InternalPlantSearchBar';
 import { ResourceEditorModal } from './internal-plant/ResourceEditorModal';
-import { LocationTree } from './internal-plant/LocationTree';
+import { SiteEditorModal } from './internal-plant/SiteEditorModal';
+import { invalidateInternalPlantRoots, LocationTree } from './internal-plant/LocationTree';
 import { TypeTree, type TypeSelection } from './internal-plant/TypeTree';
 
 type DockTab = 'locations' | 'types';
@@ -84,6 +91,17 @@ function ContextTitleIcon({ icon }: { icon: ContextIcon }) {
   return <Icon size={26} aria-hidden="true" className="shrink-0 text-app-muted" />;
 }
 
+function describeSiteReferences(refs: SiteReferences): string[] {
+  const items: Array<[number, string]> = [
+    [refs.activeChildSiteCount, 'locais internos ativos'],
+    [refs.activeRelationshipCount, 'relações ativas'],
+    [refs.activeResourceCount, 'recursos ativos'],
+    [refs.activeServiceCount, 'serviços ativos'],
+    [refs.activeOrderCount, 'ordens em andamento'],
+  ];
+  return items.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`);
+}
+
 const baseColumns: DataTableColumn<InternalPlantResourceRow>[] = [
   {
     key: 'icon',
@@ -113,7 +131,23 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const [dockWidth, setDockWidth] = useState(readStoredDockWidth);
   const state = useInternalPlantResources(context?.filter ?? null, offset, retryToken);
   const { canEdit } = useSession();
-  const [editor, setEditor] = useState<{ resourceId?: string; typeId?: string } | null>(null);
+  const [editor, setEditor] = useState<{
+    resourceId?: string;
+    typeId?: string;
+    initialPlace?: { id: string; name: string };
+  } | null>(null);
+  const [siteEditor, setSiteEditor] = useState<{
+    siteId?: string;
+    initialAdministrativeCityId?: string;
+  } | null>(null);
+  const [treeToken, setTreeToken] = useState(0);
+  const [pendingSiteRemoval, setPendingSiteRemoval] = useState<{
+    id: string;
+    name: string;
+    blocking: string[];
+  } | null>(null);
+  const [removingSite, setRemovingSite] = useState(false);
+  const [siteRemovalError, setSiteRemovalError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<InternalPlantResourceRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -162,6 +196,50 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       setDeleteError(cause instanceof Error ? cause.message : 'Falha ao excluir o recurso.');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const refreshTree = () => {
+    invalidateInternalPlantRoots();
+    setTreeToken((n) => n + 1);
+    setRetryToken((n) => n + 1);
+  };
+
+  const askRemoveSite = async (node: InternalPlantLocationNode) => {
+    if (!node.refId) return;
+    setSiteRemovalError(null);
+    let blocking: string[] = [];
+    try {
+      const refs = await fetchSiteReferences(node.refId);
+      blocking = refs.blocking ? describeSiteReferences(refs) : [];
+    } catch {
+      // Sem o impacto, a confirmação segue e o servidor ainda bloqueia com 409.
+    }
+    setPendingSiteRemoval({ id: node.refId, name: node.label, blocking });
+  };
+
+  const confirmRemoveSite = async () => {
+    if (!pendingSiteRemoval) return;
+    setRemovingSite(true);
+    setSiteRemovalError(null);
+    try {
+      await retireSite(pendingSiteRemoval.id, 'Removido pela Planta Interna');
+      if (context?.filter.siteId === pendingSiteRemoval.id) {
+        setContext(null);
+        setOffset(0);
+      }
+      setPendingSiteRemoval(null);
+      refreshTree();
+    } catch (cause) {
+      setSiteRemovalError(
+        cause instanceof SiteEditorApiError && cause.status === 409
+          ? `${cause.message} O local foi mantido.`
+          : cause instanceof Error
+            ? cause.message
+            : 'Falha ao remover o local.',
+      );
+    } finally {
+      setRemovingSite(false);
     }
   };
 
@@ -286,7 +364,17 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
         )}
         <OverlayScrollArea hostClassName="min-h-0 flex-1">
           {tab === 'locations' ? (
-            <LocationTree onSelectSite={selectSite} selectedSiteId={context?.filter.siteId} />
+            <LocationTree
+              onSelectSite={selectSite}
+              selectedSiteId={context?.filter.siteId}
+              canEdit={canEdit}
+              refreshToken={treeToken}
+              onCreateSite={(administrativeCityId) =>
+                setSiteEditor(administrativeCityId ? { initialAdministrativeCityId: administrativeCityId } : {})
+              }
+              onEditSite={(node) => node.refId && setSiteEditor({ siteId: node.refId })}
+              onRemoveSite={(node) => void askRemoveSite(node)}
+            />
           ) : (
             <TypeTree onSelect={selectType} selectedKey={context?.key} />
           )}
@@ -316,13 +404,19 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
               }
               marginBottom="12px"
               actions={
-                canEdit && context.leafTypeId ? (
+                canEdit && (context.leafTypeId || (context.icon.kind === 'site' && context.key)) ? (
                   <Button
                     variant="primary"
                     size="sm"
                     aria-label="Novo recurso"
                     title="Novo recurso"
-                    onClick={() => setEditor({ typeId: context.leafTypeId })}
+                    onClick={() =>
+                      setEditor(
+                        context.leafTypeId
+                          ? { typeId: context.leafTypeId }
+                          : { initialPlace: { id: context.key!, name: context.label } },
+                      )
+                    }
                   >
                     <Plus size={16} aria-hidden="true" />
                   </Button>
@@ -376,12 +470,70 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
         <ResourceEditorModal
           resourceId={editor.resourceId}
           initialTypeId={editor.typeId}
+          initialPlace={editor.initialPlace}
           onClose={() => setEditor(null)}
           onSaved={() => {
             setEditor(null);
             setRetryToken((n) => n + 1);
           }}
         />
+      ) : null}
+      {canEdit && siteEditor ? (
+        <SiteEditorModal
+          siteId={siteEditor.siteId}
+          initialAdministrativeCityId={siteEditor.initialAdministrativeCityId}
+          onClose={() => setSiteEditor(null)}
+          onChanged={refreshTree}
+        />
+      ) : null}
+      {pendingSiteRemoval ? (
+        <Modal
+          title="Remover local"
+          onClose={() => (removingSite ? undefined : setPendingSiteRemoval(null))}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => setPendingSiteRemoval(null)}
+                disabled={removingSite}
+              >
+                Cancelar
+              </Button>
+              {pendingSiteRemoval.blocking.length === 0 ? (
+                <Button
+                  variant="danger"
+                  onClick={() => void confirmRemoveSite()}
+                  disabled={removingSite}
+                >
+                  {removingSite ? 'Removendo...' : 'Remover'}
+                </Button>
+              ) : null}
+            </>
+          }
+        >
+          {pendingSiteRemoval.blocking.length > 0 ? (
+            <>
+              <p className="text-[0.92rem] text-app-text">
+                &ldquo;{pendingSiteRemoval.name}&rdquo; não pode ser removido enquanto houver:
+              </p>
+              <ul className="mt-2 list-disc pl-5 text-[0.88rem] text-app-text">
+                {pendingSiteRemoval.blocking.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-[0.92rem] text-app-text">
+              Remover &ldquo;{pendingSiteRemoval.name}&rdquo;? O local será encerrado (não é
+              removido fisicamente).
+            </p>
+          )}
+          {siteRemovalError ? (
+            <p role="alert" className="mt-2 text-[0.85rem] text-status-red">
+              {siteRemovalError}
+            </p>
+          ) : null}
+        </Modal>
       ) : null}
       {pendingDelete ? (
         <Modal

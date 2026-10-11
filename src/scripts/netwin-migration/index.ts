@@ -4,6 +4,7 @@
  *
  * Arquitetura em três fases com suporte a alto volume:
  * - Fase 1: Carga do Studio (Papéis, Organizações, Tipos de Locais, Tipos de Recursos)
+ *   e diretório mestre de municípios (CITYAREA)
  * - Fase 2: Carga de Dados (Locais, Hierarquias, Recursos, Diretório país/UF/município,
  *   Topologia e Conectividade)
  * - Fase 3: Projeções geoespaciais derivadas no destino (mapa, densidade e cobertura GPON)
@@ -33,6 +34,7 @@ import {
   summarizeNativeRelationships,
 } from './checkpoint.js';
 import { createMigrationContext } from './context.js';
+import { runPhase1AdministrativeCities } from './phase1-administrative-cities.js';
 import { runPhase1Parties } from './phase1-parties.js';
 import { runPhase1SiteSpecs } from './phase1-site-specs.js';
 import { runPhase1ResourceSpecs } from './phase1-resource-specs.js';
@@ -40,7 +42,10 @@ import { runPhase2Locations } from './phase2-locations.js';
 import { runPhase2Resources } from './phase2-resources.js';
 import { runPhase2AdministrativeCity } from './phase2-administrative-city.js';
 import { runPhase2InternalPlant } from './phase2-internal-plant.js';
-import { runPhase2StationInternalPlantDiscovery } from './phase2-station-internal-plant.js';
+import {
+  runPhase2StationInternalPlantDiscovery,
+  runPhase2StationRacks,
+} from './phase2-station-internal-plant.js';
 import { runPhase3Coverage } from './phase3-coverage.js';
 import { runPhase3MapFeatures } from './phase3-map-features.js';
 import type { CliOptions, MigrationPhase } from './types.js';
@@ -186,6 +191,7 @@ async function main() {
       await runPhase1Parties(ctx);
       await runPhase1SiteSpecs(ctx);
       await runPhase1ResourceSpecs(ctx);
+      await runPhase1AdministrativeCities(ctx);
     }
 
     // FASE 2: DADOS
@@ -200,6 +206,7 @@ async function main() {
         // Fecha o diretório país/UF/município (#329) com tudo que esta execução importou.
         await runPhase2AdministrativeCity(ctx);
         await runPhase2InternalPlant(ctx);
+        await runPhase2StationRacks(ctx);
         const stationPlantDiscovery = await runPhase2StationInternalPlantDiscovery(ctx);
         if (stationPlantDiscovery.blocked) {
           await pauseNativeMigrationJob(ctx);
@@ -237,6 +244,7 @@ async function main() {
       }
     } else if (options.phase === '2d') {
       console.log('\n>>> INICIANDO FASE 2.D: DESCOBERTA DE PLANTA INTERNA DE ESTAÇÕES <<<');
+      await runPhase2StationRacks(ctx);
       await runPhase2StationInternalPlantDiscovery(ctx);
     }
 

@@ -1,4 +1,6 @@
 import type {
+  AdministrativeCityRecord,
+  AdministrativeCitySiteCount,
   GeographicAddress,
   GeoAuditLog,
   GeoBulkJob,
@@ -43,6 +45,8 @@ export class GeoRepository implements IGeoRepository {
   private readonly locations = new Map<string, GeographicLocation>();
   private readonly addresses = new Map<string, GeographicAddress>();
   private readonly canonicalCityNames = new Map<string, string>();
+  private readonly cities = new Map<string, AdministrativeCityRecord>();
+  private readonly citySiteCounts = new Map<string, Map<string, number>>();
   private readonly sites = new Map<string, GeographicSite>();
   private readonly specs = new Map<string, GeographicSiteSpecification>();
   // Extensão tenant-scoped de identidade visual (issue #264): `${tenantId}:${specId}`.
@@ -103,6 +107,15 @@ export class GeoRepository implements IGeoRepository {
       stored.city = cityName;
       stored.stateOrProvince = tuple.stateCode;
       stored.country = tuple.countryCode;
+      if (!this.cities.has(key)) {
+        this.cities.set(key, {
+          id: key,
+          countryCode: tuple.countryCode,
+          countryName: tuple.countryName,
+          stateCode: tuple.stateCode,
+          cityName,
+        });
+      }
     }
     this.addresses.set(stored.id, stored);
     return cloneAddress(stored);
@@ -250,6 +263,59 @@ export class GeoRepository implements IGeoRepository {
         protected: protectedChildIds.has(childSpecId),
       });
     }
+  }
+
+  public listAdministrativeCities(query?: {
+    countryCode?: string;
+    stateCode?: string;
+  }): AdministrativeCityRecord[] {
+    return [...this.cities.values()]
+      .filter(
+        (city) =>
+          (!query?.countryCode || city.countryCode === query.countryCode.toUpperCase()) &&
+          (!query?.stateCode || city.stateCode === query.stateCode.toUpperCase()),
+      )
+      .sort((a, b) => a.cityName.localeCompare(b.cityName))
+      .map((city) => ({ ...city }));
+  }
+
+  public getAddressAdministrativeCityId(addressId: string): string | null {
+    const address = this.addresses.get(addressId);
+    if (!address) return null;
+    const tuple = normalizeAdministrativeCity({
+      country: address.country,
+      stateOrProvince: address.stateOrProvince,
+      city: address.city,
+    });
+    return tuple ? administrativeCityNaturalKey(tuple) : null;
+  }
+
+  public reconcileAdministrativeCitySiteCounts(
+    tenantId: string,
+    cityIds?: readonly string[],
+  ): void {
+    const current = new Map<string, number>();
+    for (const site of this.sites.values()) {
+      if (!matchesTenant(site.tenantId, tenantId)) continue;
+      if (site.parentSite?.id || site.status === 'Retired' || !site.address?.id) continue;
+      const cityId = this.getAddressAdministrativeCityId(site.address.id);
+      if (!cityId) continue;
+      current.set(cityId, (current.get(cityId) ?? 0) + 1);
+    }
+    const stored = this.citySiteCounts.get(tenantId) ?? new Map<string, number>();
+    const targets = cityIds ? new Set(cityIds) : new Set([...stored.keys(), ...current.keys()]);
+    for (const id of targets) {
+      const total = current.get(id) ?? 0;
+      if (total > 0) stored.set(id, total);
+      else stored.delete(id);
+    }
+    this.citySiteCounts.set(tenantId, stored);
+  }
+
+  public listAdministrativeCitySiteCounts(tenantId: string): AdministrativeCitySiteCount[] {
+    return [...(this.citySiteCounts.get(tenantId) ?? new Map<string, number>())].map(
+      ([administrativeCityId, activeSiteCount]) => ({ administrativeCityId, activeSiteCount }),
+    );
   }
 
   public upsertSite(site: GeographicSite): GeographicSite {

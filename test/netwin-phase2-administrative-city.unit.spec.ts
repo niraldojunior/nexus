@@ -7,7 +7,7 @@ const makeCtx = (apply: boolean, existingCity: boolean) => {
   const updates: string[] = [];
   let addressPages = 0;
   const execute = vi.fn(async (sql: string, binds: Record<string, unknown> = {}) => {
-    if (/GROUP BY country/i.test(sql)) {
+    if (/GROUP BY a.country/i.test(sql)) {
       return {
         rows: [
           { COUNTRY: 'BR', STATE_OR_PROVINCE: 'RJ', CITY: 'Niterói', N: 2 },
@@ -25,7 +25,7 @@ const makeCtx = (apply: boolean, existingCity: boolean) => {
       inserts.push(String(binds.cityKey));
       return {};
     }
-    if (/ORDER BY id/i.test(sql)) {
+    if (/ORDER BY s.id/i.test(sql)) {
       addressPages += 1;
       return addressPages === 1
         ? {
@@ -36,7 +36,7 @@ const makeCtx = (apply: boolean, existingCity: boolean) => {
           }
         : { rows: [] };
     }
-    if (/^UPDATE/i.test(sql)) {
+    if (/^UPDATE/i.test(sql) && /SET administrative_city_id/i.test(sql)) {
       updates.push(String(binds.cityId));
       return { rowsAffected: 2 };
     }

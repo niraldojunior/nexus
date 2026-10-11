@@ -54,7 +54,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       `SELECT c.id AS id, c.country_code AS country_code, c.country_name AS country_name,
               c.state_code AS state_code, c.city_name AS city_name
          FROM geo_administrative_city c
-         JOIN geo_administrative_city_site_count k
+         JOIN geo_administrative_city_tenant k
            ON k.administrative_city_id = c.id AND k.tenant_id = ? AND k.active_site_count > 0
         ORDER BY c.country_code, c.state_code, c.city_key, c.id`,
       [tenantId],
@@ -95,20 +95,16 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
         parentId: ufId,
       });
     }
-    // Ramo sintético só quando o tenant tem Site raiz ativo sem município canônico: total de
-    // Sites raiz ativos (índice tenant/status) menos a soma da projeção por município.
-    const [activeRoots, counted] = await Promise.all([
-      this.scalar(
-        `SELECT count(*) AS n FROM tmf_geographic_site
-          WHERE tenant_id = ? AND parent_site_id IS NULL AND status <> 'Retired'`,
-        [tenantId],
-      ),
-      this.scalar(
-        'SELECT COALESCE(SUM(active_site_count), 0) AS n FROM geo_administrative_city_site_count WHERE tenant_id = ?',
-        [tenantId],
-      ),
-    ]);
-    if (activeRoots - counted > 0) {
+    // Ramo sintético só quando o tenant tem Site raiz ativo sem município (existência, não contagem).
+    const withoutCity = await this.scalar(
+      `SELECT count(*) AS n FROM (
+         SELECT 1 FROM tmf_geographic_site
+          WHERE tenant_id = ? AND administrative_city_id IS NULL
+            AND parent_site_id IS NULL AND status <> 'Retired'
+          FETCH FIRST 1 ROWS ONLY)`,
+      [tenantId],
+    );
+    if (withoutCity > 0) {
       const countryId = 'country:BR';
       if (!countries.has(countryId)) {
         nodes.push({
@@ -157,32 +153,20 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     return { nodeId, nodes: [], total: 0, limit: options.limit, offset: options.offset };
   }
 
-  // Predicado do município sobre Sites raiz; `none` = Sites sem município canônico.
-  // Precedência: município do endereço real; sem ele, projeção `geo_site_administrative_city`.
-  // Ramos mutuamente exclusivos (UNION ALL + NOT EXISTS), sem OR.
+  // Predicado do município sobre Sites raiz; `none` = Sites sem município. O município é uma
+  // coluna do Site (issue #339): igualdade direta, resolvida por (tenant_id, administrative_city_id).
   private rootScope(cityId: string, tenantId: string): { sql: string; params: unknown[] } {
     if (cityId === UNREGISTERED) {
       return {
-        sql: `s.tenant_id = ? AND s.parent_site_id IS NULL AND s.status <> 'Retired'
-              AND NOT EXISTS (SELECT 1 FROM tmf_geographic_address a
-                               WHERE a.id = s.geographic_address_id AND a.administrative_city_id IS NOT NULL)
-              AND NOT EXISTS (SELECT 1 FROM geo_site_administrative_city p
-                               WHERE p.tenant_id = s.tenant_id AND p.site_id = s.id)`,
+        sql: `s.tenant_id = ? AND s.administrative_city_id IS NULL
+              AND s.parent_site_id IS NULL AND s.status <> 'Retired'`,
         params: [tenantId],
       };
     }
     return {
-      sql: `s.tenant_id = ? AND s.parent_site_id IS NULL AND s.status <> 'Retired'
-            AND s.id IN (SELECT x.id FROM tmf_geographic_site x
-                           JOIN tmf_geographic_address a ON a.id = x.geographic_address_id
-                          WHERE x.tenant_id = ? AND a.administrative_city_id = ?
-                         UNION ALL
-                         SELECT p.site_id FROM geo_site_administrative_city p
-                          WHERE p.tenant_id = ? AND p.administrative_city_id = ?
-                            AND NOT EXISTS (SELECT 1 FROM tmf_geographic_site y
-                                              JOIN tmf_geographic_address b ON b.id = y.geographic_address_id
-                                             WHERE y.id = p.site_id AND b.administrative_city_id IS NOT NULL))`,
-      params: [tenantId, tenantId, cityId, tenantId, cityId],
+      sql: `s.tenant_id = ? AND s.administrative_city_id = ?
+            AND s.parent_site_id IS NULL AND s.status <> 'Retired'`,
+      params: [tenantId, cityId],
     };
   }
 
@@ -498,8 +482,8 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     return map;
   }
 
-  // UF/Município vêm do diretório, a partir do endereço do Site ou do ancestral mais próximo
-  // que tenha endereço vinculado (CONNECT BY NOCYCLE em lote: uma consulta para a página toda).
+  // UF/Município vêm do diretório, a partir do município do Site ou do ancestral mais próximo
+  // que tenha município vinculado (CONNECT BY NOCYCLE em lote: uma consulta para a página toda).
   private async placeMap(siteIds: string[]) {
     const ids = [...new Set(siteIds)];
     const map = new Map<string, { id: string; name: string; uf?: string; city?: string }>();
@@ -512,10 +496,8 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     }>(
       `SELECT CONNECT_BY_ROOT x.id AS root_id, CONNECT_BY_ROOT x.name AS root_name,
               LEVEL AS lvl,
-              COALESCE(a.administrative_city_id, p.administrative_city_id) AS city_id
+              x.administrative_city_id AS city_id
          FROM tmf_geographic_site x
-         LEFT JOIN tmf_geographic_address a ON a.id = x.geographic_address_id
-         LEFT JOIN geo_site_administrative_city p ON p.tenant_id = x.tenant_id AND p.site_id = x.id
         START WITH x.id IN (${placeholders(ids)})
       CONNECT BY NOCYCLE PRIOR x.parent_site_id = x.id`,
       ids,

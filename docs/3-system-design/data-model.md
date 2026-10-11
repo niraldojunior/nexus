@@ -406,15 +406,15 @@ Política de rerun: o merge é por ownership. O migrador substitui apenas a allo
 
 `geo_administrative_city` (tabela interna de apoio, não é entidade TMF) guarda país, UF e município normalizados: `country_code`, `country_name`, `state_code`, `city_name`, `city_key`. A chave natural é `(country_code, state_code, city_key)`, onde `city_key` é caixa única, sem acentos e sem espaços repetidos. O diretório é global (sem `tenant_id`); o isolamento continua nos Sites, Resources e Addresses.
 
-`tmf_geographic_address.administrative_city_id` (nullable, FK) liga cada endereço completo ao município. Os campos TMF673 `country`, `stateOrProvince` e `city` permanecem e são servidos pelo diretório quando há vínculo; endereço com UF inválida ou município ausente mantém o texto legado e fica sem FK.
+O município operacional é dimensão **direta do Site** (issue #339): `tmf_geographic_site.administrative_city_id` (nullable; interno de repositório, fora do payload TMF — C1). Os campos TMF673 `country`, `stateOrProvince` e `city` do endereço permanecem como texto; o endereço **não** carrega mais FK para o diretório.
 
-Sincronização: `OracleGeoRepository.upsertAddress`, as fases 2.A, 2.B e 2.E do migrador Netwin e os loaders diretos em `scripts/` resolvem ou criam o município pela chave natural, sem duplicar. Endereços anteriores à migration v29 são ligados por `scripts/backfill-administrative-city.mjs` (dry-run por padrão; `--apply` exige `--target-prefix`).
+### Vínculo tenant–município (`geo_administrative_city_tenant`)
 
-### Projeção Site → município (`geo_site_administrative_city`)
+Tabela de plataforma, **não-TMF**, PK `(tenant_id, administrative_city_id)`, FK para `geo_administrative_city`, com `active_site_count` (Sites raiz não `Retired`) e `updated_at`. É o pai da FK composta `fk_tmf_geographic_site_admin_city` `(tenant_id, administrative_city_id)` do Site; o índice `idx_tmf_geographic_site_tenant_city(tenant_id, administrative_city_id, parent_site_id, status)` serve a abertura de uma cidade na árvore da Planta Interna por `INDEX RANGE SCAN`, sem UNION nem junção com endereço.
 
-Projeção de plataforma, tenant-scoped e **não-TMF** (PK `(tenant_id, site_id)`; `administrative_city_id`, `source_system`, `source_ref`). Existe para Sites que o Netwin classifica em um município (`DL_INFRANODE.MUNICIPIO_ID/MUNICIPIO/UF_ABRV`) mas que não têm endereço postal nem pai materializado (ex.: ECAC, NFL e OMC em Afonso Cláudio/ES). Nenhum `GeographicAddress` é fabricado, diferente do que TMF673 prescreve para endereços reais.
+Regras: a linha tenant–município é garantida **antes** do Site (ordem da FK); contagens são recontadas, nunca incrementadas; linhas sem Site ativo ficam com `active_site_count = 0` (nunca apagadas, pois Sites `Retired` — C6 — ainda as referenciam) e a árvore filtra `> 0`. Site sem município é válido e aparece no ramo "Sem município". Cargas e o migrador Netwin só preenchem município **nulo**, preservando edições da modal.
 
-Precedência única em árvore da Planta Interna, contagem (`geo_administrative_city_site_count`) e detalhe de recurso: município do endereço real → projeção → ramo "Sem município". O migrador (Fase 2.A) administra apenas linhas `source_system='NETWIN'` (`source_ref` = `MUNICIPIO_ID`), por MERGE idempotente no mesmo commit do lote.
+Sincronização: `OracleGeoRepository` (`setSiteAdministrativeCity`), as fases 2.A, 2.B e 2.E do migrador Netwin e os loaders em `scripts/` resolvem o município pela chave natural. Ambientes anteriores à V35 usam `scripts/backfill-site-administrative-city.mjs` (dry-run por padrão; `--apply` exige `--target-prefix`), que também valida a FK; a V36 então remove `tmf_geographic_address.administrative_city_id`, `geo_site_administrative_city` e `geo_administrative_city_site_count` (falha com instrução se houver Site sem município preenchido). Ambientes novos já nascem sem esses objetos.
 
 Os nomes das `GeographicSiteSpecification` seguem o vocabulário Netwin em português (ex.: `BUILDING` → Edifício; `CENTRAL_OFFICE` → Estação Predial) sem alterar `code`/UUID; `GeographicSite.name` na carga Netwin é `LOCATION.NAME - LOCATION.DESCRIPTION`.
 

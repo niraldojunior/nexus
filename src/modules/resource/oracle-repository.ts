@@ -2565,11 +2565,10 @@ export class OracleResourceRepository implements IResourceRepository {
       source_system: string | null;
     }>(
       `SELECT a.street_type, a.street_name, a.street_nr, a.locality,
-              COALESCE(c.city_name, a.city) AS city,
-              COALESCE(c.state_code, a.state_or_province) AS state_or_province,
+              a.city AS city,
+              a.state_or_province AS state_or_province,
               a.postcode, a.source_system
          FROM tmf_geographic_address a
-         LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
         WHERE a.id = ?`,
       [addressId],
     );

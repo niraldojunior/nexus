@@ -86,7 +86,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
-import { linkAdministrativeCities } from './administrative-city-loader.mjs';
+import {
+  linkAdministrativeCities,
+  linkSiteAdministrativeCities,
+  recountAdministrativeCityTenant,
+} from './administrative-city-loader.mjs';
 import { UF_BBOX } from './uf-geo.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 
@@ -1184,11 +1188,11 @@ async function mainFast() {
           'country',
           'postcode',
           'geographic_location_id',
-          'administrative_city_id',
           'characteristics',
         ],
         newAddresses,
       );
+      await linkSiteAdministrativeCities(client, newSites, newAddresses);
       await bulkInsert(
         client,
         'tmf_geographic_site',
@@ -1204,6 +1208,7 @@ async function mainFast() {
           'parent_site_id',
           'related_party',
           'site_addresses',
+          'administrative_city_id',
           'characteristics',
         ],
         newSites,
@@ -1295,6 +1300,7 @@ async function mainFast() {
     console.log(`  atualizados: ${toUpdate.length}`);
     console.log(`  history    : ${newHistory.length}`);
 
+    await recountAdministrativeCityTenant(client);
     console.log('\nAtualizando estatísticas...');
     for (const table of [
       'tmf_geographic_location',

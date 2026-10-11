@@ -7,7 +7,12 @@ import type {
   GeographicSite,
   GeographicSiteSpecification,
 } from '../src/modules/geo/domain.js';
-import { cleanupOracleTables, getOracleTestClient, isOracleTestConfigured } from './test-utils.js';
+import {
+  TEST_ORACLE_PREFIX,
+  cleanupOracleTables,
+  getOracleTestClient,
+  isOracleTestConfigured,
+} from './test-utils.js';
 
 // Diretório geográfico canônico (issue #329) contra Oracle real: dual-write sem duplicação,
 // serialização TMF673 pelo diretório e árvore de Locais (município → tipo → Site → Sub-Site).
@@ -78,7 +83,7 @@ const site = (
 });
 
 test.skipIf(!oracleConfigured)(
-  'upsertAddress vincula o município canônico sem duplicar e serializa pelo diretório',
+  'upsertAddress normaliza o município canônico sem duplicar e serializa pelo diretório',
   async () => {
     const client = await getOracleTestClient();
     const geo = new OracleGeoRepository(client);
@@ -90,12 +95,12 @@ test.skipIf(!oracleConfigured)(
       'SELECT id, city_name FROM geo_administrative_city',
     );
     assert.equal(cities.length, 1, 'Niterói/NITEROI colapsam em um município');
-    const linked = await client.all<{ id: string; administrative_city_id: string | null }>(
-      'SELECT id, administrative_city_id FROM tmf_geographic_address ORDER BY id',
+    const columns = await client.all<{ column_name: string }>(
+      `SELECT column_name FROM user_tab_columns
+        WHERE table_name = UPPER(?) AND column_name = 'ADMINISTRATIVE_CITY_ID'`,
+      [`${TEST_ORACLE_PREFIX}tmf_geographic_address`],
     );
-    assert.equal(linked[0]?.administrative_city_id, cities[0]?.id);
-    assert.equal(linked[1]?.administrative_city_id, cities[0]?.id);
-    assert.equal(linked[2]?.administrative_city_id, null, 'UF inválida não gera diretório');
+    assert.equal(columns.length, 0, 'endereço não referencia mais o diretório (issue #339)');
 
     const read = await geo.getAddress('a2');
     assert.equal(read?.stateOrProvince, 'RJ');

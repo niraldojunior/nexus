@@ -39,7 +39,7 @@ const cityRow = {
 };
 
 test('roots monta Brasil/UF/município só com Sites ativos e omite o ramo sem município', async () => {
-  const { db, calls } = fakeDb([[cityRow], [{ n: 4 }], [{ n: 4 }]]);
+  const { db, calls } = fakeDb([[cityRow], [{ n: 0 }]]);
   const nodes = await new OracleInternalPlantRepository(db).roots('tenant-a');
   assert.deepEqual(
     nodes.map((node) => [node.id, node.parentId]),
@@ -49,7 +49,7 @@ test('roots monta Brasil/UF/município só com Sites ativos e omite o ramo sem m
       ['city:c1', 'uf:BR|RJ'],
     ],
   );
-  assert.match(calls[0]!.sql, /geo_administrative_city_site_count/);
+  assert.match(calls[0]!.sql, /geo_administrative_city_tenant/);
   assert.match(calls[0]!.sql, /active_site_count > 0/);
   assert.deepEqual(calls[0]!.params, ['tenant-a']);
 });
@@ -57,13 +57,10 @@ test('roots monta Brasil/UF/município só com Sites ativos e omite o ramo sem m
 test('roots inclui o ramo sintético quando há Site raiz ativo sem município', async () => {
   const { db } = fakeDb([[cityRow], [{ n: 5 }], [{ n: 4 }]]);
   const nodes = await new OracleInternalPlantRepository(db).roots('tenant-a');
-  assert.deepEqual(
-    nodes.map((node) => [node.id, node.parentId]).slice(3),
-    [
-      ['uf:none', 'country:BR'],
-      ['city:none', 'uf:none'],
-    ],
-  );
+  assert.deepEqual(nodes.map((node) => [node.id, node.parentId]).slice(3), [
+    ['uf:none', 'country:BR'],
+    ['city:none', 'uf:none'],
+  ]);
 });
 
 test('roots sem nenhum Site ativo devolve árvore vazia', async () => {
@@ -77,8 +74,8 @@ test('city devolve tipos de Site raiz com volume, isolado por tenant', async () 
   assert.equal(result.nodes[0]?.id, 'site-type:c1|sp1');
   assert.equal(result.nodes[0]?.childCount, 1234);
   assert.equal(result.total, 1);
-  assert.deepEqual(calls[0]?.params.slice(0, 5), ['tenant-a', 'tenant-a', 'c1', 'tenant-a', 'c1']);
-  assert.match(calls[0]!.sql, /geo_site_administrative_city/);
+  assert.deepEqual(calls[0]?.params.slice(0, 2), ['tenant-a', 'c1']);
+  assert.doesNotMatch(calls[0]!.sql, /geo_site_administrative_city|UNION ALL/);
   assert.match(calls[0]!.sql, /parent_site_id IS NULL/);
 });
 

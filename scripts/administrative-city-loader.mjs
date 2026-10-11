@@ -63,3 +63,106 @@ export async function linkAdministrativeCities(client, rows) {
   });
   return rows;
 }
+
+/**
+ * Município direto do Site (issue #339). Preenche `administrative_city_id` em cada linha de Site a
+ * partir do endereço (`geographic_address_id`): primeiro pelas linhas de endereço da própria carga
+ * (já vinculadas por `linkAdministrativeCities`), depois pela tupla postal gravada no banco.
+ * Garante as linhas tenant–município (pai da FK composta) ANTES de o Site ser inserido e recontagem
+ * é feita ao final por `recountAdministrativeCityTenant`. Sites sem município continuam válidos.
+ * @param client resultado de openLoaderDb()
+ * @param siteRows linhas de Site com `tenant_id` e `geographic_address_id`
+ * @param addressRows linhas de endereço da carga, já passadas por linkAdministrativeCities
+ */
+export async function linkSiteAdministrativeCities(client, siteRows, addressRows = []) {
+  const cityByAddress = new Map();
+  for (const address of addressRows) {
+    if (address.administrative_city_id)
+      cityByAddress.set(address.id, address.administrative_city_id);
+  }
+  const missing = [
+    ...new Set(
+      siteRows
+        .filter(
+          (site) => site.geographic_address_id && !cityByAddress.has(site.geographic_address_id),
+        )
+        .map((site) => site.geographic_address_id),
+    ),
+  ];
+  if (missing.length > 0) {
+    const stored = [];
+    for (let i = 0; i < missing.length; i += 500) {
+      const part = missing.slice(i, i + 500);
+      const { rows } = await client.query(
+        `SELECT id, city, state_or_province, country FROM tmf_geographic_address
+          WHERE id IN (${part.map((_, index) => `$${index + 1}`).join(', ')})`,
+        part,
+      );
+      for (const row of rows) {
+        stored.push({
+          id: row.id ?? row.ID,
+          city: row.city ?? row.CITY,
+          state_or_province: row.state_or_province ?? row.STATE_OR_PROVINCE,
+          country: row.country ?? row.COUNTRY,
+        });
+      }
+    }
+    await linkAdministrativeCities(client, stored);
+    for (const address of stored) {
+      if (address.administrative_city_id)
+        cityByAddress.set(address.id, address.administrative_city_id);
+    }
+  }
+
+  const pairs = new Map();
+  for (const site of siteRows) {
+    site.administrative_city_id = site.geographic_address_id
+      ? (cityByAddress.get(site.geographic_address_id) ?? null)
+      : null;
+    if (site.administrative_city_id) {
+      pairs.set(`${site.tenant_id}|${site.administrative_city_id}`, [
+        site.tenant_id,
+        site.administrative_city_id,
+      ]);
+    }
+  }
+  for (const [tenantId, cityId] of pairs.values()) {
+    await client.query(
+      `MERGE INTO geo_administrative_city_tenant k
+       USING (SELECT $1 AS tenant_id, $2 AS city_id FROM DUAL) c
+          ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
+        WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
+             VALUES (c.tenant_id, c.city_id, 0, SYSTIMESTAMP)`,
+      [tenantId, cityId],
+    );
+  }
+  return siteRows;
+}
+
+/**
+ * Recontagem set-based de `geo_administrative_city_tenant.active_site_count` (Sites raiz
+ * não-Retired). Nunca incrementa; linhas sem Site ativo ficam com 0 (jamais apagadas).
+ */
+export async function recountAdministrativeCityTenant(client) {
+  await client.query(
+    `MERGE INTO geo_administrative_city_tenant k
+     USING (SELECT s.tenant_id, s.administrative_city_id AS city_id, COUNT(*) AS total
+              FROM tmf_geographic_site s
+             WHERE s.parent_site_id IS NULL AND s.status <> 'Retired'
+               AND s.administrative_city_id IS NOT NULL
+             GROUP BY s.tenant_id, s.administrative_city_id) c
+        ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
+      WHEN MATCHED THEN UPDATE SET k.active_site_count = c.total, k.updated_at = SYSTIMESTAMP`,
+  );
+  await client.query(
+    `UPDATE geo_administrative_city_tenant k
+        SET k.active_site_count = 0, k.updated_at = SYSTIMESTAMP
+      WHERE k.active_site_count <> 0
+        AND NOT EXISTS (SELECT 1 FROM tmf_geographic_site s
+                         WHERE s.tenant_id = k.tenant_id AND s.parent_site_id IS NULL
+                           AND s.status <> 'Retired'
+                           AND s.administrative_city_id = k.administrative_city_id)`,
+  );
+  await client.query('COMMIT');
+  await client.gatherStats('geo_administrative_city_tenant');
+}

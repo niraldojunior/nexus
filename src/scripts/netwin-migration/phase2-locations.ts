@@ -458,7 +458,6 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             country: 'BR',
             postcode: parsed.postcode,
             geographic_location_id: hasPoint ? locationId : null,
-            administrative_city_id: null,
             characteristics: '[]',
           });
         }
@@ -570,12 +569,6 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             ...addressCityTuples.values(),
             ...[...municipalityByLocation.values()].map((municipality) => municipality.tuple),
           ]);
-          for (const address of addresses) {
-            const tuple = addressCityTuples.get(String(address.id));
-            address.administrative_city_id = tuple
-              ? (cityIds.get(administrativeCityNaturalKey(tuple)) ?? null)
-              : null;
-          }
           await bulkMergeRows(
             target,
             ctx.t,
@@ -592,7 +585,6 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               'country',
               'postcode',
               'geographic_location_id',
-              'administrative_city_id',
               'characteristics',
             ],
             addresses,
@@ -619,11 +611,13 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             sites,
             ctx.options.batchSize,
           );
-          // Projeção Site→município (não-TMF): só Locations reais com município estruturado.
-          // Fallback para Sites sem endereço postal; o migrador só administra `NETWIN`.
-          const projections: Array<Record<string, unknown>> = [];
+          // Município direto do Site (issue #339): endereço postal tem precedência; sem endereço,
+          // a Location com município estruturado. Só preenche município nulo — edições da modal
+          // prevalecem. O pai tenant–município entra antes (FK composta).
+          const siteCities = new Map<string, string>();
           let unresolvedMunicipalities = 0;
           for (const row of rows) {
+            const siteId = netwinLocationId(row.ID);
             const municipality = municipalityByLocation.get(row.ID);
             if (!municipality) continue;
             const cityId = cityIds.get(administrativeCityNaturalKey(municipality.tuple));
@@ -631,28 +625,44 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               unresolvedMunicipalities += 1;
               continue;
             }
-            projections.push({
-              tenant_id: ctx.options.tenantId,
-              site_id: netwinLocationId(row.ID),
-              administrative_city_id: cityId,
-              source_system: 'NETWIN',
-              source_ref: municipality.sourceRef,
-            });
+            siteCities.set(siteId, cityId);
+          }
+          for (const site of sites) {
+            const tuple = site.geographic_address_id
+              ? addressCityTuples.get(String(site.geographic_address_id))
+              : undefined;
+            const cityId = tuple ? cityIds.get(administrativeCityNaturalKey(tuple)) : undefined;
+            if (cityId) siteCities.set(String(site.id), cityId);
           }
           if (unresolvedMunicipalities > 0) {
             console.warn(
-              `[Município] ${unresolvedMunicipalities} Site(s) com município não resolvido no diretório; sem projeção.`,
+              `[Município] ${unresolvedMunicipalities} Site(s) com município não resolvido no diretório; ficam sem município.`,
             );
           }
-          await bulkMergeRows(
-            target,
-            ctx.t,
-            'geo_site_administrative_city',
-            ['tenant_id', 'site_id'],
-            ['tenant_id', 'site_id', 'administrative_city_id', 'source_system', 'source_ref'],
-            projections,
-            ctx.options.batchSize,
-          );
+          if (siteCities.size > 0) {
+            for (const cityId of new Set(siteCities.values())) {
+              await target.execute(
+                `MERGE INTO ${ctx.t('geo_administrative_city_tenant')} k
+                 USING (SELECT :tenantId AS tenant_id, :cityId AS city_id FROM DUAL) c
+                    ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
+                  WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
+                       VALUES (c.tenant_id, c.city_id, 0, SYSTIMESTAMP)`,
+                { tenantId: ctx.options.tenantId, cityId },
+                { autoCommit: false },
+              );
+            }
+            await target.executeMany(
+              `UPDATE ${ctx.t('tmf_geographic_site')} SET administrative_city_id=:cityId WHERE id=:siteId AND administrative_city_id IS NULL`,
+              [...siteCities].map(([siteId, cityId]) => ({ siteId, cityId })),
+              {
+                autoCommit: false,
+                bindDefs: {
+                  siteId: { type: oracledb.STRING, maxSize: 36 },
+                  cityId: { type: oracledb.STRING, maxSize: 36 },
+                },
+              },
+            );
+          }
           timing.siteMergeMs = elapsed(startedAt);
           startedAt = Date.now();
           // Binds nomeados, não posicionais: node-oracledb liga binds por ordem de aparição e

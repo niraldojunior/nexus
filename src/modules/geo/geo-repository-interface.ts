@@ -93,10 +93,18 @@ export interface IGeoRepository {
     countryCode?: string;
     stateCode?: string;
   }): Awaitable<AdministrativeCityRecord[]>;
-  getAddressAdministrativeCityId(addressId: string): Awaitable<string | null>;
+  /** Município operacional direto do Site (issue #339); dado de repositório, fora do payload TMF. */
+  getSiteAdministrativeCityId(siteId: string): Awaitable<string | null>;
+  /** Grava o município do Site, garantindo antes o vínculo tenant–município. Não recontagem. */
+  setSiteAdministrativeCity(
+    siteId: string,
+    tenantId: string,
+    cityId: string | null,
+  ): Awaitable<void>;
   /**
    * Recontagem set-based (idempotente) dos Sites raiz não `Retired` por município do tenant.
-   * Sem `cityIds`, reconcilia o tenant inteiro; contagens zeradas são removidas.
+   * Sem `cityIds`, reconcilia o tenant inteiro; contagens zeradas ficam em 0 (a linha permanece
+   * enquanto qualquer Site, inclusive `Retired`, a referenciar) e a listagem filtra `> 0`.
    */
   reconcileAdministrativeCitySiteCounts(
     tenantId: string,

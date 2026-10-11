@@ -43,7 +43,7 @@ export const invalidateInternalPlantRoots = () => {
 
 // Identidades visuais por especificação de Site — a mesma lista que a Modelagem de Locais exibe.
 // Requisição única compartilhada (StrictMode/remontagens; o backend de dev atende em série).
-type SpecPresentation = { category: string; identity?: VisualIdentity | null };
+type SpecPresentation = { name: string; category: string; identity?: VisualIdentity | null };
 let identitiesRequest: Promise<Map<string, SpecPresentation>> | null = null;
 const loadSpecIdentities = () => {
   identitiesRequest ??= listGeoSiteSpecifications()
@@ -52,7 +52,7 @@ const loadSpecIdentities = () => {
         new Map(
           specs.map((spec): [string, SpecPresentation] => [
             spec.id,
-            { category: spec.category, identity: spec.visualIdentity },
+            { name: spec.name, category: spec.category, identity: spec.visualIdentity },
           ]),
         ),
     )
@@ -100,8 +100,9 @@ type Props = {
   onSelectSite: (node: InternalPlantLocationNode) => void;
   selectedSiteId?: string | undefined;
   canEdit?: boolean;
-  /** `administrativeCityId` quando o "+" é o de um município. */
-  onCreateSite?: (administrativeCityId?: string) => void;
+  /** Município selecionado (id administrativo) e callback de seleção; `undefined` limpa. */
+  selectedCityId?: string | undefined;
+  onSelectCity?: (administrativeCityId: string | undefined) => void;
   onEditSite?: (node: InternalPlantLocationNode) => void;
   onRemoveSite?: (node: InternalPlantLocationNode) => void;
   /** Incrementar após mutações (depois de `invalidateInternalPlantRoots`) para recarregar a árvore. */
@@ -113,7 +114,8 @@ export function LocationTree({
   onSelectSite,
   selectedSiteId,
   canEdit = false,
-  onCreateSite,
+  selectedCityId,
+  onSelectCity,
   onEditSite,
   onRemoveSite,
   refreshToken = 0,
@@ -124,6 +126,16 @@ export function LocationTree({
   const [branches, setBranches] = useState<Record<string, Branch>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const inFlight = useRef(new Set<string>());
+  const [specNames, setSpecNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let active = true;
+    void loadSpecIdentities().then((map) => {
+      if (active) setSpecNames(new Map([...map].map(([id, spec]) => [id, spec.name])));
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadBranch = useCallback(async (nodeId: string, offset: number) => {
     const key = `${nodeId}@${offset}`;
@@ -221,7 +233,7 @@ export function LocationTree({
     setExpanded(next);
   };
 
-  const renderNode = (node: InternalPlantLocationNode, depth: number) => {
+  const renderNode = (node: InternalPlantLocationNode, depth: number, parentIsSite = false) => {
     const isOpen = expanded.has(node.id);
     const local = isDirectoryParent(node);
     const branch: Branch | undefined = local
@@ -232,7 +244,9 @@ export function LocationTree({
         }
       : branches[node.id];
     const isSite = node.kind === 'site';
-    const selected = isSite && node.refId === selectedSiteId;
+    const isCity = node.kind === 'city' && node.id !== 'city:none';
+    const selected =
+      (isSite && node.refId === selectedSiteId) || (isCity && node.id === `city:${selectedCityId}`);
     const childIndent = { paddingLeft: 22 + depth * 14 };
     return (
       <li key={node.id} role="none">
@@ -279,25 +293,24 @@ export function LocationTree({
             className="min-w-0 flex-1 truncate text-left"
             onClick={() => {
               if (isSite) onSelectSite(node);
-              else if (node.hasChildren) toggle(node);
+              else if (isCity) {
+                onSelectCity?.(node.id.slice('city:'.length));
+                if (!isOpen && node.hasChildren) toggle(node);
+              } else if (node.hasChildren) toggle(node);
             }}
           >
+            {parentIsSite &&
+            isSite &&
+            node.siteSpecificationId &&
+            specNames.get(node.siteSpecificationId)
+              ? `[${specNames.get(node.siteSpecificationId)}] `
+              : null}
             {node.label}
             {node.kind === 'site-type' && node.childCount !== undefined
               ? ` (${countFormat.format(node.childCount)})`
               : null}
             {node.sublabel ? <span className="ml-2 text-app-muted">{node.sublabel}</span> : null}
           </button>
-          {canEdit && node.kind === 'city' && node.id !== 'city:none' && onCreateSite ? (
-            <button
-              type="button"
-              aria-label={`Novo local em ${node.label}`}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-app-muted hover:text-app-text"
-              onClick={() => onCreateSite(node.id.slice('city:'.length))}
-            >
-              <Plus size={14} />
-            </button>
-          ) : null}
           {canEdit && isSite ? (
             <span className="flex shrink-0 items-center gap-0.5 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100">
               <button
@@ -321,7 +334,7 @@ export function LocationTree({
         </div>
         {isOpen && branch ? (
           <ul role="group">
-            {branch.nodes.map((child) => renderNode(child, depth + 1))}
+            {branch.nodes.map((child) => renderNode(child, depth + 1, isSite))}
             {branch.loading ? (
               <li className="py-1.5 text-app-muted" style={childIndent}>
                 <Loader2 size={14} className="animate-spin" aria-label="Carregando" />
@@ -368,22 +381,8 @@ export function LocationTree({
   }
 
   return (
-    <div>
-      {canEdit && onCreateSite ? (
-        <div className="flex justify-end px-3 pt-2">
-          <button
-            type="button"
-            aria-label="Novo local"
-            className="flex h-6 w-6 items-center justify-center rounded-lg text-app-muted hover:bg-app-hover hover:text-app-text"
-            onClick={() => onCreateSite()}
-          >
-            <Plus size={15} />
-          </button>
-        </div>
-      ) : null}
-      <ul role="tree" aria-label="Locais" className="px-3 py-2">
-        {roots.map((node) => renderNode(node, 0))}
-      </ul>
-    </div>
+    <ul role="tree" aria-label="Locais" className="px-3 pb-2 pt-1">
+      {roots.map((node) => renderNode(node, 0))}
+    </ul>
   );
 }

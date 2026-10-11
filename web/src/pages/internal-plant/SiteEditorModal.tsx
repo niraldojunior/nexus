@@ -90,8 +90,29 @@ export function SiteEditorModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const patch = (change: Partial<Draft>) =>
+  const [dirty, setDirty] = useState(false);
+
+  const patch = (change: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...change } : current));
+    setDirty(true);
+  };
+
+  // Preenchimentos automáticos (opção única) não contam como edição do usuário.
+  const autofill = (change: Partial<Draft>) =>
+    setDraft((current) => (current ? { ...current, ...change } : current));
+
+  const requestClose = () => {
+    if (dirty && !window.confirm('Descartar as alterações não salvas?')) return;
+    onClose();
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') requestClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -170,15 +191,15 @@ export function SiteEditorModal({
 
   useEffect(() => {
     if (!draft) return;
-    if (!draft.countryCode && countries.length === 1) patch({ countryCode: countries[0]![0] });
+    if (!draft.countryCode && countries.length === 1) autofill({ countryCode: countries[0]![0] });
     else if (draft.countryCode && !draft.stateCode && states.length === 1)
-      patch({ stateCode: states[0]! });
+      autofill({ stateCode: states[0]! });
     else if (draft.stateCode && !draft.cityId && cityOptions.length === 1)
-      patch({ cityId: cityOptions[0]!.id });
+      autofill({ cityId: cityOptions[0]!.id });
   }, [draft?.countryCode, draft?.stateCode, draft?.cityId, countries, states, cityOptions]);
 
   useEffect(() => {
-    if (draft && !draft.specId && rootSpecs.length === 1) patch({ specId: rootSpecs[0]!.id });
+    if (draft && !draft.specId && rootSpecs.length === 1) autofill({ specId: rootSpecs[0]!.id });
   }, [rootSpecs, draft?.specId]);
 
   const currentSpec = draft ? specById.get(draft.specId) : undefined;
@@ -216,6 +237,7 @@ export function SiteEditorModal({
       setSiteId(saved.site.id);
       setSite(saved.site);
       patch({ statusReason: '', statusDate: '', status: saved.site.status });
+      setDirty(false);
       onChanged(saved.site.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha ao salvar o local.');
@@ -282,7 +304,7 @@ export function SiteEditorModal({
             <button
               type="button"
               aria-label="Fechar"
-              onClick={onClose}
+              onClick={requestClose}
               className="text-app-muted hover:text-app-text"
             >
               <X size={18} />
@@ -343,7 +365,9 @@ export function SiteEditorModal({
                     <select
                       className={inputClass}
                       value={draft.countryCode}
-                      onChange={(e) => patch({ countryCode: e.target.value, stateCode: '', cityId: '' })}
+                      onChange={(e) =>
+                        patch({ countryCode: e.target.value, stateCode: '', cityId: '' })
+                      }
                     >
                       <option value="">Selecione…</option>
                       {countries.map(([code, name]) => (
@@ -489,7 +513,7 @@ export function SiteEditorModal({
               {!loading && error ? error : ''}
             </p>
             <div className="flex shrink-0 gap-2">
-              <Button variant="ghost" onClick={onClose} disabled={saving}>
+              <Button variant="ghost" onClick={requestClose} disabled={saving}>
                 Fechar
               </Button>
               <Button
@@ -523,7 +547,9 @@ function CharacteristicsTab({
     return <p className="text-[0.85rem] text-app-muted">Selecione o tipo de local na aba Geral.</p>;
   if (definitions.length === 0) {
     return (
-      <p className="text-[0.85rem] text-app-muted">Este tipo de local não define características.</p>
+      <p className="text-[0.85rem] text-app-muted">
+        Este tipo de local não define características.
+      </p>
     );
   }
   return (

@@ -141,6 +141,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     initialAdministrativeCityId?: string;
   } | null>(null);
   const [treeToken, setTreeToken] = useState(0);
+  const [selectedCityId, setSelectedCityId] = useState<string | undefined>();
   const [pendingSiteRemoval, setPendingSiteRemoval] = useState<{
     id: string;
     name: string;
@@ -248,8 +249,18 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     setOffset(0);
   };
 
+  // Seleção exclusiva: escolher um município desfaz o Site selecionado e limpa a área de detalhes.
+  const selectCity = (administrativeCityId: string | undefined) => {
+    setSelectedCityId(administrativeCityId);
+    if (administrativeCityId && context?.icon.kind === 'site') {
+      setContext(null);
+      setOffset(0);
+    }
+  };
+
   const selectSite = (node: InternalPlantLocationNode) => {
     if (!node.refId) return;
+    setSelectedCityId(undefined);
     confirm({
       label: node.label,
       filter: { siteId: node.refId },
@@ -362,23 +373,41 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none transition hover:bg-app-accent-soft focus-visible:bg-app-accent-soft focus-visible:outline-none"
           />
         )}
-        <OverlayScrollArea hostClassName="min-h-0 flex-1">
-          {tab === 'locations' ? (
-            <LocationTree
-              onSelectSite={selectSite}
-              selectedSiteId={context?.filter.siteId}
-              canEdit={canEdit}
-              refreshToken={treeToken}
-              onCreateSite={(administrativeCityId) =>
-                setSiteEditor(administrativeCityId ? { initialAdministrativeCityId: administrativeCityId } : {})
+        <div className="relative min-h-0 flex-1">
+          {canEdit && tab === 'locations' ? (
+            <button
+              type="button"
+              aria-label="Novo local"
+              title={
+                selectedCityId
+                  ? 'Novo local no município selecionado'
+                  : 'Novo local (selecione um município para pré-preencher)'
               }
-              onEditSite={(node) => node.refId && setSiteEditor({ siteId: node.refId })}
-              onRemoveSite={(node) => void askRemoveSite(node)}
-            />
-          ) : (
-            <TypeTree onSelect={selectType} selectedKey={context?.key} />
-          )}
-        </OverlayScrollArea>
+              className="absolute right-3 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-lg border border-[var(--vt-yellow-light)] bg-[var(--vt-yellow-light)] text-[var(--text-primary)] transition hover:brightness-95"
+              onClick={() =>
+                setSiteEditor(selectedCityId ? { initialAdministrativeCityId: selectedCityId } : {})
+              }
+            >
+              <Plus size={14} aria-hidden="true" />
+            </button>
+          ) : null}
+          <OverlayScrollArea hostClassName="h-full min-h-0">
+            {tab === 'locations' ? (
+              <LocationTree
+                onSelectSite={selectSite}
+                selectedSiteId={context?.filter.siteId}
+                canEdit={canEdit}
+                refreshToken={treeToken}
+                selectedCityId={selectedCityId}
+                onSelectCity={selectCity}
+                onEditSite={(node) => node.refId && setSiteEditor({ siteId: node.refId })}
+                onRemoveSite={(node) => void askRemoveSite(node)}
+              />
+            ) : (
+              <TypeTree onSelect={selectType} selectedKey={context?.key} />
+            )}
+          </OverlayScrollArea>
+        </div>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-auto px-6 pb-6 pt-3">
@@ -449,7 +478,12 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   columns={columns}
                   rows={state.page.items}
                   rowKey={(row) => `${row['@type']}:${row.id}`}
-                  {...(canEdit ? { onRowClick: (row: InternalPlantResourceRow) => setEditor({ resourceId: row.id }) } : {})}
+                  {...(canEdit
+                    ? {
+                        onRowClick: (row: InternalPlantResourceRow) =>
+                          setEditor({ resourceId: row.id }),
+                      }
+                    : {})}
                   emptyMessage="Nenhum recurso encontrado."
                 />
                 <DataTablePagination

@@ -24,6 +24,7 @@ import type {
   ResourceCatalogQuery,
   ResourceRelationshipType,
   ResourceTypeRelationshipRule,
+  ResourceSiteRelationship,
 } from './domain.js';
 // Escopo de tenant para leitura por id — as mesmas entidades cujo `list*` já aceita `tenantId`
 // na query.
@@ -159,7 +160,7 @@ export interface IResourceRepository {
   ): Awaitable<ResourceConnection[]>;
   listResourceComponents(
     resourceId: string,
-    options?: { scope?: ResourceTenantScope; maxDepth?: number },
+    options?: { scope?: ResourceTenantScope; maxDepth?: number; includeConnections?: boolean },
   ): Awaitable<{
     components: ResourceComponentNode[];
     connections: ResourceComponentConnection[];
@@ -194,6 +195,33 @@ export interface IResourceRepository {
   listResourceRelationships(resourceId: string): Awaitable<ResourceRelationship[]>;
   /** Relações incidentes nos dois sentidos, necessárias para relações físicas simétricas. */
   listIncidentResourceRelationships(resourceId: string): Awaitable<ResourceRelationship[]>;
+  /** Relações que apontam para o recurso; cada item devolve o Resource de origem em `id`. */
+  listIncomingResourceRelationships(
+    resourceId: string,
+    relationshipType?: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourceRelationship[]>;
+
+  /** Relações adicionais Resource→GeographicSite (issue #334); o `place` segue sendo o principal. */
+  upsertResourceSiteRelationship(
+    relationship: ResourceSiteRelationship,
+  ): Awaitable<ResourceSiteRelationship>;
+  deleteResourceSiteRelationship(
+    tenantId: string,
+    resourceId: string,
+    siteId: string,
+    relationshipType: string,
+  ): Awaitable<boolean>;
+  listResourceSiteRelationships(
+    resourceId: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<ResourceSiteRelationship[]>;
+  /** Vínculos vigentes que apontam para o site — base da cardinalidade `maxSourcePerTarget`. */
+  countResourceSiteRelationshipsForSite(
+    siteId: string,
+    relationshipType: string,
+    scope?: ResourceTenantScope,
+  ): Awaitable<number>;
 
   listResources(query?: ResourceQuery): Awaitable<Resource[]>;
   countResources(query?: ResourceQuery): Awaitable<number>;

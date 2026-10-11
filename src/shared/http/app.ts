@@ -93,6 +93,7 @@ import type {
   ResourceSpecificationBulkItem,
   ResourceSpecificationQuery,
   ResourceType,
+  SaveResourceAggregateInput,
 } from '../../modules/resource/index.js';
 import type {
   CreateServiceSpecificationInput,
@@ -3862,6 +3863,64 @@ const routeResourceRequest = async ({
   const context = await buildRequestContext(request, config);
 
   // Planta Interna: read model paginado no servidor (árvore de locais + lista de recursos).
+  const internalPlantEditorMatch = url.pathname.match(
+    /^\/v1\/resource\/internal-plant\/resources\/([^/]+)\/editor$/,
+  );
+  if (request.method === 'GET' && internalPlantEditorMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.getResourceEditorSnapshot(
+        decodeURIComponent(internalPlantEditorMatch[1]),
+        context,
+      ),
+    );
+  }
+  const internalPlantAuditMatch = url.pathname.match(
+    /^\/v1\/resource\/internal-plant\/resources\/([^/]+)\/audit$/,
+  );
+  if (request.method === 'GET' && internalPlantAuditMatch?.[1]) {
+    requireRoles(context, INVENTORY_READ_ROLES);
+    return sendJson(
+      response,
+      200,
+      resourceService.listResourceAudit(
+        decodeURIComponent(internalPlantAuditMatch[1]),
+        context,
+        parseOptionalNumber(url.searchParams.get('limit')) ?? 200,
+      ),
+    );
+  }
+  if (request.method === 'POST' && url.pathname === '/v1/resource/internal-plant/resources') {
+    requireRoles(context, INVENTORY_WRITE_ROLES);
+    const input = parseSaveResourceAggregateInput(await readBody(request));
+    return sendJson(response, 201, resourceService.saveResourceAggregate(input, context));
+  }
+  const internalPlantResourceMatch = url.pathname.match(
+    /^\/v1\/resource\/internal-plant\/resources\/([^/]+)$/,
+  );
+  if (request.method === 'PUT' && internalPlantResourceMatch?.[1]) {
+    requireRoles(context, INVENTORY_WRITE_ROLES);
+    const id = decodeURIComponent(internalPlantResourceMatch[1]);
+    const input = parseSaveResourceAggregateInput(await readBody(request), id);
+    return sendJson(response, 200, resourceService.saveResourceAggregate(input, context));
+  }
+  if (request.method === 'DELETE' && internalPlantResourceMatch?.[1]) {
+    requireRoles(context, INVENTORY_WRITE_ROLES);
+    const id = decodeURIComponent(internalPlantResourceMatch[1]);
+    const resource = await resourceService.getResource(id, context);
+    if (!resource) {
+      throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+    }
+    return sendJson(
+      response,
+      200,
+      resource['@type'] === 'PhysicalResource'
+        ? resourceService.deletePhysicalResource(id, context)
+        : resourceService.deleteLogicalResource(id, context),
+    );
+  }
   if (request.method === 'GET' && url.pathname.startsWith('/v1/resource/internal-plant/')) {
     requireRoles(context, INVENTORY_READ_ROLES);
     const intParam = (name: string): number | undefined => {
@@ -5718,6 +5777,169 @@ const parseResourceSpecificationBulkImportItems = (
       ),
     };
   });
+};
+
+const parseSaveResourceAggregateInput = (
+  body: Record<string, unknown>,
+  routeId?: string,
+): SaveResourceAggregateInput => {
+  const editable = new Set([
+    'id',
+    '@type',
+    'name',
+    'resourceSpecificationId',
+    'status',
+    'statusCode',
+    'administrativeState',
+    'operationalState',
+    'usageState',
+    'label',
+    'serialNumber',
+    'partNumber',
+    'assetReference',
+    'supportingPhysicalResourceId',
+    'placeId',
+    'characteristic',
+    'validFor',
+    'components',
+    'relationships',
+    'siteRelationships',
+  ]);
+  const unexpected = Object.keys(body).find((field) => !editable.has(field));
+  if (unexpected) {
+    throw new AppError(`${unexpected} is not editable on the resource aggregate`, {
+      code: 'RESOURCE_AGGREGATE_FIELD_NOT_EDITABLE',
+      statusCode: 400,
+    });
+  }
+  if (body['@type'] !== 'PhysicalResource' && body['@type'] !== 'LogicalResource') {
+    throw new AppError('@type must be PhysicalResource or LogicalResource', {
+      code: 'RESOURCE_AGGREGATE_TYPE_INVALID',
+      statusCode: 400,
+    });
+  }
+  for (const field of ['name', 'resourceSpecificationId'] as const) {
+    if (typeof body[field] !== 'string' || !body[field].trim()) {
+      throw new AppError(`${field} is required`, {
+        code: 'RESOURCE_REQUIRED_FIELD',
+        statusCode: 400,
+      });
+    }
+  }
+  if (body.id !== undefined && typeof body.id !== 'string') {
+    throw new AppError('id must be a string', {
+      code: 'RESOURCE_AGGREGATE_ID_INVALID',
+      statusCode: 400,
+    });
+  }
+  if (routeId && body.id !== undefined && body.id !== routeId) {
+    throw new AppError('body id does not match the route id', {
+      code: 'RESOURCE_AGGREGATE_ID_MISMATCH',
+      statusCode: 409,
+    });
+  }
+  const assertArray = (field: string): void => {
+    if (body[field] !== undefined && !Array.isArray(body[field])) {
+      throw new AppError(`${field} must be an array`, {
+        code: 'RESOURCE_AGGREGATE_COLLECTION_INVALID',
+        statusCode: 400,
+      });
+    }
+  };
+  assertArray('characteristic');
+  assertArray('components');
+  assertArray('relationships');
+  assertArray('siteRelationships');
+
+  const parseChildren = (value: unknown, path: string): void => {
+    if (!Array.isArray(value)) return;
+    value.forEach((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new AppError(`${path}[${index}] must be an object`, {
+          code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+          statusCode: 400,
+        });
+      }
+      const child = item as Record<string, unknown>;
+      if (typeof child.name !== 'string' || !child.name.trim()) {
+        throw new AppError(`${path}[${index}].name is required`, {
+          code: 'RESOURCE_REQUIRED_FIELD',
+          statusCode: 400,
+        });
+      }
+      if (
+        typeof child.resourceSpecificationId !== 'string' ||
+        !child.resourceSpecificationId.trim()
+      ) {
+        throw new AppError(`${path}[${index}].resourceSpecificationId is required`, {
+          code: 'RESOURCE_REQUIRED_FIELD',
+          statusCode: 400,
+        });
+      }
+      if (child.characteristic !== undefined && !Array.isArray(child.characteristic)) {
+        throw new AppError(`${path}[${index}].characteristic must be an array`, {
+          code: 'RESOURCE_AGGREGATE_COLLECTION_INVALID',
+          statusCode: 400,
+        });
+      }
+      if (child.children !== undefined && !Array.isArray(child.children)) {
+        throw new AppError(`${path}[${index}].children must be an array`, {
+          code: 'RESOURCE_AGGREGATE_COLLECTION_INVALID',
+          statusCode: 400,
+        });
+      }
+      parseChildren(child.children, `${path}[${index}].children`);
+    });
+  };
+  parseChildren(body.components, 'components');
+
+  const assertRelationshipRows = (
+    value: unknown,
+    path: string,
+    targetField: 'targetId' | 'siteId',
+  ): void => {
+    if (!Array.isArray(value)) return;
+    value.forEach((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new AppError(`${path}[${index}] must be an object`, {
+          code: 'RESOURCE_AGGREGATE_RELATIONSHIP_INVALID',
+          statusCode: 400,
+        });
+      }
+      const relationship = item as Record<string, unknown>;
+      if (
+        typeof relationship[targetField] !== 'string' ||
+        !(relationship[targetField] as string).trim() ||
+        typeof relationship.relationshipType !== 'string' ||
+        !relationship.relationshipType.trim()
+      ) {
+        throw new AppError(`${path}[${index}] has invalid relationship fields`, {
+          code: 'RESOURCE_AGGREGATE_RELATIONSHIP_INVALID',
+          statusCode: 400,
+        });
+      }
+      if (
+        targetField === 'targetId' &&
+        relationship.direction !== undefined &&
+        relationship.direction !== 'outgoing' &&
+        relationship.direction !== 'incoming'
+      ) {
+        throw new AppError(`${path}[${index}].direction is invalid`, {
+          code: 'RESOURCE_AGGREGATE_RELATIONSHIP_INVALID',
+          statusCode: 400,
+        });
+      }
+    });
+  };
+  assertRelationshipRows(body.relationships, 'relationships', 'targetId');
+  assertRelationshipRows(body.siteRelationships, 'siteRelationships', 'siteId');
+
+  return {
+    ...body,
+    ...(routeId ? { id: routeId } : {}),
+    name: (body.name as string).trim(),
+    resourceSpecificationId: (body.resourceSpecificationId as string).trim(),
+  } as SaveResourceAggregateInput;
 };
 
 const parseCreateResourceSpecificationInput = (

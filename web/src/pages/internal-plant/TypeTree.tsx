@@ -1,11 +1,8 @@
 import { ChevronDown, ChevronRight, Folder, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ResourceIcon } from '../../components/ResourceIcon';
-import {
-  getResourceCatalogTree,
-  listResourceCatalogs,
-  type ResourceCatalogTreeNode,
-} from '../../services/resourceCatalogApi';
+import { loadDefaultCatalogTree } from '../../services/internalPlantCatalogCache';
+import type { ResourceCatalogTreeNode } from '../../services/resourceCatalogApi';
 
 export type TypeSelection = {
   key: string;
@@ -13,6 +10,8 @@ export type TypeSelection = {
   resourceTypeIds: string[];
   /** Código do ResourceType quando a seleção é um tipo (folha); ausente em grupo. */
   resourceTypeCode?: string | undefined;
+  /** Id do ResourceType da folha selecionada; base do botão de criação. */
+  leafResourceTypeId?: string | undefined;
 };
 
 type Props = {
@@ -36,11 +35,7 @@ export function TypeTree({ onSelect, selectedKey }: Props) {
     let cancelled = false;
     void (async () => {
       try {
-        const catalogs = await listResourceCatalogs();
-        const catalog =
-          catalogs.find((item) => item.status === 'active' && item.isDefault) ??
-          catalogs.find((item) => item.status === 'active');
-        const nodes = catalog ? await getResourceCatalogTree(catalog.id) : [];
+        const nodes = await loadDefaultCatalogTree();
         if (!cancelled) setTree(nodes);
       } catch (cause) {
         if (!cancelled) {
@@ -119,6 +114,7 @@ export function TypeTree({ onSelect, selectedKey }: Props) {
                   label: node.name,
                   resourceTypeIds: ids,
                   resourceTypeCode: node.resourceType?.code,
+                  leafResourceTypeId: node.resourceTypeId ?? undefined,
                 });
               }
             }}

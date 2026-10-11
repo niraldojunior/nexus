@@ -362,7 +362,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     likePattern: string | undefined,
   ): Promise<InternalPlantResourcePage> {
     const { tenantId, siteId, resourceTypeIdIn, limit, offset } = query;
-    const filters: string[] = ['tenant_id = ?'];
+    const filters: string[] = ["tenant_id = ?", "status <> 'terminated'"];
     const filterParams: unknown[] = [tenantId];
     if (likePattern !== undefined) {
       filters.push(`LOWER(name) LIKE ? ESCAPE '${LIKE_ESCAPE}'`);

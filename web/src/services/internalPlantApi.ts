@@ -1,4 +1,5 @@
 import { bearerToken } from './session';
+import type { ResourceAuditEntry } from './resourceApi';
 import type { VisualIdentity } from './studioGeoApi';
 
 export type InternalPlantLocationNodeKind = 'country' | 'uf' | 'city' | 'site-type' | 'site';
@@ -73,7 +74,182 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return payload as T;
 }
 
-export const fetchInternalPlantRoots = (signal?: AbortSignal) =>
+async function sendJson<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method,
+    headers: {
+      Authorization: `Bearer ${bearerToken()}`,
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  const text = await response.text();
+  let payload: unknown;
+  try {
+    payload = text ? JSON.parse(text) : undefined;
+  } catch {
+    payload = undefined;
+  }
+  if (!response.ok) {
+    const record = payload as Record<string, unknown> | undefined;
+    const message =
+      (typeof record?.message === 'string' ? record.message : undefined) ??
+      (typeof record?.error === 'string' ? record.error : undefined) ??
+      `Falha na requisição (${response.status})`;
+    throw new InternalPlantApiError(
+      message,
+      response.status,
+      typeof record?.code === 'string' ? record.code : undefined,
+    );
+  }
+  return payload as T;
+}
+
+export class InternalPlantApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'InternalPlantApiError';
+  }
+}
+
+// ---- Editor de Resource (agregado) -------------------------------------------------------
+
+export type EditorCharacteristic = {
+  name: string;
+  value: unknown;
+  valueType?: string;
+  group?: string;
+  description?: string;
+  allowedValues?: string[];
+  referenceDataSetKey?: string | null;
+  characteristicLevel?: 'specification' | 'instance';
+};
+
+export type EditorResourceKind = 'PhysicalResource' | 'LogicalResource';
+
+export type EditorResource = {
+  '@type': EditorResourceKind;
+  id: string;
+  name: string;
+  resourceSpecificationId: string;
+  status?: string;
+  statusCode?: string;
+  administrativeState?: string;
+  operationalState?: string;
+  usageState?: string;
+  label?: string;
+  serialNumber?: string;
+  partNumber?: string;
+  assetReference?: string;
+  supportingPhysicalResourceId?: string;
+  place?: { id: string; name?: string; '@referredType'?: string };
+  characteristic?: EditorCharacteristic[];
+  validFor?: { startDateTime?: string; endDateTime?: string };
+};
+
+export type EditorComponentNode = {
+  id: string;
+  name: string;
+  kind: EditorResourceKind;
+  parentId: string | null;
+  depth: number;
+  resourceType?: string;
+  specification?: { id: string; name?: string };
+};
+
+export type EditorConnection = {
+  direction: 'outgoing' | 'incoming';
+  relationshipType: string;
+  resource: { id: string; name: string; resourceType?: string; status?: string };
+};
+
+export type EditorSiteRelationship = {
+  id: string;
+  relationshipType: string;
+  site: { id: string; name?: string };
+};
+
+export type ResourceEditorSnapshot = {
+  resource: EditorResource;
+  specification: {
+    id: string;
+    name: string;
+    resourceTypeId?: string;
+    resourceSpecificationCharacteristic?: EditorCharacteristic[];
+  };
+  resourceType: {
+    id: string;
+    code: string;
+    name: string;
+    nature?: EditorResourceKind;
+    resourceTypeCharacteristic?: EditorCharacteristic[];
+  };
+  components: EditorComponentNode[];
+  relationships: EditorConnection[];
+  siteRelationships: EditorSiteRelationship[];
+  place?: { id: string; name?: string; '@referredType'?: string };
+};
+
+export type AggregateChildDraft = {
+  id?: string;
+  name: string;
+  resourceSpecificationId: string;
+  characteristic?: EditorCharacteristic[];
+  children?: AggregateChildDraft[];
+};
+
+export type SaveResourceAggregatePayload = {
+  id?: string;
+  '@type': EditorResourceKind;
+  name: string;
+  resourceSpecificationId: string;
+  statusCode?: string;
+  administrativeState?: string;
+  operationalState?: string;
+  usageState?: string;
+  label?: string;
+  serialNumber?: string;
+  partNumber?: string;
+  assetReference?: string;
+  supportingPhysicalResourceId?: string | null;
+  placeId?: string | null;
+  characteristic?: EditorCharacteristic[];
+  components?: AggregateChildDraft[];
+  relationships?: Array<{
+    targetId: string;
+    relationshipType: string;
+    direction?: 'outgoing' | 'incoming';
+  }>;
+  siteRelationships?: Array<{ siteId: string; relationshipType: string }>;
+};
+
+export const fetchResourceEditor = (id: string, signal?: AbortSignal) =>
+  getJson<ResourceEditorSnapshot>(`${BASE}/resources/${encodeURIComponent(id)}/editor`, signal);
+
+export const fetchResourceHistory = (id: string, signal?: AbortSignal) =>
+  getJson<ResourceAuditEntry[]>(`${BASE}/resources/${encodeURIComponent(id)}/audit`, signal);
+
+export const saveResourceAggregate = (payload: SaveResourceAggregatePayload) =>
+  payload.id
+    ? sendJson<{ resource: EditorResource; createdIds: string[] }>(
+        'PUT',
+        `${BASE}/resources/${encodeURIComponent(payload.id)}`,
+        payload,
+      )
+    : sendJson<{ resource: EditorResource; createdIds: string[] }>(
+        'POST',
+        `${BASE}/resources`,
+        payload,
+      );
+
+export const terminateInternalPlantResource = (id: string) =>
+  sendJson<unknown>('DELETE', `${BASE}/resources/${encodeURIComponent(id)}`);
+
+export const fetchInternalPlantRoots =(signal?: AbortSignal) =>
   getJson<InternalPlantLocationRootNode[]>(`${BASE}/locations/roots`, signal);
 
 export const fetchInternalPlantChildren = (

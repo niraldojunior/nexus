@@ -2,6 +2,7 @@ import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import {
   buildHref,
+  type Characteristic,
   type CharacteristicLevel,
   type EventService,
   type RelatedParty,
@@ -62,6 +63,12 @@ import type {
   ResourceModelSnapshotSource,
   CreateResourceTypeRelationshipRuleInput,
   UpdateResourceTypeRelationshipRuleInput,
+  ResourceEditorSnapshot,
+  SaveResourceAggregateInput,
+  SaveResourceAggregateResult,
+  ResourceAggregateChildDraft,
+  ResourceAggregateRelationshipDraft,
+  ResourceAggregateSiteRelationshipDraft,
 } from './domain.js';
 import type { IResourceRepository, ResourceTenantScope } from './resource-repository-interface.js';
 import type { MapFeatureSynchronizer } from '../geo/map-feature-synchronizer.js';
@@ -77,9 +84,39 @@ const scopeOf = (context?: RequestContext): ResourceTenantScope => ({
   tenantId: tenantOf(context),
 });
 
+type GeoSiteRef = { id: string; name: string; siteSpecificationId?: string; status?: string };
+
+type EditorRulePlan = {
+  rule: ResourceTypeRelationshipRule;
+  type: ResourceRelationshipType;
+};
+
+type AggregateChildPlan = {
+  draft: ResourceAggregateChildDraft;
+  specification: ResourceSpecification;
+  resourceType: ResourceType;
+  rule: EditorRulePlan;
+  existing?: Resource;
+  children: AggregateChildPlan[];
+};
+
+type AggregateRelationshipPlan = {
+  draft: ResourceAggregateRelationshipDraft & { direction: 'outgoing' | 'incoming' };
+  target: Resource;
+  targetType: ResourceType;
+  rule: EditorRulePlan;
+};
+
+type AggregateSiteRelationshipPlan = {
+  draft: ResourceAggregateSiteRelationshipDraft;
+  site: GeoSiteRef;
+  rule: EditorRulePlan;
+};
+
 type ResourceServiceDependencies = {
   lookupPlace?: (
     id: string,
+    tenantId: string,
   ) =>
     | Promise<{ id: string; '@referredType': string; href?: string; name?: string } | undefined>
     | { id: string; '@referredType': string; href?: string; name?: string }
@@ -103,6 +140,14 @@ type ResourceServiceDependencies = {
   lookupGeoSiteSpecification?: (
     id: string,
   ) => Promise<{ id: string; name: string } | undefined> | { id: string; name: string } | undefined;
+  /**
+   * Porta de leitura de GeographicSite para o editor da Planta Interna (issue #334): valida o
+   * site de uma relação Resource→Site contra a `GeographicSiteSpecification` declarada na regra.
+   */
+  lookupGeoSite?: (
+    id: string,
+    tenantId: string,
+  ) => Promise<GeoSiteRef | undefined> | GeoSiteRef | undefined;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
   lookupActiveVisualAsset?: (tenantId: string, assetId: string) => Promise<boolean> | boolean;
   /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
@@ -392,18 +437,19 @@ export class ResourceService {
         inverseCode: 'mountedOn',
         allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
       },
-      // Alimentação de rede entre recursos (ex.: CDO alimentada por fibra).
+      // Alimentação de rede (ex.: CDO alimentada por fibra ou por estações). O alvo pode ser recurso
+      // ou local; a inversa só é materializada quando o alvo é recurso.
       {
         code: 'fedBy',
         name: 'Alimentado por',
         inverseCode: 'feeds',
-        allowedTargetKinds: ['RESOURCE_TYPE'],
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
       },
       {
         code: 'feeds',
         name: 'Alimenta',
         inverseCode: 'fedBy',
-        allowedTargetKinds: ['RESOURCE_TYPE'],
+        allowedTargetKinds: ['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION'],
       },
       // Atendimento derivado (ex.: CDO atende CDO downstream).
       {
@@ -438,7 +484,19 @@ export class ResourceService {
         const existing = await this.repository.getResourceRelationshipType(definition.code, {
           tenantId,
         });
-        if (existing) continue;
+        if (existing) {
+          // Tipos de bootstrap já gravados ganham os alvos acrescentados depois (ex.: alimentação por local).
+          const missing = definition.allowedTargetKinds.filter(
+            (kind) => !existing.allowedTargetKinds.includes(kind),
+          );
+          if (missing.length > 0) {
+            await this.repository.upsertResourceRelationshipType({
+              ...existing,
+              allowedTargetKinds: [...existing.allowedTargetKinds, ...missing],
+            });
+          }
+          continue;
+        }
         created += 1;
         await this.repository.upsertResourceRelationshipType({
           '@type': 'ResourceRelationshipType',
@@ -453,6 +511,14 @@ export class ResourceService {
           lifecycleStatus: 'Active',
           tenantId,
           _bootstrapProtected: true,
+        });
+      }
+      // `fedBySite` foi um tipo próprio e redundante; "É alimentado por" agora aceita local.
+      const legacy = await this.repository.getResourceRelationshipType('fedBySite', { tenantId });
+      if (legacy && legacy.lifecycleStatus === 'Active') {
+        await this.repository.upsertResourceRelationshipType({
+          ...legacy,
+          lifecycleStatus: 'Retired',
         });
       }
       return {
@@ -1880,7 +1946,7 @@ export class ResourceService {
       context,
     );
     const id = createCanonicalId();
-    const place = await this.resolvePlace(input.placeId, input.placeType);
+    const place = await this.resolvePlace(input.placeId, input.placeType, context);
     const resource: PhysicalResource = {
       '@type': 'PhysicalResource',
       id,
@@ -1951,7 +2017,7 @@ export class ResourceService {
     const { place: _currentPlace, ...currentWithoutPlace } = current;
     const place =
       input.placeId !== undefined
-        ? await this.resolvePlace(input.placeId, input.placeType)
+        ? await this.resolvePlace(input.placeId, input.placeType, context)
         : current.place;
     const updated = await this.repository.upsertPhysicalResource({
       ...currentWithoutPlace,
@@ -2006,6 +2072,7 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<PhysicalResource> {
     const current = await this.getPhysicalResourceOrThrow(id, context);
+    await this.assertResourceCanTerminate(current, context);
     const terminated = await this.repository.upsertPhysicalResource({
       ...current,
       status: 'terminated',
@@ -2119,6 +2186,19 @@ export class ResourceService {
     });
   }
 
+  /** Histórico de qualquer Resource (físico ou lógico) para o editor da Planta Interna. */
+  public async listResourceAudit(
+    id: string,
+    context?: RequestContext,
+    limit = 200,
+  ): Promise<ResourceAuditEntry[]> {
+    await this.getResourceOrThrow(id, context);
+    return await this.repository.listResourceAudit(id, {
+      ...scopeOf(context),
+      limit: Math.min(Math.max(Math.trunc(limit), 1), 500),
+    });
+  }
+
   public async listPhysicalResources(
     query?: ResourceQuery,
     context?: RequestContext,
@@ -2140,7 +2220,7 @@ export class ResourceService {
       'LogicalResource',
       context,
     );
-    const place = await this.resolvePlace(input.placeId, input.placeType);
+    const place = await this.resolvePlace(input.placeId, input.placeType, context);
     const supporting = input.supportingPhysicalResourceId
       ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId, context)
       : undefined;
@@ -2205,17 +2285,21 @@ export class ResourceService {
     const { place: _currentPlace, ...currentWithoutPlace } = current;
     const place =
       input.placeId !== undefined
-        ? await this.resolvePlace(input.placeId, input.placeType)
+        ? await this.resolvePlace(input.placeId, input.placeType, context)
         : current.place;
     const supporting =
       input.supportingPhysicalResourceId !== undefined
-        ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId, context)
+        ? input.supportingPhysicalResourceId
+          ? await this.getPhysicalResourceOrThrow(input.supportingPhysicalResourceId, context)
+          : undefined
         : current.supportingPhysicalResourceId
           ? await this.getPhysicalResourceOrThrow(current.supportingPhysicalResourceId, context)
           : undefined;
+    const { supportingPhysicalResourceId: _currentSupporting, ...currentWithoutPlaceAndSupporting } =
+      currentWithoutPlace;
 
     const updated = await this.repository.upsertLogicalResource({
-      ...currentWithoutPlace,
+      ...currentWithoutPlaceAndSupporting,
       name: input.name !== undefined ? input.name.trim() : current.name,
       resourceSpecificationId: input.resourceSpecificationId ?? current.resourceSpecificationId,
       resourceSpecification: {
@@ -2254,6 +2338,7 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<LogicalResource> {
     const current = await this.getLogicalResourceOrThrow(id, context);
+    await this.assertResourceCanTerminate(current, context);
     const terminated = await this.repository.upsertLogicalResource({
       ...current,
       status: 'terminated',
@@ -2295,6 +2380,642 @@ export class ResourceService {
       (await this.repository.getPhysicalResource(id, scopeOf(context))) ??
       (await this.repository.getLogicalResource(id, scopeOf(context)))
     );
+  }
+
+  public async getResourceEditorSnapshot(
+    id: string,
+    context?: RequestContext,
+  ): Promise<ResourceEditorSnapshot> {
+    const resource = await this.getResourceOrThrow(id, context);
+    const specification = await this.getResourceSpecificationOrThrow(
+      resource.resourceSpecificationId,
+      context,
+    );
+    const resourceType = await this.getResourceTypeByIdOrThrow(
+      specification.resourceTypeId,
+      context,
+      true,
+    );
+    const [componentView, relationships, siteRelationships, place] = await Promise.all([
+      this.repository.listResourceComponents(id, {
+        scope: scopeOf(context),
+        maxDepth: 32,
+        includeConnections: false,
+      }),
+      this.repository.listResourceConnections(id, scopeOf(context)),
+      this.repository.listResourceSiteRelationships(id, scopeOf(context)),
+      resource.place
+        ? this.dependencies.lookupPlace?.(resource.place.id, tenantOf(context))
+        : undefined,
+    ]);
+    return {
+      '@type': 'ResourceEditorSnapshot',
+      resource,
+      specification,
+      resourceType,
+      components: componentView.components,
+      relationships,
+      siteRelationships,
+      ...(resource.place
+        ? {
+            place: {
+              id: resource.place.id,
+              ...(place?.name ? { name: place.name } : {}),
+              '@referredType': resource.place['@referredType'],
+            },
+          }
+        : {}),
+    };
+  }
+
+  /**
+   * Grava o agregado do editor em uma única transação. A validação estrita por regra de catálogo é
+   * propositalmente restrita a este caminho; os endpoints TMF legados continuam permissivos para
+   * manter compatibilidade com integrações existentes.
+   */
+  public async saveResourceAggregate(
+    input: SaveResourceAggregateInput,
+    context?: RequestContext,
+  ): Promise<SaveResourceAggregateResult> {
+    assertName(input.name);
+    const tenantId = tenantOf(context);
+    const current = input.id ? await this.getResourceOrThrow(input.id, context) : undefined;
+    if (current && current['@type'] !== input['@type']) {
+      throw new AppError('resource nature cannot be changed', {
+        code: 'RESOURCE_AGGREGATE_NATURE_CHANGE_NOT_ALLOWED',
+        statusCode: 409,
+      });
+    }
+
+    const specification = await this.getResourceSpecificationForKindOrThrow(
+      input.resourceSpecificationId,
+      input['@type'],
+      context,
+    );
+    const resourceType = await this.getResourceTypeByIdOrThrow(
+      specification.resourceTypeId,
+      context,
+    );
+    assertEditorCharacteristics(input.characteristic ?? current?.characteristic ?? [], resourceType);
+
+    const existingComponentView = current
+      ? await this.repository.listResourceComponents(current.id, {
+          scope: scopeOf(context),
+          maxDepth: 32,
+        })
+      : { components: [], connections: [], truncated: false };
+    if (existingComponentView.truncated) {
+      throw new AppError('resource component tree exceeds the editor limit', {
+        code: 'RESOURCE_COMPONENT_TREE_TRUNCATED',
+        statusCode: 409,
+      });
+    }
+    const existingComponentIds = new Set(
+      existingComponentView.components.map((component) => component.id),
+    );
+    const seenExistingIds = new Set<string>();
+
+    const planChildren = async (
+      drafts: ResourceAggregateChildDraft[],
+      parentType: ResourceType,
+    ): Promise<AggregateChildPlan[]> => {
+      const plans: AggregateChildPlan[] = [];
+      for (const draft of drafts) {
+        assertName(draft.name);
+        const childSpecification = await this.getResourceSpecificationOrThrow(
+          draft.resourceSpecificationId,
+          context,
+        );
+        const childType = await this.getResourceTypeByIdOrThrow(
+          childSpecification.resourceTypeId,
+          context,
+        );
+        if (childType.nature !== parentType.nature) {
+          throw new AppError('contained resources must have the same nature', {
+            code: 'RESOURCE_CONTAINMENT_NATURE_MISMATCH',
+            statusCode: 409,
+          });
+        }
+        const rule = await this.getActiveEditorRule(
+          parentType.id,
+          'containsAsChild',
+          'RESOURCE_TYPE',
+          childType.id,
+          context,
+        );
+        const existing = draft.id ? await this.getResourceOrThrow(draft.id, context) : undefined;
+        if (existing) {
+          if (!current || !existingComponentIds.has(existing.id)) {
+            throw new AppError('only existing children from this component tree may be edited', {
+              code: 'RESOURCE_COMPONENT_NOT_IN_AGGREGATE',
+              statusCode: 409,
+            });
+          }
+          if (seenExistingIds.has(existing.id)) {
+            throw new AppError('a component may appear only once in the aggregate', {
+              code: 'RESOURCE_COMPONENT_DUPLICATE',
+              statusCode: 409,
+            });
+          }
+          seenExistingIds.add(existing.id);
+          if (existing['@type'] !== childType.nature) {
+            throw new AppError('component nature cannot be changed', {
+              code: 'RESOURCE_AGGREGATE_NATURE_CHANGE_NOT_ALLOWED',
+              statusCode: 409,
+            });
+          }
+        }
+        assertEditorCharacteristics(
+          draft.characteristic ?? existing?.characteristic ?? [],
+          childType,
+        );
+        plans.push({
+          draft,
+          specification: childSpecification,
+          resourceType: childType,
+          rule,
+          ...(existing ? { existing } : {}),
+          children: await planChildren(draft.children ?? [], childType),
+        });
+      }
+      this.assertPlannedTargetCardinality(plans, 'containsAsChild');
+      return plans;
+    };
+
+    const componentPlans = input.components
+      ? await planChildren(input.components, resourceType)
+      : undefined;
+
+    if (componentPlans && current) {
+      const managedIds = new Set([current.id, ...existingComponentIds]);
+      const desiredParent = new Map<string, string>();
+      const indexParents = (plans: AggregateChildPlan[], parentId: string) => {
+        for (const plan of plans) {
+          if (plan.existing) desiredParent.set(plan.existing.id, parentId);
+          indexParents(plan.children, plan.existing?.id ?? `new:${plan.draft.name}`);
+        }
+      };
+      indexParents(componentPlans, current.id);
+      for (const [childId, parentId] of desiredParent) {
+        const incoming = await this.repository.listIncomingResourceRelationships(
+          childId,
+          'containsAsChild',
+          scopeOf(context),
+        );
+        const conflicting = incoming.find(
+          (relationship) =>
+            relationshipIsActive(relationship) &&
+            relationship.id !== parentId &&
+            !managedIds.has(relationship.id),
+        );
+        if (conflicting) {
+          throw new AppError('resource already has an active containment parent', {
+            code: 'RESOURCE_CONTAINMENT_PARENT_EXISTS',
+            statusCode: 409,
+          });
+        }
+      }
+    }
+
+    const relationshipPlans = input.relationships
+      ? await Promise.all(
+          input.relationships.map((draft) =>
+            this.planEditorRelationship(draft, current?.id, resourceType, context),
+          ),
+        )
+      : undefined;
+    if (relationshipPlans) this.assertPlannedRelationshipCardinality(relationshipPlans);
+
+    const siteRelationshipPlans = input.siteRelationships
+      ? await Promise.all(
+          input.siteRelationships.map((draft) =>
+            this.planEditorSiteRelationship(draft, resourceType, context),
+          ),
+        )
+      : undefined;
+    if (siteRelationshipPlans) this.assertPlannedSiteCardinality(siteRelationshipPlans);
+
+    const servingPlace =
+      input.placeId !== undefined
+        ? await this.resolvePlace(input.placeId, 'GeographicSite', context)
+        : current?.place;
+    const createdIds: string[] = [];
+
+    const result = await this.repository.transaction(async () => {
+      const root = current
+        ? input['@type'] === 'PhysicalResource'
+          ? await this.updatePhysicalResource(
+              current.id,
+              aggregatePhysicalUpdate(input),
+              context,
+            )
+          : await this.updateLogicalResource(current.id, aggregateLogicalUpdate(input), context)
+        : input['@type'] === 'PhysicalResource'
+          ? await this.createPhysicalResource(aggregatePhysicalCreate(input), context)
+          : await this.createLogicalResource(aggregateLogicalCreate(input), context);
+      if (!current) createdIds.push(root.id);
+
+      if (componentPlans) {
+        await this.persistAggregateChildren(
+          root,
+          componentPlans,
+          servingPlace?.id,
+          createdIds,
+          context,
+        );
+      }
+      if (relationshipPlans) {
+        await this.reconcileEditorRelationships(root, relationshipPlans, context);
+      }
+      if (siteRelationshipPlans) {
+        await this.reconcileEditorSiteRelationships(root, siteRelationshipPlans, tenantId);
+      }
+      return await this.getResourceOrThrow(root.id, context);
+    });
+
+    return { resource: result, createdIds };
+  }
+
+  private async getActiveEditorRule(
+    sourceResourceTypeId: string,
+    relationshipTypeCode: string,
+    targetKind: ResourceTypeRelationshipRule['targetKind'],
+    targetId: string,
+    context?: RequestContext,
+  ): Promise<{ rule: ResourceTypeRelationshipRule; type: ResourceRelationshipType }> {
+    const [rules, type] = await Promise.all([
+      this.repository.listResourceTypeRelationshipRules(sourceResourceTypeId, {
+        ...scopeOf(context),
+        includeRetired: false,
+      }),
+      this.getResourceRelationshipTypeOrThrow(relationshipTypeCode, context),
+    ]);
+    if (type.lifecycleStatus !== 'Active' || !type.allowedTargetKinds.includes(targetKind)) {
+      throw new AppError('resource relationship type is not active for this target kind', {
+        code: 'RESOURCE_RELATIONSHIP_TYPE_NOT_ALLOWED',
+        statusCode: 409,
+      });
+    }
+    const rule = rules.find(
+      (candidate) =>
+        candidate.relationshipTypeCode === relationshipTypeCode &&
+        candidate.targetKind === targetKind &&
+        candidate.targetId === targetId &&
+        periodIsActive(candidate.validFor),
+    );
+    if (!rule) {
+      throw new AppError('resource type relationship rule not found or not active', {
+        code: 'RESOURCE_RELATIONSHIP_RULE_NOT_ALLOWED',
+        statusCode: 409,
+      });
+    }
+    return { rule, type };
+  }
+
+  private assertPlannedTargetCardinality(
+    plans: AggregateChildPlan[],
+    relationshipTypeCode: string,
+  ): void {
+    const counts = new Map<string, number>();
+    for (const plan of plans) {
+      const key = `${relationshipTypeCode}|${plan.resourceType.id}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const maximum = effectiveCardinality(plan.rule.rule, plan.rule.type).maxTargetPerSource;
+      if (maximum !== undefined && (counts.get(key) ?? 0) > maximum) {
+        throw new AppError('resource relationship target cardinality exceeded', {
+          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_EXCEEDED',
+          statusCode: 409,
+        });
+      }
+    }
+  }
+
+  private async planEditorRelationship(
+    draft: ResourceAggregateRelationshipDraft,
+    rootId: string | undefined,
+    rootType: ResourceType,
+    context?: RequestContext,
+  ): Promise<AggregateRelationshipPlan> {
+    assertName(draft.relationshipType, 'relationshipType');
+    const target = await this.getResourceOrThrow(draft.targetId, context);
+    if (target.status === 'terminated') {
+      throw new AppError('terminated resources cannot be relationship targets', {
+        code: 'RESOURCE_RELATIONSHIP_TARGET_TERMINATED',
+        statusCode: 409,
+      });
+    }
+    if (rootId && target.id === rootId) {
+      throw new AppError('a resource cannot relate to itself', {
+        code: 'RESOURCE_RELATIONSHIP_SELF_REFERENCE',
+        statusCode: 409,
+      });
+    }
+    const targetSpecification = await this.getResourceSpecificationOrThrow(
+      target.resourceSpecificationId,
+      context,
+    );
+    const targetType = await this.getResourceTypeByIdOrThrow(
+      targetSpecification.resourceTypeId,
+      context,
+    );
+    const direction = draft.direction ?? 'outgoing';
+    const rule =
+      direction === 'outgoing'
+        ? await this.getActiveEditorRule(
+            rootType.id,
+            draft.relationshipType,
+            'RESOURCE_TYPE',
+            targetType.id,
+            context,
+          )
+        : await this.getActiveEditorRule(
+            targetType.id,
+            draft.relationshipType,
+            'RESOURCE_TYPE',
+            rootType.id,
+            context,
+          );
+    if (
+      draft.relationshipType === 'containsAsChild' ||
+      draft.relationshipType === 'containedBy'
+    ) {
+      throw new AppError('containment relationships belong in the Components tab', {
+        code: 'RESOURCE_RELATIONSHIP_CONTAINMENT_NOT_ALLOWED',
+        statusCode: 400,
+      });
+    }
+    return { draft: { ...draft, direction }, target, targetType, rule };
+  }
+
+  private assertPlannedRelationshipCardinality(plans: AggregateRelationshipPlan[]): void {
+    const counts = new Map<string, number>();
+    for (const plan of plans) {
+      const sourceKey =
+        plan.draft.direction === 'incoming'
+          ? `${plan.target.id}|${plan.draft.relationshipType}`
+          : `root|${plan.draft.relationshipType}`;
+      counts.set(sourceKey, (counts.get(sourceKey) ?? 0) + 1);
+      const maximum = effectiveCardinality(plan.rule.rule, plan.rule.type).maxTargetPerSource;
+      if (maximum !== undefined && (counts.get(sourceKey) ?? 0) > maximum) {
+        throw new AppError('resource relationship target cardinality exceeded', {
+          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_EXCEEDED',
+          statusCode: 409,
+        });
+      }
+    }
+  }
+
+  private async planEditorSiteRelationship(
+    draft: ResourceAggregateSiteRelationshipDraft,
+    rootType: ResourceType,
+    context?: RequestContext,
+  ): Promise<AggregateSiteRelationshipPlan> {
+    assertName(draft.relationshipType, 'relationshipType');
+    const site = await this.dependencies.lookupGeoSite?.(draft.siteId, tenantOf(context));
+    if (!site || site.status === 'terminated') {
+      throw new AppError('geographic site not found or terminated', {
+        code: 'RESOURCE_RELATIONSHIP_SITE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    if (!site.siteSpecificationId) {
+      throw new AppError('geographic site has no specification', {
+        code: 'RESOURCE_RELATIONSHIP_SITE_SPECIFICATION_MISSING',
+        statusCode: 409,
+      });
+    }
+    const rule = await this.getActiveEditorRule(
+      rootType.id,
+      draft.relationshipType,
+      'GEOGRAPHIC_SITE_SPECIFICATION',
+      site.siteSpecificationId,
+      context,
+    );
+    return { draft, site, rule };
+  }
+
+  private assertPlannedSiteCardinality(plans: AggregateSiteRelationshipPlan[]): void {
+    const counts = new Map<string, number>();
+    for (const plan of plans) {
+      const key = plan.draft.relationshipType;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const maximum = effectiveCardinality(plan.rule.rule, plan.rule.type).maxTargetPerSource;
+      if (maximum !== undefined && (counts.get(key) ?? 0) > maximum) {
+        throw new AppError('resource to site relationship cardinality exceeded', {
+          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_EXCEEDED',
+          statusCode: 409,
+        });
+      }
+    }
+  }
+
+  private async persistAggregateChildren(
+    root: Resource,
+    plans: AggregateChildPlan[],
+    inheritedPlaceId: string | undefined,
+    createdIds: string[],
+    context?: RequestContext,
+  ): Promise<void> {
+    const currentTree = await this.repository.listResourceComponents(root.id, {
+      scope: scopeOf(context),
+      maxDepth: 32,
+    });
+    const currentIds = new Set(currentTree.components.map((component) => component.id));
+    const sources = [root.id, ...currentIds];
+    for (const sourceId of sources) {
+      for (const relationship of await this.repository.listResourceRelationships(sourceId)) {
+        if (
+          relationship.relationshipType === 'containsAsChild' &&
+          currentIds.has(relationship.id)
+        ) {
+          await this.repository.deleteResourceRelationship(
+            sourceId,
+            relationship.id,
+            'containsAsChild',
+          );
+        }
+      }
+    }
+
+    const persist = async (parent: Resource, childPlans: AggregateChildPlan[]): Promise<void> => {
+      for (const plan of childPlans) {
+        const child = plan.existing
+          ? plan.existing['@type'] === 'PhysicalResource'
+            ? await this.updatePhysicalResource(
+                plan.existing.id,
+                {
+                  name: plan.draft.name,
+                  resourceSpecificationId: plan.specification.id,
+                  ...(plan.draft.characteristic
+                    ? { characteristic: plan.draft.characteristic }
+                    : {}),
+                  ...(inheritedPlaceId && !plan.existing.place
+                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                    : {}),
+                },
+                context,
+              )
+            : await this.updateLogicalResource(
+                plan.existing.id,
+                {
+                  name: plan.draft.name,
+                  resourceSpecificationId: plan.specification.id,
+                  ...(plan.draft.characteristic
+                    ? { characteristic: plan.draft.characteristic }
+                    : {}),
+                  ...(inheritedPlaceId && !plan.existing.place
+                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                    : {}),
+                },
+                context,
+              )
+          : plan.resourceType.nature === 'PhysicalResource'
+            ? await this.createPhysicalResource(
+                {
+                  name: plan.draft.name,
+                  resourceSpecificationId: plan.specification.id,
+                  ...(plan.draft.characteristic
+                    ? { characteristic: plan.draft.characteristic }
+                    : {}),
+                  ...(inheritedPlaceId
+                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                    : {}),
+                },
+                context,
+              )
+            : await this.createLogicalResource(
+                {
+                  name: plan.draft.name,
+                  resourceSpecificationId: plan.specification.id,
+                  ...(plan.draft.characteristic
+                    ? { characteristic: plan.draft.characteristic }
+                    : {}),
+                  ...(inheritedPlaceId
+                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                    : {}),
+                },
+                context,
+              );
+        if (!plan.existing) createdIds.push(child.id);
+        await this.repository.upsertResourceRelationship(parent.id, {
+          id: child.id,
+          relationshipType: 'containsAsChild',
+          '@referredType': 'Resource',
+        });
+        await persist(child, plan.children);
+      }
+    };
+    await persist(root, plans);
+  }
+
+  private async reconcileEditorRelationships(
+    root: Resource,
+    plans: AggregateRelationshipPlan[],
+    context?: RequestContext,
+  ): Promise<void> {
+    const current = await this.repository.listResourceConnections(root.id, scopeOf(context));
+    for (const connection of current) {
+      const fromId = connection.direction === 'outgoing' ? root.id : connection.resource.id;
+      const toId = connection.direction === 'outgoing' ? connection.resource.id : root.id;
+      await this.repository.deleteResourceRelationship(
+        fromId,
+        toId,
+        connection.relationshipType,
+      );
+    }
+    for (const plan of plans) {
+      const fromId = plan.draft.direction === 'incoming' ? plan.target.id : root.id;
+      const toId = plan.draft.direction === 'incoming' ? root.id : plan.target.id;
+      const direct: ResourceRelationship = {
+        id: toId,
+        relationshipType: plan.draft.relationshipType,
+        '@referredType': 'Resource',
+      };
+      const maximumSources = effectiveCardinality(
+        plan.rule.rule,
+        plan.rule.type,
+      ).maxSourcePerTarget;
+      if (maximumSources !== undefined) {
+        const existingSources = (
+          await this.repository.listIncomingResourceRelationships(
+            toId,
+            plan.draft.relationshipType,
+            scopeOf(context),
+          )
+        ).filter(relationshipIsActive);
+        if (existingSources.length >= maximumSources) {
+          throw new AppError('resource relationship source cardinality exceeded', {
+            code: 'RESOURCE_RELATIONSHIP_CARDINALITY_EXCEEDED',
+            statusCode: 409,
+          });
+        }
+      }
+      if (plan.draft.relationshipType === 'connectedTo') {
+        await this.assertSplitterOutputDropConnection(
+          fromId === root.id ? root : plan.target,
+          toId === root.id ? root : plan.target,
+          direct,
+          context,
+        );
+      }
+      await this.repository.upsertResourceRelationship(fromId, direct);
+      const inverseCode = plan.rule.type.symmetric
+        ? plan.rule.type.code
+        : plan.rule.type.inverseCode;
+      if (inverseCode) {
+        await this.repository.upsertResourceRelationship(toId, {
+          id: fromId,
+          relationshipType: inverseCode,
+          '@referredType': 'Resource',
+        });
+      }
+    }
+  }
+
+  private async reconcileEditorSiteRelationships(
+    root: Resource,
+    plans: AggregateSiteRelationshipPlan[],
+    tenantId: string,
+  ): Promise<void> {
+    const current = await this.repository.listResourceSiteRelationships(root.id, { tenantId });
+    for (const relationship of current) {
+      await this.repository.deleteResourceSiteRelationship(
+        tenantId,
+        root.id,
+        relationship.site.id,
+        relationship.relationshipType,
+      );
+    }
+    for (const plan of plans) {
+      const maximum = effectiveCardinality(
+        plan.rule.rule,
+        plan.rule.type,
+      ).maxSourcePerTarget;
+      if (maximum !== undefined) {
+        const existing = await this.repository.countResourceSiteRelationshipsForSite(
+          plan.site.id,
+          plan.draft.relationshipType,
+          { tenantId },
+        );
+        if (existing >= maximum) {
+          throw new AppError('resource to site relationship source cardinality exceeded', {
+            code: 'RESOURCE_RELATIONSHIP_CARDINALITY_EXCEEDED',
+            statusCode: 409,
+          });
+        }
+      }
+      await this.repository.upsertResourceSiteRelationship({
+        id: createCanonicalId(),
+        tenantId,
+        resourceId: root.id,
+        site: {
+          id: plan.site.id,
+          name: plan.site.name,
+          '@referredType': 'GeographicSite',
+        },
+        relationshipType: plan.draft.relationshipType,
+      });
+    }
   }
 
   public async listResources(query?: ResourceQuery, context?: RequestContext): Promise<Resource[]> {
@@ -2417,6 +3138,41 @@ export class ResourceService {
     return await this.repository.listResourceRelationships(resourceId);
   }
 
+  private async assertResourceCanTerminate(
+    resource: Resource,
+    context?: RequestContext,
+  ): Promise<void> {
+    if (resource.status === 'terminated') return;
+    const [outgoing, incoming, siteRelationships, logicalDependents] = await Promise.all([
+      this.repository.listResourceRelationships(resource.id),
+      this.repository.listIncomingResourceRelationships(resource.id, undefined, scopeOf(context)),
+      this.repository.listResourceSiteRelationships(resource.id, scopeOf(context)),
+      resource['@type'] === 'PhysicalResource'
+        ? this.repository.listLogicalResources({
+            tenantId: tenantOf(context),
+            limit: 10_000,
+          })
+        : Promise.resolve([]),
+    ]);
+    const activeOutgoing = outgoing.filter(relationshipIsActive);
+    const activeIncoming = incoming.filter(relationshipIsActive);
+    const hasLogicalDependent = logicalDependents.some(
+      (candidate) =>
+        candidate.status !== 'terminated' && candidate.supportingPhysicalResourceId === resource.id,
+    );
+    if (
+      activeOutgoing.length > 0 ||
+      activeIncoming.length > 0 ||
+      siteRelationships.some((item) => periodIsActive(item.validFor)) ||
+      hasLogicalDependent
+    ) {
+      throw new AppError('resource has active dependencies and cannot be terminated', {
+        code: 'RESOURCE_HAS_ACTIVE_DEPENDENCIES',
+        statusCode: 409,
+      });
+    }
+  }
+
   public async activateResource(
     input: ResourceFunctionActivationInput,
     context?: RequestContext,
@@ -2490,9 +3246,10 @@ export class ResourceService {
   private async resolvePlace(
     placeId: string | null | undefined,
     placeType: string | undefined,
+    context?: RequestContext,
   ): Promise<{ id: string; '@referredType': string } | undefined> {
     if (!placeId) return undefined;
-    const lookup = await this.dependencies.lookupPlace?.(placeId);
+    const lookup = await this.dependencies.lookupPlace?.(placeId, tenantOf(context));
     if (!lookup) {
       throw new AppError('place not found', { code: 'RESOURCE_PLACE_NOT_FOUND', statusCode: 404 });
     }
@@ -2582,6 +3339,105 @@ export class ResourceService {
     return resource;
   }
 }
+
+const effectiveCardinality = (
+  rule: ResourceTypeRelationshipRule,
+  type: ResourceRelationshipType,
+): ResourceRelationshipCardinality => rule.cardinality ?? type.cardinality ?? {};
+
+const periodIsActive = (period?: { startDateTime?: string; endDateTime?: string }): boolean => {
+  const now = Date.now();
+  if (period?.startDateTime && new Date(period.startDateTime).getTime() > now) return false;
+  return !period?.endDateTime || new Date(period.endDateTime).getTime() > now;
+};
+
+const assertEditorCharacteristics = (
+  characteristics: Characteristic[],
+  resourceType: ResourceType,
+): void => {
+  const instanceDefinitions = new Map(
+    (resourceType.resourceTypeCharacteristic ?? [])
+      .filter((definition) => definition.characteristicLevel === 'instance')
+      .map((definition) => [definition.name, definition]),
+  );
+  for (const characteristic of characteristics) {
+    // Extensões transversais e dados legados desconhecidos são preservados. O editor só governa as
+    // definições explicitamente marcadas como `instance` no ResourceType.
+    if (characteristic.name.startsWith('_') || !instanceDefinitions.has(characteristic.name)) continue;
+    const definition = instanceDefinitions.get(characteristic.name)!;
+    if (
+      definition.valueType &&
+      characteristic.valueType &&
+      definition.valueType !== characteristic.valueType
+    ) {
+      throw new AppError('resource characteristic value type does not match its definition', {
+        code: 'RESOURCE_CHARACTERISTIC_TYPE_MISMATCH',
+        statusCode: 409,
+      });
+    }
+    if (
+      definition.allowedValues?.length &&
+      typeof characteristic.value === 'string' &&
+      !definition.allowedValues.includes(characteristic.value)
+    ) {
+      throw new AppError('resource characteristic value is not allowed', {
+        code: 'RESOURCE_CHARACTERISTIC_VALUE_NOT_ALLOWED',
+        statusCode: 409,
+      });
+    }
+  }
+};
+
+const aggregatePhysicalCreate = (
+  input: SaveResourceAggregateInput,
+): CreatePhysicalResourceInput => ({
+  name: input.name,
+  resourceSpecificationId: input.resourceSpecificationId,
+  ...(input.placeId ? { placeId: input.placeId, placeType: 'GeographicSite' } : {}),
+  ...(input.status ? { status: input.status } : {}),
+  ...(input.statusCode ? { statusCode: input.statusCode } : {}),
+  ...(input.administrativeState ? { administrativeState: input.administrativeState } : {}),
+  ...(input.operationalState ? { operationalState: input.operationalState } : {}),
+  ...(input.usageState ? { usageState: input.usageState } : {}),
+  ...(input.label ? { label: input.label } : {}),
+  ...(input.serialNumber ? { serialNumber: input.serialNumber } : {}),
+  ...(input.partNumber ? { partNumber: input.partNumber } : {}),
+  ...(input.assetReference ? { assetReference: input.assetReference } : {}),
+  ...(input.characteristic ? { characteristic: input.characteristic } : {}),
+  ...(input.validFor ? { validFor: input.validFor } : {}),
+});
+
+const aggregatePhysicalUpdate = (
+  input: SaveResourceAggregateInput,
+): UpdatePhysicalResourceInput => ({
+  ...aggregatePhysicalCreate(input),
+  ...(input.placeId === null ? { placeId: null } : {}),
+});
+
+const aggregateLogicalCreate = (
+  input: SaveResourceAggregateInput,
+): CreateLogicalResourceInput => ({
+  name: input.name,
+  resourceSpecificationId: input.resourceSpecificationId,
+  ...(input.placeId ? { placeId: input.placeId, placeType: 'GeographicSite' } : {}),
+  ...(input.supportingPhysicalResourceId
+    ? { supportingPhysicalResourceId: input.supportingPhysicalResourceId }
+    : {}),
+  ...(input.status ? { status: input.status } : {}),
+  ...(input.administrativeState ? { administrativeState: input.administrativeState } : {}),
+  ...(input.operationalState ? { operationalState: input.operationalState } : {}),
+  ...(input.usageState ? { usageState: input.usageState } : {}),
+  ...(input.characteristic ? { characteristic: input.characteristic } : {}),
+  ...(input.validFor ? { validFor: input.validFor } : {}),
+});
+
+const aggregateLogicalUpdate = (
+  input: SaveResourceAggregateInput,
+): UpdateLogicalResourceInput => ({
+  ...aggregateLogicalCreate(input),
+  ...(input.placeId === null ? { placeId: null } : {}),
+  ...(input.supportingPhysicalResourceId === null ? { supportingPhysicalResourceId: null } : {}),
+});
 
 const assertName = (value: unknown, field = 'name'): void => {
   if (typeof value !== 'string' || value.trim().length === 0) {

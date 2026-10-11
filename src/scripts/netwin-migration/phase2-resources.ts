@@ -31,13 +31,23 @@ import {
   type NativeRelationship,
 } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
-import { equipmentModelSpecId, pickSpecification, SpecCoverage } from './concrete-specs.js';
+import {
+  equipmentModelSpecId,
+  equipmentTypeSpecId,
+  pickSpecification,
+  SpecCoverage,
+} from './concrete-specs.js';
 import {
   hydrateByIds,
   hydrateWktByIds,
   selectResourceIdsByInfranodes,
   selectResourceIdsByStructuredInfranode,
 } from './source-batches.js';
+import {
+  createEnrichmentCaches,
+  enrichEquipmentPage,
+  type EnrichmentInput,
+} from './equipment-enrichment-page.js';
 import type { PhaseStats } from './types.js';
 
 /** Subtipos OSP comprovados; qualquer outro é contabilizado como não mapeado. */
@@ -283,6 +293,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       console.log(`[Resume] Fase 2.B/equipamentos: cursor ${lastEqId}; processados=${eqCount}.`);
     }
     equipmentProgress.start();
+    const enrichmentCaches = createEnrichmentCaches();
+    let serialConflictCount = 0;
+    let projectsResolvedCount = 0;
+    let projectsUnresolvedCount = 0;
 
     for (;;) {
       if (equipmentProcessedThisRun >= maxRecords) break;
@@ -368,6 +382,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       const addresses: Array<Record<string, unknown>> = [];
       const addressCityTuples = new Map<string, AdministrativeCityTuple>();
       const seenEqIds = new Set<number>();
+      const enrichmentInputs: EnrichmentInput[] = [];
 
       for (const eq of rows) {
         lastEqId = Math.max(lastEqId, eq.ID);
@@ -456,10 +471,18 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           ispDetail?.ID_BD_TIPO_NE && ispDetail.ID_BD_TIPO_EQUIP
             ? equipmentModelSpecId(ispDetail.ID_BD_TIPO_NE, ispDetail.ID_BD_TIPO_EQUIP)
             : null;
+        // Tipo interno sem modelo (Célula 2G, antena...): a spec "de tipo" vem antes do fallback
+        // genérico, para o recurso não ser classificado como CDOE por omissão.
+        const typeSpecId = ispDetail?.ID_BD_TIPO_NE
+          ? equipmentTypeSpecId(ispDetail.ID_BD_TIPO_NE)
+          : null;
+        const hasConcrete = concreteId !== null && validSpecs.has(concreteId);
         const finalSpecId =
-          specName || (concreteId && validSpecs.has(concreteId))
-            ? pickSpecification(concreteId, validSpecs, genericResolved, equipmentCoverage)
-            : genericResolved;
+          !hasConcrete && typeSpecId && validSpecs.has(typeSpecId)
+            ? (equipmentCoverage.record('concrete'), typeSpecId)
+            : specName || hasConcrete
+              ? pickSpecification(concreteId, validSpecs, genericResolved, equipmentCoverage)
+              : genericResolved;
 
         resources.push({
           id: resId,
@@ -470,29 +493,45 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           status_code: ispState?.statusCode ?? ospState.statusCode,
           place_id: resId,
           place_type: 'GeographicLocation',
-          // Site onde o equipamento está instalado: poste (CDOE/CEO), edificação ou sala (CDOI).
-          // É a LOCATION do INFRANODE do equipamento, a mesma que a Fase 2.A grava como Site.
-          // Não cai para a estação (EXCHANGE_ID): ela é outra relação e misturaria o significado.
-          serving_site_id: eq.INFRANODE_ID ? netwinLocationId(eq.INFRANODE_ID) : null,
+          // Estação abastecedora (não o INFRANODE, que é o local físico): preenchida pelo
+          // enriquecimento a partir da célula / atributo dinâmico.
+          serving_site_id: null,
           administrative_state: ispState?.administrative_state ?? ospState.administrative_state,
           operational_state: ispState?.operational_state ?? ospState.operational_state,
           usage_state: ispState?.usage_state ?? 'idle',
-          related_party: JSON.stringify([
-            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
-          ]),
-          characteristics: JSON.stringify([
+          related_party: '[]',
+          characteristics: '[]',
+          label: null,
+          serial_number: null,
+          project_id: null,
+        });
+        enrichmentInputs.push({
+          ospId: eq.ID,
+          resourceId: resId,
+          name,
+          baseCharacteristics: [
             ...netwinOriginCharacteristics('OSP_EQUIPMENT', eq.ID),
             ...(substatus ? [{ name: 'substatus', value: substatus, valueType: 'string' }] : []),
-            ...[
-              ['serialNumber', ispDetail?.NUM_SERIE],
-              ['alternateDesignation', ispDetail?.DESIGNACAO_ALTERNATIVA],
-              ['identification', ispDetail?.IDENTIFICACAO],
-            ]
-              .filter(([, value]) => value !== null && value !== undefined && value !== '')
-              .map(([name, value]) => ({ name, value: String(value), valueType: 'string' })),
-          ]),
+          ],
         });
       }
+
+      const enrichmentStartedAt = Date.now();
+      const enrichment = await enrichEquipmentPage(
+        ctx,
+        source,
+        target,
+        enrichmentInputs,
+        enrichmentCaches,
+      );
+      for (const resource of resources) {
+        const enriched = enrichment.rows.get(String(resource.id));
+        if (enriched) Object.assign(resource, enriched);
+      }
+      serialConflictCount += enrichment.stats.serialConflicts;
+      projectsResolvedCount += enrichment.stats.projectsResolved;
+      projectsUnresolvedCount += enrichment.stats.projectsUnresolved;
+      const enrichmentMs = Date.now() - enrichmentStartedAt;
 
       const nextEqCount = eqCount + equipmentIds.length;
       let locationMergeMs = 0;
@@ -569,6 +608,9 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'usage_state',
               'related_party',
               'characteristics',
+              'label',
+              'serial_number',
+              'project_id',
             ],
             resources,
             batchSize,
@@ -592,11 +634,28 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       stats.loaded += resources.length;
       equipmentProgress.advance(equipmentIds.length);
       console.log(
-        `[Progresso] Fase 2.B — Equipamentos: cursor ${lastEqId}; selecionados=${equipmentIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; commit=${commitMs}ms.`,
+        `[Progresso] Fase 2.B — Equipamentos: cursor ${lastEqId}; selecionados=${equipmentIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; enriquecimento=${enrichmentMs}ms (${Object.entries(
+          enrichment.stats.timings,
+        )
+          .map(([k, v]) => `${k}=${v}`)
+          .join(
+            ' ',
+          )}); localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; commit=${commitMs}ms.`,
       );
     }
     equipmentProgress.finish();
     console.log(equipmentCoverage.format('equipamentos'));
+    console.log(
+      `[Enriquecimento] séries em conflito=${serialConflictCount}; projetos resolvidos=${projectsResolvedCount}, mantidos como characteristic=${projectsUnresolvedCount}.`,
+    );
+    if (enrichmentCaches.unmappedDynamic.size > 0) {
+      const top = [...enrichmentCaches.unmappedDynamic.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([name, count]) => `${name}=${count}`)
+        .join(', ');
+      console.log(`[Enriquecimento] atributos dinâmicos fora da allowlist (top 10): ${top}.`);
+    }
     if (equipmentGeometryFailures > 0) {
       console.warn(
         `[Geometria] ${equipmentGeometryFailures} equipamento(s) migrados sem geometria por dado corrompido na origem (OSP_EQUIPMENT.GEOM).`,

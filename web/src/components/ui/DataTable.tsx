@@ -66,6 +66,19 @@ export default function DataTable<T>({
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onRowClick(row);
+                        }
+                      }
+                    : undefined
+                }
+                tabIndex={onRowClick ? 0 : undefined}
+                className={onRowClick ? 'group/row focus-visible:bg-app-accent-soft focus-visible:outline-none' : undefined}
                 style={onRowClick ? { cursor: 'pointer' } : undefined}
               >
                 {columns.map((col) => (

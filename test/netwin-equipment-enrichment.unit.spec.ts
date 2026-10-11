@@ -46,7 +46,9 @@ describe('equipment-enrichment: normalização', () => {
     for (const banned of ['manufacturer', 'networkType', 'serialNumber', 'label']) {
       expect(names).not.toContain(banned);
     }
-    expect(new Set(names).size).toBe(ENRICHMENT_CHARACTERISTICS.length);
+    expect(new Set(names).size).toBe(names.length);
+    // As de rádio (célula 2G/3G/4G) vivem à parte e só entram nos tipos de célula.
+    expect(ENRICHMENT_CHARACTERISTICS.length).toBeGreaterThan(names.length);
     expect(enrichmentInstanceDefinitions().every((d) => d.characteristicLevel === 'instance')).toBe(
       true,
     );

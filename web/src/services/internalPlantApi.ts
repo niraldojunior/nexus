@@ -32,6 +32,7 @@ export type InternalPlantResourceRow = {
   '@type': 'PhysicalResource' | 'LogicalResource';
   name: string;
   status: string;
+  statusCode?: string;
   resourceType: { id: string; code: string; name: string };
   resourceSpecification: { id: string; name: string };
   place?: { id: string; name: string };

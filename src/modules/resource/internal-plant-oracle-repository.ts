@@ -26,6 +26,7 @@ type PageRow = {
   name: string;
   spec_id: string;
   status: ResourceStatus;
+  status_code?: string | null;
   place_id: string | null;
   total?: number | string;
 };
@@ -382,17 +383,17 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       filterParams.push(...resourceTypeIdIn);
     }
     const where = filters.join(' AND ');
-    const union = `SELECT u.id, u.entity_type, u.name, u.spec_id, u.status, u.place_id FROM (
-        SELECT id, 'PhysicalResource' AS entity_type, name, resource_specification_id AS spec_id, status, serving_site_id AS place_id
+    const union = `SELECT u.id, u.entity_type, u.name, u.spec_id, u.status, u.status_code, u.place_id FROM (
+        SELECT id, 'PhysicalResource' AS entity_type, name, resource_specification_id AS spec_id, status, status_code, serving_site_id AS place_id
           FROM tmf_physical_resource WHERE ${where}
         UNION ALL
-        SELECT id, 'LogicalResource' AS entity_type, name, resource_specification_id AS spec_id, status, serving_site_id AS place_id
+        SELECT id, 'LogicalResource' AS entity_type, name, resource_specification_id AS spec_id, status, CAST(NULL AS VARCHAR(100)) AS status_code, serving_site_id AS place_id
           FROM tmf_logical_resource WHERE ${where}
       ) u`;
     const unionParams = [...filterParams, ...filterParams];
 
     const rows = await this.db.all<PageRow>(
-      `SELECT p.id, p.entity_type, p.name, p.spec_id, p.status, p.place_id, p.total FROM (
+      `SELECT p.id, p.entity_type, p.name, p.spec_id, p.status, p.status_code, p.place_id, p.total FROM (
          SELECT x.*, count(*) OVER() AS total FROM (${union}) x
        ) p
        ORDER BY LOWER(p.name), p.entity_type, p.id
@@ -419,6 +420,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
         '@type': row.entity_type,
         name: row.name,
         status: row.status,
+        ...(row.status_code ? { statusCode: row.status_code } : {}),
         resourceType: spec.type,
         resourceSpecification: { id: row.spec_id, name: spec.name },
         ...(place ? { place: { id: place.id, name: place.name } } : {}),

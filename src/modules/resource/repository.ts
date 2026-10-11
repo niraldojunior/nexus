@@ -477,7 +477,8 @@ export class ResourceRepository implements IResourceRepository {
       '@type': 'ResourcePortsView',
       ctoId,
       groups: splitters.map((splitter) => {
-        const splitRatio = characteristicString(splitter, 'razao');
+        const splitRatio =
+          characteristicString(splitter, 'splitRatio') ?? characteristicString(splitter, 'razao');
         return {
           splitter: {
             id: splitter.id,
@@ -556,7 +557,9 @@ export class ResourceRepository implements IResourceRepository {
       });
     const role = characteristicString(port, 'role');
     const index = characteristicNumber(port, 'index');
-    const splitRatio = splitter ? characteristicString(splitter, 'razao') : undefined;
+    const splitRatio = splitter
+      ? (characteristicString(splitter, 'splitRatio') ?? characteristicString(splitter, 'razao'))
+      : undefined;
     return {
       '@type': 'ResourcePortDetail',
       resource: {
@@ -762,7 +765,11 @@ export class ResourceRepository implements IResourceRepository {
         ...(model ? { model } : {}),
         ...(physical?.serialNumber ? { serialNumber: physical.serialNumber } : {}),
         ...(res.characteristic.length > 0
-          ? { characteristics: res.characteristic.filter((characteristic) => !characteristic.name.startsWith('_')) }
+          ? {
+              characteristics: res.characteristic.filter(
+                (characteristic) => !characteristic.name.startsWith('_'),
+              ),
+            }
           : {}),
         ...(portInfo ? { portInfo } : {}),
       });

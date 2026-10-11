@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   infranodeScopeBinds,
+  municipalityIdInfranodeBinds,
+  municipalityIdInfranodePredicate,
   municipalityInfranodePredicate,
   neighborhoodInfranodePredicate,
   normalizeScopeName,
@@ -31,6 +33,22 @@ describe('netwin-migration: bairro scope', () => {
     // A sigla já é maiúscula e sem acento na origem, e não existe índice funcional sobre
     // LIMPASTRING(BADDR_UF_ABRV) — envolver a coluna só custaria uma chamada PL/SQL por linha.
     expect(ufInfranodePredicate('infranode')).not.toContain('LIMPASTRING');
+  });
+
+  it('gera pré-filtro municipal por IDs indexados com binds nomeados', () => {
+    expect(municipalityIdInfranodePredicate('infranode', [42, 84])).toBe(
+      'infranode.BADDR_MUNICIPIO_ID IN (:municipioId0, :municipioId1)',
+    );
+    expect(municipalityIdInfranodeBinds([42, 84])).toEqual({
+      municipioId0: 42,
+      municipioId1: 84,
+    });
+  });
+
+  it('recusa pré-filtro municipal sem IDs', () => {
+    expect(() => municipalityIdInfranodePredicate('infranode', [])).toThrow(
+      'ao menos um BADDR_MUNICIPIO_ID',
+    );
   });
 
   it('mantém os binds do recorte de bairro isolados da consulta sem escopo', () => {

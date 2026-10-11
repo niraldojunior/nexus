@@ -3,7 +3,7 @@ import oracledb, { type Connection } from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { normalizeScopeName } from './scope.js';
 
-export const NATIVE_MAPPING_VERSION = 'netwin-native-phase2-v1';
+export const NATIVE_MAPPING_VERSION = 'netwin-native-phase2-v3';
 
 export type NativeCheckpoint = {
   lastSourceId: number;

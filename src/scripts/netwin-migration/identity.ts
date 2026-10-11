@@ -68,6 +68,11 @@ export function netwinPartyId(sourceId: number | string): string {
   return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:PARTY:${sourceId}`);
 }
 
+/** Proprietário (`NETWIN.OWNER`): namespace próprio para não colidir com `MANUFACTURER.ID`. */
+export function netwinOwnerPartyId(sourceId: number | string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:OWNER:${sourceId}`);
+}
+
 export function netwinPartyRoleId(partyId: string, roleName: string): string {
   return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:PARTY_ROLE:${partyId}:${roleName}`);
 }

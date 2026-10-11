@@ -91,7 +91,7 @@ const columns: DataTableColumn<InternalPlantResourceRow>[] = [
   {
     key: 'status',
     header: <div className="text-center">Status</div>,
-    render: (row) => <StatusLight status={row.status} />,
+    render: (row) => <StatusLight status={row.statusCode ?? row.status} />,
   },
   { key: 'uf', header: 'UF', render: (row) => row.stateOrProvince ?? '—' },
   { key: 'city', header: 'Município', render: (row) => row.city ?? '—' },

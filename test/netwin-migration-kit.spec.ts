@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveLifecycleStatus,
+  resolveOspLifecycleState,
   resolveNetwinPlantState,
   resolveNetwinSiteStatus,
 } from '../src/scripts/netwin-migration-kit.js';
@@ -159,6 +160,40 @@ describe('resolveLifecycleStatus', () => {
       status: 'suspended',
       substatus: 'Planejado',
       assumed: false,
+    });
+  });
+});
+
+describe('resolveOspLifecycleState', () => {
+  it('Em Projeto e Projetado são planejados (inactive + status_code), não suspensos', () => {
+    expect(resolveOspLifecycleState('Em Projeto')).toMatchObject({
+      status: 'inactive',
+      statusCode: 'planned',
+      administrative_state: 'unlocked',
+      operational_state: 'disabled',
+      usage_state: 'idle',
+    });
+    expect(resolveOspLifecycleState('Projetado')).toMatchObject({
+      status: 'inactive',
+      statusCode: 'designed',
+    });
+  });
+
+  it('Removido e Extraviado encerram o recurso (C6)', () => {
+    for (const d of ['Removido', 'Extraviado']) {
+      expect(resolveOspLifecycleState(d)).toMatchObject({
+        status: 'terminated',
+        administrative_state: 'locked',
+        statusCode: null,
+      });
+    }
+  });
+
+  it('Instalado segue ativo e habilitado', () => {
+    expect(resolveOspLifecycleState('Instalado')).toMatchObject({
+      status: 'active',
+      operational_state: 'enabled',
+      statusCode: null,
     });
   });
 });

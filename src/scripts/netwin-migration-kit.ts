@@ -115,6 +115,54 @@ export function resolveLifecycleStatus(designation: string | undefined): Lifecyc
   return { status: 'suspended', substatus: designation ?? '', assumed: false };
 }
 
+export type OspLifecycleState = {
+  status: 'active' | 'inactive' | 'suspended' | 'terminated';
+  administrative_state: 'unlocked' | 'locked';
+  operational_state: 'enabled' | 'disabled' | 'unknown';
+  usage_state: 'idle';
+  /** Estado granular do catálogo (status-catalog.ts); `null` quando não há equivalente. */
+  statusCode: string | null;
+  substatus: string;
+  assumed: boolean;
+};
+
+/**
+ * Ciclo de vida OSP (NI_CAT_STATE) em todos os eixos. Em Projeto/Projetado são recursos ainda não
+ * construídos: `inactive` + `status_code` planned/designed (farol "planejado"), nunca `suspended`.
+ * Removido/Extraviado encerram o recurso (C6). O restante segue `resolveLifecycleStatus`.
+ */
+export function resolveOspLifecycleState(designation: string | undefined): OspLifecycleState {
+  const normalized = normalizeDesignation(designation);
+  const planned = /^EM PROJETO$|^PROJETANDO$|^PROJECTING$/.test(normalized)
+    ? 'planned'
+    : /^PROJETADO$|^PROJECTED$/.test(normalized)
+      ? 'designed'
+      : null;
+  if (planned) {
+    return {
+      status: 'inactive',
+      administrative_state: 'unlocked',
+      operational_state: 'disabled',
+      usage_state: 'idle',
+      statusCode: planned,
+      substatus: '',
+      assumed: false,
+    };
+  }
+  const removed = /^REMOVID|^EXTRAVIAD|^REMOVED$/.test(normalized);
+  const base = resolveLifecycleStatus(designation);
+  const status = removed ? 'terminated' : base.status;
+  return {
+    status,
+    administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
+    operational_state: status === 'active' ? 'enabled' : 'disabled',
+    usage_state: 'idle',
+    statusCode: null,
+    substatus: base.substatus,
+    assumed: base.assumed,
+  };
+}
+
 // ---- estados da planta interna ISP (ESTADO_CICLO_VIDA / ESTADO_OPERACIONAL / ESTADO_PROVISAO) ----
 //
 // Catálogos da origem: ISP_CAT_ESTADO_CICLO_VIDA (1 Instalado, 2 Projetado, 3 Removido, 4 Em

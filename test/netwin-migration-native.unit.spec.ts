@@ -27,13 +27,14 @@ import {
   resourceIdsByInfranodesQuery,
   resourceIdsByStructuredInfranodeQuery,
   scopedInfranodeIdQuery,
+  structuredInfranodePredicates,
 } from '../src/scripts/netwin-migration/source-batches.js';
 import {
   isCompatiblePortSpecification,
   parseSplitterRatio,
   resolveCanonicalCdoParents,
 } from '../src/scripts/netwin-migration/phase2-internal-plant.js';
-import { cdoEquipmentIdQuery } from '../src/scripts/netwin-migration/internal-plant-source.js';
+import { plantEquipmentIdQuery } from '../src/scripts/netwin-migration/internal-plant-source.js';
 import { isStationPlantDiscoveryBlocked } from '../src/scripts/netwin-migration/phase2-station-internal-plant.js';
 import { CANONICAL_SITE_SPECS } from '../src/scripts/netwin-migration/phase1-site-specs.js';
 import {
@@ -194,9 +195,9 @@ describe('netwin-migration: Fase 2.C CDO canônica', () => {
   });
 
   it('filtra CDO por tipo em SQL, sem DISTINCT, ordenada por equipamento (Fase 2.C paginada)', () => {
-    const query = cdoEquipmentIdQuery(':id0, :id1');
+    const query = plantEquipmentIdQuery(':id0, :id1');
 
-    expect(query).toContain('e.ID_BD_TIPO_NE IN (270, 271, 272)');
+    expect(query).not.toContain('ID_BD_TIPO_NE IN');
     expect(query).toContain('ORDER BY e.ID_BD_EQUIPAMENTO');
     expect(query).not.toContain('DISTINCT');
     expect(query).toContain('oq.INFRANODE_ID IN (:id0, :id1)');
@@ -238,6 +239,30 @@ describe('netwin-migration: seleção e hidratação em lote', () => {
     // ~52s por página contra ~0,7s sem ele.
     const query = scopedInfranodeIdQuery(['infranode.BADDR_UF_ABRV = :uf']);
     expect(query).not.toMatch(/DISTINCT/i);
+  });
+
+  it('pré-filtra município por ID sem remover a validação textual nem o stop-key', () => {
+    const predicates = structuredInfranodePredicates(
+      { municipio: 'Niterói', uf: 'RJ' },
+      'infranode',
+      { municipalityIds: [3303302], resolutionMs: 12 },
+    );
+    const query = scopedInfranodeIdQuery(predicates);
+
+    expect(query).toContain('infranode.BADDR_MUNICIPIO_ID IN (:municipioId0)');
+    expect(query).toContain('NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio');
+    expect(query).toContain('infranode.BADDR_UF_ABRV = :uf');
+    expect(query).toContain('infranode.PI_ID > :lastId');
+    expect(query).toContain('ORDER BY infranode.PI_ID');
+    expect(query).toContain('WHERE ROWNUM <= :batchSize');
+    expect(query).not.toMatch(/DISTINCT/i);
+  });
+
+  it('mantém a consulta sem pré-filtro igual ao caminho legado', () => {
+    expect(structuredInfranodePredicates({ municipio: 'Niterói', uf: 'RJ' })).toEqual([
+      'NETWIN.LIMPASTRING(infranode.BADDR_MUNICIPIO) = :municipio',
+      'infranode.BADDR_UF_ABRV = :uf',
+    ]);
   });
 
   it('pagina a carga full somente pela chave da tabela', () => {

@@ -46,6 +46,8 @@ export type InternalPlantResourceRow = {
   '@type': ResourceKind;
   name: string;
   status: ResourceStatus;
+  /** Estado granular do catálogo (ex.: planned, designed), quando há. */
+  statusCode?: string;
   resourceType: {
     id: string;
     code: string;

@@ -2,6 +2,7 @@ import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { merge } from '../netwin-migration-kit.js';
 import {
+  netwinOwnerPartyId,
   netwinPartyId,
   netwinPartyRoleId,
   deterministicUuid,
@@ -205,6 +206,49 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
         });
       }
 
+      stats.loaded++;
+    }
+
+    // 3. Proprietários de NETWIN.OWNER (role infrastructure_owner), identidade própria
+    const ownerRows = await source.execute<{ ID: number; NAME: string | null }>(
+      `SELECT ID, NAME FROM NETWIN.OWNER ORDER BY ID`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const owners = ownerRows.rows ?? [];
+    console.log(`Proprietários encontrados em NETWIN.OWNER: ${owners.length}`);
+    const ownerRoleTypeId = roleTypeIdMap.get('infrastructure_owner');
+
+    for (const o of owners) {
+      const ownerName = o.NAME?.trim();
+      if (!ownerName) {
+        stats.skipped++;
+        continue;
+      }
+      const partyId = netwinOwnerPartyId(o.ID);
+      if (target) {
+        await merge(target, ctx.t, 'tmf_party', ['id'], {
+          id: partyId,
+          tenant_id: ctx.options.tenantId,
+          name: ownerName,
+          party_type: 'Organization',
+          status: 'active',
+          characteristics: JSON.stringify([
+            { group: '_origin', name: 'system', value: 'Netwin', valueType: 'string' },
+            { group: '_origin', name: 'entity', value: 'OWNER', valueType: 'string' },
+            { group: '_origin', name: 'id', value: String(o.ID), valueType: 'string' },
+          ]),
+        });
+        await merge(target, ctx.t, 'tmf_party_role', ['id'], {
+          id: netwinPartyRoleId(partyId, 'InfrastructureOwner'),
+          tenant_id: ctx.options.tenantId,
+          party_id: partyId,
+          role_type_id: ownerRoleTypeId ?? null,
+          name: 'InfrastructureOwner',
+          status: 'active',
+          characteristics: '[]',
+        });
+      }
       stats.loaded++;
     }
 

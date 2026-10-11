@@ -120,7 +120,9 @@ const characteristicsFromJson = (raw: string | null): Characteristic[] => {
   try {
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
-      ? (parsed as Characteristic[]).filter((characteristic) => !characteristic.name.startsWith('_'))
+      ? (parsed as Characteristic[]).filter(
+          (characteristic) => !characteristic.name.startsWith('_'),
+        )
       : [];
   } catch {
     return [];
@@ -1640,7 +1642,9 @@ export class OracleResourceRepository implements IResourceRepository {
     const groups = await Promise.all(
       splitterRows.map(async (splitter) => {
         const ports = await this.listPortDetailsForSplitter(splitter.id, cto, tenantId);
-        const splitRatio = characteristicStringFromJson(splitter.characteristics, 'razao');
+        const splitRatio =
+          characteristicStringFromJson(splitter.characteristics, 'splitRatio') ??
+          characteristicStringFromJson(splitter.characteristics, 'razao');
         return {
           splitter: {
             id: splitter.id,
@@ -1840,7 +1844,11 @@ export class OracleResourceRepository implements IResourceRepository {
       tenantId,
     );
     const specificationInfoById = await this.loadComponentSpecificationInfo(
-      [...new Set(componentRows.flatMap((row) => (row.specification_id ? [row.specification_id] : [])))],
+      [
+        ...new Set(
+          componentRows.flatMap((row) => (row.specification_id ? [row.specification_id] : [])),
+        ),
+      ],
       tenantId,
     );
     const connections = await this.listComponentConnections(resourceId, maxDepth, visited);
@@ -1861,14 +1869,16 @@ export class OracleResourceRepository implements IResourceRepository {
         depth: row.depth,
         ...(row.administrative_state
           ? {
-              administrativeState:
-                row.administrative_state as NonNullable<ResourceComponentNode['administrativeState']>,
+              administrativeState: row.administrative_state as NonNullable<
+                ResourceComponentNode['administrativeState']
+              >,
             }
           : {}),
         ...(row.operational_state
           ? {
-              operationalState:
-                row.operational_state as NonNullable<ResourceComponentNode['operationalState']>,
+              operationalState: row.operational_state as NonNullable<
+                ResourceComponentNode['operationalState']
+              >,
             }
           : {}),
         ...(row.usage_state
@@ -1887,7 +1897,9 @@ export class OracleResourceRepository implements IResourceRepository {
               },
             }
           : {}),
-        ...(specificationInfo?.manufacturer ? { manufacturer: specificationInfo.manufacturer } : {}),
+        ...(specificationInfo?.manufacturer
+          ? { manufacturer: specificationInfo.manufacturer }
+          : {}),
         ...(specificationInfo?.model ? { model: specificationInfo.model } : {}),
         ...(row.serial_number ? { serialNumber: row.serial_number } : {}),
         ...(characteristics.length > 0 ? { characteristics } : {}),
@@ -2325,7 +2337,8 @@ export class OracleResourceRepository implements IResourceRepository {
       ? ('active' as const)
       : ('idle' as const);
     const splitRatio = parent
-      ? characteristicStringFromJson(parent.characteristics, 'razao')
+      ? (characteristicStringFromJson(parent.characteristics, 'splitRatio') ??
+        characteristicStringFromJson(parent.characteristics, 'razao'))
       : undefined;
     return {
       '@type': 'ResourcePortDetail',

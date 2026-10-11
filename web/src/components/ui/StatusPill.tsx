@@ -25,9 +25,10 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   terminated: { label: 'Encerrado', tone: 'red' },
   locked: { label: 'Bloqueado', tone: 'red' },
   planejado: { label: 'Planejado', tone: 'purple' },
-  planned: { label: 'Planejado', tone: 'purple' },
+  planned: { label: 'Em Projeto', tone: 'purple' },
   reservado: { label: 'Reservado', tone: 'purple' },
   reserved: { label: 'Reservado', tone: 'purple' },
+  designed: { label: 'Projetado', tone: 'amber' },
 };
 
 const TONE_COLORS: Record<Tone, { color: string; bg: string }> = {

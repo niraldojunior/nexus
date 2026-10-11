@@ -634,7 +634,7 @@ async function main() {
     placeId: posteSplitterLoc,
     placeType: 'GeographicLocation',
     serialNumber: 'SPLITTER-1x8-ICARAI-01',
-    characteristic: [{ name: 'razao', value: '1:8', valueType: 'string' }],
+    characteristic: [{ name: 'splitRatio', value: '1:8', valueType: 'string' }],
   });
   await link(splitter, posteSplitter, 'mountedOn');
 

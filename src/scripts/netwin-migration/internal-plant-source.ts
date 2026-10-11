@@ -32,6 +32,7 @@ export type InternalPortRow = {
   ID_BD_EQUIPAMENTO: number | null;
   ID_BD_SUBBASTIDOR: number | null;
   ID_BD_CARTA: number | null;
+  ID_BD_TIPO_PORTO_FISICO: number | null;
   NOME: string | null;
   NOME_ALTERNATIVO: string | null;
   ID_PORTO: string | null;
@@ -50,6 +51,7 @@ export type InternalPortRow = {
 
 export type InternalCardRow = {
   ID_BD_CARTA: number;
+  ID_BD_TIPO_CARTA: number | null;
   NOME: string | null;
   NOME_ALTERNATIVO: string | null;
   N_SLOT: string | null;
@@ -188,7 +190,7 @@ export async function loadInternalEquipment(
  * `fullTableIdQuery` em `source-batches.ts`. Nenhuma consulta neste arquivo era
  * estruturada assim antes do Passo 1 do plano de paginação da Fase 2.C.
  */
-export const cdoEquipmentIdQuery = (clause: string): string => `
+export const plantEquipmentIdQuery = (clause: string): string => `
   SELECT * FROM (
      SELECT e.ID_BD_EQUIPAMENTO, nm.ID_BD_ENTITY_OSP AS ID_BD_EQUIPAMENTO_OSP,
             oq.INFRANODE_ID AS ID_BD_LOCAL, e.ID_BD_TIPO_NE
@@ -197,11 +199,11 @@ export const cdoEquipmentIdQuery = (clause: string): string => `
        JOIN NETWIN.OSP_EQUIPMENT oq ON oq.ID = nm.ID_BD_ENTITY_OSP
       WHERE nm.ENTITY_ISP = 'AC_GEN_INS_EQUIPAMENTO'
         AND oq.INFRANODE_ID IN (${clause})
-        AND e.ID_BD_TIPO_NE IN (${CDO_TYPE_IDS.join(', ')})
       ORDER BY e.ID_BD_EQUIPAMENTO
    ) WHERE ROWNUM <= :maxRecords`;
 
-export async function loadInternalCdoEquipmentIds(
+/** Todos os equipamentos ISP espelhados em OSP no escopo, de qualquer tipo (CDO, modem, bateria...). */
+export async function loadInternalPlantEquipmentIds(
   source: Connection,
   locationIds: number[],
   maxRecords: number,
@@ -212,7 +214,7 @@ export async function loadInternalCdoEquipmentIds(
   for (let offset = 0; offset < locationIds.length && rows.length < maxRecords; offset += 900) {
     const { clause, binds } = inBinds(locationIds.slice(offset, offset + 900));
     const result = await source.execute<CdoEquipmentIdRow>(
-      cdoEquipmentIdQuery(clause),
+      plantEquipmentIdQuery(clause),
       { ...binds, maxRecords: maxRecords - rows.length },
       FETCH_OPTIONS,
     );
@@ -265,15 +267,44 @@ export async function loadInternalEquipmentByNeighborhood(
   return result.rows ?? [];
 }
 
+/** Contagem de portas por tipo (DRY-RUN da 2.C); mesmo predicado de `loadInternalPorts`. */
+export async function countInternalPortsByType(
+  source: Connection,
+  equipmentIds: number[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  for (let offset = 0; offset < equipmentIds.length; offset += 900) {
+    const { clause, binds } = inBinds(equipmentIds.slice(offset, offset + 900));
+    const result = await source.execute<{ TIPO: string | null; N: number }>(
+      `SELECT NVL(UPPER(cp.TIPO), '(sem tipo)') AS TIPO, COUNT(*) AS N
+         FROM NETWIN.ISP_INS_PORTO_FISICO p
+         LEFT JOIN NETWIN.ISP_CAT_PORTO_FISICO cp ON cp.ID_BD_TIPO_PORTO_FISICO = p.ID_BD_TIPO_PORTO_FISICO
+         JOIN NETWIN.NS_RES_INS_TP_MIRROR_ALL mirror ON mirror.ID_BD_ENTITY_ISP = p.ID_BD_PORTO_FISICO
+        WHERE p.ID_BD_EQUIPAMENTO IN (${clause})
+        GROUP BY NVL(UPPER(cp.TIPO), '(sem tipo)')`,
+      binds,
+      FETCH_OPTIONS,
+    );
+    for (const row of result.rows ?? [])
+      counts.set(row.TIPO ?? '(sem tipo)', (counts.get(row.TIPO ?? '(sem tipo)') ?? 0) + row.N);
+  }
+  return counts;
+}
+
 export async function loadInternalPorts(
   source: Connection,
   equipmentIds: number[],
+  options: { allPortTypes?: boolean } = {},
 ): Promise<InternalPortRow[]> {
+  // A 2.D segue restrita aos tipos ópticos comprovados; a 2.C pede todos os tipos de porta.
+  const typeFilter = options.allPortTypes
+    ? ''
+    : "AND (cp.TIPO IS NULL OR UPPER(cp.TIPO) IN ('ADAPTER', 'FO.I', 'FO.O'))";
   const rows: InternalPortRow[] = [];
   for (let offset = 0; offset < equipmentIds.length; offset += 900) {
     const { clause, binds } = inBinds(equipmentIds.slice(offset, offset + 900));
     const result = await source.execute<InternalPortRow>(
-      `SELECT p.ID_BD_PORTO_FISICO, p.ID_BD_EQUIPAMENTO, p.ID_BD_SUBBASTIDOR, p.ID_BD_CARTA,
+      `SELECT p.ID_BD_PORTO_FISICO, p.ID_BD_EQUIPAMENTO, p.ID_BD_SUBBASTIDOR, p.ID_BD_CARTA, p.ID_BD_TIPO_PORTO_FISICO,
               p.NOME, p.NOME_ALTERNATIVO, p.ID_PORTO, p.CODIFICACAO_PORTO, p.OCUPACAO, p.CIRCUITO, p.DEBITO,
               p.ESTADO_CICLO_VIDA, p.ESTADO_OPERACIONAL,
               p.ESTADO_PROVISAO, p.ID_SERVICO, p.TIPO_OCUPACAO,
@@ -282,7 +313,7 @@ export async function loadInternalPorts(
          LEFT JOIN NETWIN.ISP_CAT_PORTO_FISICO cp ON cp.ID_BD_TIPO_PORTO_FISICO = p.ID_BD_TIPO_PORTO_FISICO
          JOIN NETWIN.NS_RES_INS_TP_MIRROR_ALL mirror ON mirror.ID_BD_ENTITY_ISP = p.ID_BD_PORTO_FISICO
         WHERE p.ID_BD_EQUIPAMENTO IN (${clause})
-          AND (cp.TIPO IS NULL OR UPPER(cp.TIPO) IN ('ADAPTER', 'FO.I', 'FO.O'))
+          ${typeFilter}
         ORDER BY p.ID_BD_PORTO_FISICO`,
       binds,
       FETCH_OPTIONS,
@@ -306,7 +337,12 @@ export async function loadInternalPorts(
 export async function resolveCardCanonicalEquipmentIds(
   source: Connection,
   cardIds: number[],
+  options: { allEquipmentTypes?: boolean } = {},
 ): Promise<Map<number, number>> {
+  const typeFilter = options.allEquipmentTypes
+    ? ''
+    : `AND (cp.TIPO IS NULL OR UPPER(cp.TIPO) IN ('ADAPTER', 'FO.I', 'FO.O'))
+          AND e.ID_BD_TIPO_NE IN (${CDO_TYPE_IDS.join(', ')})`;
   const result = new Map<number, number>();
   for (let offset = 0; offset < cardIds.length; offset += 900) {
     const { clause, binds } = inBinds(cardIds.slice(offset, offset + 900));
@@ -317,8 +353,7 @@ export async function resolveCardCanonicalEquipmentIds(
          JOIN NETWIN.NS_RES_INS_TP_MIRROR_ALL mirror ON mirror.ID_BD_ENTITY_ISP = p.ID_BD_PORTO_FISICO
          JOIN NETWIN.ISP_INS_EQUIPAMENTO e ON e.ID_BD_EQUIPAMENTO = p.ID_BD_EQUIPAMENTO
         WHERE p.ID_BD_CARTA IN (${clause})
-          AND (cp.TIPO IS NULL OR UPPER(cp.TIPO) IN ('ADAPTER', 'FO.I', 'FO.O'))
-          AND e.ID_BD_TIPO_NE IN (${CDO_TYPE_IDS.join(', ')})
+          ${typeFilter}
         GROUP BY p.ID_BD_CARTA`,
       binds,
       FETCH_OPTIONS,
@@ -336,7 +371,7 @@ export async function loadInternalCards(
   for (let offset = 0; offset < cardIds.length; offset += 900) {
     const { clause, binds } = inBinds(cardIds.slice(offset, offset + 900));
     const result = await source.execute<InternalCardRow>(
-      `SELECT c.ID_BD_CARTA, c.NOME, c.NOME_ALTERNATIVO, c.N_SLOT, c.POSICAO_UF,
+      `SELECT c.ID_BD_CARTA, c.ID_BD_TIPO_CARTA, c.NOME, c.NOME_ALTERNATIVO, c.N_SLOT, c.POSICAO_UF,
               c.ESTADO_CICLO_VIDA, c.ESTADO_OPERACIONAL,
               cc.NOME_CARTA AS TIPO_NOME, cc.SIGLA_CARTA AS TIPO_SIGLA
          FROM NETWIN.ISP_INS_CARTA c
@@ -444,4 +479,34 @@ export async function loadInternalRacks(
     FETCH_OPTIONS,
   );
   return result.rows ?? [];
+}
+
+export type CdoEquipmentDetailRow = {
+  ID_BD_EQUIPAMENTO: number;
+  ID_BD_TIPO_NE: number | null;
+  ID_BD_TIPO_EQUIP: number | null;
+  DESIGNACAO_ALTERNATIVA: string | null;
+  IDENTIFICACAO: string | null;
+  NUM_SERIE: string | null;
+};
+
+/** Hidratação em lote (por IDs ISP da página) dos dados descritivos da CDO; mantém a seleção slim. */
+export async function loadInternalEquipmentDetails(
+  source: Connection,
+  equipmentIds: number[],
+): Promise<CdoEquipmentDetailRow[]> {
+  const rows: CdoEquipmentDetailRow[] = [];
+  for (let offset = 0; offset < equipmentIds.length; offset += 900) {
+    const { clause, binds } = inBinds(equipmentIds.slice(offset, offset + 900));
+    const result = await source.execute<CdoEquipmentDetailRow>(
+      `SELECT e.ID_BD_EQUIPAMENTO, e.ID_BD_TIPO_NE, e.ID_BD_TIPO_EQUIP,
+              e.DESIGNACAO_ALTERNATIVA, e.IDENTIFICACAO, e.NUM_SERIE
+         FROM NETWIN.ISP_INS_EQUIPAMENTO e
+        WHERE e.ID_BD_EQUIPAMENTO IN (${clause})`,
+      binds,
+      FETCH_OPTIONS,
+    );
+    rows.push(...(result.rows ?? []));
+  }
+  return rows;
 }

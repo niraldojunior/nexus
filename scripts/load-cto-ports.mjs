@@ -195,7 +195,7 @@ async function processCdoe(name) {
     placeId,
     placeType,
     serialNumber: splitterName,
-    characteristic: [{ name: 'razao', value: `1:${ratio}`, valueType: 'string' }],
+    characteristic: [{ name: 'splitRatio', value: `1:${ratio}`, valueType: 'string' }],
   });
   await link(cdoeRef, splitter, 'containsAsChild');
 

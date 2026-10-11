@@ -21,6 +21,7 @@ import {
   merge,
   netwinOriginCharacteristics,
   resolveLifecycleStatus,
+  resolveOspLifecycleState,
   resolveNetwinPlantState,
 } from '../netwin-migration-kit.js';
 import {
@@ -30,6 +31,7 @@ import {
   type NativeRelationship,
 } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
+import { equipmentModelSpecId, pickSpecification, SpecCoverage } from './concrete-specs.js';
 import {
   hydrateByIds,
   hydrateWktByIds,
@@ -37,6 +39,23 @@ import {
   selectResourceIdsByStructuredInfranode,
 } from './source-batches.js';
 import type { PhaseStats } from './types.js';
+
+/** Subtipos OSP comprovados; qualquer outro é contabilizado como não mapeado. */
+const EQUIPMENT_SPEC_BY_SUBTYPE = new Map<number, string>([
+  [517, 'Netwin CDOI'],
+  [512, 'Netwin CEO'],
+  [504, 'Netwin CEO'],
+  [508, 'Netwin Optical Node'],
+]);
+
+interface IspEquipmentDetail extends Record<string, unknown> {
+  OSP_ID: number;
+  ID_BD_TIPO_NE: number | null;
+  ID_BD_TIPO_EQUIP: number | null;
+  NUM_SERIE: string | null;
+  DESIGNACAO_ALTERNATIVA: string | null;
+  IDENTIFICACAO: string | null;
+}
 
 export type ResourcePhaseRunStats = PhaseStats & { paused: boolean };
 
@@ -77,6 +96,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       NEXUS_NETWIN_NAMESPACE,
       'RESOURCE_SPEC:Netwin Aerial Span',
     );
+    const equipmentCoverage = new SpecCoverage();
     const defaultEqSpecId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:Netwin CDOE');
 
     if (target) {
@@ -311,6 +331,24 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
                          ) st ON st.OSP_ID = e.ID
                         WHERE e.ID IN (${inClause})`,
       );
+      // Dados descritivos do espelho ISP (tipo/modelo, série...) em lote, fora da seleção paginada.
+      const ispDetails = await hydrateByIds<IspEquipmentDetail>(
+        source,
+        equipmentIds,
+        (inClause) => `SELECT nm.ID_BD_ENTITY_OSP AS OSP_ID,
+                              MIN(ie.ID_BD_TIPO_NE) AS ID_BD_TIPO_NE,
+                              MIN(ie.ID_BD_TIPO_EQUIP) AS ID_BD_TIPO_EQUIP,
+                              MIN(ie.NUM_SERIE) AS NUM_SERIE,
+                              MIN(ie.DESIGNACAO_ALTERNATIVA) AS DESIGNACAO_ALTERNATIVA,
+                              MIN(ie.IDENTIFICACAO) AS IDENTIFICACAO
+                         FROM NETWIN.NS_RES_INS_NODE_MIRROR nm
+                         JOIN NETWIN.ISP_INS_EQUIPAMENTO ie ON ie.ID_BD_EQUIPAMENTO = nm.ID_BD_ENTITY_ISP
+                        WHERE nm.ENTITY_ISP = 'AC_GEN_INS_EQUIPAMENTO'
+                          AND nm.ID_BD_ENTITY_OSP IN (${inClause})
+                        GROUP BY nm.ID_BD_ENTITY_OSP`,
+        'OSP_ID',
+      );
+      const ispDetailByOspId = new Map(ispDetails.map((row) => [row.OSP_ID, row]));
       const { wktById, failedIds } = await hydrateWktByIds(
         source,
         'NETWIN.OSP_EQUIPMENT',
@@ -391,6 +429,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             ? lifecycleMap.get(eq.CAT_LIFE_CYCLE_STATE_ID)
             : undefined;
         const lifecycle = resolveLifecycleStatus(designation);
+        const ospState = resolveOspLifecycleState(designation);
         const hasIspState = eq.ISP_CICLO_VIDA !== null || eq.ISP_OPERACIONAL !== null;
         const ispState = hasIspState
           ? resolveNetwinPlantState({
@@ -399,19 +438,28 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             })
           : null;
         const { substatus } = lifecycle;
-        const status = ispState?.status ?? lifecycle.status;
+        const status = ispState?.status ?? ospState.status;
 
-        let specName = 'Netwin CDOE';
-        if (eq.CAT_SUBTYPE_ID === 517) {
-          specName = 'Netwin CDOI';
-        } else if (eq.CAT_SUBTYPE_ID === 512 || eq.CAT_SUBTYPE_ID === 504) {
-          specName = 'Netwin CEO';
-        } else if (eq.CAT_SUBTYPE_ID === 508) {
-          specName = 'Netwin Optical Node';
-        }
-
-        const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${specName}`);
-        const finalSpecId = target && !validSpecs.has(specId) ? defaultEqSpecId : specId;
+        // Subtipo desconhecido não vira CDOE por omissão: é contabilizado e cai na genérica
+        // de CDOE apenas porque o recurso precisa de uma specification; o relatório o expõe.
+        const specName = EQUIPMENT_SPEC_BY_SUBTYPE.get(eq.CAT_SUBTYPE_ID ?? -1);
+        if (!specName) equipmentCoverage.record('unmapped', eq.CAT_SUBTYPE_ID);
+        const genericId = deterministicUuid(
+          NEXUS_NETWIN_NAMESPACE,
+          `RESOURCE_SPEC:${specName ?? 'Netwin CDOE'}`,
+        );
+        const genericResolved = target && !validSpecs.has(genericId) ? defaultEqSpecId : genericId;
+        const ispDetail = ispDetailByOspId.get(eq.ID);
+        // A Fase 1 materializa specs de modelo para todo tipo de equipamento em uso; a spec
+        // concreta vale mesmo quando o subtipo OSP não está no mapa (modem, bateria, antena...).
+        const concreteId =
+          ispDetail?.ID_BD_TIPO_NE && ispDetail.ID_BD_TIPO_EQUIP
+            ? equipmentModelSpecId(ispDetail.ID_BD_TIPO_NE, ispDetail.ID_BD_TIPO_EQUIP)
+            : null;
+        const finalSpecId =
+          specName || (concreteId && validSpecs.has(concreteId))
+            ? pickSpecification(concreteId, validSpecs, genericResolved, equipmentCoverage)
+            : genericResolved;
 
         resources.push({
           id: resId,
@@ -419,17 +467,15 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           name,
           resource_specification_id: finalSpecId,
           status,
-          status_code: ispState?.statusCode ?? null,
+          status_code: ispState?.statusCode ?? ospState.statusCode,
           place_id: resId,
           place_type: 'GeographicLocation',
           // Site onde o equipamento está instalado: poste (CDOE/CEO), edificação ou sala (CDOI).
           // É a LOCATION do INFRANODE do equipamento, a mesma que a Fase 2.A grava como Site.
           // Não cai para a estação (EXCHANGE_ID): ela é outra relação e misturaria o significado.
           serving_site_id: eq.INFRANODE_ID ? netwinLocationId(eq.INFRANODE_ID) : null,
-          administrative_state:
-            ispState?.administrative_state ?? (status === 'terminated' ? 'locked' : 'unlocked'),
-          operational_state:
-            ispState?.operational_state ?? (status === 'active' ? 'enabled' : 'disabled'),
+          administrative_state: ispState?.administrative_state ?? ospState.administrative_state,
+          operational_state: ispState?.operational_state ?? ospState.operational_state,
           usage_state: ispState?.usage_state ?? 'idle',
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
@@ -437,6 +483,13 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           characteristics: JSON.stringify([
             ...netwinOriginCharacteristics('OSP_EQUIPMENT', eq.ID),
             ...(substatus ? [{ name: 'substatus', value: substatus, valueType: 'string' }] : []),
+            ...[
+              ['serialNumber', ispDetail?.NUM_SERIE],
+              ['alternateDesignation', ispDetail?.DESIGNACAO_ALTERNATIVA],
+              ['identification', ispDetail?.IDENTIFICACAO],
+            ]
+              .filter(([, value]) => value !== null && value !== undefined && value !== '')
+              .map(([name, value]) => ({ name, value: String(value), valueType: 'string' })),
           ]),
         });
       }
@@ -543,6 +596,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       );
     }
     equipmentProgress.finish();
+    console.log(equipmentCoverage.format('equipamentos'));
     if (equipmentGeometryFailures > 0) {
       console.warn(
         `[Geometria] ${equipmentGeometryFailures} equipamento(s) migrados sem geometria por dado corrompido na origem (OSP_EQUIPMENT.GEOM).`,
@@ -640,7 +694,8 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           r.CAT_LIFE_CYCLE_STATE_ID !== null
             ? lifecycleMap.get(r.CAT_LIFE_CYCLE_STATE_ID)
             : undefined;
-        const { status } = resolveLifecycleStatus(designation);
+        const ospState = resolveOspLifecycleState(designation);
+        const status = ospState.status;
 
         const specId = deterministicUuid(
           NEXUS_NETWIN_NAMESPACE,
@@ -657,9 +712,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           place_id: resId,
           place_type: 'GeographicLocation',
           serving_site_id: r.EXCHANGE_ID ? netwinLocationId(r.EXCHANGE_ID) : null,
-          administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
-          operational_state: status === 'active' ? 'enabled' : 'disabled',
-          usage_state: 'idle',
+          status_code: ospState.statusCode,
+          administrative_state: ospState.administrative_state,
+          operational_state: ospState.operational_state,
+          usage_state: ospState.usage_state,
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
@@ -704,6 +760,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'name',
               'resource_specification_id',
               'status',
+              'status_code',
               'place_id',
               'place_type',
               'serving_site_id',
@@ -838,7 +895,8 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           c.CAT_LIFE_CYCLE_STATE_ID !== null
             ? lifecycleMap.get(c.CAT_LIFE_CYCLE_STATE_ID)
             : undefined;
-        const { status } = resolveLifecycleStatus(designation);
+        const ospState = resolveOspLifecycleState(designation);
+        const status = ospState.status;
 
         const specId = c.CAT_MODEL_ID
           ? deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:CABLE_MODEL:${c.CAT_MODEL_ID}`)
@@ -854,9 +912,10 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           place_id: cableId,
           place_type: 'GeographicLocation',
           serving_site_id: c.EXCHANGE_ID ? netwinLocationId(c.EXCHANGE_ID) : null,
-          administrative_state: status === 'terminated' ? 'locked' : 'unlocked',
-          operational_state: status === 'active' ? 'enabled' : 'disabled',
-          usage_state: 'idle',
+          status_code: ospState.statusCode,
+          administrative_state: ospState.administrative_state,
+          operational_state: ospState.operational_state,
+          usage_state: ospState.usage_state,
           related_party: JSON.stringify([
             { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
           ]),
@@ -949,6 +1008,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'name',
               'resource_specification_id',
               'status',
+              'status_code',
               'place_id',
               'place_type',
               'serving_site_id',

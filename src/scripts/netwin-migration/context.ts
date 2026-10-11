@@ -94,6 +94,19 @@ function guardReadOnlyConnection(connection: Connection, label: string): Connect
  */
 const DEFAULT_SOURCE_CALL_TIMEOUT_MS = 15 * 60 * 1000;
 
+const DEFAULT_HYDRATION_CONCURRENCY = 3;
+const MAX_HYDRATION_CONCURRENCY = 4;
+
+/**
+ * Conexões de origem usadas em paralelo nas hidratações independentes (o driver serializa
+ * chamadas por conexão). Default 3, teto 4; NETWIN_SOURCE_CONCURRENCY=1 desliga o paralelismo.
+ */
+export function sourceHydrationConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Math.floor(Number(env.NETWIN_SOURCE_CONCURRENCY));
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_HYDRATION_CONCURRENCY;
+  return Math.min(parsed, MAX_HYDRATION_CONCURRENCY);
+}
+
 export async function createMigrationContext(options: CliOptions): Promise<MigrationContext> {
   const t = makeTablePrefixer(options.targetPrefix);
   const parsedCallTimeout = Number(process.env.NETWIN_DR_CALL_TIMEOUT_MS);
@@ -133,7 +146,7 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
       password: sourcePassword,
       ...(netwinTnsAdmin ? { configDir: netwinTnsAdmin } : {}),
       poolMin: 1,
-      poolMax: 2,
+      poolMax: sourceHydrationConcurrency(),
     });
   }
 

@@ -27,6 +27,25 @@ export function municipalityInfranodePredicate(
   return `NETWIN.LIMPASTRING(${infranodeAlias}.BADDR_MUNICIPIO) = :${bindName}`;
 }
 
+export function municipalityIdInfranodePredicate(
+  infranodeAlias: string,
+  municipalityIds: readonly number[],
+): string {
+  if (municipalityIds.length === 0) {
+    throw new Error('O pré-filtro de município exige ao menos um BADDR_MUNICIPIO_ID.');
+  }
+  const binds = municipalityIds.map((_, index) => `:municipioId${index}`).join(', ');
+  return `${infranodeAlias}.BADDR_MUNICIPIO_ID IN (${binds})`;
+}
+
+export function municipalityIdInfranodeBinds(
+  municipalityIds: readonly number[],
+): Record<string, number> {
+  return Object.fromEntries(
+    municipalityIds.map((municipalityId, index) => [`municipioId${index}`, municipalityId]),
+  );
+}
+
 /**
  * A UF é comparada diretamente, sem LIMPASTRING. A sigla em BADDR_UF_ABRV já é maiúscula, sem
  * acento e sem espaço (verificado no DR: 27 siglas distintas, 1:1 com BADDR_UF_ID), então a

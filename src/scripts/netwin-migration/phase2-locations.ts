@@ -1,5 +1,5 @@
 import oracledb from 'oracledb';
-import type { MigrationContext } from './context.js';
+import { sourceHydrationConcurrency, type MigrationContext } from './context.js';
 import { deterministicUuid, netwinLocationId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import {
   bulkMergeRows,
@@ -15,6 +15,7 @@ import {
 } from '../../modules/geo/administrative-city.js';
 import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
+import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
 import {
   chunksOf,
   namedInBinds,
@@ -93,29 +94,55 @@ const formatTiming = (timing: BatchTiming) =>
 export const neighborhoodLocationIdQuery = (predicates: string[]): string =>
   scopedInfranodeIdQuery(predicates);
 
+type SourceConnection = Awaited<ReturnType<MigrationContext['getSourceConnection']>>;
+type CatalogEntry = { CAT_NAME: string | null; CAT_DESC: string | null };
+
+/** Catálogo pequeno de categorias: lido uma vez por execução, recomposto em memória (LEFT JOIN). */
+async function loadCategoryCatalog(source: SourceConnection): Promise<Map<number, CatalogEntry>> {
+  const result = await source.execute<{ ID: number; NAME: string | null; DESCRIPTION: string | null }>(
+    'SELECT ID, NAME, DESCRIPTION FROM NETWIN.CAT_ENTITY',
+    {},
+    { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 2000, prefetchRows: 2001 },
+  );
+  return new Map(
+    (result.rows ?? []).map((row) => [row.ID, { CAT_NAME: row.NAME, CAT_DESC: row.DESCRIPTION }]),
+  );
+}
+
 async function hydrateLocations(
-  source: Awaited<ReturnType<MigrationContext['getSourceConnection']>>,
+  source: SourceConnection,
   ids: number[],
+  catalog: Map<number, CatalogEntry>,
 ): Promise<NetwinLocationRow[]> {
   const locations = new Map<number, NetwinLocationRow>();
   for (const chunk of chunksOf(ids)) {
     const { clause, binds } = namedInBinds(chunk, 'location');
-    const result = await source.execute<Omit<NetwinLocationRow, 'ADDRESS_TEXT'>>(
-      `SELECT l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE,
-              ce.NAME AS CAT_NAME, ce.DESCRIPTION AS CAT_DESC
+    const result = await source.execute<
+      Omit<NetwinLocationRow, 'ADDRESS_TEXT' | 'CAT_NAME' | 'CAT_DESC'>
+    >(
+      `SELECT l.ID, l.NAME, l.LATITUDE, l.LONGITUDE, l.ID_CAT_ENTITY, l.STATE_LIFECYCLE
          FROM NETWIN.LOCATION l
-         LEFT JOIN NETWIN.CAT_ENTITY ce ON ce.ID = l.ID_CAT_ENTITY
         WHERE l.ID IN (${clause})`,
       binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: chunk.length },
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        fetchArraySize: chunk.length,
+        prefetchRows: chunk.length + 1,
+      },
     );
-    for (const row of result.rows ?? []) locations.set(row.ID, { ...row, ADDRESS_TEXT: null });
+    for (const row of result.rows ?? []) {
+      const category = (row.ID_CAT_ENTITY !== null ? catalog.get(row.ID_CAT_ENTITY) : undefined) ?? {
+        CAT_NAME: null,
+        CAT_DESC: null,
+      };
+      locations.set(row.ID, { ...row, ...category, ADDRESS_TEXT: null });
+    }
   }
   return ids.flatMap((id) => (locations.has(id) ? [locations.get(id)!] : []));
 }
 
 async function hydrateAddresses(
-  source: Awaited<ReturnType<MigrationContext['getSourceConnection']>>,
+  source: SourceConnection,
   ids: number[],
 ): Promise<Map<number, string>> {
   const addresses = new Map<number, string>();
@@ -128,7 +155,11 @@ async function hydrateAddresses(
         WHERE laa.ID_LOCATION IN (${clause})
         GROUP BY laa.ID_LOCATION`,
       binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: chunk.length },
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        fetchArraySize: chunk.length,
+        prefetchRows: chunk.length + 1,
+      },
     );
     for (const row of result.rows ?? []) {
       if (row.ADDRESS_TEXT) addresses.set(row.ID_LOCATION, row.ADDRESS_TEXT);
@@ -138,7 +169,7 @@ async function hydrateAddresses(
 }
 
 async function hydrateAssociations(
-  source: Awaited<ReturnType<MigrationContext['getSourceConnection']>>,
+  source: SourceConnection,
   ids: number[],
 ): Promise<Array<{ ID_PARENT: number; ID_CHILD: number }>> {
   const associations: Array<{ ID_PARENT: number; ID_CHILD: number }> = [];
@@ -147,7 +178,11 @@ async function hydrateAssociations(
     const result = await source.execute<{ ID_PARENT: number; ID_CHILD: number }>(
       `SELECT ID_PARENT, ID_CHILD FROM NETWIN.LOCATION_ASSOC WHERE ID_CHILD IN (${clause})`,
       binds,
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        fetchArraySize: 2000,
+        prefetchRows: 2001,
+      },
     );
     associations.push(...(result.rows ?? []));
   }
@@ -167,15 +202,34 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
   };
   console.log('\n=== Fase 2.A: Locais, Endereços e Hierarquia (GeographicSite) ===');
   const source = await ctx.getSourceConnection();
+  const auxSources: SourceConnection[] = [];
   const target = await ctx.getTargetConnection();
   try {
+    // Conexões auxiliares para hidratação concorrente (default 3 no total, teto 4).
+    for (let index = 1; index < Math.min(sourceHydrationConcurrency(), 3); index += 1) {
+      auxSources.push(await ctx.getSourceConnection());
+    }
+    const categoryCatalog = await loadCategoryCatalog(source);
     const structuredScope = Boolean(
       ctx.options.scope.bairro || ctx.options.scope.municipio || ctx.options.scope.uf,
     );
-    const predicates = structuredInfranodePredicates(ctx.options.scope);
-    console.log(
-      `[Escopo] Fase 2.A: ${structuredScope ? `DL_INFRANODE estruturado (${predicates.length} predicado(s))` : 'LOCATION nacional por ID'}.`,
+    const municipalityPrefilter = structuredScope
+      ? await resolveMunicipalityScopePrefilter(source, ctx.options.scope)
+      : undefined;
+    const predicates = structuredInfranodePredicates(
+      ctx.options.scope,
+      'infranode',
+      municipalityPrefilter,
     );
+    const scopeStrategy = municipalityPrefilter ? 'municipio-id+nome' : 'nome-only';
+    console.log(
+      `[Escopo] Fase 2.A: ${structuredScope ? `DL_INFRANODE estruturado (${predicates.length} predicado(s); estratégia=${scopeStrategy})` : 'LOCATION nacional por ID'}.`,
+    );
+    if (municipalityPrefilter) {
+      console.log(
+        `[Escopo] Município resolvido para BADDR_MUNICIPIO_ID=${municipalityPrefilter.municipalityIds.join(',')}; resolução=${municipalityPrefilter.resolutionMs}ms.`,
+      );
+    }
     const checkpoint = await loadNativeCheckpoint(target, ctx, '2A');
     let lastId = checkpoint.lastSourceId;
     let totalProcessed = checkpoint.processedCount;
@@ -209,21 +263,62 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       };
       let startedAt = Date.now();
       const ids = structuredScope
-        ? await selectScopedInfranodeIds(source, ctx.options.scope, lastId, limit)
+        ? await selectScopedInfranodeIds(
+            source,
+            ctx.options.scope,
+            lastId,
+            limit,
+            municipalityPrefilter,
+          )
         : await selectFullTableIds(source, 'NETWIN.LOCATION', lastId, limit);
       timing.scopeSelectionMs = elapsed(startedAt);
+      const configuredSlowSelectionMs = Number(process.env.NETWIN_SCOPE_SLOW_MS);
+      const slowSelectionMs =
+        Number.isFinite(configuredSlowSelectionMs) && configuredSlowSelectionMs > 0
+          ? configuredSlowSelectionMs
+          : 5_000;
+      if (timing.scopeSelectionMs > slowSelectionMs) {
+        console.warn(
+          `[Escopo] Seleção lenta na Fase 2.A: ${timing.scopeSelectionMs}ms; estratégia=${scopeStrategy}; cursor=${lastId}; selecionados=${ids.length}.`,
+        );
+      }
       if (ids.length === 0) break;
       lastId = ids[ids.length - 1] ?? lastId;
 
-      startedAt = Date.now();
-      const rows = await hydrateLocations(source, ids);
-      timing.locationHydrationMs = elapsed(startedAt);
-      startedAt = Date.now();
-      const addressByLocation = await hydrateAddresses(source, ids);
-      timing.addressHydrationMs = elapsed(startedAt);
-      startedAt = Date.now();
-      const associations = await hydrateAssociations(source, ids);
-      timing.associationHydrationMs = elapsed(startedAt);
+      // Três famílias independentes, cada uma na própria conexão (o driver serializa por
+      // conexão). Com NETWIN_SOURCE_CONCURRENCY=1 volta ao modo sequencial na conexão principal.
+      const timed = async <T>(
+        connection: SourceConnection,
+        key: 'locationHydrationMs' | 'addressHydrationMs' | 'associationHydrationMs',
+        run: (connection: SourceConnection) => Promise<T>,
+      ): Promise<T> => {
+        const hydrationStartedAt = Date.now();
+        try {
+          return await run(connection);
+        } finally {
+          timing[key] = elapsed(hydrationStartedAt);
+        }
+      };
+      const runLocations = (c: SourceConnection) =>
+        timed(c, 'locationHydrationMs', (conn) => hydrateLocations(conn, ids, categoryCatalog));
+      const runAddresses = (c: SourceConnection) =>
+        timed(c, 'addressHydrationMs', (conn) => hydrateAddresses(conn, ids));
+      const runAssociations = (c: SourceConnection) =>
+        timed(c, 'associationHydrationMs', (conn) => hydrateAssociations(conn, ids));
+      let rows: NetwinLocationRow[];
+      let addressByLocation: Map<number, string>;
+      let associations: Array<{ ID_PARENT: number; ID_CHILD: number }>;
+      if (auxSources.length === 0) {
+        rows = await runLocations(source);
+        addressByLocation = await runAddresses(source);
+        associations = await runAssociations(source);
+      } else {
+        [rows, addressByLocation, associations] = await Promise.all([
+          runLocations(source),
+          runAddresses(auxSources[0] ?? source),
+          runAssociations(auxSources[1] ?? auxSources[0] ?? source),
+        ]);
+      }
 
       startedAt = Date.now();
       const locations: Array<Record<string, unknown>> = [];
@@ -445,6 +540,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
     );
     return stats;
   } finally {
+    await Promise.allSettled(auxSources.map((connection) => connection.close()));
     await source.close();
     if (target) await target.close();
   }

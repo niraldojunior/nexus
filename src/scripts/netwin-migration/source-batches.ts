@@ -1,10 +1,13 @@
 import oracledb, { type Connection } from 'oracledb';
 import {
   infranodeScopeBinds,
+  municipalityIdInfranodeBinds,
+  municipalityIdInfranodePredicate,
   municipalityInfranodePredicate,
   neighborhoodInfranodePredicate,
   ufInfranodePredicate,
 } from './scope.js';
+import type { MunicipalityScopePrefilter } from './scope-resolution.js';
 import type { MigrationScope } from './types.js';
 
 export const ORACLE_IN_BATCH_SIZE = 900;
@@ -35,8 +38,12 @@ export function namedInBinds(
 export function structuredInfranodePredicates(
   scope: Pick<MigrationScope, 'bairro' | 'municipio' | 'uf'>,
   alias = 'infranode',
+  prefilter?: MunicipalityScopePrefilter,
 ): string[] {
   const predicates: string[] = [];
+  if (prefilter) {
+    predicates.push(municipalityIdInfranodePredicate(alias, prefilter.municipalityIds));
+  }
   if (scope.bairro) predicates.push(neighborhoodInfranodePredicate(alias));
   if (scope.municipio) predicates.push(municipalityInfranodePredicate(alias));
   if (scope.uf) predicates.push(ufInfranodePredicate(alias));
@@ -251,10 +258,16 @@ export async function selectScopedInfranodeIds(
   scope: Pick<MigrationScope, 'bairro' | 'municipio' | 'uf'>,
   lastId: number,
   batchSize: number,
+  prefilter?: MunicipalityScopePrefilter,
 ): Promise<number[]> {
   const result = await source.execute<{ PI_ID: number }>(
-    scopedInfranodeIdQuery(structuredInfranodePredicates(scope)),
-    { ...infranodeScopeBinds(scope), lastId, batchSize },
+    scopedInfranodeIdQuery(structuredInfranodePredicates(scope, 'infranode', prefilter)),
+    {
+      ...infranodeScopeBinds(scope),
+      ...(prefilter ? municipalityIdInfranodeBinds(prefilter.municipalityIds) : {}),
+      lastId,
+      batchSize,
+    },
     { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: batchSize, prefetchRows: batchSize },
   );
   return (result.rows ?? []).map((row) => row.PI_ID);

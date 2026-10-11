@@ -3,7 +3,8 @@ import type { MigrationContext } from './context.js';
 import {
   hasAnyPhysicalConnections,
   loadInternalCards,
-  loadInternalCdoEquipmentIds,
+  loadInternalPlantEquipmentIds,
+  countInternalPortsByType,
   loadInternalEquipmentByNeighborhood,
   loadInternalPortConnections,
   loadInternalPorts,
@@ -27,6 +28,15 @@ import {
   loadNativeCheckpoint,
   saveNativeCheckpoint,
 } from './checkpoint.js';
+import {
+  cardTypeSpecId,
+  CDO_TYPE_TO_SPEC,
+  genericSpecId,
+  parseSplitterRatioStrict,
+  pickSpecification,
+  portTypeSpecId,
+  SpecCoverage,
+} from './concrete-specs.js';
 import { MigrationProgress } from './progress.js';
 import type { PhaseStats } from './types.js';
 
@@ -37,26 +47,12 @@ import type { PhaseStats } from './types.js';
  */
 const CDO_PAGE_SIZE = 900;
 
-const CDO_TYPE_TO_SPEC = new Map<number, { typeCode: string; specName: string }>([
-  [270, { typeCode: 'category:CDOI', specName: 'Netwin CDOI' }],
-  [271, { typeCode: 'category:CDOE', specName: 'Netwin CDOE' }],
-  [272, { typeCode: 'category:CDOI', specName: 'Netwin CDOI' }],
-]);
-
 export function parseSplitterRatio(
   tipoNome: string | null | undefined,
   tipoSigla: string | null | undefined,
   cardNome: string | null | undefined,
 ): number {
-  const combined = `${tipoNome ?? ''} ${tipoSigla ?? ''} ${cardNome ?? ''}`.toUpperCase();
-  const match = combined.match(/1\s*[:xX/]\s*(\d+)/);
-  if (match && match[1]) {
-    const ratio = parseInt(match[1], 10);
-    if ([2, 4, 8, 16, 32, 64].includes(ratio)) {
-      return ratio;
-    }
-  }
-  return 8; // fallback padrão para FTTH CDO splitter
+  return parseSplitterRatioStrict(tipoNome, tipoSigla, cardNome) ?? 8; // fallback padrão FTTH
 }
 
 type CdoSourceRow = CdoEquipmentIdRow;
@@ -79,8 +75,6 @@ export function resolveCanonicalCdoParents(rows: CdoSourceRow[]): {
   const rejectedEquipmentIds = new Set<number>();
 
   for (const row of rows) {
-    const mapping = CDO_TYPE_TO_SPEC.get(row.ID_BD_TIPO_NE ?? -1);
-    if (!mapping) continue;
     if (!Number.isInteger(row.ID_BD_EQUIPAMENTO_OSP)) {
       rejectedEquipmentIds.add(row.ID_BD_EQUIPAMENTO);
       continue;
@@ -168,7 +162,7 @@ async function requirePortSpecification(
   ctx: MigrationContext,
   target: oracledb.Connection,
 ): Promise<string> {
-  const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'RESOURCE_SPEC:Netwin Port');
+  const specId = genericSpecId('Netwin Port');
   const result = await target.execute<{
     ID: string;
     SPECIFICATION_TENANT_ID: string;
@@ -299,10 +293,8 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     // do plano de paginação da Fase 2.C). O filtro de tipo CDO já vem do SQL — não filtra
     // mais em JS — então `loadInternalEquipment` (usada pela Fase 2.D) fica intacta.
     const cdoEquipment: CdoSourceRow[] = ctx.options.scope.bairro
-      ? (await loadInternalEquipmentByNeighborhood(source, ctx.options.scope, maxRecords)).filter(
-          (item) => CDO_TYPE_TO_SPEC.has(item.ID_BD_TIPO_NE ?? -1),
-        )
-      : await loadInternalCdoEquipmentIds(source, locationIds, maxRecords);
+      ? await loadInternalEquipmentByNeighborhood(source, ctx.options.scope, maxRecords)
+      : await loadInternalPlantEquipmentIds(source, locationIds, maxRecords);
     const equipmentMs = Date.now() - equipmentStartedAt;
 
     const { parents: canonicalParents, rejectedEquipmentIds } =
@@ -319,6 +311,24 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     );
 
     if (!target) {
+      const portsStartedAt = Date.now();
+      const portCounts = new Map<string, number>();
+      for (let offset = 0; offset < sortedCdoIds.length; offset += CDO_PAGE_SIZE) {
+        const page = await countInternalPortsByType(
+          source,
+          sortedCdoIds.slice(offset, offset + CDO_PAGE_SIZE),
+        );
+        for (const [tipo, n] of page) portCounts.set(tipo, (portCounts.get(tipo) ?? 0) + n);
+      }
+      const totalPorts = [...portCounts.values()].reduce((a, b) => a + b, 0);
+      const top = [...portCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([tipo, n]) => `${tipo}=${n}`)
+        .join(', ');
+      console.log(
+        `DRY-RUN 2.C: ${totalPorts} porta(s) fisicas em ${portCounts.size} tipo(s) (${Date.now() - portsStartedAt}ms). Principais: ${top}.`,
+      );
       console.log(
         `DRY-RUN 2.C: ${canonicalParents.size} CDOs canônicas seriam processadas em páginas de ${CDO_PAGE_SIZE}; ${stats.rejected} equipamento(s) rejeitado(s) por ambiguidade OSP.`,
       );
@@ -328,6 +338,17 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     await requireSpecIds(ctx, target);
     const portSpecId = await requirePortSpecification(ctx, target);
     const splitterSpecsByRatio = await requireSplitterSpecifications(ctx, target);
+    const availableSpecIds = new Set<string>();
+    const specRows = await target.execute<{ ID: string }>(
+      `SELECT id FROM ${ctx.t('tmf_resource_specification')} WHERE tenant_id = :1`,
+      [ctx.options.tenantId],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    for (const row of specRows.rows ?? []) availableSpecIds.add(row.ID);
+    const splitterCoverage = new SpecCoverage();
+    const portCoverage = new SpecCoverage();
+    let splitterRatioFallbacks = 0;
+    let skippedNonSplitterCards = 0;
 
     const validParentIds = new Set<string>();
     const parentIds = [
@@ -427,7 +448,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       const pageIds = remainingCdoIds.slice(offset, offset + CDO_PAGE_SIZE);
 
       let pageStartedAt = Date.now();
-      const ports = await loadInternalPorts(source, pageIds);
+      const ports = await loadInternalPorts(source, pageIds, { allPortTypes: true });
       timing.portsMs += Date.now() - pageStartedAt;
 
       const cardIds = [
@@ -442,7 +463,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
         loadInternalCards(source, cardIds),
         // Determinismo do card por MIN(ID_BD_EQUIPAMENTO) em SQL — Passo 3, necessário
         // porque 10 cards no RJ pertencem a portas de mais de um equipamento.
-        resolveCardCanonicalEquipmentIds(source, cardIds),
+        resolveCardCanonicalEquipmentIds(source, cardIds, { allEquipmentTypes: true }),
       ]);
       timing.cardsMs += Date.now() - pageStartedAt;
       const cardById = new Map(cards.map((c) => [c.ID_BD_CARTA, c]));
@@ -472,7 +493,28 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           pageRejected++;
           continue;
         }
-        const ratio = parseSplitterRatio(card.TIPO_NOME, card.TIPO_SIGLA, card.NOME);
+        const strictRatio = parseSplitterRatioStrict(card.TIPO_NOME, card.TIPO_SIGLA, card.NOME);
+        // Placa que nao e splitter (equipamento nao-CDO) nao vira Splitter: as portas ficam sob o equipamento.
+        if (
+          !CDO_TYPE_TO_SPEC.has(cdo.ID_BD_TIPO_NE ?? -1) &&
+          (strictRatio === null ||
+            !/SPLIT/i.test(`${card.TIPO_NOME ?? ''} ${card.TIPO_SIGLA ?? ''}`))
+        ) {
+          skippedNonSplitterCards++;
+          continue;
+        }
+        if (strictRatio === null) splitterRatioFallbacks++;
+        const ratio = strictRatio ?? 8;
+        const ratioSpecId = splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!;
+        const splitterSpecId =
+          strictRatio !== null && card.ID_BD_TIPO_CARTA
+            ? pickSpecification(
+                cardTypeSpecId(card.ID_BD_TIPO_CARTA),
+                availableSpecIds,
+                ratioSpecId,
+                splitterCoverage,
+              )
+            : (splitterCoverage.record('genericFallback'), ratioSpecId);
         const splitterId = netwinInternalCardId(card.ID_BD_CARTA);
         const cardState = resolveNetwinPlantState({
           cicloVida: card.ESTADO_CICLO_VIDA,
@@ -486,8 +528,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
             card.NOME_ALTERNATIVO ||
               `${card.TIPO_SIGLA ?? card.TIPO_NOME ?? 'Splitter'} ${card.ID_BD_CARTA}`,
           ),
-          resource_specification_id:
-            splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!,
+          resource_specification_id: splitterSpecId,
           status: cardState.status,
           status_code: cardState.statusCode ?? null,
           // Recurso interno: sem place/serving. O lugar dele é resolvido pelo recurso que o
@@ -545,6 +586,14 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           provisao: port.ESTADO_PROVISAO,
           hasService: port.ID_SERVICO !== null && port.ID_SERVICO !== undefined,
         });
+        const resolvedPortSpecId = port.TIPO_NOME
+          ? pickSpecification(
+              portTypeSpecId(port.TIPO_NOME, port.DIRECCIONALIDADE),
+              availableSpecIds,
+              portSpecId,
+              portCoverage,
+            )
+          : (portCoverage.record('genericFallback'), portSpecId);
         pageResources.push({
           id: portId,
           tenant_id: ctx.options.tenantId,
@@ -552,7 +601,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
             port.NOME,
             port.CODIFICACAO_PORTO || `Porta ${port.ID_BD_PORTO_FISICO}`,
           ),
-          resource_specification_id: portSpecId,
+          resource_specification_id: resolvedPortSpecId,
           status: portState.status,
           status_code: portState.statusCode ?? null,
           // Recurso interno: sem place/serving. O lugar dele é resolvido pelo recurso que o
@@ -575,6 +624,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
               ['occupancyType', port.TIPO_OCUPACAO],
               ['provisionState', port.ESTADO_PROVISAO],
               ['serviceId', port.ID_SERVICO],
+              ['directionality', port.DIRECCIONALIDADE],
               ['circuit', port.CIRCUITO],
               ['bandwidth', port.DEBITO],
             ]),
@@ -677,6 +727,18 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     console.log(
       `Fase 2.C concluída: ${importedCardIds.size} splitters e ${importedPortIds.size} portas reconciliados; ${stats.rejected} itens rejeitados; ${queuedConnections} conexões enfileiradas para reconciliação de topologia. DML em lote: ${timing.executeManyCalls} executeMany; recursos=${timing.resourceMergeMs}ms; relações=${timing.relationshipMergeMs}ms; commits=${timing.commitMs}ms; leitura — portas=${timing.portsMs}ms, cards=${timing.cardsMs}ms, conexões=${timing.connectionsMs}ms. Nenhuma CDO ISP duplicada foi criada.`,
     );
+    if (skippedNonSplitterCards > 0) {
+      console.log(
+        `[Cobertura] ${skippedNonSplitterCards} placa(s) de equipamento nao-CDO que nao sao splitter nao viram recurso; portas ficam sob o equipamento.`,
+      );
+    }
+    console.log(splitterCoverage.format('splitters'));
+    console.log(portCoverage.format('portas'));
+    if (splitterRatioFallbacks > 0) {
+      console.warn(
+        `[Cobertura] ${splitterRatioFallbacks} splitter(s) sem razão 1:N reconhecida no catálogo; usada a razão 1:8 por padrão.`,
+      );
+    }
     return stats;
   } finally {
     await source.close();

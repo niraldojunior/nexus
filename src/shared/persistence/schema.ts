@@ -6,12 +6,11 @@ export const TABLE_NAMES = [
   'geo_search_history',
   'tmf_geographic_location',
   'geo_administrative_city',
-  'geo_administrative_city_site_count',
+  'geo_administrative_city_tenant',
   'tmf_geographic_address',
   'tmf_geographic_site_specification',
   'tmf_geographic_site_spec_containment_rule',
   'tmf_geographic_site',
-  'geo_site_administrative_city',
   'tmf_geographic_site_status_history',
   'tmf_geographic_site_relationship',
   'geo_project',
@@ -732,8 +731,10 @@ export const SCHEMA_SQL = `
       CREATE UNIQUE INDEX IF NOT EXISTS uq_geo_administrative_city_key ON geo_administrative_city(country_code, state_code, city_key);
       CREATE INDEX IF NOT EXISTS idx_geo_administrative_city_nav ON geo_administrative_city(country_code, state_code, city_name, id);
 
-      -- Projeção tenant-scoped (C8): quantidade de Sites raiz ativos por município. A master acima é global.
-      CREATE TABLE IF NOT EXISTS geo_administrative_city_site_count (
+      -- Vínculo tenant–município (C8). Substituiu a antiga projeção de contagem (issue #339):
+      -- a linha existe enquanto qualquer Site do tenant a referenciar; active_site_count conta só
+      -- Sites raiz não-Retired e a árvore exibe apenas contagens > 0.
+      CREATE TABLE IF NOT EXISTS geo_administrative_city_tenant (
         tenant_id TEXT NOT NULL,
         administrative_city_id TEXT NOT NULL,
         active_site_count INTEGER NOT NULL DEFAULT 0,
@@ -741,7 +742,7 @@ export const SCHEMA_SQL = `
         PRIMARY KEY (tenant_id, administrative_city_id),
         FOREIGN KEY (administrative_city_id) REFERENCES geo_administrative_city(id)
       );
-      CREATE INDEX IF NOT EXISTS idx_geo_admin_city_site_count_nav ON geo_administrative_city_site_count(tenant_id, active_site_count);
+      CREATE INDEX IF NOT EXISTS idx_geo_admin_city_tenant_nav ON geo_administrative_city_tenant(tenant_id, active_site_count);
 
       -- TMF673: Geographic Address (endereço postal estruturado)
       CREATE TABLE IF NOT EXISTS tmf_geographic_address (
@@ -760,15 +761,13 @@ export const SCHEMA_SQL = `
         postcode TEXT,
         postcode_search TEXT,
         geographic_location_id TEXT,
-        administrative_city_id TEXT,
         sub_address TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
         characteristics TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (geographic_location_id) REFERENCES tmf_geographic_location(id),
-        FOREIGN KEY (administrative_city_id) REFERENCES geo_administrative_city(id)
+        FOREIGN KEY (geographic_location_id) REFERENCES tmf_geographic_location(id)
       );
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_location ON tmf_geographic_address(geographic_location_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_city_postcode ON tmf_geographic_address(city, postcode);
@@ -842,6 +841,7 @@ export const SCHEMA_SQL = `
         status_reason TEXT,
         geographic_location_id TEXT,
         geographic_address_id TEXT,
+        administrative_city_id TEXT,
         parent_site_id TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
@@ -863,23 +863,6 @@ export const SCHEMA_SQL = `
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_name ON tmf_geographic_site(name);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant ON tmf_geographic_site(tenant_id);
       CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_status ON tmf_geographic_site(tenant_id, status);
-
-      -- Projeção administrativa tenant-scoped do Site. Não substitui TMF673: endereço real tem
-      -- precedência; esta associação preserva o município operacional quando não existe endereço.
-      CREATE TABLE IF NOT EXISTS geo_site_administrative_city (
-        tenant_id TEXT NOT NULL,
-        site_id TEXT NOT NULL,
-        administrative_city_id TEXT NOT NULL,
-        source_system TEXT NOT NULL,
-        source_ref TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (tenant_id, site_id),
-        FOREIGN KEY (site_id) REFERENCES tmf_geographic_site(id),
-        FOREIGN KEY (administrative_city_id) REFERENCES geo_administrative_city(id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_geo_site_admin_city_nav
-        ON geo_site_administrative_city(tenant_id, administrative_city_id, site_id);
 
       CREATE TABLE IF NOT EXISTS tmf_geographic_site_status_history (
         id TEXT PRIMARY KEY,
@@ -2181,41 +2164,53 @@ const MIGRATIONS_SQL_V29_GEO_ADMINISTRATIVE_CITY = `
     ON geo_administrative_city(country_code, state_code, city_key);
   CREATE INDEX IF NOT EXISTS idx_geo_administrative_city_nav
     ON geo_administrative_city(country_code, state_code, city_name, id);
-  ALTER TABLE tmf_geographic_address ADD COLUMN IF NOT EXISTS administrative_city_id TEXT REFERENCES geo_administrative_city(id);
-  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_address_admin_city
-    ON tmf_geographic_address(administrative_city_id);
 `;
 
 // V32: projeção tenant-scoped da quantidade de Sites raiz ativos por município. Aditiva; a árvore
 // de Locais da Planta Interna só exibe municípios com contagem > 0. Reconciliada por recontagem.
-const MIGRATIONS_SQL_V32_GEO_ADMINISTRATIVE_CITY_SITE_COUNT = `
-  CREATE TABLE IF NOT EXISTS geo_administrative_city_site_count (
+// V32 (aposentada na V36, issue #339): a projeção geo_administrative_city_site_count foi substituída por geo_administrative_city_tenant (V35). Corpo vazio: ambientes novos não a criam; os já migrados a removem na V36.
+const MIGRATIONS_SQL_V32_GEO_ADMINISTRATIVE_CITY_SITE_COUNT = ``;
+
+// V33: município operacional do Site quando não existe endereço TMF673. A projeção é mantida mesmo
+// quando o Site possui endereço, para auditoria e fallback; consumidores usam endereço primeiro.
+// V33 (aposentada na V36, issue #339): geo_site_administrative_city foi substituída por tmf_geographic_site.administrative_city_id (V35).
+const MIGRATIONS_SQL_V33_GEO_SITE_ADMINISTRATIVE_CITY = ``;
+
+// V34: abertura de município na árvore de Locais da Planta Interna (`rootScope`). O índice simples
+// em administrative_city_id obrigava um acesso à tabela por endereço para obter o id; os compostos
+// abaixo deixam o join município → endereço → Site raiz resolver-se só em índice.
+// V34 (aposentada na V36, issue #339): índices do caminho município → endereço → Site, substituídos por idx_tmf_geographic_site_tenant_city (V35).
+const MIGRATIONS_SQL_V34_GEO_CITY_SITE_LOOKUP_INDEXES = ``;
+
+// V35 (expand, issue #339): município administrativo direto no Site. A FK composta aponta para o
+// vínculo tenant–município, que substitui geo_administrative_city_site_count (copiada por hook
+// MERGE em oracle-database.ts). A FK nasce NOVALIDATE; scripts/backfill-site-administrative-city.mjs
+// preenche a coluna e a valida. As estruturas legadas saem na V36 (contração, hook em oracle-database.ts).
+const MIGRATIONS_SQL_V35_SITE_ADMINISTRATIVE_CITY = `
+  CREATE TABLE IF NOT EXISTS geo_administrative_city_tenant (
     tenant_id TEXT NOT NULL,
     administrative_city_id TEXT NOT NULL REFERENCES geo_administrative_city(id),
     active_site_count INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (tenant_id, administrative_city_id)
   );
-  CREATE INDEX IF NOT EXISTS idx_geo_admin_city_site_count_nav
-    ON geo_administrative_city_site_count(tenant_id, active_site_count);
+  CREATE INDEX IF NOT EXISTS idx_geo_admin_city_tenant_nav
+    ON geo_administrative_city_tenant(tenant_id, active_site_count);
+  ALTER TABLE tmf_geographic_site ADD COLUMN IF NOT EXISTS administrative_city_id TEXT;
+  CREATE INDEX IF NOT EXISTS idx_tmf_geographic_site_tenant_city
+    ON tmf_geographic_site(tenant_id, administrative_city_id, parent_site_id, status);
+  ALTER TABLE tmf_geographic_site
+    ADD CONSTRAINT fk_tmf_geographic_site_admin_city
+    FOREIGN KEY (tenant_id, administrative_city_id)
+    REFERENCES geo_administrative_city_tenant(tenant_id, administrative_city_id)
+    ENABLE NOVALIDATE;
 `;
 
-// V33: município operacional do Site quando não existe endereço TMF673. A projeção é mantida mesmo
-// quando o Site possui endereço, para auditoria e fallback; consumidores usam endereço primeiro.
-const MIGRATIONS_SQL_V33_GEO_SITE_ADMINISTRATIVE_CITY = `
-  CREATE TABLE IF NOT EXISTS geo_site_administrative_city (
-    tenant_id TEXT NOT NULL,
-    site_id TEXT NOT NULL REFERENCES tmf_geographic_site(id),
-    administrative_city_id TEXT NOT NULL REFERENCES geo_administrative_city(id),
-    source_system TEXT NOT NULL,
-    source_ref TEXT,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (tenant_id, site_id)
-  );
-  CREATE INDEX IF NOT EXISTS idx_geo_site_admin_city_nav
-    ON geo_site_administrative_city(tenant_id, administrative_city_id, site_id);
-`;
+// V36 (contract, issue #339): sem DDL declarativo — o hook em oracle-database.ts remove
+// geo_site_administrative_city e geo_administrative_city_site_count e aposenta
+// tmf_geographic_address.administrative_city_id (SET UNUSED), falhando se o backfill estiver incompleto.
+// Fica fora do SQL para que o DDL aditivo de todo boot nunca ressuscite os objetos aposentados.
+const MIGRATIONS_SQL_V36_SITE_ADMINISTRATIVE_CITY_CONTRACT = ``;
 
 // V30: relações adicionais Resource→GeographicSite tipadas por ResourceTypeRelationshipRule
 // (issue #334). O `place` (serving site) continua sendo o vínculo principal; esta tabela guarda
@@ -2394,6 +2389,21 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 33,
     name: 'geo-site-administrative-city',
     sql: MIGRATIONS_SQL_V33_GEO_SITE_ADMINISTRATIVE_CITY,
+  },
+  {
+    version: 34,
+    name: 'geo-city-site-lookup-indexes',
+    sql: MIGRATIONS_SQL_V34_GEO_CITY_SITE_LOOKUP_INDEXES,
+  },
+  {
+    version: 35,
+    name: 'site-administrative-city',
+    sql: MIGRATIONS_SQL_V35_SITE_ADMINISTRATIVE_CITY,
+  },
+  {
+    version: 36,
+    name: 'site-administrative-city-contract',
+    sql: MIGRATIONS_SQL_V36_SITE_ADMINISTRATIVE_CITY_CONTRACT,
   },
 ];
 

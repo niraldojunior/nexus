@@ -759,7 +759,6 @@ async function main() {
         'country',
         'postcode',
         'geographic_location_id',
-        'administrative_city_id',
         'characteristics',
       ],
       addresses,

@@ -284,6 +284,12 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'party-role-type-id') {
         await this.backfillPartyRoleRoleTypeId(connection);
       }
+      if (batch.name === 'site-administrative-city') {
+        await this.copyAdministrativeCitySiteCountToTenant(connection);
+      }
+      if (batch.name === 'site-administrative-city-contract') {
+        await this.contractLegacyAdministrativeCity(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -314,6 +320,90 @@ export class OracleDatabase implements DatabaseClient {
     }
     for (const statement of splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL)) {
       await executeOracleDdl(connection, prefixDdl(statement));
+    }
+  }
+
+  // V35 (issue #339): geo_administrative_city_tenant é o renome lógico de
+  // geo_administrative_city_site_count. Copia as linhas existentes (idempotente); a tabela antiga
+  // só é removida na V36.
+  private async copyAdministrativeCitySiteCountToTenant(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const legacy = prefixed('geo_administrative_city_site_count', prefix);
+    const target = prefixed('geo_administrative_city_tenant', prefix);
+    try {
+      await connection.execute(
+        `MERGE INTO ${target} t
+         USING (SELECT tenant_id, administrative_city_id, active_site_count FROM ${legacy}) l
+            ON (t.tenant_id = l.tenant_id AND t.administrative_city_id = l.administrative_city_id)
+          WHEN MATCHED THEN UPDATE SET t.active_site_count = l.active_site_count, t.updated_at = SYSTIMESTAMP
+          WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
+               VALUES (l.tenant_id, l.administrative_city_id, l.active_site_count, SYSTIMESTAMP)`,
+        [],
+        { autoCommit: true },
+      );
+    } catch (error) {
+      // Ambiente novo sem a tabela legada: nada a copiar.
+      if (!/ORA-00942/.test(error instanceof Error ? error.message : String(error))) throw error;
+    }
+  }
+
+  // V36 (issue #339): contração. Só remove as estruturas legadas se nenhum Site ainda depender
+  // delas para o município (backfill incompleto aborta o boot com instrução). Em ambiente novo
+  // os objetos não existem e tudo é ignorado.
+  private async contractLegacyAdministrativeCity(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const site = prefixed('tmf_geographic_site', prefix);
+    const address = prefixed('tmf_geographic_address', prefix);
+    const projection = prefixed('geo_site_administrative_city', prefix);
+    const legacyCount = prefixed('geo_administrative_city_site_count', prefix);
+    const columnExists = async (table: string, column: string): Promise<boolean> => {
+      const result = await connection.execute<{ n: number }>(
+        `SELECT COUNT(*) AS "n" FROM user_tab_columns WHERE table_name = :1 AND column_name = :2`,
+        [table.toUpperCase(), column.toUpperCase()],
+        QUERY_OPTIONS,
+      );
+      return Number(result.rows?.[0]?.n ?? 0) > 0;
+    };
+    const tableExists = async (table: string): Promise<boolean> => {
+      const result = await connection.execute<{ n: number }>(
+        `SELECT COUNT(*) AS "n" FROM user_tables WHERE table_name = :1`,
+        [table.toUpperCase()],
+        QUERY_OPTIONS,
+      );
+      return Number(result.rows?.[0]?.n ?? 0) > 0;
+    };
+    const hasAddressColumn = await columnExists(address, 'administrative_city_id');
+    const hasProjection = await tableExists(projection);
+    if (hasAddressColumn || hasProjection) {
+      const sources: string[] = [];
+      if (hasAddressColumn) {
+        sources.push(`(SELECT a.administrative_city_id FROM ${address} a WHERE a.id = s.geographic_address_id)`);
+      }
+      if (hasProjection) {
+        sources.push(
+          `(SELECT p.administrative_city_id FROM ${projection} p WHERE p.tenant_id = s.tenant_id AND p.site_id = s.id)`,
+        );
+      }
+      const pending = await connection.execute<{ n: number }>(
+        `SELECT COUNT(*) AS "n" FROM ${site} s
+          WHERE s.administrative_city_id IS NULL AND COALESCE(${sources.join(', ')}) IS NOT NULL`,
+        [],
+        QUERY_OPTIONS,
+      );
+      if (Number(pending.rows?.[0]?.n ?? 0) > 0) {
+        throw new Error(
+          `V36 abortada: ${pending.rows?.[0]?.n} Site(s) ainda sem administrative_city_id. Execute ` +
+            `scripts/backfill-site-administrative-city.mjs --target-prefix ${prefix} --apply e reinicie.`,
+        );
+      }
+    }
+    if (hasProjection) await executeOracleDdl(connection, `DROP TABLE ${projection}`);
+    if (await tableExists(legacyCount)) {
+      await executeOracleDdl(connection, `DROP TABLE ${legacyCount}`);
+    }
+    if (hasAddressColumn) {
+      // DROP COLUMN remove também a FK e os índices que a referenciam.
+      await executeOracleDdl(connection, `ALTER TABLE ${address} DROP COLUMN administrative_city_id CASCADE CONSTRAINTS`);
     }
   }
 

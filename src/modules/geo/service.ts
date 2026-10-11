@@ -1413,8 +1413,7 @@ export class GeoService {
   ): Promise<void> {
     const cityIds = new Set<string>();
     for (const site of sites) {
-      if (!site.address?.id) continue;
-      const cityId = await this.repository.getAddressAdministrativeCityId(site.address.id);
+      const cityId = await this.repository.getSiteAdministrativeCityId(site.id);
       if (cityId) cityIds.add(cityId);
     }
     await this.repository.reconcileAdministrativeCitySiteCounts(ctx.tenantId, [...cityIds]);
@@ -1572,7 +1571,7 @@ export class GeoService {
     const address = site.address?.id
       ? await this.repository.getAddress(site.address.id, { tenantId: ctx.tenantId })
       : undefined;
-    const cityId = address ? await this.repository.getAddressAdministrativeCityId(address.id) : null;
+    const cityId = await this.repository.getSiteAdministrativeCityId(site.id);
     const administrativeCity = cityId
       ? (await this.repository.listAdministrativeCities()).find((city) => city.id === cityId)
       : undefined;
@@ -1610,7 +1609,7 @@ export class GeoService {
         : undefined;
       const unchanged =
         currentAddress &&
-        (await this.repository.getAddressAdministrativeCityId(currentAddress.id)) === city.id &&
+        (await this.repository.getSiteAdministrativeCityId(current!.id)) === city.id &&
         currentAddress.street === input.street &&
         (currentAddress.streetNr ?? '') === (input.streetNr ?? '') &&
         (currentAddress.postcode ?? '') === (input.postcode ?? '');
@@ -1631,6 +1630,15 @@ export class GeoService {
       const site = current
         ? await this.updateSite(current.id, payload, ctx)
         : await this.createSite(payload as SiteInput, ctx);
+      // Município direto no Site (issue #339); reconcilia o anterior e o novo.
+      const previousCityId = current
+        ? await this.repository.getSiteAdministrativeCityId(current.id)
+        : null;
+      await this.repository.setSiteAdministrativeCity(site.id, ctx.tenantId, city.id);
+      await this.repository.reconcileAdministrativeCitySiteCounts(
+        ctx.tenantId,
+        [city.id, previousCityId].filter((id): id is string => Boolean(id)),
+      );
       return { site, address };
     });
     return {

@@ -27,8 +27,9 @@ type AddressRow = {
 /**
  * Fase 2.E — diretório geográfico canônico (issue #329).
  *
- * A master de municípios nasce na Fase 1 (CITYAREA); aqui só se fecham os vínculos legados dos
- * endereços e se reconcilia a quantidade de Sites ativos por município.
+ * A master de municípios nasce na Fase 1 (CITYAREA); aqui se preenche o município direto do Site
+ * (`tmf_geographic_site.administrative_city_id`, issue #339) a partir da tupla postal do endereço e
+ * se reconcilia a quantidade de Sites ativos por município.
  *
  * As Fases 2.A/2.B já gravam `administrative_city_id` junto de cada endereço importado. Esta etapa
  * fecha a execução: garante que todo município/UF/país dos endereços do tenant esteja no diretório
@@ -41,17 +42,20 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
   console.log('\n=== Fase 2.E: Diretório geográfico (país, UF, município) ===');
   const { tenantId, batchSize } = ctx.options;
   const address = ctx.t('tmf_geographic_address');
+  const site = ctx.t('tmf_geographic_site');
+  const cityTenant = ctx.t('geo_administrative_city_tenant');
   const directory = ctx.t('geo_administrative_city');
 
   const target = ctx.options.apply ? await ctx.getTargetConnection() : null;
   const reader = target ?? (await ctx.getTargetReadConnection());
   try {
     const grouped = await reader.execute<TupleRow>(
-      `SELECT country AS "COUNTRY", state_or_province AS "STATE_OR_PROVINCE", city AS "CITY",
+      `SELECT a.country AS "COUNTRY", a.state_or_province AS "STATE_OR_PROVINCE", a.city AS "CITY",
               COUNT(*) AS "N"
-         FROM ${address}
-        WHERE tenant_id=:tenantId AND administrative_city_id IS NULL
-        GROUP BY country, state_or_province, city`,
+         FROM ${site} s
+         JOIN ${address} a ON a.id = s.geographic_address_id
+        WHERE s.tenant_id=:tenantId AND s.administrative_city_id IS NULL
+        GROUP BY a.country, a.state_or_province, a.city`,
       { tenantId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
@@ -89,7 +93,7 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
     }
 
     console.log(
-      `[Diretório] endereços sem vínculo: elegíveis=${eligible}; ignorados (incompletos/inválidos)=${stats.skipped}; municípios distintos=${groups.size}.`,
+      `[Diretório] Sites sem município: elegíveis=${eligible}; ignorados (incompletos/inválidos)=${stats.skipped}; municípios distintos=${groups.size}.`,
     );
     if (!target) {
       console.log('[Diretório] DRY-RUN: nada gravado.');
@@ -124,11 +128,12 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
     let lastId = ' ';
     for (;;) {
       const page = await target.execute<AddressRow>(
-        `SELECT id AS "ID", country AS "COUNTRY", state_or_province AS "STATE_OR_PROVINCE",
-                city AS "CITY"
-           FROM ${address}
-          WHERE tenant_id=:tenantId AND administrative_city_id IS NULL AND id > :lastId
-          ORDER BY id
+        `SELECT s.id AS "ID", a.country AS "COUNTRY", a.state_or_province AS "STATE_OR_PROVINCE",
+                a.city AS "CITY"
+           FROM ${site} s
+           JOIN ${address} a ON a.id = s.geographic_address_id
+          WHERE s.tenant_id=:tenantId AND s.administrative_city_id IS NULL AND s.id > :lastId
+          ORDER BY s.id
           FETCH FIRST :pageSize ROWS ONLY`,
         { tenantId, lastId, pageSize: batchSize },
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -157,8 +162,19 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
                 return `:id${index}`;
               })
               .join(', ');
+            // Pai da FK composta antes do Site.
+            await target.execute(
+              `MERGE INTO ${cityTenant} k
+               USING (SELECT :tenantId AS tenant_id, :cityId AS city_id FROM DUAL) c
+                  ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
+                WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
+                     VALUES (c.tenant_id, c.city_id, 0, SYSTIMESTAMP)`,
+              { tenantId, cityId },
+              { autoCommit: false },
+            );
+            // Só preenche município nulo: edições da modal prevalecem sobre a carga.
             const result = await target.execute(
-              `UPDATE ${address} SET administrative_city_id=:cityId
+              `UPDATE ${site} SET administrative_city_id=:cityId
                 WHERE tenant_id=:tenantId AND administrative_city_id IS NULL AND id IN (${clause})`,
               binds,
               { autoCommit: false },
@@ -172,7 +188,7 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
         throw error;
       }
     }
-    console.log(`[Diretório] endereços ligados ao município=${stats.updated}.`);
+    console.log(`[Diretório] Sites ligados ao município=${stats.updated}.`);
     await reconcileAdministrativeCitySiteCounts(ctx, target);
     await target.execute('COMMIT');
     return stats;

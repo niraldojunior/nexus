@@ -49,7 +49,7 @@ import type {
   GeographicSiteSpecVisualIdentityRow,
   GeographicSiteStatusHistoryRow,
 } from './rows.js';
-import { cityKeyOf, normalizeAdministrativeCity } from './administrative-city.js';
+import { normalizeAdministrativeCity } from './administrative-city.js';
 import type { VisualIdentity } from '../../shared/ui/visual-identity.js';
 
 // Tamanho de bloco para listBlockedSiteIds/bulkTransitionSites (issue #58): grande o bastante
@@ -194,20 +194,20 @@ export class OracleGeoRepository implements IGeoRepository {
     address: GeographicAddress,
     now: string,
   ): Promise<void> {
-    // Dual-write do diretório (issue #329): tupla completa vincula o município canônico e
-    // sincroniza os campos TMF textuais; incompleta mantém o legado e deixa a FK nula.
+    // Tupla completa normaliza a grafia canônica dos campos TMF textuais (issue #329); o município
+    // operacional vive no Site (issue #339), não no endereço. Garante a linha na master.
     const tuple = normalizeAdministrativeCity({
       country: address.country,
       stateOrProvince: address.stateOrProvince,
       city: address.city,
     });
-    const administrativeCityId = tuple ? await this.resolveAdministrativeCityId(tuple) : null;
+    if (tuple) await this.resolveAdministrativeCityId(tuple);
     await this.db.run(
       `INSERT INTO tmf_geographic_address
        (id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
-        country, geographic_location_id, administrative_city_id, sub_address, source_system, source_ref,
+        country, geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        street_type = excluded.street_type,
        street_name = excluded.street_name,
@@ -217,7 +217,6 @@ export class OracleGeoRepository implements IGeoRepository {
        postcode = excluded.postcode,
        country = excluded.country,
        geographic_location_id = excluded.geographic_location_id,
-       administrative_city_id = excluded.administrative_city_id,
        sub_address = excluded.sub_address,
        source_system = excluded.source_system,
        source_ref = excluded.source_ref,
@@ -236,7 +235,6 @@ export class OracleGeoRepository implements IGeoRepository {
         address.postcode || null,
         tuple?.countryCode ?? (address.country || null),
         address.geographicLocationId || null,
-        administrativeCityId,
         address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
@@ -296,13 +294,11 @@ export class OracleGeoRepository implements IGeoRepository {
   ): Promise<GeographicAddress | undefined> {
     const row = await this.db.get<GeographicAddressRow>(
       `SELECT a.id, a.tenant_id, a.street_type, a.street_name, a.street_nr,
-              COALESCE(c.city_name, a.city) AS city,
-              COALESCE(c.state_code, a.state_or_province) AS state_or_province,
-              a.postcode, COALESCE(c.country_code, a.country) AS country,
+              a.city, a.state_or_province,
+              a.postcode, a.country,
               a.geographic_location_id, a.sub_address, a.source_system, a.source_ref,
               a.valid_for_start, a.valid_for_end, a.characteristics
        FROM tmf_geographic_address a
-       LEFT JOIN geo_administrative_city c ON c.id = a.administrative_city_id
        WHERE a.id = ?`,
       [id],
     );
@@ -337,18 +333,16 @@ export class OracleGeoRepository implements IGeoRepository {
     }
     const city = normalizeAddressText(query?.city);
     if (city) {
-      // Diretório (issue #329) para endereços vinculados; texto legado só para os sem vínculo.
-      conditions.push(`(administrative_city_id IN (SELECT id FROM geo_administrative_city WHERE city_key = ?)
-              OR (administrative_city_id IS NULL AND LOWER(TRANSLATE(COALESCE(city, ''),
+      // O endereço guarda a grafia canônica do município (normalizada no upsert, issue #329).
+      conditions.push(`LOWER(TRANSLATE(COALESCE(city, ''),
               'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
-              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')) = ?))`);
-      params.push(cityKeyOf(city), city);
+              'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')) = ?`);
+      params.push(city);
     }
     const state = normalizeAddressText(query?.stateOrProvince);
     if (state) {
-      conditions.push(`(administrative_city_id IN (SELECT id FROM geo_administrative_city WHERE state_code = UPPER(?))
-              OR (administrative_city_id IS NULL AND LOWER(state_or_province) = LOWER(?)))`);
-      params.push(state, state);
+      conditions.push('LOWER(state_or_province) = LOWER(?)');
+      params.push(state);
     }
     const postcode = normalizePostcodeSearch(query?.postcode);
     if (postcode) {
@@ -665,16 +659,40 @@ export class OracleGeoRepository implements IGeoRepository {
     }));
   }
 
-  public async getAddressAdministrativeCityId(addressId: string): Promise<string | null> {
+  public async getSiteAdministrativeCityId(siteId: string): Promise<string | null> {
     const row = await this.db.get<{ administrative_city_id: string | null }>(
-      'SELECT administrative_city_id FROM tmf_geographic_address WHERE id = ?',
-      [addressId],
+      'SELECT administrative_city_id FROM tmf_geographic_site WHERE id = ?',
+      [siteId],
     );
     return row?.administrative_city_id ?? null;
   }
 
-  // Recontagem (não incremento): reexecutável em retry/resume. Só Site raiz não `Retired`;
-  // município = endereço real, com fallback na projeção Site→município.
+  // Município operacional direto do Site (issue #339). Garante antes a linha tenant–município
+  // exigida pela FK composta. Não reconcilia contagens: o chamador decide o escopo.
+  public async setSiteAdministrativeCity(
+    siteId: string,
+    tenantId: string,
+    cityId: string | null,
+  ): Promise<void> {
+    if (cityId) {
+      await this.db.run(
+        `INSERT INTO geo_administrative_city_tenant
+         (tenant_id, administrative_city_id, active_site_count, updated_at)
+         VALUES (?, ?, 0, ?)
+         ON CONFLICT(tenant_id, administrative_city_id) DO UPDATE SET
+         updated_at = excluded.updated_at`,
+        [tenantId, cityId, new Date().toISOString()],
+      );
+    }
+    await this.db.run('UPDATE tmf_geographic_site SET administrative_city_id = ? WHERE id = ?', [
+      cityId,
+      siteId,
+    ]);
+  }
+
+  // Recontagem (não incremento): reexecutável em retry/resume. Só Site raiz não `Retired`.
+  // Linhas tenant–município sem Site ativo ficam com 0 (nunca apagadas: Sites Retired ainda as
+  // referenciam pela FK); a árvore filtra `active_site_count > 0`.
   public async reconcileAdministrativeCitySiteCounts(
     tenantId: string,
     cityIds?: readonly string[],
@@ -684,22 +702,21 @@ export class OracleGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
     const batches = scoped ? chunk(scoped, 500) : [undefined];
     for (const batch of batches) {
-      const cityExpr = 'COALESCE(a.administrative_city_id, p.administrative_city_id)';
-      const inClause = batch ? `AND ${cityExpr} IN (${batch.map(() => '?').join(', ')})` : '';
+      const inClause = batch
+        ? `AND s.administrative_city_id IN (${batch.map(() => '?').join(', ')})`
+        : '';
       const counts = await this.db.all<{ administrative_city_id: string; total: number }>(
-        `SELECT ${cityExpr} AS administrative_city_id, COUNT(*) AS total
+        `SELECT s.administrative_city_id AS administrative_city_id, COUNT(*) AS total
            FROM tmf_geographic_site s
-           LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
-           LEFT JOIN geo_site_administrative_city p ON p.tenant_id = s.tenant_id AND p.site_id = s.id
           WHERE s.tenant_id = ? AND s.parent_site_id IS NULL AND s.status <> 'Retired'
-            AND ${cityExpr} IS NOT NULL ${inClause}
-          GROUP BY ${cityExpr}`,
+            AND s.administrative_city_id IS NOT NULL ${inClause}
+          GROUP BY s.administrative_city_id`,
         [tenantId, ...(batch ?? [])],
       );
       const positive = new Set(counts.map((row) => row.administrative_city_id));
       for (const row of counts) {
         await this.db.run(
-          `INSERT INTO geo_administrative_city_site_count
+          `INSERT INTO geo_administrative_city_tenant
            (tenant_id, administrative_city_id, active_site_count, updated_at)
            VALUES (?, ?, ?, ?)
            ON CONFLICT(tenant_id, administrative_city_id) DO UPDATE SET
@@ -708,27 +725,23 @@ export class OracleGeoRepository implements IGeoRepository {
           [tenantId, row.administrative_city_id, Number(row.total), now],
         );
       }
-      if (batch) {
-        for (const cityId of batch.filter((id) => !positive.has(id))) {
-          await this.db.run(
-            `DELETE FROM geo_administrative_city_site_count
-              WHERE tenant_id = ? AND administrative_city_id = ?`,
-            [tenantId, cityId],
-          );
-        }
-      } else {
-        // Tenant inteiro: remove as projeções que ficaram sem Sites.
-        const stale = await this.db.all<{ administrative_city_id: string }>(
-          'SELECT administrative_city_id FROM geo_administrative_city_site_count WHERE tenant_id = ?',
-          [tenantId],
+      const stale = batch
+        ? batch.filter((id) => !positive.has(id))
+        : (
+            await this.db.all<{ administrative_city_id: string }>(
+              `SELECT administrative_city_id FROM geo_administrative_city_tenant
+                WHERE tenant_id = ? AND active_site_count <> 0`,
+              [tenantId],
+            )
+          )
+            .map((row) => row.administrative_city_id)
+            .filter((id) => !positive.has(id));
+      for (const cityId of stale) {
+        await this.db.run(
+          `UPDATE geo_administrative_city_tenant SET active_site_count = 0, updated_at = ?
+            WHERE tenant_id = ? AND administrative_city_id = ?`,
+          [now, tenantId, cityId],
         );
-        for (const row of stale.filter((r) => !positive.has(r.administrative_city_id))) {
-          await this.db.run(
-            `DELETE FROM geo_administrative_city_site_count
-              WHERE tenant_id = ? AND administrative_city_id = ?`,
-            [tenantId, row.administrative_city_id],
-          );
-        }
       }
     }
   }
@@ -738,7 +751,7 @@ export class OracleGeoRepository implements IGeoRepository {
   ): Promise<AdministrativeCitySiteCount[]> {
     const rows = await this.db.all<{ administrative_city_id: string; active_site_count: number }>(
       `SELECT administrative_city_id, active_site_count
-         FROM geo_administrative_city_site_count
+         FROM geo_administrative_city_tenant
         WHERE tenant_id = ? AND active_site_count > 0`,
       [tenantId],
     );
@@ -792,7 +805,36 @@ export class OracleGeoRepository implements IGeoRepository {
       ],
     );
 
+    await this.deriveSiteCityFromAddress(site);
     return (await this.getSite(site.id))!;
+  }
+
+  // Compatibilidade com escritores que só informam o endereço: preenche o município do Site a
+  // partir da tupla postal, mas apenas quando ainda é nulo (edições da modal prevalecem).
+  private async deriveSiteCityFromAddress(site: GeographicSite): Promise<void> {
+    if (!site.address?.id) return;
+    const tenantId = site.tenantId ?? 'default';
+    const current = await this.getSiteAdministrativeCityId(site.id);
+    if (current) return;
+    const address = await this.db.get<{
+      city: string | null;
+      state_or_province: string | null;
+      country: string | null;
+    }>('SELECT city, state_or_province, country FROM tmf_geographic_address WHERE id = ?', [
+      site.address.id,
+    ]);
+    if (!address) return;
+    const tuple = normalizeAdministrativeCity({
+      country: address.country ?? undefined,
+      stateOrProvince: address.state_or_province ?? undefined,
+      city: address.city ?? undefined,
+    });
+    if (!tuple) return;
+    await this.setSiteAdministrativeCity(
+      site.id,
+      tenantId,
+      await this.resolveAdministrativeCityId(tuple),
+    );
   }
 
   public async getSite(id: string, scope?: GeoTenantScope): Promise<GeographicSite | undefined> {

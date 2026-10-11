@@ -1,6 +1,5 @@
 import oracledb from 'oracledb';
 import {
-  administrativeCityNaturalKey,
   normalizeAdministrativeCity,
   normalizeStateCode,
   type AdministrativeCityTuple,
@@ -424,7 +423,6 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               if (cityTuple) addressCityTuples.set(addressId, cityTuple);
               addresses.push({
                 id: addressId,
-                administrative_city_id: null,
                 tenant_id: ctx.options.tenantId,
                 street_name: name,
                 locality: locality ? locality.slice(0, 100) : null,
@@ -592,15 +590,8 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             locations,
             batchSize,
           );
-          const cityIds = await resolveAdministrativeCityIds(target, ctx.t, [
-            ...addressCityTuples.values(),
-          ]);
-          for (const address of addresses) {
-            const tuple = addressCityTuples.get(String(address.id));
-            address.administrative_city_id = tuple
-              ? (cityIds.get(administrativeCityNaturalKey(tuple)) ?? null)
-              : null;
-          }
+          // Município vive no Site (issue #339); a master é só garantida para a grafia canônica.
+          await resolveAdministrativeCityIds(target, ctx.t, [...addressCityTuples.values()]);
           await bulkMergeRows(
             target,
             ctx.t,
@@ -615,7 +606,6 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
               'state_or_province',
               'country',
               'geographic_location_id',
-              'administrative_city_id',
               'characteristics',
             ],
             addresses,

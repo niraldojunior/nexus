@@ -61,7 +61,11 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { openLoaderDb } from './loader-db.mjs';
-import { linkAdministrativeCities } from './administrative-city-loader.mjs';
+import {
+  linkAdministrativeCities,
+  linkSiteAdministrativeCities,
+  recountAdministrativeCityTenant,
+} from './administrative-city-loader.mjs';
 import { createCanonicalId } from '../dist/src/shared/utils/canonical-id.js';
 import {
   normalizeAddressText,
@@ -844,7 +848,6 @@ async function main() {
             'postcode',
             'country',
             'geographic_location_id',
-            'administrative_city_id',
             'characteristics',
           ];
           await linkAdministrativeCities(client, addressRows);
@@ -857,6 +860,7 @@ async function main() {
           );
         }
         if (chunk.newSites.length > 0) {
+          await linkSiteAdministrativeCities(client, chunk.newSites);
           await client.bulkInsert(
             'tmf_geographic_site',
             [
@@ -872,6 +876,7 @@ async function main() {
               'related_party',
               'site_addresses',
               'note',
+              'administrative_city_id',
               'characteristics',
             ],
             chunk.newSites,
@@ -938,6 +943,7 @@ async function main() {
     // Estatísticas do otimizador ficam presas na contagem de antes da carga (o Oracle de dev
     // chegou a achar que geo_project_site tinha 6 linhas com 62 mil gravadas) — sem isto todo
     // ganho de índice desta carga é anulado pelo CBO escolhendo o plano errado.
+    await recountAdministrativeCityTenant(client);
     console.log('\nAtualizando estatísticas...');
     for (const table of [
       'tmf_geographic_location',

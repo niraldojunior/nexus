@@ -46,6 +46,7 @@ export class GeoRepository implements IGeoRepository {
   private readonly addresses = new Map<string, GeographicAddress>();
   private readonly canonicalCityNames = new Map<string, string>();
   private readonly cities = new Map<string, AdministrativeCityRecord>();
+  private readonly siteCities = new Map<string, string>();
   private readonly citySiteCounts = new Map<string, Map<string, number>>();
   private readonly sites = new Map<string, GeographicSite>();
   private readonly specs = new Map<string, GeographicSiteSpecification>();
@@ -279,7 +280,20 @@ export class GeoRepository implements IGeoRepository {
       .map((city) => ({ ...city }));
   }
 
-  public getAddressAdministrativeCityId(addressId: string): string | null {
+  public getSiteAdministrativeCityId(siteId: string): string | null {
+    return this.siteCities.get(siteId) ?? null;
+  }
+
+  public setSiteAdministrativeCity(
+    siteId: string,
+    _tenantId: string,
+    cityId: string | null,
+  ): void {
+    if (cityId) this.siteCities.set(siteId, cityId);
+    else this.siteCities.delete(siteId);
+  }
+
+  private addressCityId(addressId: string): string | null {
     const address = this.addresses.get(addressId);
     if (!address) return null;
     const tuple = normalizeAdministrativeCity({
@@ -297,8 +311,8 @@ export class GeoRepository implements IGeoRepository {
     const current = new Map<string, number>();
     for (const site of this.sites.values()) {
       if (!matchesTenant(site.tenantId, tenantId)) continue;
-      if (site.parentSite?.id || site.status === 'Retired' || !site.address?.id) continue;
-      const cityId = this.getAddressAdministrativeCityId(site.address.id);
+      if (site.parentSite?.id || site.status === 'Retired') continue;
+      const cityId = this.siteCities.get(site.id);
       if (!cityId) continue;
       current.set(cityId, (current.get(cityId) ?? 0) + 1);
     }
@@ -306,16 +320,15 @@ export class GeoRepository implements IGeoRepository {
     const targets = cityIds ? new Set(cityIds) : new Set([...stored.keys(), ...current.keys()]);
     for (const id of targets) {
       const total = current.get(id) ?? 0;
-      if (total > 0) stored.set(id, total);
-      else stored.delete(id);
+      if (total > 0 || stored.has(id)) stored.set(id, total);
     }
     this.citySiteCounts.set(tenantId, stored);
   }
 
   public listAdministrativeCitySiteCounts(tenantId: string): AdministrativeCitySiteCount[] {
-    return [...(this.citySiteCounts.get(tenantId) ?? new Map<string, number>())].map(
-      ([administrativeCityId, activeSiteCount]) => ({ administrativeCityId, activeSiteCount }),
-    );
+    return [...(this.citySiteCounts.get(tenantId) ?? new Map<string, number>())]
+      .filter(([, activeSiteCount]) => activeSiteCount > 0)
+      .map(([administrativeCityId, activeSiteCount]) => ({ administrativeCityId, activeSiteCount }));
   }
 
   public upsertSite(site: GeographicSite): GeographicSite {
@@ -324,6 +337,10 @@ export class GeoRepository implements IGeoRepository {
       relatedSite: site.relatedSite.length ? site.relatedSite : this.listSiteRelationships(site.id),
     });
     this.sites.set(stored.id, stored);
+    if (!this.siteCities.has(stored.id) && stored.address?.id) {
+      const derived = this.addressCityId(stored.address.id);
+      if (derived) this.siteCities.set(stored.id, derived);
+    }
     return cloneSite(stored);
   }
 

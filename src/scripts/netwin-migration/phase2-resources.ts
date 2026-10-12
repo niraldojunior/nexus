@@ -40,9 +40,9 @@ import {
   chunksOf,
   hydrateByIds,
   hydrateWktByIds,
-  selectResourceIdsByInfranodes,
   selectResourceIdsByStructuredInfranode,
 } from './source-batches.js';
+import { createScopedResourcePager } from './scoped-resource-ids.js';
 import {
   createEnrichmentCaches,
   enrichEquipmentPage,
@@ -235,6 +235,17 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       return (result.rows ?? []).map((row) => row.ID);
     };
 
+    const ufOnlyScope = Boolean(
+      !ctx.options.scope.bairro && !ctx.options.scope.municipio && ctx.options.scope.uf,
+    );
+    const exchangePager = (table: string) =>
+      createScopedResourcePager(source, table, 'EXCHANGE_ID', exchangeIds, {
+        eligible: ufOnlyScope,
+      });
+    const equipmentPager = exchangePager('NETWIN.OSP_EQUIPMENT');
+    const routePager = exchangePager('NETWIN.OSP_ROUTE');
+    const cablePager = exchangePager('NETWIN.OSP_CABLE');
+
     const selectEquipmentIds = async (lastId: number, limit: number) => {
       if (ctx.options.scope.bairro) {
         return selectResourceIdsByStructuredInfranode(
@@ -246,16 +257,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           limit,
         );
       }
-      if (exchangeIds.length > 0) {
-        return selectResourceIdsByInfranodes(
-          source,
-          'NETWIN.OSP_EQUIPMENT',
-          'EXCHANGE_ID',
-          exchangeIds,
-          lastId,
-          limit,
-        );
-      }
+      if (exchangeIds.length > 0) return equipmentPager.next(lastId, limit);
       return emptyStructuredScope
         ? []
         : selectFullResourceIds('NETWIN.OSP_EQUIPMENT', lastId, limit);
@@ -268,14 +270,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
     ) => {
       if (skipRoutesAndCablesForNeighborhood || emptyStructuredScope) return [];
       if (exchangeIds.length > 0) {
-        return selectResourceIdsByInfranodes(
-          source,
-          table,
-          'EXCHANGE_ID',
-          exchangeIds,
-          lastId,
-          limit,
-        );
+        return (table === 'NETWIN.OSP_ROUTE' ? routePager : cablePager).next(lastId, limit);
       }
       return selectFullResourceIds(table, lastId, limit);
     };
@@ -663,7 +658,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       stats.loaded += resources.length;
       equipmentProgress.advance(equipmentIds.length);
       console.log(
-        `[Progresso] Fase 2.B — Equipamentos: cursor ${lastEqId}; selecionados=${equipmentIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; enriquecimento=${enrichmentMs}ms (${Object.entries(
+        `[Progresso] Fase 2.B — Equipamentos: cursor ${lastEqId}; selecionados=${equipmentIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms (${equipmentPager.strategy()}); hidratação=${hydrationMs}ms; enriquecimento=${enrichmentMs}ms (${Object.entries(
           enrichment.stats.timings,
         )
           .map(([k, v]) => `${k}=${v}`)
@@ -673,6 +668,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       );
     }
     equipmentProgress.finish();
+    equipmentPager.release();
     console.log(equipmentCoverage.format('equipamentos'));
     console.log(
       `[Enriquecimento] séries em conflito=${serialConflictCount}; projetos resolvidos=${projectsResolvedCount}, mantidos como characteristic=${projectsUnresolvedCount}.`,
@@ -880,10 +876,11 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       stats.loaded += resources.length;
       routeProgress.advance(routeIds.length);
       console.log(
-        `[Progresso] Fase 2.B — Lances: cursor ${lastRouteId}; selecionados=${routeIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; commit=${commitMs}ms.`,
+        `[Progresso] Fase 2.B — Lances: cursor ${lastRouteId}; selecionados=${routeIds.length}; hidratados=${rows.length}; seleção=${scopeSelectionMs}ms (${routePager.strategy()}); hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; commit=${commitMs}ms.`,
       );
     }
     routeProgress.finish();
+    routePager.release();
     if (routeGeometryFailures > 0) {
       console.warn(
         `[Geometria] ${routeGeometryFailures} rota(s) migradas sem geometria por dado corrompido na origem (OSP_ROUTE.GEOM).`,
@@ -1136,10 +1133,11 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       stats.loaded += resources.length;
       cableProgress.advance(cableIds.length);
       console.log(
-        `[Progresso] Fase 2.B — Cabos: cursor ${lastCableId}; selecionados=${cableIds.length}; hidratados=${rows.length}; vínculosEncontrados=${relationshipsFound}; relaçõesDeduplicadas=${uniqueRelationships.length}; relaçõesEnfileiradas=${relationshipsEnqueued}; seleção=${scopeSelectionMs}ms; hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; relationshipQueueInsertMs=${relationshipQueueInsertMs}ms; commit=${commitMs}ms.`,
+        `[Progresso] Fase 2.B — Cabos: cursor ${lastCableId}; selecionados=${cableIds.length}; hidratados=${rows.length}; vínculosEncontrados=${relationshipsFound}; relaçõesDeduplicadas=${uniqueRelationships.length}; relaçõesEnfileiradas=${relationshipsEnqueued}; seleção=${scopeSelectionMs}ms (${cablePager.strategy()}); hidratação=${hydrationMs}ms; localização=${locationMergeMs}ms; recursos=${resourceMergeMs}ms; relationshipQueueInsertMs=${relationshipQueueInsertMs}ms; commit=${commitMs}ms.`,
       );
     }
     cableProgress.finish();
+    cablePager.release();
     if (cableGeometryFailures > 0) {
       console.warn(
         `[Geometria] ${cableGeometryFailures} cabo(s) migrados sem geometria por dado corrompido na origem (OSP_CABLE.GEOM).`,

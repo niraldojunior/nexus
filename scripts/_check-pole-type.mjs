@@ -4,12 +4,12 @@ loadEnv({ quiet: true });
 async function main() {
   const db = await openLoaderDb();
   const t = await db.query(
-    `SELECT code, name, category_code, status FROM tmf_resource_type WHERE code = $1`,
+    `SELECT code, name, category_code, status FROM resource_type WHERE code = $1`,
     ['Pole'],
   );
   console.log('resource_type Pole:', JSON.stringify(t.rows));
   const s = await db.query(
-    `SELECT id, name, category, resource_type FROM tmf_resource_specification WHERE resource_type = $1`,
+    `SELECT id, name, category, resource_type FROM resource_specification WHERE resource_type = $1`,
     ['Pole'],
   );
   console.log('resource_specification Pole:', JSON.stringify(s.rows, null, 2));

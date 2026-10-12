@@ -290,7 +290,7 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
       tenantId: context.tenantId,
       actorSub: 'nexus-studio',
       roles: ['studio.admin', 'inventory.admin'],
-      // traceId vira correlationId em tmf_event (correlation_id) — coluna dimensionada para UUID
+      // traceId vira correlationId em environment_event (correlation_id) — coluna dimensionada para UUID
       // (VARCHAR2(36) no Oracle, ver oracle-schema.ts), não string legível com prefixo.
       traceId: createCanonicalId(),
     };

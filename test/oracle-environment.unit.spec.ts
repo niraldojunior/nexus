@@ -10,11 +10,11 @@ import { PREFIXABLE_TABLE_NAMES } from '../src/shared/persistence/oracle-object-
 
 test('descobre ambientes completos e parciais apenas por tabelas Nexus permitidas', () => {
   const tables = [
-    'NX_DEV_USERS',
-    'NX_DEV_TMF_PARTY',
-    'NX_DEV_SCHEMA_MIGRATIONS',
-    'NX_PARTIAL_USERS',
-    'NX_PARTIAL_TMF_PARTY',
+    'NX_DEV_USER_ACCOUNT',
+    'NX_DEV_PARTY',
+    'NX_DEV_MIGRATION_SCHEMA',
+    'NX_PARTIAL_USER_ACCOUNT',
+    'NX_PARTIAL_PARTY',
     'UNRELATED_TABLE',
     'NX_NOISE_AUDIT_LOG',
   ];
@@ -40,10 +40,10 @@ test('ambiente com todas as tabelas gerenciadas é completo', () => {
   assert.equal(environment[0]?.tableCount, PREFIXABLE_TABLE_NAMES.length);
 });
 
-test('destruição mantém schema_migrations por último', () => {
-  const order = orderedTablesForDestruction(['users', 'tmf_party', 'schema_migrations']);
-  assert.equal(order.at(-1), 'schema_migrations');
-  assert.deepEqual(new Set(order), new Set(['users', 'tmf_party', 'schema_migrations']));
+test('destruição mantém migration_schema por último', () => {
+  const order = orderedTablesForDestruction(['user_account', 'party', 'migration_schema']);
+  assert.equal(order.at(-1), 'migration_schema');
+  assert.deepEqual(new Set(order), new Set(['user_account', 'party', 'migration_schema']));
 });
 
 test('o ID de tenant explícito aceito para NX_DEV2_ segue o contrato operacional vtal', () => {
@@ -59,4 +59,30 @@ test('senha temporária é forte e não é determinística', () => {
   assert.notEqual(first, second);
   assert.ok(isTemporaryPasswordStrong(first));
   assert.ok(isTemporaryPasswordStrong(second));
+});
+
+test('nomes novos que são sufixo de legados não geram prefixo fantasma (issue #344)', () => {
+  const environments = discoverOracleEnvironments([
+    'NX_DEV_SCHEMA_MIGRATIONS',
+    'NX_DEV_TMF_PARTY',
+    'NX_DEV_TMF_PARTY_ROLE',
+    'NX_DEV_USERS',
+  ]);
+  assert.deepEqual(
+    environments.map(({ prefix }) => prefix),
+    ['NX_DEV_'],
+  );
+});
+
+test('conta Netwin e tabelas históricas sob o prefixo, para a exclusão não deixar lixo', () => {
+  const environments = discoverOracleEnvironments([
+    'NX_DEV9_MIGRATION_SCHEMA',
+    'NX_DEV9_NETWIN_MIG_NATIVE_JOB',
+    'NX_DEV9_GEO_GPON_COVERAGE_AREA',
+  ]);
+  assert.deepEqual(
+    environments.map(({ prefix }) => prefix),
+    ['NX_DEV9_'],
+  );
+  assert.equal(environments[0]?.status, 'partial');
 });

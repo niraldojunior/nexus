@@ -55,7 +55,7 @@ export class OracleStudioRepository implements IStudioRepository {
   ): Promise<StudioWorkspace | undefined> {
     const row = await this.db.get<StudioWorkspaceRow>(
       `SELECT id, tenant_id, domain, published_version_id, draft_version_id, updated_at
-       FROM studio_workspace WHERE tenant_id = ? AND domain = ?`,
+       FROM environment_studio_workspace WHERE tenant_id = ? AND domain = ?`,
       [tenantId, domain],
     );
     return row ? this.mapWorkspaceRow(row) : undefined;
@@ -63,7 +63,7 @@ export class OracleStudioRepository implements IStudioRepository {
 
   public async upsertWorkspace(workspace: StudioWorkspace): Promise<StudioWorkspace> {
     await this.db.run(
-      `INSERT INTO studio_workspace (id, tenant_id, domain, published_version_id, draft_version_id, updated_at)
+      `INSERT INTO environment_studio_workspace (id, tenant_id, domain, published_version_id, draft_version_id, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(tenant_id, domain) DO UPDATE SET
        published_version_id = excluded.published_version_id,
@@ -95,7 +95,7 @@ export class OracleStudioRepository implements IStudioRepository {
       `SELECT id, tenant_id, domain, version_number, status, snapshot, baseline_snapshot, checksum,
               validation, base_version_id, created_at, created_by, published_at, published_by,
               discarded_at, discarded_by
-       FROM studio_version WHERE ${conditions.join(' AND ')}`,
+       FROM environment_studio_version WHERE ${conditions.join(' AND ')}`,
       params,
     );
     return row ? this.mapVersionRow(row) : undefined;
@@ -103,7 +103,7 @@ export class OracleStudioRepository implements IStudioRepository {
 
   public async insertVersion(version: StudioVersion): Promise<StudioVersion> {
     await this.db.run(
-      `INSERT INTO studio_version
+      `INSERT INTO environment_studio_version
        (id, tenant_id, domain, version_number, status, snapshot, baseline_snapshot, checksum,
         validation, base_version_id, created_at, created_by, published_at, published_by,
         discarded_at, discarded_by)
@@ -135,7 +135,7 @@ export class OracleStudioRepository implements IStudioRepository {
     expectedChecksum?: string,
   ): Promise<StudioVersion | undefined> {
     const result = await this.db.run(
-      `UPDATE studio_version SET
+      `UPDATE environment_studio_version SET
        status = ?, snapshot = ?, checksum = ?, validation = ?, published_at = ?, published_by = ?,
        discarded_at = ?, discarded_by = ?
        WHERE id = ? AND tenant_id = ?${expectedChecksum !== undefined ? ' AND checksum = ?' : ''}`,
@@ -169,7 +169,7 @@ export class OracleStudioRepository implements IStudioRepository {
       `SELECT id, tenant_id, domain, version_number, status, snapshot, baseline_snapshot, checksum,
               validation, base_version_id, created_at, created_by, published_at, published_by,
               discarded_at, discarded_by
-       FROM studio_version WHERE tenant_id = ? AND domain = ?`,
+       FROM environment_studio_version WHERE tenant_id = ? AND domain = ?`,
       'ORDER BY version_number DESC',
       hasLimit ? 'LIMIT ?' : '',
       hasOffset ? 'OFFSET ?' : '',
@@ -184,7 +184,7 @@ export class OracleStudioRepository implements IStudioRepository {
 
   public async getMaxVersionNumber(tenantId: string, domain: StudioDomain): Promise<number> {
     const row = await this.db.get<{ max_version: number | null }>(
-      `SELECT MAX(version_number) AS max_version FROM studio_version WHERE tenant_id = ? AND domain = ?`,
+      `SELECT MAX(version_number) AS max_version FROM environment_studio_version WHERE tenant_id = ? AND domain = ?`,
       [tenantId, domain],
     );
     return row?.max_version ?? 0;
@@ -192,7 +192,7 @@ export class OracleStudioRepository implements IStudioRepository {
 
   public async appendAudit(entry: StudioAuditEntry): Promise<void> {
     await this.db.run(
-      `INSERT INTO studio_audit_log (id, tenant_id, domain, action, version_id, version_number, actor_sub, event_time)
+      `INSERT INTO user_studio_audit_log (id, tenant_id, domain, action, version_id, version_number, actor_sub, event_time)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         entry.id,
@@ -217,7 +217,7 @@ export class OracleStudioRepository implements IStudioRepository {
     const params: Array<string | number> = [tenantId, domain];
     const sql = [
       `SELECT id, tenant_id, domain, action, version_id, version_number, actor_sub, event_time
-       FROM studio_audit_log WHERE tenant_id = ? AND domain = ?`,
+       FROM user_studio_audit_log WHERE tenant_id = ? AND domain = ?`,
       'ORDER BY event_time DESC',
       hasLimit ? 'LIMIT ?' : '',
       hasOffset ? 'OFFSET ?' : '',

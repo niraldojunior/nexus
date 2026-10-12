@@ -15,7 +15,7 @@
  *
  * Modelagem — como isto se encaixa no cânone (ver AGENTS.md §5–§6):
  *
- *   Projeto de trabalho (geo_project, REQ-MOD01-015)
+ *   Projeto de trabalho (project, REQ-MOD01-015)
  *     └── GeographicSite (spec de SITE_SPECIFICATION, ex. Installation Point)
  *          ├── GeographicAddress (opcional — se nenhum ADDRESS_* vier preenchido,
  *          │     o site é gravado sem endereço)
@@ -332,7 +332,7 @@ async function main() {
     // ---------------------------------------------------------- bootstrap ---
 
     const { rows: specRows } = await client.query(
-      `SELECT id, code, name, lifecycle_status FROM tmf_geographic_site_specification`,
+      `SELECT id, code, name, lifecycle_status FROM geographic_site_specification`,
     );
     const specByCode = new Map();
     const specByName = new Map();
@@ -342,7 +342,7 @@ async function main() {
     }
 
     const { rows: projectRows } = await client.query(
-      `SELECT id, name, status FROM geo_project WHERE tenant_id = $1`,
+      `SELECT id, name, status FROM project WHERE tenant_id = $1`,
       [TENANT_ID],
     );
     const projectByName = new Map(projectRows.map((p) => [nameKey(p.name), p]));
@@ -357,8 +357,8 @@ async function main() {
               l.geometry_type AS own_location_geometry_type,
               l.geometry AS own_location_geometry,
               l.spatial_ref AS own_location_spatial_ref
-         FROM tmf_geographic_site s
-         LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
+         FROM geographic_site s
+         LEFT JOIN geographic_location l ON l.id = s.geographic_location_id
         WHERE s.tenant_id = $1 AND s.status NOT IN ('Retired', 'terminated')`,
       [TENANT_ID],
     );
@@ -366,15 +366,15 @@ async function main() {
 
     const { rows: linkRows } = await client.query(
       `SELECT ps.project_id, ps.site_id, ps.position
-         FROM geo_project_site ps
-         JOIN geo_project p ON p.id = ps.project_id
+         FROM project_site ps
+         JOIN project p ON p.id = ps.project_id
         WHERE p.tenant_id = $1`,
       [TENANT_ID],
     );
     // Posição do vínculo é rastreada pela CHAVE do projeto (nome normalizado), não pelo
     // project_id do banco — um projeto novo só ganha id real na fase de gravação, então
     // toda a fase de planejamento (dry-run incluso) precisa de uma chave estável que
-    // exista mesmo antes do INSERT em geo_project.
+    // exista mesmo antes do INSERT em project.
     const projectIdToKey = new Map(projectRows.map((p) => [p.id, nameKey(p.name)]));
     const linkedProjectsBySite = new Map(); // site_id -> Set(project_id)
     const maxPositionByProjectKey = new Map(); // projectKey -> number
@@ -410,7 +410,7 @@ async function main() {
         const { rows } = await client.query(
           `SELECT id, street_name, street_nr, city, state_or_province, postcode, country,
                   geographic_location_id
-             FROM tmf_geographic_address
+             FROM geographic_address
             WHERE tenant_id = $1 AND ${streetSearchCol} IN (${placeholders})`,
           [TENANT_ID, ...block],
         );
@@ -772,7 +772,7 @@ async function main() {
     }
     if (newProjectRows.length > 0) {
       await client.bulkInsert(
-        'geo_project',
+        'project',
         ['id', 'tenant_id', 'name', 'description', 'icon_data_url', 'status', 'created_by'],
         newProjectRows,
       );
@@ -785,7 +785,7 @@ async function main() {
       try {
         if (chunk.newLocations.length > 0) {
           await client.bulkInsert(
-            'tmf_geographic_location',
+            'geographic_location',
             [
               'id',
               'tenant_id',
@@ -800,7 +800,7 @@ async function main() {
         }
         for (const upd of chunk.locationUpdates) {
           await client.query(
-            `UPDATE tmf_geographic_location
+            `UPDATE geographic_location
                 SET geometry_type = $2, geometry = $3, spatial_ref = $4, reference_point = $5, updated_at = $6
               WHERE id = $1`,
             [
@@ -851,18 +851,18 @@ async function main() {
             'characteristics',
           ];
           await linkAdministrativeCities(client, addressRows);
-          await client.bulkInsert('tmf_geographic_address', columns, addressRows);
+          await client.bulkInsert('geographic_address', columns, addressRows);
         }
         for (const upd of chunk.addressLocationUpdates) {
           await client.query(
-            `UPDATE tmf_geographic_address SET geographic_location_id = $2, updated_at = $3 WHERE id = $1`,
+            `UPDATE geographic_address SET geographic_location_id = $2, updated_at = $3 WHERE id = $1`,
             [upd.addressId, upd.locationId, new Date().toISOString()],
           );
         }
         if (chunk.newSites.length > 0) {
           await linkSiteAdministrativeCities(client, chunk.newSites);
           await client.bulkInsert(
-            'tmf_geographic_site',
+            'geographic_site',
             [
               'id',
               'tenant_id',
@@ -884,7 +884,7 @@ async function main() {
         }
         if (chunk.newHistory.length > 0) {
           await client.bulkInsert(
-            'tmf_geographic_site_status_history',
+            'geographic_site_status_history',
             [
               'id',
               'site_id',
@@ -901,7 +901,7 @@ async function main() {
         }
         for (const upd of chunk.siteUpdates) {
           await client.query(
-            `UPDATE tmf_geographic_site
+            `UPDATE geographic_site
                 SET site_specification_id = $2, note = $3, geographic_address_id = $4,
                     geographic_location_id = $5, characteristics = $6, updated_at = $7
               WHERE id = $1`,
@@ -924,7 +924,7 @@ async function main() {
             created_at: new Date().toISOString(),
           }));
           await client.bulkInsert(
-            'geo_project_site',
+            'project_site',
             ['project_id', 'site_id', 'position', 'created_at'],
             linkRowsToInsert,
             { ignoreDuplicates: true },
@@ -941,17 +941,17 @@ async function main() {
     console.log('\nGravado com sucesso.');
 
     // Estatísticas do otimizador ficam presas na contagem de antes da carga (o Oracle de dev
-    // chegou a achar que geo_project_site tinha 6 linhas com 62 mil gravadas) — sem isto todo
+    // chegou a achar que project_site tinha 6 linhas com 62 mil gravadas) — sem isto todo
     // ganho de índice desta carga é anulado pelo CBO escolhendo o plano errado.
     await recountAdministrativeCityTenant(client);
     console.log('\nAtualizando estatísticas...');
     for (const table of [
-      'tmf_geographic_location',
-      'tmf_geographic_address',
-      'tmf_geographic_site',
-      'tmf_geographic_site_status_history',
-      'geo_project',
-      'geo_project_site',
+      'geographic_location',
+      'geographic_address',
+      'geographic_site',
+      'geographic_site_status_history',
+      'project',
+      'project_site',
     ]) {
       await client.gatherStats(table);
     }

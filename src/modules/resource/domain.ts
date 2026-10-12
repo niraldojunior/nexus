@@ -80,7 +80,7 @@ export type ResourceStatusCatalogEntry = {
 };
 
 /**
- * Entrada do histórico de um recurso (issue #171). Projeção de leitura de `tmf_audit_log`, que
+ * Entrada do histórico de um recurso (issue #171). Projeção de leitura de `user_audit_log`, que
  * `recordMutation` já alimenta em toda mutação via `ResourceService.emit()` — não há tabela nova.
  *
  * ⚠️ As cargas em massa gravam por SQL direto e **não** passam pelo audit, então o histórico
@@ -497,7 +497,7 @@ export type ResourceBase = {
   resourceType: string;
   status: ResourceStatus;
   /**
-   * Motivo granular por trás do `status` SID, resolvido em `tmf_resource_status_catalog`
+   * Motivo granular por trás do `status` SID, resolvido em `resource_status_catalog`
    * (ex.: `blocked_risk_area` sob `status='suspended'`). Extensível via catálogo (C9) —
    * `status` continua sendo o eixo canônico fechado.
    */
@@ -523,7 +523,7 @@ export type PhysicalResource = ResourceBase & {
   label?: string;
   /** ID Imobilizado (SAP) — referência patrimonial do exemplar. */
   assetReference?: string;
-  /** Projeto de implantação que originou o recurso (`geo_project.id`). */
+  /** Projeto de implantação que originou o recurso (`project.id`). */
   projectId?: string;
 };
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Migra a characteristic livre `substatus` dos recursos para `status_code`, resolvido no catálogo
- * `tmf_resource_status_catalog` (issue #171).
+ * `resource_status_catalog` (issue #171).
  *
  * O script NÃO remove `substatus`: ele fica como rastreabilidade da origem nesta fase. Novas leituras
  * passam a preferir `status_code`; a remoção só poderá ocorrer depois da homologação do backfill.
@@ -31,7 +31,7 @@ async function loadPending(db) {
   return (
     await db.query(
       `SELECT r.id, jt.substatus
-         FROM tmf_physical_resource r,
+         FROM resource_physical r,
               JSON_TABLE(r.characteristics, '$[*]' COLUMNS (
                 char_name VARCHAR2(255) PATH '$.name',
                 substatus VARCHAR2(4000) PATH '$.value'
@@ -79,7 +79,7 @@ async function main() {
       for (const batch of chunks(ids, CHUNK_SIZE)) {
         const placeholders = batch.map((_, index) => `$${index + 2}`).join(', ');
         const result = await db.query(
-          `UPDATE tmf_physical_resource
+          `UPDATE resource_physical
               SET status_code = $1, updated_at = CURRENT_TIMESTAMP
             WHERE status_code IS NULL AND id IN (${placeholders})`,
           [code, ...batch],

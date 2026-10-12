@@ -7,7 +7,7 @@ export class OracleEventRepository implements IEventRepository {
 
   public async appendEvent(event: TmfEvent): Promise<TmfEvent> {
     await this.db.run(
-      `INSERT INTO tmf_event (id, event_type, event_time, source, event_data, correlation_id)
+      `INSERT INTO environment_event (id, event_type, event_time, source, event_data, correlation_id)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        event_type = excluded.event_type,
@@ -38,7 +38,7 @@ export class OracleEventRepository implements IEventRepository {
       correlation_id?: string | null;
     }>(
       `SELECT id, event_type, event_time, source, event_data, correlation_id
-       FROM tmf_event
+       FROM environment_event
        WHERE id = ?`,
       [id],
     );
@@ -77,7 +77,7 @@ export class OracleEventRepository implements IEventRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT id, event_type, event_time, source, event_data, correlation_id FROM tmf_event',
+      'SELECT id, event_type, event_time, source, event_data, correlation_id FROM environment_event',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY event_time DESC, id DESC',
       limitClause,

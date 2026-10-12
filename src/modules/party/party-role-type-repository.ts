@@ -121,7 +121,7 @@ export class PartyRoleTypeRepository {
         // pré-migration V24), o fallback por roleName continua correto porque antes da V24 só
         // existia um PartyRoleType por roleName.
         await this.db.run(
-          `UPDATE tmf_party_role SET name = ?, updated_at = ?
+          `UPDATE party_role SET name = ?, updated_at = ?
             WHERE tenant_id = ? AND (role_type_id = ? OR (role_type_id IS NULL AND name = ?))`,
           [nextRoleName, now, tenantId, id, current.roleName],
         );
@@ -156,8 +156,8 @@ export class PartyRoleTypeRepository {
     const placeholders = roleTypeIds.map(() => '?').join(', ');
     return await this.db.all<{ id: string; name: string }>(
       `SELECT DISTINCT p.id, p.name
-         FROM tmf_party p
-         JOIN tmf_party_role r ON r.party_id = p.id
+         FROM party p
+         JOIN party_role r ON r.party_id = p.id
         WHERE r.role_type_id IN (${placeholders})
           AND (r.tenant_id = ? OR r.tenant_id IS NULL)
           AND r.status = 'active'
@@ -183,8 +183,8 @@ export class PartyRoleTypeRepository {
       : { clause: 'r.name = ?', param: roleName };
     const orgRows = await this.db.all<{ id: string; name: string }>(
       `SELECT DISTINCT p.id, p.name
-         FROM tmf_party p
-         JOIN tmf_party_role r ON r.party_id = p.id
+         FROM party p
+         JOIN party_role r ON r.party_id = p.id
         WHERE ${orgFilter.clause}
           AND (r.tenant_id = ? OR r.tenant_id IS NULL)
           AND r.status = 'active'

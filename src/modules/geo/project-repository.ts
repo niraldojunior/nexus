@@ -67,7 +67,7 @@ export type UpdateGeoProjectInput = {
 };
 
 // Observação de trabalho e endereço GEONET de um local, por dentro do vínculo com o
-// projeto (não é atributo do Site — ver nota em schema.ts sobre geo_project_site).
+// projeto (não é atributo do Site — ver nota em schema.ts sobre project_site).
 export type GeoProjectSiteLink = {
   siteId: string;
   note: string | null;
@@ -100,7 +100,7 @@ export type UpdateGeoProjectSiteLinkInput = {
 
 // Mancha de agrupamento espacial dos locais de um Projeto (REQ-MOD01-017), gerada por
 // scripts/build-project-areas.mjs — ver src/modules/geo/project-area-grid.ts para o algoritmo.
-// A geometria em si vive em tmf_geographic_location (Polygon, TMF675); esta forma é a junção
+// A geometria em si vive em geographic_location (Polygon, TMF675); esta forma é a junção
 // pronta para o mapa (id da Location + geometria + classificação), sem o chamador precisar
 // saber que a mancha é uma Location por baixo.
 export type GeoProjectArea = {
@@ -125,7 +125,7 @@ export type CreateProjectAreaInput = {
 };
 
 // Location (Polygon) que o chamador (scripts/build-project-areas.mjs) já monta pronta para
-// gravação — mesma forma que build-coverage.mjs monta para tmf_geographic_location.
+// gravação — mesma forma que build-coverage.mjs monta para geographic_location.
 export type CreateProjectAreaLocationInput = {
   id: string;
   geometry: string;
@@ -221,18 +221,18 @@ const PROJECT_SELECT = `
          COALESCE(sc.behavior, 'planning') AS statusBehavior, p.created_by AS createdBy,
          p.created_at AS createdAt, p.updated_at AS updatedAt,
          p.archived_at AS archivedAt, p.archived_by AS archivedBy,
-         (SELECT COUNT(*) FROM geo_project_site ps WHERE ps.project_id = p.id) AS siteCount,
-         (SELECT COUNT(*) FROM geo_project_resource pr WHERE pr.project_id = p.id AND pr.detached_at IS NULL) AS resourceCount,
-         (SELECT COUNT(*) FROM geo_project_resource pr
-            JOIN tmf_physical_resource r ON r.id = pr.resource_id
-            JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-            JOIN tmf_resource_type rt
+         (SELECT COUNT(*) FROM project_site ps WHERE ps.project_id = p.id) AS siteCount,
+         (SELECT COUNT(*) FROM project_resource pr WHERE pr.project_id = p.id AND pr.detached_at IS NULL) AS resourceCount,
+         (SELECT COUNT(*) FROM project_resource pr
+            JOIN resource_physical r ON r.id = pr.resource_id
+            JOIN resource_specification rs ON rs.id = r.resource_specification_id
+            JOIN resource_type rt
               ON rt.id = rs.resource_type_id
            WHERE pr.project_id = p.id AND pr.detached_at IS NULL
              AND rt.code IN (${PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})) AS infrastructureCount,
-         (SELECT COUNT(*) FROM geo_project_area pa WHERE pa.project_id = p.id) AS areaCount
-    FROM geo_project p
-    LEFT JOIN geo_project_status_catalog sc
+         (SELECT COUNT(*) FROM project_area pa WHERE pa.project_id = p.id) AS areaCount
+    FROM project p
+    LEFT JOIN project_status_catalog sc
       ON sc.tenant_id = p.tenant_id AND sc.code = p.status_code
 `;
 
@@ -288,12 +288,12 @@ export class GeoProjectRepository {
       // ON CONFLICT é específico de Postgres/SQLite. O runtime corporativo usa Oracle,
       // portanto o bootstrap precisa ser simples e portável.
       const existing = await this.db.get<{ code: string }>(
-        `SELECT code FROM geo_project_status_catalog WHERE tenant_id = ? AND code = ?`,
+        `SELECT code FROM project_status_catalog WHERE tenant_id = ? AND code = ?`,
         [tenantId, item.code],
       );
       if (!existing) {
         await this.db.run(
-          `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
+          `INSERT INTO project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [tenantId, item.code, item.name, item.sortOrder, item.active ? 1 : 0, item.behavior],
         );
@@ -307,7 +307,7 @@ export class GeoProjectRepository {
     const rows = await this.db.all<GeoProjectStatusCatalogItem & { active: unknown }>(
       `SELECT code, name, sort_order AS sortOrder,
               CASE WHEN active = 1 THEN 1 ELSE 0 END AS active, behavior
-         FROM geo_project_status_catalog WHERE tenant_id = ? ORDER BY sort_order, code`,
+         FROM project_status_catalog WHERE tenant_id = ? ORDER BY sort_order, code`,
       [tenantId],
     );
     return rows.map((row) => ({ ...row, active: Number(row.active) === 1 }));
@@ -321,7 +321,7 @@ export class GeoProjectRepository {
     const row = await this.db.get<GeoProjectStatusCatalogItem & { active: unknown }>(
       `SELECT code, name, sort_order AS sortOrder,
               CASE WHEN active = 1 THEN 1 ELSE 0 END AS active, behavior
-         FROM geo_project_status_catalog WHERE tenant_id = ? AND code = ?`,
+         FROM project_status_catalog WHERE tenant_id = ? AND code = ?`,
       [tenantId, code],
     );
     return row ? { ...row, active: Number(row.active) === 1 } : null;
@@ -332,7 +332,7 @@ export class GeoProjectRepository {
   // "legacy-cancelled", que ficam de fora do cálculo).
   private async nextStatusCode(tenantId: string): Promise<string> {
     const rows = await this.db.all<{ code: string }>(
-      `SELECT code FROM geo_project_status_catalog WHERE tenant_id = ?`,
+      `SELECT code FROM project_status_catalog WHERE tenant_id = ?`,
       [tenantId],
     );
     const highest = rows.reduce((max, row) => {
@@ -349,7 +349,7 @@ export class GeoProjectRepository {
     await this.ensureStatusCatalog(tenantId);
     const code = await this.nextStatusCode(tenantId);
     await this.db.run(
-      `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
+      `INSERT INTO project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [tenantId, code, item.name, item.sortOrder, item.active ? 1 : 0, item.behavior],
     );
@@ -364,7 +364,7 @@ export class GeoProjectRepository {
     const current = await this.getStatusCatalogItem(tenantId, code);
     if (!current) return null;
     await this.db.run(
-      `UPDATE geo_project_status_catalog SET name = ?, sort_order = ?, active = ?, behavior = ?
+      `UPDATE project_status_catalog SET name = ?, sort_order = ?, active = ?, behavior = ?
         WHERE tenant_id = ? AND code = ?`,
       [
         patch.name ?? current.name,
@@ -398,7 +398,7 @@ export class GeoProjectRepository {
 
   async archive(tenantId: string, id: string, actorSub: string): Promise<GeoProject | null> {
     await this.db.run(
-      `UPDATE geo_project SET archived_at = ?, archived_by = ?, updated_at = ?
+      `UPDATE project SET archived_at = ?, archived_by = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ? AND archived_at IS NULL`,
       [new Date().toISOString(), actorSub, new Date().toISOString(), tenantId, id],
     );
@@ -415,7 +415,7 @@ export class GeoProjectRepository {
     const now = new Date().toISOString();
     const statusCode = input.statusCode ?? '11';
     await this.db.run(
-      `INSERT INTO geo_project
+      `INSERT INTO project
           (id, tenant_id, name, description, icon_data_url, status, status_code, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -442,7 +442,7 @@ export class GeoProjectRepository {
     const existing = await this.get(tenantId, id);
     if (!existing) return null;
     await this.db.run(
-      `UPDATE geo_project
+      `UPDATE project
           SET name = ?, description = ?, icon_data_url = ?, status = ?, status_code = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`,
       [
@@ -464,16 +464,16 @@ export class GeoProjectRepository {
   // (C6: aqui não se decide o destino do Site, só se descobre quais existem).
   async remove(tenantId: string, id: string): Promise<string[]> {
     const siteIds = await this.listSiteIds(tenantId, id);
-    await this.db.run(`DELETE FROM geo_project_site WHERE project_id = ?`, [id]);
-    await this.db.run(`DELETE FROM geo_project WHERE tenant_id = ? AND id = ?`, [tenantId, id]);
+    await this.db.run(`DELETE FROM project_site WHERE project_id = ?`, [id]);
+    await this.db.run(`DELETE FROM project WHERE tenant_id = ? AND id = ?`, [tenantId, id]);
     return siteIds;
   }
 
   async listSiteIds(tenantId: string, projectId: string): Promise<string[]> {
     const rows = await this.db.all<{ siteId: string }>(
       `SELECT ps.site_id AS siteId
-         FROM geo_project_site ps
-         JOIN geo_project p ON p.id = ps.project_id
+         FROM project_site ps
+         JOIN project p ON p.id = ps.project_id
         WHERE p.tenant_id = ? AND ps.project_id = ?
         ORDER BY ps.position`,
       [tenantId, projectId],
@@ -488,8 +488,8 @@ export class GeoProjectRepository {
   async hasSiteLink(tenantId: string, projectId: string, siteId: string): Promise<boolean> {
     const row = await this.db.get<{ one: number }>(
       `SELECT 1 AS one
-         FROM geo_project_site ps
-         JOIN geo_project p ON p.id = ps.project_id
+         FROM project_site ps
+         JOIN project p ON p.id = ps.project_id
         WHERE p.tenant_id = ? AND ps.project_id = ? AND ps.site_id = ?
         LIMIT 1`,
       [tenantId, projectId, siteId],
@@ -512,9 +512,9 @@ export class GeoProjectRepository {
         ? `AND pr.resource_kind = 'PhysicalResource'
            AND EXISTS (
              SELECT 1
-               FROM tmf_physical_resource r
-               JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-               JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+               FROM resource_physical r
+               JOIN resource_specification rs ON rs.id = r.resource_specification_id
+               JOIN resource_type rt ON rt.id = rs.resource_type_id
               WHERE r.id = pr.resource_id
                 AND rt.code IN (${PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})
            )`
@@ -523,7 +523,7 @@ export class GeoProjectRepository {
       `SELECT pr.id, pr.resource_id AS resourceId, pr.resource_kind AS resourceKind,
               pr.origin_kind AS originKind, pr.position, pr.linked_at AS linkedAt,
               pr.detached_at AS detachedAt, pr.detached_reason AS detachedReason
-         FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
+         FROM project_resource pr JOIN project p ON p.id = pr.project_id
         WHERE p.tenant_id = ? AND pr.project_id = ? ${options.includeDetached ? '' : 'AND pr.detached_at IS NULL'}
           ${infrastructureFilter}
         ORDER BY pr.position LIMIT ? OFFSET ?`,
@@ -558,9 +558,9 @@ export class GeoProjectRepository {
         : await this.db.all<GeoProjectSearchItem>(
             `SELECT s.id, 'site' AS kind, s.name AS label,
               CASE WHEN LOWER(s.name) LIKE LOWER(?) THEN 0 ELSE 1 END AS rank
-         FROM geo_project_site ps
-         JOIN geo_project p ON p.id = ps.project_id
-         JOIN tmf_geographic_site s ON s.id = ps.site_id
+         FROM project_site ps
+         JOIN project p ON p.id = ps.project_id
+         JOIN geographic_site s ON s.id = ps.site_id
         WHERE p.tenant_id = ? AND ps.project_id = ? AND LOWER(s.name) LIKE LOWER(?)
         ORDER BY rank, s.name
         LIMIT ?`,
@@ -576,11 +576,11 @@ export class GeoProjectRepository {
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
                      WHEN LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) THEN 1
                      WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
-           FROM geo_project_resource pr
-           JOIN geo_project p ON p.id = pr.project_id
-           JOIN tmf_physical_resource r ON r.id = pr.resource_id
-           LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-           LEFT JOIN tmf_resource_type rt
+           FROM project_resource pr
+           JOIN project p ON p.id = pr.project_id
+           JOIN resource_physical r ON r.id = pr.resource_id
+           LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+           LEFT JOIN resource_type rt
              ON rt.id = rs.resource_type_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'PhysicalResource'
@@ -594,11 +594,11 @@ export class GeoProjectRepository {
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
                      WHEN LOWER(COALESCE(rt.code, '')) LIKE LOWER(?) THEN 1
                      WHEN LOWER(COALESCE(rs.name, '')) LIKE LOWER(?) THEN 1 ELSE 2 END AS rank
-           FROM geo_project_resource pr
-           JOIN geo_project p ON p.id = pr.project_id
-           JOIN tmf_logical_resource r ON r.id = pr.resource_id
-           LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-           LEFT JOIN tmf_resource_type rt
+           FROM project_resource pr
+           JOIN project p ON p.id = pr.project_id
+           JOIN resource_logical r ON r.id = pr.resource_id
+           LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+           LEFT JOIN resource_type rt
              ON rt.id = rs.resource_type_id
           WHERE p.tenant_id = ? AND pr.project_id = ? AND pr.detached_at IS NULL
             AND pr.resource_kind = 'LogicalResource'
@@ -635,7 +635,7 @@ export class GeoProjectRepository {
     return (
       (await this.db.get<{ projectId: string; projectName: string }>(
         `SELECT p.id AS projectId, p.name AS projectName
-         FROM geo_project_resource pr JOIN geo_project p ON p.id = pr.project_id
+         FROM project_resource pr JOIN project p ON p.id = pr.project_id
         WHERE p.tenant_id = ? AND pr.resource_id = ? AND pr.detached_at IS NULL
           AND p.status NOT IN ('terminated', 'cancelled') AND p.archived_at IS NULL`,
         [tenantId, resourceId],
@@ -652,7 +652,7 @@ export class GeoProjectRepository {
   ): Promise<GeoProjectResourceLink> {
     const now = new Date().toISOString();
     const max = await this.db.get<{ maxPos: number | null }>(
-      `SELECT MAX(position) AS maxPos FROM geo_project_resource WHERE project_id = ?`,
+      `SELECT MAX(position) AS maxPos FROM project_resource WHERE project_id = ?`,
       [projectId],
     );
     const link: GeoProjectResourceLink = {
@@ -666,11 +666,11 @@ export class GeoProjectRepository {
       detachedReason: null,
     };
     await this.db.run(
-      `INSERT INTO geo_project_resource (id, project_id, resource_id, resource_kind, origin_kind, position, linked_at, linked_by)
+      `INSERT INTO project_resource (id, project_id, resource_id, resource_kind, origin_kind, position, linked_at, linked_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [link.id, projectId, resourceId, resourceKind, originKind, link.position, now, actorSub],
     );
-    await this.db.run(`UPDATE geo_project SET updated_at = ? WHERE id = ?`, [now, projectId]);
+    await this.db.run(`UPDATE project SET updated_at = ? WHERE id = ?`, [now, projectId]);
     return link;
   }
 
@@ -681,7 +681,7 @@ export class GeoProjectRepository {
     reason: string,
   ): Promise<boolean> {
     const result = await this.db.run(
-      `UPDATE geo_project_resource SET detached_at = ?, detached_by = ?, detached_reason = ?
+      `UPDATE project_resource SET detached_at = ?, detached_by = ?, detached_reason = ?
         WHERE project_id = ? AND resource_id = ? AND detached_at IS NULL`,
       [new Date().toISOString(), actorSub, reason, projectId, resourceId],
     );
@@ -698,8 +698,8 @@ export class GeoProjectRepository {
   ): Promise<{ projectId: string; projectName: string } | null> {
     const row = await this.db.get<{ projectId: string; projectName: string }>(
       `SELECT p.id AS projectId, p.name AS projectName
-         FROM geo_project_site ps
-         JOIN geo_project p ON p.id = ps.project_id
+         FROM project_site ps
+         JOIN project p ON p.id = ps.project_id
         WHERE p.tenant_id = ? AND ps.site_id = ?`,
       [tenantId, siteId],
     );
@@ -712,17 +712,17 @@ export class GeoProjectRepository {
     options: { geonetAddressId?: string | null } = {},
   ): Promise<void> {
     const row = await this.db.get<{ maxPos: number | null }>(
-      `SELECT MAX(position) AS maxPos FROM geo_project_site WHERE project_id = ?`,
+      `SELECT MAX(position) AS maxPos FROM project_site WHERE project_id = ?`,
       [projectId],
     );
     const position = (row?.maxPos ?? -1) + 1;
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO geo_project_site (project_id, site_id, position, geonet_address_id, created_at)
+      `INSERT INTO project_site (project_id, site_id, position, geonet_address_id, created_at)
        VALUES (?, ?, ?, ?, ?)`,
       [projectId, siteId, position, options.geonetAddressId ?? null, now],
     );
-    await this.db.run(`UPDATE geo_project SET updated_at = ? WHERE id = ?`, [now, projectId]);
+    await this.db.run(`UPDATE project SET updated_at = ? WHERE id = ?`, [now, projectId]);
   }
 
   // Locais do projeto com a anotação de trabalho e o endereço GEONET de origem (ver
@@ -731,8 +731,8 @@ export class GeoProjectRepository {
   async listSiteLinks(tenantId: string, projectId: string): Promise<GeoProjectSiteLink[]> {
     const rows = await this.db.all<ProjectSiteLinkRow>(
       `SELECT ps.site_id AS siteId, ps.note, ps.geonet_address_id AS geonetAddressId
-         FROM geo_project_site ps
-         JOIN geo_project p ON p.id = ps.project_id
+         FROM project_site ps
+         JOIN project p ON p.id = ps.project_id
         WHERE p.tenant_id = ? AND ps.project_id = ?
         ORDER BY ps.position`,
       [tenantId, projectId],
@@ -746,7 +746,7 @@ export class GeoProjectRepository {
     patch: UpdateGeoProjectSiteLinkInput,
   ): Promise<void> {
     if (patch.note === undefined) return;
-    await this.db.run(`UPDATE geo_project_site SET note = ? WHERE project_id = ? AND site_id = ?`, [
+    await this.db.run(`UPDATE project_site SET note = ? WHERE project_id = ? AND site_id = ?`, [
       patch.note,
       projectId,
       siteId,
@@ -755,16 +755,16 @@ export class GeoProjectRepository {
 
   async unlinkSite(projectId: string, siteId: string): Promise<boolean> {
     const result = await this.db.run(
-      `DELETE FROM geo_project_site WHERE project_id = ? AND site_id = ?`,
+      `DELETE FROM project_site WHERE project_id = ? AND site_id = ?`,
       [projectId, siteId],
     );
     return result.changes > 0;
   }
 
   // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
-  // scripts/build-project-areas.mjs. A geometria vem de tmf_geographic_location; o resto do
+  // scripts/build-project-areas.mjs. A geometria vem de geographic_location; o resto do
   // relatório (siteIds de amostra, centroide, área) fica em colunas próprias de
-  // geo_project_area — mesma extensão de plataforma que geo_project_site.note, não
+  // project_area — mesma extensão de plataforma que project_site.note, não
   // characteristic TMF (C1 não se aplica).
   async listAreas(tenantId: string, projectId: string): Promise<GeoProjectArea[]> {
     const rows = await this.db.all<{
@@ -780,14 +780,14 @@ export class GeoProjectRepository {
       geometry: string | null;
     }>(
       `SELECT pa.location_id AS locationId, pa.kind, pa.site_count AS siteCount,
-              (SELECT COUNT(*) FROM geo_project_area_resource par
+              (SELECT COUNT(*) FROM project_area_resource par
                 WHERE par.project_id = pa.project_id AND par.location_id = pa.location_id) AS resourceCount,
               pa.site_ids AS siteIds, pa.centroid_lng AS centroidLng,
               pa.centroid_lat AS centroidLat, pa.area_km2 AS areaKm2,
               pa.generated_at AS generatedAt, l.geometry
-         FROM geo_project_area pa
-         JOIN geo_project p ON p.id = pa.project_id
-         JOIN tmf_geographic_location l ON l.id = pa.location_id
+         FROM project_area pa
+         JOIN project p ON p.id = pa.project_id
+         JOIN geographic_location l ON l.id = pa.location_id
         WHERE p.tenant_id = ? AND pa.project_id = ?
         ORDER BY pa.position`,
       [tenantId, projectId],
@@ -830,19 +830,19 @@ export class GeoProjectRepository {
     if (!project) return;
 
     const existing = await this.db.all<{ locationId: string }>(
-      `SELECT location_id AS locationId FROM geo_project_area WHERE project_id = ?`,
+      `SELECT location_id AS locationId FROM project_area WHERE project_id = ?`,
       [projectId],
     );
     if (existing.length > 0) {
-      await this.db.run(`DELETE FROM geo_project_area WHERE project_id = ?`, [projectId]);
+      await this.db.run(`DELETE FROM project_area WHERE project_id = ?`, [projectId]);
       for (const row of existing) {
-        await this.db.run(`DELETE FROM tmf_geographic_location WHERE id = ?`, [row.locationId]);
+        await this.db.run(`DELETE FROM geographic_location WHERE id = ?`, [row.locationId]);
       }
     }
 
     for (const location of locations) {
       await this.db.run(
-        `INSERT INTO tmf_geographic_location
+        `INSERT INTO geographic_location
             (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
          VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
         [location.id, location.geometry, `PROJECT:${projectId}`, location.characteristics],
@@ -850,7 +850,7 @@ export class GeoProjectRepository {
     }
     for (const [position, area] of areas.entries()) {
       await this.db.run(
-        `INSERT INTO geo_project_area
+        `INSERT INTO project_area
             (project_id, location_id, kind, site_count, site_ids, centroid_lng, centroid_lat, area_km2, position)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -866,7 +866,7 @@ export class GeoProjectRepository {
         ],
       );
     }
-    await this.db.run(`UPDATE geo_project SET updated_at = ? WHERE id = ?`, [
+    await this.db.run(`UPDATE project SET updated_at = ? WHERE id = ?`, [
       new Date().toISOString(),
       projectId,
     ]);

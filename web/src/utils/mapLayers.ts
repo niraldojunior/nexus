@@ -463,7 +463,7 @@ const STORAGE_KEY_EXPANDED_GROUPS_BASE = 'nexus.geo.mapLayerControl.expandedGrou
 // Preferências antigas (sem namespace) migram uma única vez para o primeiro ambiente legacy que
 // ainda não tiver chave própria — um ambiente empty nunca lê nem apaga essas chaves legadas.
 // 'legacy' é o environmentId que EnvironmentProfileRepository.get() devolve para todo namespace
-// sem linha própria em nexus_environment (schema pré-v17 ou perfil nunca marcado).
+// sem linha própria em environment (schema pré-v17 ou perfil nunca marcado).
 const LEGACY_MIGRATION_ENVIRONMENT_ID = 'legacy';
 
 export const namespacedKey = (

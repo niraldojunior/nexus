@@ -89,7 +89,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO tmf_geographic_location
+      `INSERT INTO geographic_location
        (id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
         source_system, source_ref, accuracy_level,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
@@ -141,7 +141,7 @@ export class OracleGeoRepository implements IGeoRepository {
       `SELECT id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               source_system, source_ref, accuracy_level,
               valid_for_start, valid_for_end, characteristics
-       FROM tmf_geographic_location WHERE id = ?`,
+       FROM geographic_location WHERE id = ?`,
       [id],
     );
 
@@ -165,7 +165,7 @@ export class OracleGeoRepository implements IGeoRepository {
       `SELECT id, tenant_id, geometry_type, geometry, spatial_ref, accuracy, reference_point,
               source_system, source_ref, accuracy_level,
               valid_for_start, valid_for_end, characteristics
-       FROM tmf_geographic_location`,
+       FROM geographic_location`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -203,7 +203,7 @@ export class OracleGeoRepository implements IGeoRepository {
     });
     if (tuple) await this.resolveAdministrativeCityId(tuple);
     await this.db.run(
-      `INSERT INTO tmf_geographic_address
+      `INSERT INTO geographic_address
        (id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
         country, geographic_location_id, sub_address, source_system, source_ref,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
@@ -253,7 +253,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const lookup = async (): Promise<string | undefined> =>
       (
         await this.db.get<{ id: string }>(
-          `SELECT id FROM geo_administrative_city
+          `SELECT id FROM geographic_administrative_city
            WHERE country_code = ? AND state_code = ? AND city_key = ?`,
           [tuple.countryCode, tuple.stateCode, tuple.cityKey],
         )
@@ -263,7 +263,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const id = createCanonicalId();
     try {
       await this.db.run(
-        `INSERT INTO geo_administrative_city
+        `INSERT INTO geographic_administrative_city
          (id, country_code, country_name, state_code, city_name, city_key, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -298,7 +298,7 @@ export class OracleGeoRepository implements IGeoRepository {
               a.postcode, a.country,
               a.geographic_location_id, a.sub_address, a.source_system, a.source_ref,
               a.valid_for_start, a.valid_for_end, a.characteristics
-       FROM tmf_geographic_address a
+       FROM geographic_address a
        WHERE a.id = ?`,
       [id],
     );
@@ -389,7 +389,7 @@ export class OracleGeoRepository implements IGeoRepository {
       `SELECT id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode, country,
               geographic_location_id, sub_address, source_system, source_ref, valid_for_start, valid_for_end,
               ${query?.includeCharacteristics === false ? 'NULL' : 'characteristics'} AS characteristics
-       FROM tmf_geographic_address`,
+       FROM geographic_address`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY street_name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -410,7 +410,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO tmf_geographic_site_specification
+      `INSERT INTO geographic_site_specification
        (id, name, code, category, site_role, lifecycle_status, description, allowed_parent_spec_ids, allowed_child_spec_ids,
         valid_for_start, valid_for_end, characteristics, is_bootstrap, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -458,7 +458,7 @@ export class OracleGeoRepository implements IGeoRepository {
       `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
-       FROM tmf_geographic_site_specification
+       FROM geographic_site_specification
        WHERE id = ?`,
       [id],
     );
@@ -475,7 +475,7 @@ export class OracleGeoRepository implements IGeoRepository {
       `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
-       FROM tmf_geographic_site_specification
+       FROM geographic_site_specification
        WHERE LOWER(code) = LOWER(?)`,
       [code.trim()],
     );
@@ -520,7 +520,7 @@ export class OracleGeoRepository implements IGeoRepository {
       `SELECT id, name, code, category, site_role, lifecycle_status, description,
               allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
               characteristics, is_bootstrap
-       FROM tmf_geographic_site_specification`,
+       FROM geographic_site_specification`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -544,7 +544,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
     if (!identity) {
       await this.db.run(
-        `DELETE FROM tmf_geo_site_spec_visual_identity
+        `DELETE FROM geographic_site_spec_visual_identity
          WHERE tenant_id = ? AND site_specification_id = ?`,
         [tenantId, specId],
       );
@@ -555,7 +555,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const iconAssetId = identity.kind === 'asset' ? identity.assetId : null;
 
     await this.db.run(
-      `INSERT INTO tmf_geo_site_spec_visual_identity
+      `INSERT INTO geographic_site_spec_visual_identity
        (tenant_id, site_specification_id, icon_code, icon_asset_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(tenant_id, site_specification_id) DO UPDATE SET
@@ -577,24 +577,24 @@ export class OracleGeoRepository implements IGeoRepository {
   ): Promise<void> {
     if (input.allowedParentSpecIds.length === 0) {
       await this.db.run(
-        `DELETE FROM tmf_geographic_site_spec_containment_rule WHERE child_spec_id = ?`,
+        `DELETE FROM geographic_site_spec_containment_rule WHERE child_spec_id = ?`,
         [specId],
       );
     } else {
       await this.db.run(
-        `DELETE FROM tmf_geographic_site_spec_containment_rule
+        `DELETE FROM geographic_site_spec_containment_rule
          WHERE child_spec_id = ? AND parent_spec_id NOT IN (${input.allowedParentSpecIds.map(() => '?').join(', ')})`,
         [specId, ...input.allowedParentSpecIds],
       );
     }
     if (input.allowedChildSpecIds.length === 0) {
       await this.db.run(
-        `DELETE FROM tmf_geographic_site_spec_containment_rule WHERE parent_spec_id = ?`,
+        `DELETE FROM geographic_site_spec_containment_rule WHERE parent_spec_id = ?`,
         [specId],
       );
     } else {
       await this.db.run(
-        `DELETE FROM tmf_geographic_site_spec_containment_rule
+        `DELETE FROM geographic_site_spec_containment_rule
          WHERE parent_spec_id = ? AND child_spec_id NOT IN (${input.allowedChildSpecIds.map(() => '?').join(', ')})`,
         [specId, ...input.allowedChildSpecIds],
       );
@@ -602,7 +602,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
     for (const parentSpecId of input.allowedParentSpecIds) {
       await this.db.run(
-        `INSERT INTO tmf_geographic_site_spec_containment_rule
+        `INSERT INTO geographic_site_spec_containment_rule
          (parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected)
          VALUES (?, ?, NULL, NULL, ?)
          ON CONFLICT(parent_spec_id, child_spec_id) DO UPDATE SET
@@ -613,7 +613,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
     for (const childSpecId of input.allowedChildSpecIds) {
       await this.db.run(
-        `INSERT INTO tmf_geographic_site_spec_containment_rule
+        `INSERT INTO geographic_site_spec_containment_rule
          (parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected)
          VALUES (?, ?, NULL, NULL, ?)
          ON CONFLICT(parent_spec_id, child_spec_id) DO UPDATE SET
@@ -645,7 +645,7 @@ export class OracleGeoRepository implements IGeoRepository {
       city_name: string;
     }>(
       `SELECT id, country_code, country_name, state_code, city_name
-       FROM geo_administrative_city
+       FROM geographic_administrative_city
        ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
        ORDER BY country_code, state_code, city_name, id`,
       params,
@@ -661,7 +661,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   public async getSiteAdministrativeCityId(siteId: string): Promise<string | null> {
     const row = await this.db.get<{ administrative_city_id: string | null }>(
-      'SELECT administrative_city_id FROM tmf_geographic_site WHERE id = ?',
+      'SELECT administrative_city_id FROM geographic_site WHERE id = ?',
       [siteId],
     );
     return row?.administrative_city_id ?? null;
@@ -676,7 +676,7 @@ export class OracleGeoRepository implements IGeoRepository {
   ): Promise<void> {
     if (cityId) {
       await this.db.run(
-        `INSERT INTO geo_administrative_city_tenant
+        `INSERT INTO geographic_administrative_city_tenant
          (tenant_id, administrative_city_id, active_site_count, updated_at)
          VALUES (?, ?, 0, ?)
          ON CONFLICT(tenant_id, administrative_city_id) DO UPDATE SET
@@ -684,7 +684,7 @@ export class OracleGeoRepository implements IGeoRepository {
         [tenantId, cityId, new Date().toISOString()],
       );
     }
-    await this.db.run('UPDATE tmf_geographic_site SET administrative_city_id = ? WHERE id = ?', [
+    await this.db.run('UPDATE geographic_site SET administrative_city_id = ? WHERE id = ?', [
       cityId,
       siteId,
     ]);
@@ -707,7 +707,7 @@ export class OracleGeoRepository implements IGeoRepository {
         : '';
       const counts = await this.db.all<{ administrative_city_id: string; total: number }>(
         `SELECT s.administrative_city_id AS administrative_city_id, COUNT(*) AS total
-           FROM tmf_geographic_site s
+           FROM geographic_site s
           WHERE s.tenant_id = ? AND s.parent_site_id IS NULL AND s.status <> 'Retired'
             AND s.administrative_city_id IS NOT NULL ${inClause}
           GROUP BY s.administrative_city_id`,
@@ -716,7 +716,7 @@ export class OracleGeoRepository implements IGeoRepository {
       const positive = new Set(counts.map((row) => row.administrative_city_id));
       for (const row of counts) {
         await this.db.run(
-          `INSERT INTO geo_administrative_city_tenant
+          `INSERT INTO geographic_administrative_city_tenant
            (tenant_id, administrative_city_id, active_site_count, updated_at)
            VALUES (?, ?, ?, ?)
            ON CONFLICT(tenant_id, administrative_city_id) DO UPDATE SET
@@ -729,7 +729,7 @@ export class OracleGeoRepository implements IGeoRepository {
         ? batch.filter((id) => !positive.has(id))
         : (
             await this.db.all<{ administrative_city_id: string }>(
-              `SELECT administrative_city_id FROM geo_administrative_city_tenant
+              `SELECT administrative_city_id FROM geographic_administrative_city_tenant
                 WHERE tenant_id = ? AND active_site_count <> 0`,
               [tenantId],
             )
@@ -738,7 +738,7 @@ export class OracleGeoRepository implements IGeoRepository {
             .filter((id) => !positive.has(id));
       for (const cityId of stale) {
         await this.db.run(
-          `UPDATE geo_administrative_city_tenant SET active_site_count = 0, updated_at = ?
+          `UPDATE geographic_administrative_city_tenant SET active_site_count = 0, updated_at = ?
             WHERE tenant_id = ? AND administrative_city_id = ?`,
           [now, tenantId, cityId],
         );
@@ -751,7 +751,7 @@ export class OracleGeoRepository implements IGeoRepository {
   ): Promise<AdministrativeCitySiteCount[]> {
     const rows = await this.db.all<{ administrative_city_id: string; active_site_count: number }>(
       `SELECT administrative_city_id, active_site_count
-         FROM geo_administrative_city_tenant
+         FROM geographic_administrative_city_tenant
         WHERE tenant_id = ? AND active_site_count > 0`,
       [tenantId],
     );
@@ -765,7 +765,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO tmf_geographic_site
+      `INSERT INTO geographic_site
        (id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
         geographic_address_id, parent_site_id, related_party, site_addresses,
         note, characteristics, created_at, updated_at)
@@ -820,7 +820,7 @@ export class OracleGeoRepository implements IGeoRepository {
       city: string | null;
       state_or_province: string | null;
       country: string | null;
-    }>('SELECT city, state_or_province, country FROM tmf_geographic_address WHERE id = ?', [
+    }>('SELECT city, state_or_province, country FROM geographic_address WHERE id = ?', [
       site.address.id,
     ]);
     if (!address) return;
@@ -847,7 +847,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const row = await this.db.get<GeographicSiteRow>(
       `SELECT id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, site_addresses, note, characteristics
-       FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
+       FROM geographic_site WHERE ${conditions.join(' AND ')}`,
       params,
     );
 
@@ -926,7 +926,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const sql = [
       `SELECT id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
               geographic_address_id, parent_site_id, related_party, site_addresses, note, characteristics
-       FROM tmf_geographic_site`,
+       FROM geographic_site`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -953,7 +953,7 @@ export class OracleGeoRepository implements IGeoRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM tmf_geographic_site ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
+      `SELECT COUNT(*) as count FROM geographic_site ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}`,
       params,
     );
     return Number(row?.count ?? 0);
@@ -970,7 +970,7 @@ export class OracleGeoRepository implements IGeoRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM tmf_geographic_site WHERE ${conditions.join(' AND ')}`,
+      `SELECT COUNT(*) as count FROM geographic_site WHERE ${conditions.join(' AND ')}`,
       params,
     );
     return Number(row?.count ?? 0);
@@ -987,7 +987,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
     const row = await this.db.get<{ count: number }>(
       `SELECT COUNT(*) AS count
-         FROM tmf_geographic_site s
+         FROM geographic_site s
         WHERE s.site_specification_id = ?
           AND EXISTS (
             SELECT 1
@@ -1026,7 +1026,7 @@ export class OracleGeoRepository implements IGeoRepository {
     for (const characteristic of characteristics) {
       const serialized = JSON.stringify(characteristic);
       const result = await this.db.run(
-        `UPDATE tmf_geographic_site s
+        `UPDATE geographic_site s
             SET s.characteristics = CASE
                   WHEN s.characteristics IS NULL
                     OR TRIM(DBMS_LOB.SUBSTR(s.characteristics, 4000, 1)) = '[]'
@@ -1056,7 +1056,7 @@ export class OracleGeoRepository implements IGeoRepository {
     relationship: GeographicSiteRelationship,
   ): Promise<GeographicSiteRelationship> {
     await this.db.run(
-      `INSERT INTO tmf_geographic_site_relationship
+      `INSERT INTO geographic_site_relationship
        (site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(site_from_id, site_to_id, relationship_type) DO UPDATE SET
@@ -1081,7 +1081,7 @@ export class OracleGeoRepository implements IGeoRepository {
     endedAt: string,
   ): Promise<boolean> {
     const result = await this.db.run(
-      `UPDATE tmf_geographic_site_relationship
+      `UPDATE geographic_site_relationship
           SET valid_for_end = ?
         WHERE site_from_id = ?
           AND site_to_id = ?
@@ -1095,7 +1095,7 @@ export class OracleGeoRepository implements IGeoRepository {
   public async listSiteRelationships(siteId: string): Promise<GeographicSiteRelationship[]> {
     const rows = await this.db.all<Omit<GeographicSiteRelationshipRow, 'site_from_id'>>(
       `SELECT site_to_id, relationship_type, valid_for_start, valid_for_end
-       FROM tmf_geographic_site_relationship
+       FROM geographic_site_relationship
        WHERE site_from_id = ?
        ORDER BY relationship_type, site_to_id`,
       [siteId],
@@ -1109,7 +1109,7 @@ export class OracleGeoRepository implements IGeoRepository {
   ): Promise<GeographicRelationshipType> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_geographic_relationship_type
+      `INSERT INTO geographic_relationship_type
        (id, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
         cardinality, lifecycle_status, is_bootstrap, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1146,7 +1146,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const row = await this.db.get<GeographicRelationshipTypeRow>(
       `SELECT id, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
-       FROM tmf_geographic_relationship_type
+       FROM geographic_relationship_type
        WHERE LOWER(code) = LOWER(?)`,
       [code.trim()],
     );
@@ -1176,7 +1176,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const sql = [
       `SELECT id, code, name, inverse_code, is_symmetric, allowed_source_categories, allowed_target_categories,
               cardinality, lifecycle_status, is_bootstrap
-       FROM tmf_geographic_relationship_type`,
+       FROM geographic_relationship_type`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY code',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -1196,7 +1196,7 @@ export class OracleGeoRepository implements IGeoRepository {
     entry: GeographicSiteStatusHistoryEntry,
   ): Promise<GeographicSiteStatusHistoryEntry> {
     await this.db.run(
-      `INSERT INTO tmf_geographic_site_status_history
+      `INSERT INTO geographic_site_status_history
        (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -1226,7 +1226,7 @@ export class OracleGeoRepository implements IGeoRepository {
     }
     const rows = await this.db.all<GeographicSiteStatusHistoryRow>(
       `SELECT id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id
-       FROM tmf_geographic_site_status_history
+       FROM geographic_site_status_history
        WHERE ${conditions.join(' AND ')}
        ORDER BY status_date DESC, id DESC`,
       params,
@@ -1254,7 +1254,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const activeChildSiteCount = Number(
       (
         await this.db.get<{ count: number }>(
-          `SELECT COUNT(*) AS count FROM tmf_geographic_site
+          `SELECT COUNT(*) AS count FROM geographic_site
           WHERE parent_site_id = ? AND status <> 'Retired' ${tenantFilter}`,
           [siteId, ...tenantParams],
         )
@@ -1263,7 +1263,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const activeRelationshipCount = Number(
       (
         await this.db.get<{ count: number }>(
-          `SELECT COUNT(*) AS count FROM tmf_geographic_site_relationship
+          `SELECT COUNT(*) AS count FROM geographic_site_relationship
           WHERE site_from_id = ? AND valid_for_end IS NULL`,
           [siteId],
         )
@@ -1278,31 +1278,31 @@ export class OracleGeoRepository implements IGeoRepository {
     const [activeResourceCount, activeServiceCount, activeOrderCount] = await Promise.all([
       Promise.all([
         countOf(
-          `SELECT COUNT(*) AS count FROM tmf_physical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)`,
+          `SELECT COUNT(*) AS count FROM resource_physical WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)`,
           [siteId, siteId],
         ),
         countOf(
-          `SELECT COUNT(*) AS count FROM tmf_logical_resource WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)`,
+          `SELECT COUNT(*) AS count FROM resource_logical WHERE status <> 'terminated' AND (place_id = ? OR serving_site_id = ?)`,
           [siteId, siteId],
         ),
       ]).then(([a, b]) => a + b),
       Promise.all([
         countOf(
-          `SELECT COUNT(*) AS count FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?`,
+          `SELECT COUNT(*) AS count FROM service_customer_facing WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?`,
           [`%${siteId}%`],
         ),
         countOf(
-          `SELECT COUNT(*) AS count FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?`,
+          `SELECT COUNT(*) AS count FROM service_resource_facing WHERE COALESCE(state, status) <> 'terminated' AND place LIKE ?`,
           [`%${siteId}%`],
         ),
       ]).then(([a, b]) => a + b),
       Promise.all([
         countOf(
-          `SELECT COUNT(*) AS count FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND service_order_item LIKE ?`,
+          `SELECT COUNT(*) AS count FROM order_service WHERE state NOT IN ('completed', 'cancelled', 'failed') AND service_order_item LIKE ?`,
           [`%${siteId}%`],
         ),
         countOf(
-          `SELECT COUNT(*) AS count FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed') AND resource_order_item LIKE ?`,
+          `SELECT COUNT(*) AS count FROM order_resource WHERE state NOT IN ('completed', 'cancelled', 'failed') AND resource_order_item LIKE ?`,
           [`%${siteId}%`],
         ),
       ]).then(([a, b]) => a + b),
@@ -1345,7 +1345,7 @@ export class OracleGeoRepository implements IGeoRepository {
       const childSeed = dialect.inlineRows(idsChunk, 'v', 'id');
       const childRows = await this.db.all<{ id: string }>(
         `SELECT DISTINCT parent_site_id AS id
-           FROM tmf_geographic_site
+           FROM geographic_site
           WHERE parent_site_id IN (SELECT id FROM ${childSeed.sql})
             AND status <> 'Retired' ${tenantFilter}`,
         [...childSeed.binds, ...tenantParams],
@@ -1355,14 +1355,14 @@ export class OracleGeoRepository implements IGeoRepository {
       const relSeed = dialect.inlineRows(idsChunk, 'v', 'id');
       const relRows = await this.db.all<{ id: string }>(
         `SELECT DISTINCT site_from_id AS id
-           FROM tmf_geographic_site_relationship
+           FROM geographic_site_relationship
           WHERE site_from_id IN (SELECT id FROM ${relSeed.sql})
             AND valid_for_end IS NULL`,
         relSeed.binds,
       );
       for (const row of relRows) blocked.add(row.id);
 
-      for (const table of ['tmf_physical_resource', 'tmf_logical_resource']) {
+      for (const table of ['resource_physical', 'resource_logical']) {
         const seed = dialect.inlineRows(idsChunk, 'v', 'id');
         const rows = await this.db.all<{ id: string | null }>(
           `SELECT place_id AS id FROM ${table}
@@ -1392,16 +1392,16 @@ export class OracleGeoRepository implements IGeoRepository {
       }
     };
     await scanEmbeddedIds(
-      `SELECT place AS text FROM tmf_customer_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place IS NOT NULL`,
+      `SELECT place AS text FROM service_customer_facing WHERE COALESCE(state, status) <> 'terminated' AND place IS NOT NULL`,
     );
     await scanEmbeddedIds(
-      `SELECT place AS text FROM tmf_resource_facing_service WHERE COALESCE(state, status) <> 'terminated' AND place IS NOT NULL`,
+      `SELECT place AS text FROM service_resource_facing WHERE COALESCE(state, status) <> 'terminated' AND place IS NOT NULL`,
     );
     await scanEmbeddedIds(
-      `SELECT service_order_item AS text FROM tmf_service_order WHERE state NOT IN ('completed', 'cancelled', 'failed')`,
+      `SELECT service_order_item AS text FROM order_service WHERE state NOT IN ('completed', 'cancelled', 'failed')`,
     );
     await scanEmbeddedIds(
-      `SELECT resource_order_item AS text FROM tmf_resource_order WHERE state NOT IN ('completed', 'cancelled', 'failed')`,
+      `SELECT resource_order_item AS text FROM order_resource WHERE state NOT IN ('completed', 'cancelled', 'failed')`,
     );
 
     return [...blocked];
@@ -1432,10 +1432,10 @@ export class OracleGeoRepository implements IGeoRepository {
     for (const idsChunk of chunk(siteIds, BULK_SITE_CHUNK_SIZE)) {
       const historySeed = dialect.inlineRows(idsChunk, 'v', 'id');
       await this.db.run(
-        `INSERT INTO tmf_geographic_site_status_history
+        `INSERT INTO geographic_site_status_history
             (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
          SELECT ${dialect.newRowId()}, s.id, s.tenant_id, s.status, ?, ?, ?, ?, ?
-           FROM tmf_geographic_site s
+           FROM geographic_site s
           WHERE s.tenant_id = ? AND s.status IN (${fromPlaceholders})
             AND s.id IN (SELECT id FROM ${historySeed.sql})`,
         [
@@ -1452,7 +1452,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
       const updateSeed = dialect.inlineRows(idsChunk, 'v', 'id');
       const result = await this.db.run(
-        `UPDATE tmf_geographic_site
+        `UPDATE geographic_site
             SET status = ?, status_date = ?, status_reason = ?, updated_at = ?
           WHERE tenant_id = ? AND status IN (${fromPlaceholders})
             AND id IN (SELECT id FROM ${updateSeed.sql})`,
@@ -1474,7 +1474,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   public async appendAudit(audit: GeoAuditLog): Promise<GeoAuditLog> {
     await this.db.run(
-      `INSERT INTO tmf_audit_log
+      `INSERT INTO user_audit_log
        (id, tenant_id, actor_sub, action, entity_type, entity_id, event_time, before_state, after_state, trace_id, source_ip)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -1507,7 +1507,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const rows = await this.db.all<GeoAuditLogRow>(
       `SELECT id, tenant_id, actor_sub, action, entity_type, entity_id, event_time,
               before_state, after_state, trace_id, source_ip
-       FROM tmf_audit_log
+       FROM user_audit_log
        WHERE ${conditions.join(' AND ')}
        ORDER BY event_time DESC, id DESC`,
       params,
@@ -1530,7 +1530,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   public async appendEvent(event: GeoEvent): Promise<GeoEvent> {
     await this.db.run(
-      `INSERT INTO tmf_event (id, event_type, event_time, source, event_data, correlation_id)
+      `INSERT INTO environment_event (id, event_type, event_time, source, event_data, correlation_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         event.id,
@@ -1547,7 +1547,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   public async appendOutbox(message: GeoOutboxMessage): Promise<GeoOutboxMessage> {
     await this.db.run(
-      `INSERT INTO tmf_outbox (id, tenant_id, event_id, topic, payload, status, created_at, published_at)
+      `INSERT INTO environment_outbox (id, tenant_id, event_id, topic, payload, status, created_at, published_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         message.id,
@@ -1566,7 +1566,7 @@ export class OracleGeoRepository implements IGeoRepository {
   public async listEventsForEntity(entityId: string): Promise<GeoEvent[]> {
     const rows = await this.db.all<EventRow>(
       `SELECT id, event_type, event_time, source, event_data, correlation_id
-       FROM tmf_event
+       FROM environment_event
        WHERE json_extract(event_data, '$.entityId') = ?
        ORDER BY event_time DESC`,
       [entityId],
@@ -1585,7 +1585,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   public async upsertBulkJob(job: GeoBulkJob): Promise<GeoBulkJob> {
     await this.db.run(
-      `INSERT INTO tmf_geo_bulk_job
+      `INSERT INTO geographic_bulk_job
        (id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
         completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1628,7 +1628,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const row = await this.db.get<GeoBulkJobRow>(
       `SELECT id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
               completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id
-       FROM tmf_geo_bulk_job
+       FROM geographic_bulk_job
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -1649,7 +1649,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const row = await this.db.get<GeoBulkJobRow>(
       `SELECT id, tenant_id, target, mode, idempotency_key, status, submitted_at, started_at,
               completed_at, total, success_count, error_count, warning_count, actor_sub, trace_id
-       FROM tmf_geo_bulk_job
+       FROM geographic_bulk_job
        WHERE ${conditions.join(' AND ')}
        ORDER BY submitted_at DESC
        LIMIT 1`,
@@ -1660,7 +1660,7 @@ export class OracleGeoRepository implements IGeoRepository {
 
   public async appendBulkJobResult(result: GeoBulkJobResult): Promise<GeoBulkJobResult> {
     await this.db.run(
-      `INSERT INTO tmf_geo_bulk_job_result
+      `INSERT INTO geographic_bulk_job_result
        (id, job_id, tenant_id, item_index, status, entity_id, legacy_system, legacy_entity,
         legacy_id, error_code, message, warnings)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1706,7 +1706,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const sql = [
       `SELECT id, job_id, tenant_id, item_index, status, entity_id, legacy_system,
               legacy_entity, legacy_id, error_code, message, warnings
-       FROM tmf_geo_bulk_job_result`,
+       FROM geographic_bulk_job_result`,
       `WHERE ${conditions.join(' AND ')}`,
       'ORDER BY item_index, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -1729,7 +1729,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const placeholders = ids.map(() => '?').join(', ');
     const ruleRows = await this.db.all<GeographicSiteSpecificationContainmentRuleRow>(
       `SELECT parent_spec_id, child_spec_id, valid_for_start, valid_for_end, is_protected
-       FROM tmf_geographic_site_spec_containment_rule
+       FROM geographic_site_spec_containment_rule
        WHERE parent_spec_id IN (${placeholders}) OR child_spec_id IN (${placeholders})`,
       [...ids, ...ids],
     );
@@ -1740,7 +1740,7 @@ export class OracleGeoRepository implements IGeoRepository {
       referencedIds.add(ruleRow.child_spec_id);
     }
     // Fallback de containment (issue #291): quando a tabela de regras não cobre um spec — por
-    // exemplo logo após uma migração que não populou `tmf_geographic_site_spec_containment_rule` —
+    // exemplo logo após uma migração que não populou `geographic_site_spec_containment_rule` —
     // usamos a coluna `allowed_parent/child_spec_ids`, que já vem no SELECT e era ignorada. Os ids
     // dela também precisam entrar em `referencedIds` para que `rowById` consiga montar os refs.
     for (const row of rows) {
@@ -1754,7 +1754,7 @@ export class OracleGeoRepository implements IGeoRepository {
             `SELECT id, name, code, category, site_role, lifecycle_status, description,
                     allowed_parent_spec_ids, allowed_child_spec_ids, valid_for_start, valid_for_end,
                     characteristics, is_bootstrap
-             FROM tmf_geographic_site_specification
+             FROM geographic_site_specification
              WHERE id IN (${[...referencedIds].map(() => '?').join(', ')})`,
             [...referencedIds],
           )
@@ -1772,7 +1772,7 @@ export class OracleGeoRepository implements IGeoRepository {
       const specPlaceholders = allSpecIds.map(() => '?').join(', ');
       const viRows = await this.db.all<GeographicSiteSpecVisualIdentityRow>(
         `SELECT tenant_id, site_specification_id, icon_code, icon_asset_id
-         FROM tmf_geo_site_spec_visual_identity
+         FROM geographic_site_spec_visual_identity
          WHERE tenant_id = ? AND site_specification_id IN (${specPlaceholders})`,
         [tenantId, ...allSpecIds],
       );
@@ -1863,7 +1863,7 @@ export class OracleGeoRepository implements IGeoRepository {
     const siteSeed = dialectFor().inlineRows(siteIds, 'v', 'id');
     const rows = await this.db.all<GeographicSiteRelationshipRow>(
       `SELECT site_from_id, site_to_id, relationship_type, valid_for_start, valid_for_end
-       FROM tmf_geographic_site_relationship
+       FROM geographic_site_relationship
        WHERE site_from_id IN (SELECT id FROM ${siteSeed.sql})
        ORDER BY site_from_id, relationship_type, site_to_id`,
       siteSeed.binds,
@@ -2019,7 +2019,7 @@ export class OracleGeoRepository implements IGeoRepository {
         params.push(scope.tenantId);
       }
       const rows = await this.db.all<{ id: string }>(
-        `SELECT id FROM tmf_geographic_site WHERE ${conditions.join(' AND ')} ORDER BY id`,
+        `SELECT id FROM geographic_site WHERE ${conditions.join(' AND ')} ORDER BY id`,
         params,
       );
       for (const row of rows) {

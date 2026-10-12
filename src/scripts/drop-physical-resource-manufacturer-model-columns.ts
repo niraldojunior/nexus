@@ -1,9 +1,9 @@
-// Script de DROP físico das colunas `manufacturer` e `model` de `tmf_physical_resource`
+// Script de DROP físico das colunas `manufacturer` e `model` de `resource_physical`
 // (issue #251, fechando o ciclo aberto pela #171).
 //
 // Contexto:
 // A issue #171 moveu fabricante (relatedParty role=manufacturer) e modelo (characteristic 'model')
-// para ResourceSpecification, alinhado a TMF639 v4 e TMF632/669. As colunas em tmf_physical_resource
+// para ResourceSpecification, alinhado a TMF639 v4 e TMF632/669. As colunas em resource_physical
 // viraram informação morta.
 //
 // Uso:
@@ -68,16 +68,16 @@ const run = async (): Promise<void> => {
     await client.initialize();
 
     process.stdout.write(
-      '\n=== Auditoria / Remoção física: tmf_physical_resource (manufacturer, model) ===\n',
+      '\n=== Auditoria / Remoção física: resource_physical (manufacturer, model) ===\n',
     );
     process.stdout.write(`Ambiente: ${config.database.provider} (prefixo: "${objectPrefix}")\n\n`);
 
     const hasManufacturerCol = await columnExists(
       objectPrefix,
-      'tmf_physical_resource',
+      'resource_physical',
       'manufacturer',
     );
-    const hasModelCol = await columnExists(objectPrefix, 'tmf_physical_resource', 'model');
+    const hasModelCol = await columnExists(objectPrefix, 'resource_physical', 'model');
 
     process.stdout.write(`Status das colunas no Oracle:\n`);
     process.stdout.write(
@@ -94,7 +94,7 @@ const run = async (): Promise<void> => {
 
     // Se as colunas existem, audita os dados persistidos
     const totalRow = await client.queryOne<{ total: number | string }>(
-      'SELECT COUNT(*) AS total FROM tmf_physical_resource',
+      'SELECT COUNT(*) AS total FROM resource_physical',
     );
     const total = Number(totalRow?.total ?? 0);
 
@@ -103,20 +103,20 @@ const run = async (): Promise<void> => {
 
     if (hasManufacturerCol) {
       const row = await client.queryOne<{ count: number | string }>(
-        'SELECT COUNT(*) AS count FROM tmf_physical_resource WHERE manufacturer IS NOT NULL',
+        'SELECT COUNT(*) AS count FROM resource_physical WHERE manufacturer IS NOT NULL',
       );
       mfgCount = Number(row?.count ?? 0);
     }
 
     if (hasModelCol) {
       const row = await client.queryOne<{ count: number | string }>(
-        'SELECT COUNT(*) AS count FROM tmf_physical_resource WHERE model IS NOT NULL',
+        'SELECT COUNT(*) AS count FROM resource_physical WHERE model IS NOT NULL',
       );
       modelCount = Number(row?.count ?? 0);
     }
 
     process.stdout.write(`Auditoria de dados:\n`);
-    process.stdout.write(`  - Total de instâncias em tmf_physical_resource: ${total}\n`);
+    process.stdout.write(`  - Total de instâncias em resource_physical: ${total}\n`);
     process.stdout.write(`  - Linhas com manufacturer preenchido: ${mfgCount}\n`);
     process.stdout.write(`  - Linhas com model preenchido:        ${modelCount}\n\n`);
 
@@ -129,7 +129,7 @@ const run = async (): Promise<void> => {
       if (hasModelCol) sampleCols.push('model');
 
       const samples = await client.queryMany<Record<string, unknown>>(
-        `SELECT ${sampleCols.join(', ')} FROM tmf_physical_resource WHERE ${[
+        `SELECT ${sampleCols.join(', ')} FROM resource_physical WHERE ${[
           hasManufacturerCol ? 'manufacturer IS NOT NULL' : '',
           hasModelCol ? 'model IS NOT NULL' : '',
         ]
@@ -166,10 +166,10 @@ const run = async (): Promise<void> => {
     // Executa o DROP físico
     process.stdout.write('Executando DROP físico das colunas...\n');
     if (hasManufacturerCol) {
-      await dropColumnIfExists(objectPrefix, 'tmf_physical_resource', 'manufacturer');
+      await dropColumnIfExists(objectPrefix, 'resource_physical', 'manufacturer');
     }
     if (hasModelCol) {
-      await dropColumnIfExists(objectPrefix, 'tmf_physical_resource', 'model');
+      await dropColumnIfExists(objectPrefix, 'resource_physical', 'model');
     }
 
     process.stdout.write('\nDROP concluído com sucesso. Schema atualizado.\n');

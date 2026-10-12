@@ -13,7 +13,7 @@ export type CliOptions = {
   states: string[];
   /** Domínios carregados. Default só `energy`: gás e ferrovia exigem opt-in explícito. */
   domains: Domain[];
-  /** `undefined` = resolver do próprio namespace (`nexus_environment.tenant_id`). */
+  /** `undefined` = resolver do próprio namespace (`environment.tenant_id`). */
   tenantId?: string | undefined;
   /** `undefined` = herdar o tenant resolvido. */
   ownerPartyId?: string | undefined;
@@ -27,7 +27,7 @@ const DEFAULT_STATES = ['RJ', 'SP'];
  *
  * Nem `tenantId` nem `ownerPartyId` têm default fixo aqui: ambos saem do namespace de destino na
  * fase 0 (`resolveTenant`). Fixar `'default'` gravaria num tenant que nenhuma tela lê — a DEMO
- * provisionada registra `vtal` em `nexus_environment`, e é esse o tenant do token da sessão.
+ * provisionada registra `vtal` em `environment`, e é esse o tenant do token da sessão.
  * Quem precisar divergir passa `--tenant-id` / `--owner-party-id` explicitamente.
  */
 export function parseCliArgs(argv: readonly string[]): CliOptions {

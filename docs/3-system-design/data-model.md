@@ -253,7 +253,7 @@ outro hemisfério. Cargas anteriores já sofreram com coordenada corrompida.
 > permanece em aberto é a **capacidade de lote** para a carga inicial dos 22M endereços ([#90](https://github.com/niraldojunior/nexus/issues/90)).
 >
 > **Implementação atual (Oracle, execução local — Oracle Spatial pendente):** `sourceSystem`/`sourceRef` em
-> `tmf_geographic_location`/`tmf_geographic_address` e `accuracyLevel` em `tmf_geographic_location`
+> `geographic_location`/`geographic_address` e `accuracyLevel` em `geographic_location`
 > já existem no schema runtime, gravados pelo painel unificado de Local (REQ-MOD01-016,
 > `docs/2-functional-specs/01-module-geo.md` §21) — a coluna `DIMINFO`/`SDO_GEOM` acima permanece
 > destino, não estado presente.
@@ -343,7 +343,7 @@ coluna** dos índices compostos — garante _pruning_ por tenant.
 A imposição do filtro não pode depender de disciplina de quem escreve query. Ver
 [`security.md`](security.md) para o mecanismo (VPD/RLS ou filtro forçado no adaptador).
 
-`reference_data_set`/`reference_data_value` seguem a mesma regra: `tenant_id` obrigatório e primeira
+`environment_reference_data_set`/`environment_reference_data_value` seguem a mesma regra: `tenant_id` obrigatório e primeira
 coluna dos índices (`idx_reference_data_set_tenant_active`,
 `idx_reference_data_value_set_active`). Um conjunto de dados de referência nunca é global — cada
 tenant modela e publica os seus; um `characteristic` de outro módulo referencia o conjunto pela
@@ -367,13 +367,13 @@ mesmo tenant.
 | `ServiceOrder`          | `service_order`               | 4 — Order      |
 | `ServiceQualification`  | `service_qualification`       | 4              |
 | `ResourceOrder`         | `resource_order`              | 4              |
-| `Party` / `PartyRole`   | `tmf_party`, `tmf_party_role` | 6 — Party      |
+| `Party` / `PartyRole`   | `party`, `party_role` | 6 — Party      |
 | `Event`                 | `event` + `outbox`            | Transversal    |
-| `StudioWorkspace`       | `studio_workspace`            | Studio (#191)  |
-| `StudioVersion`         | `studio_version`              | Studio (#191)  |
-| `StudioAuditEntry`      | `studio_audit_log`            | Studio (#191)  |
-| Reference Data set      | `reference_data_set`          | Studio (#196)  |
-| Reference Data value    | `reference_data_value`        | Studio (#196)  |
+| `StudioWorkspace`       | `environment_studio_workspace`            | Studio (#191)  |
+| `StudioVersion`         | `environment_studio_version`              | Studio (#191)  |
+| `StudioAuditEntry`      | `user_studio_audit_log`            | Studio (#191)  |
+| Reference Data set      | `environment_reference_data_set`          | Studio (#196)  |
+| Reference Data value    | `environment_reference_data_value`        | Studio (#196)  |
 
 Os tipos de linha crus estão tipados em `src/modules/*/rows.ts` — eles são o contrato entre o SQL e o
 domínio, e o compilador valida o mapeamento.
@@ -394,7 +394,7 @@ A Fase 2.B do migrador hidrata, por lote e somente por SELECT, os dados de `OSP_
 | `NUM_SERIE`                                                                            | `serial_number` (UNIQUE); colisão ou duplicata vira a characteristic `reportedSerialNumber`, sem abortar o lote    |
 | `OWNER_ID`                                                                             | `relatedParty` com role `infrastructure_owner` (Party importada na Fase 1)                                         |
 | Fabricante do modelo                                                                   | `relatedParty` com role `manufacturer` da ResourceSpecification (nunca da instância)                               |
-| `PROJECT.NAME`                                                                         | `project_id` se casar por nome normalizado exato com `geo_project`; senão a characteristic `implementationProject` |
+| `PROJECT.NAME`                                                                         | `project_id` se casar por nome normalizado exato com `project`; senão a characteristic `implementationProject` |
 | Estação abastecedora (dinâmico `supplierStationId` ou `OSP_CELL.SUPPLIER_LOCATION_ID`) | `serving_site_id` + characteristic `servingSite` (nunca `INFRANODE_ID`, que é o local físico)                      |
 | Dimensões, rede, topologia, flags, controle, datas, observações                        | characteristics tipadas da allowlist (`characteristicLevel: instance`)                                             |
 
@@ -404,19 +404,34 @@ Política de rerun: o merge é por ownership. O migrador substitui apenas a allo
 
 ## 9.1 Diretório geográfico canônico
 
-`geo_administrative_city` (tabela interna de apoio, não é entidade TMF) guarda país, UF e município normalizados: `country_code`, `country_name`, `state_code`, `city_name`, `city_key`. A chave natural é `(country_code, state_code, city_key)`, onde `city_key` é caixa única, sem acentos e sem espaços repetidos. O diretório é global (sem `tenant_id`); o isolamento continua nos Sites, Resources e Addresses.
+`geographic_administrative_city` (tabela interna de apoio, não é entidade TMF) guarda país, UF e município normalizados: `country_code`, `country_name`, `state_code`, `city_name`, `city_key`. A chave natural é `(country_code, state_code, city_key)`, onde `city_key` é caixa única, sem acentos e sem espaços repetidos. O diretório é global (sem `tenant_id`); o isolamento continua nos Sites, Resources e Addresses.
 
-O município operacional é dimensão **direta do Site** (issue #339): `tmf_geographic_site.administrative_city_id` (nullable; interno de repositório, fora do payload TMF — C1). Os campos TMF673 `country`, `stateOrProvince` e `city` do endereço permanecem como texto; o endereço **não** carrega mais FK para o diretório.
+O município operacional é dimensão **direta do Site** (issue #339): `geographic_site.administrative_city_id` (nullable; interno de repositório, fora do payload TMF — C1). Os campos TMF673 `country`, `stateOrProvince` e `city` do endereço permanecem como texto; o endereço **não** carrega mais FK para o diretório.
 
-### Vínculo tenant–município (`geo_administrative_city_tenant`)
+### Vínculo tenant–município (`geographic_administrative_city_tenant`)
 
-Tabela de plataforma, **não-TMF**, PK `(tenant_id, administrative_city_id)`, FK para `geo_administrative_city`, com `active_site_count` (Sites raiz não `Retired`) e `updated_at`. É o pai da FK composta `fk_tmf_geographic_site_admin_city` `(tenant_id, administrative_city_id)` do Site; o índice `idx_tmf_geographic_site_tenant_city(tenant_id, administrative_city_id, parent_site_id, status)` serve a abertura de uma cidade na árvore da Planta Interna por `INDEX RANGE SCAN`, sem UNION nem junção com endereço.
+Tabela de plataforma, **não-TMF**, PK `(tenant_id, administrative_city_id)`, FK para `geographic_administrative_city`, com `active_site_count` (Sites raiz não `Retired`) e `updated_at`. É o pai da FK composta `geographic_fk_site_admin_city` `(tenant_id, administrative_city_id)` do Site; o índice `geographic_idx_site_tenant_city(tenant_id, administrative_city_id, parent_site_id, status)` serve a abertura de uma cidade na árvore da Planta Interna por `INDEX RANGE SCAN`, sem UNION nem junção com endereço.
 
 Regras: a linha tenant–município é garantida **antes** do Site (ordem da FK); contagens são recontadas, nunca incrementadas; linhas sem Site ativo ficam com `active_site_count = 0` (nunca apagadas, pois Sites `Retired` — C6 — ainda as referenciam) e a árvore filtra `> 0`. Site sem município é válido e aparece no ramo "Sem município". Cargas e o migrador Netwin só preenchem município **nulo**, preservando edições da modal.
 
-Sincronização: `OracleGeoRepository` (`setSiteAdministrativeCity`), as fases 2.A, 2.B e 2.E do migrador Netwin e os loaders em `scripts/` resolvem o município pela chave natural. Ambientes anteriores à V35 usam `scripts/backfill-site-administrative-city.mjs` (dry-run por padrão; `--apply` exige `--target-prefix`), que também valida a FK; a V36 então remove `tmf_geographic_address.administrative_city_id`, `geo_site_administrative_city` e `geo_administrative_city_site_count` (falha com instrução se houver Site sem município preenchido). Ambientes novos já nascem sem esses objetos.
+Sincronização: `OracleGeoRepository` (`setSiteAdministrativeCity`), as fases 2.A, 2.B e 2.E do migrador Netwin e os loaders em `scripts/` resolvem o município pela chave natural. Ambientes anteriores à V35 usam `scripts/backfill-site-administrative-city.mjs` (dry-run por padrão; `--apply` exige `--target-prefix`), que também valida a FK; a V36 então remove `geographic_address.administrative_city_id`, `geographic_site_administrative_city` e `geographic_administrative_city_site_count` (falha com instrução se houver Site sem município preenchido). Ambientes novos já nascem sem esses objetos.
 
 Os nomes das `GeographicSiteSpecification` seguem o vocabulário Netwin em português (ex.: `BUILDING` → Edifício; `CENTRAL_OFFICE` → Estação Predial) sem alterar `code`/UUID; `GeographicSite.name` na carga Netwin é `LOCATION.NAME - LOCATION.DESCRIPTION`.
+
+## 9.2 Nomes físicos por domínio e cutover (#344)
+
+Toda tabela Oracle segue `<ORACLE_OBJECT_PREFIX><DOMÍNIO>_<RESTO>`, com o domínio em `GEOGRAPHIC`, `PROJECT`, `ENVIRONMENT`, `RESOURCE`, `SERVICE`, `MIGRATION`, `PARTY`, `USER` ou `ORDER`. Índices e constraints nomeadas usam `<DOMÍNIO>_<TIPO>_<RESTO>` (`IDX`, `UQ`, `FK`, `CK`, `PK`); constraints `SYS_*` não são renomeadas. A fonte única é `src/shared/persistence/database-object-names.ts` (tabelas) e `legacy-object-names.ts` (índices e constraints legados, usados só no cutover). O vocabulário TMF permanece no domínio e nas APIs; só a persistência muda.
+
+Namespaces criados antes da #344 usam os nomes legados (`TMF_*`, `GEO_*`, ...). O boot recusa iniciar sobre eles; a conversão é um comando explícito, metadado-only (`RENAME`), retomável e registrado em `<PREFIXO>MIGRATION_DATABASE_OBJECT_RENAME`:
+
+```
+ORACLE_OBJECT_PREFIX=NX_DEV9_ npm run db:restructure -- --inventory
+ORACLE_OBJECT_PREFIX=NX_DEV9_ npm run db:restructure -- --dry-run
+ORACLE_OBJECT_PREFIX=NX_DEV9_ npm run db:restructure -- --apply --confirm-prefix NX_DEV9_
+ORACLE_OBJECT_PREFIX=NX_DEV9_ npm run db:restructure -- --verify
+```
+
+Pare backend, Studio e migradores antes do `--apply` e faça backup do ambiente. Se origem e destino coexistirem, o comando aborta. `--rollback --confirm-prefix <PREFIXO>` reverte pelo mesmo mapa.
 
 ## 10. Referências
 

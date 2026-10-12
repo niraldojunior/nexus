@@ -12,7 +12,7 @@
  * Uso:
  *   npm run build                                              # obrigatório uma vez
  *   node scripts/gather-db-stats.mjs                            # todas as tabelas do schema
- *   node scripts/gather-db-stats.mjs --table tmf_geographic_site,geo_project_site
+ *   node scripts/gather-db-stats.mjs --table geographic_site,project_site
  */
 
 import { config as loadEnv } from 'dotenv';

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Restaura a hierarquia do catálogo de recursos (tmf_resource_catalog_node.parent_node_id)
+ * Restaura a hierarquia do catálogo de recursos (resource_catalog_node.parent_node_id)
  * achatada por uma publicação do Studio "Modelo de recursos" — issue #214.
  *
  * O que aconteceu: `ResourceModelStudioAdapter.materialize` resolvia `parentNodeId` (um UUID)
@@ -9,7 +9,7 @@
  * `src/modules/studio/adapters/resource-model-adapter.ts`. Este script repara o estrago já
  * feito.
  *
- * Fonte da verdade: `studio_version.snapshot` da última versão *published* anterior à
+ * Fonte da verdade: `environment_studio_version.snapshot` da última versão *published* anterior à
  * publicação destrutiva — a captura de draft (`ResourceModelStudio.tsx: handleCaptureAsDraft`)
  * lê a árvore ainda saudável direto do banco antes de salvar, então o snapshot é fiel.
  * Confirmado por leitura direta no Oracle dev: domain='resource-model', version_number=2,
@@ -47,7 +47,7 @@ const EXPLICIT_VERSION = versionArg ? Number(versionArg.split('=')[1]) : null;
 async function countRootsVsChildren(db) {
   const r = await db.query(
     `SELECT CASE WHEN parent_node_id IS NULL THEN 'RAIZ' ELSE 'COM_PAI' END AS pos, COUNT(*) AS qtd
-       FROM tmf_resource_catalog_node
+       FROM resource_catalog_node
       GROUP BY CASE WHEN parent_node_id IS NULL THEN 'RAIZ' ELSE 'COM_PAI' END`,
   );
   const byPos = Object.fromEntries(r.rows.map((row) => [row.pos, Number(row.qtd)]));
@@ -58,7 +58,7 @@ async function findReferenceSnapshot(db) {
   if (EXPLICIT_VERSION) {
     const r = await db.query(
       `SELECT version_number, status, published_at, snapshot
-         FROM studio_version
+         FROM environment_studio_version
         WHERE domain = $1 AND version_number = $2 AND status = 'published'`,
       [DOMAIN, EXPLICIT_VERSION],
     );
@@ -74,7 +74,7 @@ async function findReferenceSnapshot(db) {
   // v2 (ambientes diferentes têm históricos diferentes).
   const r = await db.query(
     `SELECT version_number, status, published_at, snapshot
-       FROM studio_version
+       FROM environment_studio_version
       WHERE domain = $1 AND status = 'published'
       ORDER BY version_number ASC`,
     [DOMAIN],
@@ -111,7 +111,7 @@ async function main() {
     );
 
     const currentResult = await db.query(
-      'SELECT id, code, parent_node_id, sort_order FROM tmf_resource_catalog_node',
+      'SELECT id, code, parent_node_id, sort_order FROM resource_catalog_node',
     );
     const currentById = new Map(currentResult.rows.map((r) => [r.id, r]));
     const currentByCode = new Map(currentResult.rows.map((r) => [r.code, r]));
@@ -187,7 +187,7 @@ async function main() {
     await db.query('BEGIN');
     for (const p of plan) {
       await db.query(
-        'UPDATE tmf_resource_catalog_node SET parent_node_id = $1, sort_order = $2 WHERE id = $3',
+        'UPDATE resource_catalog_node SET parent_node_id = $1, sort_order = $2 WHERE id = $3',
         [p.toParent, p.toSort, p.nodeId],
       );
     }

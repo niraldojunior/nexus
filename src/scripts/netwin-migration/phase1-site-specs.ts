@@ -122,7 +122,7 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
       const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${spec.code}`);
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_geographic_site_specification', ['code'], {
+        await merge(target, ctx.t, 'geographic_site_specification', ['code'], {
           id: specId,
           name: spec.name,
           code: spec.code,
@@ -134,7 +134,7 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
         await reconcileCatalogCharacteristics(
           target,
           ctx.t,
-          'tmf_geographic_site_specification',
+          'geographic_site_specification',
           specId,
           spec.specCharacteristic ?? [STATE_LIFECYCLE_CHARACTERISTIC],
         );

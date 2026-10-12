@@ -28,7 +28,7 @@ test.skipIf(!oracleConfigured)(
   async () => {
     const client = await getOracleTestClient();
     await client.run(
-      `INSERT INTO tmf_resource_catalog
+      `INSERT INTO resource_catalog
        (id, tenant_id, code, name, status, is_default, sort_order, created_at, updated_at)
        VALUES (?, 'vtal', 'default-catalog', 'Catálogo de Recursos', 'active', 1, 0, ?, ?)`,
       ['netwin-default-catalog', new Date().toISOString(), new Date().toISOString()],
@@ -38,7 +38,7 @@ test.skipIf(!oracleConfigured)(
     await repository.initialize();
 
     const catalogs = await client.all<{ id: string; code: string; is_default: number }>(
-      `SELECT id, code, is_default FROM tmf_resource_catalog
+      `SELECT id, code, is_default FROM resource_catalog
        WHERE tenant_id = 'vtal' ORDER BY id`,
     );
     assert.deepEqual(catalogs, [
@@ -295,7 +295,7 @@ test.skipIf(!oracleConfigured)(
     // tenant do operador — exatamente o que uma base migrada de outro schema carrega.
     const now = new Date().toISOString();
     await client.run(
-      `INSERT INTO tmf_resource_type
+      `INSERT INTO resource_type
        (id, tenant_id, code, name, description, status, nature, created_at, updated_at)
        VALUES (?, ?, ?, ?, NULL, 'active', 'PhysicalResource', ?, ?)`,
       ['rt-olt-legacy-vtal', 'vtal', 'OLT', 'Optical Line Terminal', now, now],
@@ -311,7 +311,7 @@ test.skipIf(!oracleConfigured)(
     assert.equal(activeOltMatches.length, 1, 'combo não deve exibir "OLT" duplicado');
 
     const legacyRow = await client.get<{ status: string }>(
-      `SELECT status FROM tmf_resource_type WHERE id = ?`,
+      `SELECT status FROM resource_type WHERE id = ?`,
       ['rt-olt-legacy-vtal'],
     );
     assert.equal(legacyRow?.status, 'inactive', 'linha legada precisa ser inativada, não excluída');

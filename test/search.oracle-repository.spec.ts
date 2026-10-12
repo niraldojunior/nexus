@@ -68,7 +68,7 @@ test.skipIf(!oracleConfigured)(
     assert.equal(archived?.status, 'archived');
 
     await client.run(
-      `INSERT INTO research_session
+      `INSERT INTO user_research_session
        (id, user_id, title, status, created_at, updated_at)
        VALUES (?, ?, ?, 'deleted', ?, ?)`,
       [

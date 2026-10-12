@@ -92,13 +92,13 @@ test.skipIf(!oracleConfigured)(
     await geo.upsertAddress(address('a3', 'Sem UF', 'XX'));
 
     const cities = await client.all<{ id: string; city_name: string }>(
-      'SELECT id, city_name FROM geo_administrative_city',
+      'SELECT id, city_name FROM geographic_administrative_city',
     );
     assert.equal(cities.length, 1, 'Niterói/NITEROI colapsam em um município');
     const columns = await client.all<{ column_name: string }>(
       `SELECT column_name FROM user_tab_columns
         WHERE table_name = UPPER(?) AND column_name = 'ADMINISTRATIVE_CITY_ID'`,
-      [`${TEST_ORACLE_PREFIX}tmf_geographic_address`],
+      [`${TEST_ORACLE_PREFIX}geographic_address`],
     );
     assert.equal(columns.length, 0, 'endereço não referencia mais o diretório (issue #339)');
 
@@ -168,12 +168,12 @@ test.skipIf(!oracleConfigured)(
 
     const now = new Date().toISOString();
     await client.run(
-      `INSERT INTO tmf_resource_type (id, tenant_id, code, name, status, created_at, updated_at)
+      `INSERT INTO resource_type (id, tenant_id, code, name, status, created_at, updated_at)
        VALUES ('rt-1', 'tenant-a', 'OLT', 'OLT', 'active', ?, ?)`,
       [now, now],
     );
     await client.run(
-      `INSERT INTO tmf_resource_specification (id, tenant_id, name, resource_type_id)
+      `INSERT INTO resource_specification (id, tenant_id, name, resource_type_id)
        VALUES ('rs-1', 'tenant-a', 'OLT Spec', 'rt-1')`,
       [],
     );
@@ -182,14 +182,14 @@ test.skipIf(!oracleConfigured)(
       ['res-child', 'child-1'],
     ] as const) {
       await client.run(
-        `INSERT INTO tmf_physical_resource (id, tenant_id, name, resource_specification_id, status, place_id)
+        `INSERT INTO resource_physical (id, tenant_id, name, resource_specification_id, status, place_id)
          VALUES (?, 'tenant-a', ?, 'rs-1', 'active', ?)`,
         [id, id, placeId],
       );
     }
     // Recurso interno (porta/splitter): sem lugar próprio, só aparece pelo recurso que o contém.
     await client.run(
-      `INSERT INTO tmf_physical_resource (id, tenant_id, name, resource_specification_id, status)
+      `INSERT INTO resource_physical (id, tenant_id, name, resource_specification_id, status)
        VALUES ('res-internal', 'tenant-a', 'res-internal', 'rs-1', 'active')`,
       [],
     );

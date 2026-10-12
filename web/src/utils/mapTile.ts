@@ -1,5 +1,5 @@
 // Matemática de tile (função pura, sem I/O) para o cliente decidir quais tiles pedir ao
-// índice de exibição do mapa (`geo_map_feature` — ver useMapTiles/geoMapTileApi). Espelha
+// índice de exibição do mapa (`geographic_map_feature` — ver useMapTiles/geoMapTileApi). Espelha
 // `src/modules/geo/map-tile.ts` do backend: mesmo esquema de "slippy map" (grade 2^z × 2^z em
 // Web Mercator), mesmo MAP_TILE_ZOOM fixo — precisa ser o MESMO valor dos dois lados, senão o
 // cliente pede tiles que não existem no índice. Duplicado aqui (não importado de `src/`) pelo

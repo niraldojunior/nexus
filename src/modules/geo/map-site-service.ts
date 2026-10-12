@@ -4,7 +4,7 @@
 // nenhum código de specification de forma especial. Quem decide QUAIS specifications entram é o
 // chamador (catálogo publicado do Studio GEO), via `sourceModelIds`.
 //
-// Lê o mesmo read-model de GeoMapTileService (geo_map_feature); um Site pontual mora em exatamente
+// Lê o mesmo read-model de GeoMapTileService (geographic_map_feature); um Site pontual mora em exatamente
 // uma linha, então não há duplicidade entre tiles.
 
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
@@ -33,7 +33,7 @@ export class GeoMapSiteService {
       `SELECT f.entity_id, f.feature_kind, f.entity_type, f.shape, f.type_code, f.site_category,
               f.source_model_type, f.source_model_id, f.status, f.label, f.sublabel, f.lng, f.lat,
               f.geometry
-         FROM geo_map_feature f
+         FROM geographic_map_feature f
         WHERE f.tenant_id = ?
           AND f.feature_kind = 'site'
           AND f.shape = 'point'
@@ -43,8 +43,8 @@ export class GeoMapSiteService {
           AND f.lat >= ? AND f.lat <= ?
           AND (f.status IS NULL OR f.status NOT IN ('Retired', 'terminated'))
           AND NOT EXISTS (
-            SELECT 1 FROM geo_project_site ps
-              JOIN geo_project p ON p.id = ps.project_id
+            SELECT 1 FROM project_site ps
+              JOIN project p ON p.id = ps.project_id
              WHERE ps.site_id = f.entity_id AND p.status <> 'terminated'
           )
         ORDER BY f.lng, f.lat, f.entity_id

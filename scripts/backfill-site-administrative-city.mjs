@@ -2,9 +2,9 @@
 /**
  * Backfill do município direto no Site (issue #339, fase expand → cutover).
  *
- * Preenche `tmf_geographic_site.administrative_city_id` com a precedência legada
- * `COALESCE(endereço.administrative_city_id, geo_site_administrative_city.administrative_city_id)`,
- * garante antes as linhas tenant–município em `geo_administrative_city_tenant`, recontagem
+ * Preenche `geographic_site.administrative_city_id` com a precedência legada
+ * `COALESCE(endereço.administrative_city_id, geographic_site_administrative_city.administrative_city_id)`,
+ * garante antes as linhas tenant–município em `geographic_administrative_city_tenant`, recontagem
  * `active_site_count` (Sites raiz não-Retired; linhas referenciadas ficam com 0, nunca apagadas) e,
  * só se a paridade fechar, valida a FK composta e coleta estatísticas.
  *
@@ -58,34 +58,34 @@ async function scalar(client, sql, params = []) {
 
 // Cidade legada de um Site, com a precedência do código anterior ao cutover.
 const LEGACY_CITY = `COALESCE(
-  (SELECT a.administrative_city_id FROM tmf_geographic_address a WHERE a.id = s.geographic_address_id),
-  (SELECT p.administrative_city_id FROM geo_site_administrative_city p
+  (SELECT a.administrative_city_id FROM geographic_address a WHERE a.id = s.geographic_address_id),
+  (SELECT p.administrative_city_id FROM geographic_site_administrative_city p
     WHERE p.tenant_id = s.tenant_id AND p.site_id = s.id))`;
 
 async function parity(client) {
   const mismatched = await scalar(
     client,
-    `SELECT COUNT(*) AS n FROM tmf_geographic_site s
+    `SELECT COUNT(*) AS n FROM geographic_site s
       WHERE s.administrative_city_id IS NOT NULL
         AND s.administrative_city_id <> ${LEGACY_CITY}`,
   );
   const missingLink = await scalar(
     client,
-    `SELECT COUNT(*) AS n FROM tmf_geographic_site s
+    `SELECT COUNT(*) AS n FROM geographic_site s
       WHERE s.administrative_city_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM geo_administrative_city_tenant t
+        AND NOT EXISTS (SELECT 1 FROM geographic_administrative_city_tenant t
                          WHERE t.tenant_id = s.tenant_id
                            AND t.administrative_city_id = s.administrative_city_id)`,
   );
   const unfilled = await scalar(
     client,
-    `SELECT COUNT(*) AS n FROM tmf_geographic_site s
+    `SELECT COUNT(*) AS n FROM geographic_site s
       WHERE s.administrative_city_id IS NULL AND ${LEGACY_CITY} IS NOT NULL`,
   );
   const wrongCount = await scalar(
     client,
-    `SELECT COUNT(*) AS n FROM geo_administrative_city_tenant t
-      WHERE t.active_site_count <> (SELECT COUNT(*) FROM tmf_geographic_site s
+    `SELECT COUNT(*) AS n FROM geographic_administrative_city_tenant t
+      WHERE t.active_site_count <> (SELECT COUNT(*) FROM geographic_site s
                                      WHERE s.tenant_id = t.tenant_id
                                        AND s.administrative_city_id = t.administrative_city_id
                                        AND s.parent_site_id IS NULL AND s.status <> 'Retired')`,
@@ -98,16 +98,16 @@ async function main() {
   try {
     const prefix = process.env.ORACLE_OBJECT_PREFIX;
     console.log(`Ambiente: ${prefix}`);
-    const total = await scalar(client, `SELECT COUNT(*) AS n FROM tmf_geographic_site`);
+    const total = await scalar(client, `SELECT COUNT(*) AS n FROM geographic_site`);
     const pending = await scalar(
       client,
-      `SELECT COUNT(*) AS n FROM tmf_geographic_site s
+      `SELECT COUNT(*) AS n FROM geographic_site s
         WHERE s.administrative_city_id IS NULL AND ${LEGACY_CITY} IS NOT NULL`,
     );
     const pairs = await scalar(
       client,
       `SELECT COUNT(*) AS n FROM (SELECT DISTINCT s.tenant_id, ${LEGACY_CITY} AS city_id
-                                   FROM tmf_geographic_site s) x WHERE x.city_id IS NOT NULL`,
+                                   FROM geographic_site s) x WHERE x.city_id IS NOT NULL`,
     );
     console.log(
       `Sites: ${total}; a preencher: ${pending}; pares tenant–município distintos (legado): ${pairs}`,
@@ -120,9 +120,9 @@ async function main() {
     // 1) Pares tenant–município (inclui os usados só por Sites Retired).
     await client.query('BEGIN');
     await client.query(
-      `MERGE INTO geo_administrative_city_tenant t
+      `MERGE INTO geographic_administrative_city_tenant t
        USING (SELECT DISTINCT s.tenant_id, ${LEGACY_CITY} AS city_id
-                FROM tmf_geographic_site s) src
+                FROM geographic_site s) src
           ON (t.tenant_id = src.tenant_id AND t.administrative_city_id = src.city_id)
         WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
              VALUES (src.tenant_id, src.city_id, 0, SYSTIMESTAMP)
@@ -137,7 +137,7 @@ async function main() {
     for (;;) {
       const { rows } = await client.query(
         `SELECT MAX(id) AS upper_id FROM (
-           SELECT id FROM tmf_geographic_site WHERE id > $1 ORDER BY id
+           SELECT id FROM geographic_site WHERE id > $1 ORDER BY id
             FETCH FIRST ${BATCH_SIZE} ROWS ONLY)`,
         [lastId],
       );
@@ -146,7 +146,7 @@ async function main() {
       const bt = Date.now();
       await client.query('BEGIN');
       const result = await client.query(
-        `UPDATE tmf_geographic_site s
+        `UPDATE geographic_site s
             SET s.administrative_city_id = ${LEGACY_CITY}
           WHERE s.id > $1 AND s.id <= $2 AND s.administrative_city_id IS NULL
             AND ${LEGACY_CITY} IS NOT NULL`,
@@ -162,8 +162,8 @@ async function main() {
     // 3) Recontagem (nunca incrementa): Sites raiz não-Retired; linhas referenciadas ficam com 0.
     await client.query('BEGIN');
     await client.query(
-      `UPDATE geo_administrative_city_tenant t
-          SET t.active_site_count = (SELECT COUNT(*) FROM tmf_geographic_site s
+      `UPDATE geographic_administrative_city_tenant t
+          SET t.active_site_count = (SELECT COUNT(*) FROM geographic_site s
                                       WHERE s.tenant_id = t.tenant_id
                                         AND s.administrative_city_id = t.administrative_city_id
                                         AND s.parent_site_id IS NULL AND s.status <> 'Retired'),
@@ -178,10 +178,10 @@ async function main() {
       throw new Error('Paridade divergente — FK NÃO validada. Corrija e reexecute.');
     }
     await client.query(
-      `ALTER TABLE tmf_geographic_site MODIFY CONSTRAINT ${prefix}fk_tmf_geographic_site_admin_city VALIDATE`,
+      `ALTER TABLE geographic_site MODIFY CONSTRAINT ${prefix}geographic_fk_site_admin_city VALIDATE`,
     );
-    await client.gatherStats('tmf_geographic_site');
-    await client.gatherStats('geo_administrative_city_tenant');
+    await client.gatherStats('geographic_site');
+    await client.gatherStats('geographic_administrative_city_tenant');
     console.log(
       `Concluído: ${filled} Site(s) preenchido(s) em ${batches} lote(s). FK validada; estatísticas atualizadas.`,
     );

@@ -36,7 +36,7 @@ export class OracleServiceRepository implements IServiceRepository {
   ): Promise<ServiceSpecification> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_service_specification
+      `INSERT INTO service_specification
        (id, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -80,7 +80,7 @@ export class OracleServiceRepository implements IServiceRepository {
     }
     const row = await this.db.get<ServiceSpecificationRow>(
       `SELECT id, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id
-       FROM tmf_service_specification
+       FROM service_specification
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -117,7 +117,7 @@ export class OracleServiceRepository implements IServiceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_service_specification',
+      'SELECT id, name, category, service_type, description, observation, valid_for_start, valid_for_end, characteristics, tenant_id FROM service_specification',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY category, name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -136,7 +136,7 @@ export class OracleServiceRepository implements IServiceRepository {
   public async upsertServiceCategory(category: ServiceCategory): Promise<ServiceCategory> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_service_category
+      `INSERT INTO service_category
        (id, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -176,7 +176,7 @@ export class OracleServiceRepository implements IServiceRepository {
     }
     const row = await this.db.get<ServiceCategoryRow>(
       `SELECT id, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id
-       FROM tmf_service_category
+       FROM service_category
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -204,7 +204,7 @@ export class OracleServiceRepository implements IServiceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_service_category',
+      'SELECT id, name, description, parent_category_id, valid_for_start, valid_for_end, characteristics, tenant_id FROM service_category',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -223,7 +223,7 @@ export class OracleServiceRepository implements IServiceRepository {
   public async upsertServiceCandidate(candidate: ServiceCandidate): Promise<ServiceCandidate> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_service_candidate
+      `INSERT INTO service_candidate
        (id, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -267,7 +267,7 @@ export class OracleServiceRepository implements IServiceRepository {
     }
     const row = await this.db.get<ServiceCandidateRow>(
       `SELECT id, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id
-       FROM tmf_service_candidate
+       FROM service_candidate
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -303,7 +303,7 @@ export class OracleServiceRepository implements IServiceRepository {
     const hasLimit = query?.limit !== undefined;
     const hasOffset = query?.offset !== undefined;
     const sql = [
-      'SELECT id, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_service_candidate',
+      'SELECT id, name, description, service_specification_id, service_category_id, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM service_candidate',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -324,7 +324,7 @@ export class OracleServiceRepository implements IServiceRepository {
   ): Promise<CustomerFacingService> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_customer_facing_service
+      `INSERT INTO service_customer_facing
        (id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
         is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
         supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
@@ -400,7 +400,7 @@ export class OracleServiceRepository implements IServiceRepository {
       `SELECT id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
               supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_customer_facing_service
+       FROM service_customer_facing
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -419,7 +419,7 @@ export class OracleServiceRepository implements IServiceRepository {
   ): Promise<ResourceFacingService> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_resource_facing_service
+      `INSERT INTO service_resource_facing
        (id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
         is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
         service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
@@ -495,7 +495,7 @@ export class OracleServiceRepository implements IServiceRepository {
       `SELECT id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
               service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_resource_facing_service
+       FROM service_resource_facing
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -540,7 +540,7 @@ export class OracleServiceRepository implements IServiceRepository {
         supporting_resource_id: string | null;
       }>(
         `SELECT supporting_resources, supporting_resource_id
-           FROM tmf_resource_facing_service
+           FROM service_resource_facing
           WHERE ${conditions.join(' AND ')}`,
         params,
       );
@@ -583,7 +583,7 @@ export class OracleServiceRepository implements IServiceRepository {
         `SELECT id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
                 is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
                 supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
-         FROM tmf_customer_facing_service
+         FROM service_customer_facing
          ORDER BY name, id`,
       );
       return rows
@@ -600,7 +600,7 @@ export class OracleServiceRepository implements IServiceRepository {
       `SELECT id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, subscriber_id, supporting_resource_facing_service_id, place, related_party,
               supporting_services, service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_customer_facing_service`,
+       FROM service_customer_facing`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -623,7 +623,7 @@ export class OracleServiceRepository implements IServiceRepository {
         `SELECT id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
                 is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
                 service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
-         FROM tmf_resource_facing_service
+         FROM service_resource_facing
          ORDER BY name, id`,
       );
       return rows
@@ -638,7 +638,7 @@ export class OracleServiceRepository implements IServiceRepository {
       `SELECT id, name, service_specification_id, status, state, service_type, category, service_date, start_date, end_date,
               is_service_enabled, has_started, supporting_resource_id, place, related_party, supporting_resources, supporting_services,
               service_relationships, characteristics, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_resource_facing_service`,
+       FROM service_resource_facing`,
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name, id',
       hasLimit ? 'LIMIT ?' : hasOffset ? 'LIMIT -1' : '',
@@ -660,7 +660,7 @@ export class OracleServiceRepository implements IServiceRepository {
       subscriberIdColumn: 'subscriber_id',
     });
     const sql = [
-      'SELECT COUNT(*) as count FROM tmf_customer_facing_service',
+      'SELECT COUNT(*) as count FROM service_customer_facing',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
     ]
       .filter((part) => part.length > 0)
@@ -674,7 +674,7 @@ export class OracleServiceRepository implements IServiceRepository {
       return (await this.listResourceFacingServicesDirect(query)).length;
     const { conditions, params } = buildServiceConditions(query);
     const sql = [
-      'SELECT COUNT(*) as count FROM tmf_resource_facing_service',
+      'SELECT COUNT(*) as count FROM service_resource_facing',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
     ]
       .filter((part) => part.length > 0)

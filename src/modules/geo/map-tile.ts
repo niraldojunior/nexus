@@ -1,5 +1,5 @@
 // Matemática de tile (função pura, sem I/O) para o índice de exibição do mapa
-// (`geo_map_feature` — ver scripts/build-map-features.mjs e GeoMapTileService).
+// (`geographic_map_feature` — ver scripts/build-map-features.mjs e GeoMapTileService).
 //
 // Esquema padrão de "slippy map" (mesmo do Google/OSM/MapBox): em cada zoom `z` o mundo vira
 // uma grade de 2^z × 2^z tiles em Web Mercator. `MAP_TILE_ZOOM` é o zoom de ARMAZENAMENTO —
@@ -174,7 +174,7 @@ export function clipLineToBounds(
   return runs;
 }
 
-// Todos os tiles que uma polyline atravessa, no zoom `z` — a rota entra em `geo_map_feature`
+// Todos os tiles que uma polyline atravessa, no zoom `z` — a rota entra em `geographic_map_feature`
 // uma vez por tile desta lista (recortada por clipLineToBounds em cada um). Por segmento,
 // varre o retângulo de tiles que cobre os dois vértices e confirma cada candidato com
 // clipSegment contra o tile (não só a caixa envolvente) — correto mesmo quando o segmento é
@@ -217,7 +217,7 @@ export function tileForPoint(coordinates: LngLat, z: number = MAP_TILE_ZOOM): Ti
   return lngLatToTile(coordinates[0], coordinates[1], z);
 }
 
-// Tiles + trecho recortado de um cabo, prontos para virar linhas de geo_map_feature. Um tile pode
+// Tiles + trecho recortado de um cabo, prontos para virar linhas de geographic_map_feature. Um tile pode
 // receber mais de um trecho quando a rota sai dele e volta a entrar; `rank` é o ordinal estável
 // desses trechos na ordem da rota e completa a chave física da projeção.
 export function tileSegmentsForLine(
@@ -331,7 +331,7 @@ export function tileSegmentsForLayerLine(
 // ---------------------------------------------------------------------------------------------
 // LOD multirresolução das linhas (issue #317). Cada camada LINE do Studio GEO declara perfis
 // (`lodProfiles`) e cada faixa de escala escolhe um. O índice materializa UMA vez cada perfil
-// referenciado, gravado em `geo_map_feature.lod_key`; o cliente pede exatamente o LOD da faixa.
+// referenciado, gravado em `geographic_map_feature.lod_key`; o cliente pede exatamente o LOD da faixa.
 // ---------------------------------------------------------------------------------------------
 
 /** `lod_key` de pontos e de qualquer feature que não tem pirâmide de LOD. */

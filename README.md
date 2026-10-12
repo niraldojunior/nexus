@@ -106,7 +106,7 @@ constraint) é criado e consultado com esse prefixo
 [`oracle-object-names.ts`](src/shared/persistence/oracle-object-names.ts)). O usuário Oracle precisa
 de privilégio de DDL quando `DATABASE_AUTO_SCHEMA=true` cria os objetos do prefixo.
 
-Em produção o boot somente valida `<prefixo>schema_migrations`; aplique DDL antecipadamente com
+Em produção o boot somente valida `<prefixo>migration_schema`; aplique DDL antecipadamente com
 `npm run db:migrate`. `DATABASE_AUTO_SCHEMA=true` é aceito apenas em desenvolvimento/teste.
 
 A ordem de resolução das variáveis Oracle está em

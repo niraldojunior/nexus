@@ -15,7 +15,7 @@ export const INTERNAL_RESOURCE_TYPES = ['Splitter', 'Port'] as const;
 export const INTERNAL_RESOURCE_TYPES_SQL = INTERNAL_RESOURCE_TYPES.map((t) => `'${t}'`).join(', ');
 
 // Fragmentos SQL sobre o ResourceType resolvido pela FK de ResourceSpecification.
-// O alias deve apontar para o JOIN de tmf_resource_type (por exemplo, "rt").
+// O alias deve apontar para o JOIN de resource_type (por exemplo, "rt").
 export function excludeInternalResourceTypesSql(alias = 'rt'): string {
   return `${alias}.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;
 }

@@ -343,7 +343,7 @@ export type GeographicSite = {
   characteristic: Characteristic[];
 };
 
-/** Município do diretório master (`geo_administrative_city`), global e sem tenant (issue #329). */
+/** Município do diretório master (`geographic_administrative_city`), global e sem tenant (issue #329). */
 export type AdministrativeCityRecord = {
   id: string;
   countryCode: string;

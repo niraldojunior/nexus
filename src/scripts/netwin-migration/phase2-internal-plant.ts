@@ -171,8 +171,8 @@ async function requirePortSpecification(
     `SELECT specification.id,
             specification.tenant_id AS specification_tenant_id,
             resource_type.code AS resource_type_code
-       FROM ${ctx.t('tmf_resource_specification')} specification
-       JOIN ${ctx.t('tmf_resource_type')} resource_type ON resource_type.id = specification.resource_type_id
+       FROM ${ctx.t('resource_specification')} specification
+       JOIN ${ctx.t('resource_type')} resource_type ON resource_type.id = specification.resource_type_id
       WHERE specification.id = :1`,
     [specId],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -208,8 +208,8 @@ async function requireSplitterSpecifications(
 
   const result = await target.execute<{ ID: string }>(
     `SELECT specification.id
-       FROM ${ctx.t('tmf_resource_specification')} specification
-       JOIN ${ctx.t('tmf_resource_type')} resource_type ON resource_type.id = specification.resource_type_id
+       FROM ${ctx.t('resource_specification')} specification
+       JOIN ${ctx.t('resource_type')} resource_type ON resource_type.id = specification.resource_type_id
       WHERE specification.tenant_id = :1
         AND resource_type.code = 'Splitter'`,
     [ctx.options.tenantId],
@@ -240,7 +240,7 @@ async function requireSpecIds(
   if (!target) return specs;
 
   const result = await target.execute<{ ID: string }>(
-    `SELECT id FROM ${ctx.t('tmf_resource_specification')}`,
+    `SELECT id FROM ${ctx.t('resource_specification')}`,
     [],
     {
       outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -340,7 +340,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     const splitterSpecsByRatio = await requireSplitterSpecifications(ctx, target);
     const availableSpecIds = new Set<string>();
     const specRows = await target.execute<{ ID: string }>(
-      `SELECT id FROM ${ctx.t('tmf_resource_specification')} WHERE tenant_id = :1`,
+      `SELECT id FROM ${ctx.t('resource_specification')} WHERE tenant_id = :1`,
       [ctx.options.tenantId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
@@ -359,7 +359,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       const placeholders = parentBatch.map((_, index) => `:${index + 1}`).join(', ');
       const result = await target.execute<{ ID: string; TENANT_ID: string }>(
         `SELECT id, tenant_id
-           FROM ${ctx.t('tmf_physical_resource')}
+           FROM ${ctx.t('resource_physical')}
           WHERE id IN (${placeholders})`,
         parentBatch,
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -670,7 +670,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_physical_resource',
+            'resource_physical',
             ['id'],
             resourceColumns,
             resourceBatch,
@@ -685,7 +685,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_resource_relationship',
+            'resource_relationship',
             relationshipColumns,
             relationshipColumns,
             relationshipBatch,

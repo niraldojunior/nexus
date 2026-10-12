@@ -3,7 +3,7 @@
  *
  * Em conformidade com TM Forum TMF632 e C1 (TMF-first), dados cadastrais de perfil, identificações
  * fiscais/legais, contatos e endereços são modelados como `partyCharacteristic` tipadas,
- * sem adicionar campos ad-hoc ou alterar a tabela `tmf_party`.
+ * sem adicionar campos ad-hoc ou alterar a tabela `party`.
  */
 
 export const PARTY_CHARACTERISTIC_GROUPS = {

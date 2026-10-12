@@ -165,23 +165,23 @@ function levelConfig(level: Level) {
 export function phase3CdoSourceSql(t: (table: string) => string): string {
   return `SELECT r.id AS "ID", r.name AS "NAME", r.status AS "STATUS", l.geometry AS "GEOMETRY",
                  a.locality AS "LOCALITY", a.city AS "CITY", a.state_or_province AS "UF", a.street_nr AS "STREET_NR"
-            FROM ${t('tmf_physical_resource')} r
-            JOIN ${t('tmf_resource_specification')} rs
+            FROM ${t('resource_physical')} r
+            JOIN ${t('resource_specification')} rs
               ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
-            JOIN ${t('tmf_resource_type')} rt ON rt.id = rs.resource_type_id
-            LEFT JOIN ${t('tmf_geographic_site')} place_site
+            JOIN ${t('resource_type')} rt ON rt.id = rs.resource_type_id
+            LEFT JOIN ${t('geographic_site')} place_site
               ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
-            LEFT JOIN ${t('tmf_geographic_address')} place_address
+            LEFT JOIN ${t('geographic_address')} place_address
               ON place_address.id = r.place_id AND place_address.tenant_id = r.tenant_id
-            JOIN ${t('tmf_geographic_location')} l
+            JOIN ${t('geographic_location')} l
               ON l.id = COALESCE(place_site.geographic_location_id,place_address.geographic_location_id,r.place_id)
              AND l.tenant_id = r.tenant_id
-            LEFT JOIN ${t('tmf_geographic_address')} a
+            LEFT JOIN ${t('geographic_address')} a
               ON a.id = COALESCE(
                 place_site.geographic_address_id,
                 (
                   SELECT address.id
-                    FROM ${t('tmf_geographic_address')} address
+                    FROM ${t('geographic_address')} address
                    WHERE address.geographic_location_id = l.id
                      AND address.tenant_id = r.tenant_id
                    ORDER BY address.id
@@ -206,7 +206,7 @@ export function phase3CdoPageSql(t: (table: string) => string): string {
 async function resolveSpecId(conn: Connection, ctx: MigrationContext): Promise<string> {
   const existing = await conn.execute<{ ID: string; CATEGORY: string; SITE_ROLE: string | null }>(
     `SELECT id AS "ID", category AS "CATEGORY", site_role AS "SITE_ROLE"
-       FROM ${ctx.t('tmf_geographic_site_specification')}
+       FROM ${ctx.t('geographic_site_specification')}
       WHERE code=:1`,
     [SPEC_CODE],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -223,7 +223,7 @@ async function resolveSpecId(conn: Connection, ctx: MigrationContext): Promise<s
   }
   if (ctx.options.apply) {
     await conn.execute(
-      `INSERT INTO ${ctx.t('tmf_geographic_site_specification')}
+      `INSERT INTO ${ctx.t('geographic_site_specification')}
         (id,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap)
        VALUES (:1,:2,:3,'Region','grouping','Active','[]',0)`,
       [SPEC_ID, 'Cobertura GPON', SPEC_CODE],
@@ -444,18 +444,18 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
 
     try {
       await conn.execute(
-        `UPDATE ${ctx.t('tmf_geographic_site')}
+        `UPDATE ${ctx.t('geographic_site')}
             SET status='Retired'
           WHERE tenant_id=:tenantId
             AND site_specification_id=:specId
             AND status<>'Retired'`,
         { tenantId: ctx.options.tenantId, specId },
       );
-      await conn.execute(`DELETE FROM ${ctx.t('geo_coverage_cell')} WHERE tenant_id=:tenantId`, {
+      await conn.execute(`DELETE FROM ${ctx.t('geographic_coverage_cell')} WHERE tenant_id=:tenantId`, {
         tenantId: ctx.options.tenantId,
       });
       await conn.execute(
-        `DELETE FROM ${ctx.t('geo_coverage_area')} WHERE tenant_id=:tenantId AND source_type=:sourceType AND source_id=:sourceId`,
+        `DELETE FROM ${ctx.t('geographic_coverage_area')} WHERE tenant_id=:tenantId AND source_type=:sourceType AND source_id=:sourceId`,
         {
           tenantId: ctx.options.tenantId,
           sourceType: 'GEOGRAPHIC_SITE_SPECIFICATION',
@@ -465,7 +465,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       await bulkMergeRows(
         conn,
         ctx.t,
-        'tmf_geographic_location',
+        'geographic_location',
         ['id'],
         [
           'id',
@@ -482,7 +482,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       await bulkMergeRows(
         conn,
         ctx.t,
-        'tmf_geographic_site',
+        'geographic_site',
         ['id'],
         [
           'id',
@@ -500,7 +500,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       await bulkMergeRows(
         conn,
         ctx.t,
-        'geo_coverage_area',
+        'geographic_coverage_area',
         ['tenant_id', 'location_id'],
         [
           'tenant_id',
@@ -528,7 +528,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
       await bulkMergeRows(
         conn,
         ctx.t,
-        'geo_coverage_cell',
+        'geographic_coverage_cell',
         ['tenant_id', 'grid_size_m', 'grid_x', 'grid_y'],
         [
           'tenant_id',

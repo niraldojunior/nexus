@@ -39,7 +39,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
   public constructor(private readonly db: DatabaseClient) {}
 
   /**
-   * Diretório Brasil/UF/município num único carregamento, lido de `geo_administrative_city`.
+   * Diretório Brasil/UF/município num único carregamento, lido de `geographic_administrative_city`.
    * Lê somente o diretório (tabela pequena, sem tocar em endereços/sites): o custo por
    * município fica para a expansão do nó, que é lazy.
    */
@@ -53,8 +53,8 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     }>(
       `SELECT c.id AS id, c.country_code AS country_code, c.country_name AS country_name,
               c.state_code AS state_code, c.city_name AS city_name
-         FROM geo_administrative_city c
-         JOIN geo_administrative_city_tenant k
+         FROM geographic_administrative_city c
+         JOIN geographic_administrative_city_tenant k
            ON k.administrative_city_id = c.id AND k.tenant_id = ? AND k.active_site_count > 0
         ORDER BY c.country_code, c.state_code, c.city_key, c.id`,
       [tenantId],
@@ -98,7 +98,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     // Ramo sintético só quando o tenant tem Site raiz ativo sem município (existência, não contagem).
     const withoutCity = await this.scalar(
       `SELECT count(*) AS n FROM (
-         SELECT 1 FROM tmf_geographic_site
+         SELECT 1 FROM geographic_site
           WHERE tenant_id = ? AND administrative_city_id IS NULL
             AND parent_site_id IS NULL AND status <> 'Retired'
           FETCH FIRST 1 ROWS ONLY)`,
@@ -184,8 +184,8 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       total: number | string;
     }>(
       `SELECT sp.id AS id, sp.name AS name, count(*) AS n, count(*) OVER() AS total
-         FROM tmf_geographic_site s
-         JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
+         FROM geographic_site s
+         JOIN geographic_site_specification sp ON sp.id = s.site_specification_id
         WHERE ${scope.sql}
         GROUP BY sp.id, sp.name
         ORDER BY LOWER(sp.name), sp.id
@@ -211,7 +211,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       total: await this.totalOrFallback(rows[0]?.total, options.offset, rows.length, () =>
         this.scalar(
           `SELECT count(*) AS n FROM (
-             SELECT s.site_specification_id FROM tmf_geographic_site s
+             SELECT s.site_specification_id FROM geographic_site s
               WHERE ${scope.sql} GROUP BY s.site_specification_id) g`,
           scope.params,
         ),
@@ -237,7 +237,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     }>(
       `SELECT s.id AS id, s.name AS name, s.status AS status,
               s.site_specification_id AS spec_id, count(*) OVER() AS total
-         FROM tmf_geographic_site s
+         FROM geographic_site s
         WHERE ${scope.sql} AND s.site_specification_id = ?
         ORDER BY LOWER(s.name), s.id
         LIMIT ? OFFSET ?`,
@@ -248,7 +248,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       nodes: await this.siteNodes(rows, options.tenantId),
       total: await this.totalOrFallback(rows[0]?.total, options.offset, rows.length, () =>
         this.scalar(
-          `SELECT count(*) AS n FROM tmf_geographic_site s
+          `SELECT count(*) AS n FROM geographic_site s
             WHERE ${scope.sql} AND s.site_specification_id = ?`,
           [...scope.params, specId],
         ),
@@ -272,7 +272,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       total: number | string;
     }>(
       `SELECT id, name, status, site_specification_id AS spec_id, count(*) OVER() AS total
-         FROM tmf_geographic_site
+         FROM geographic_site
         WHERE tenant_id = ? AND parent_site_id = ? AND id <> ? AND status <> 'Retired'
         ORDER BY LOWER(name), id
         LIMIT ? OFFSET ?`,
@@ -283,7 +283,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       nodes: await this.siteNodes(rows, tenantId),
       total: await this.totalOrFallback(rows[0]?.total, offset, rows.length, () =>
         this.scalar(
-          "SELECT count(*) AS n FROM tmf_geographic_site WHERE tenant_id = ? AND parent_site_id = ? AND id <> ? AND status <> 'Retired'",
+          "SELECT count(*) AS n FROM geographic_site WHERE tenant_id = ? AND parent_site_id = ? AND id <> ? AND status <> 'Retired'",
           [tenantId, siteId, siteId],
         ),
       ),
@@ -300,7 +300,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     if (rows.length === 0) return [];
     const ids = rows.map((row) => row.id);
     const counted = await this.db.all<{ id: string; n: number | string }>(
-      `SELECT parent_site_id AS id, count(*) AS n FROM tmf_geographic_site
+      `SELECT parent_site_id AS id, count(*) AS n FROM geographic_site
         WHERE tenant_id = ? AND parent_site_id IN (${placeholders(ids)}) AND id <> parent_site_id AND status <> 'Retired'
         GROUP BY parent_site_id`,
       [tenantId, ...ids],
@@ -339,7 +339,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       icon_asset_id: string | null;
     }>(
       `SELECT site_specification_id, icon_code, icon_asset_id
-         FROM tmf_geo_site_spec_visual_identity
+         FROM geographic_site_spec_visual_identity
         WHERE tenant_id = ? AND site_specification_id IN (${placeholders(ids)})`,
       [tenantId, ...ids],
     );
@@ -387,7 +387,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     }
     if (resourceTypeIdIn && resourceTypeIdIn.length > 0) {
       filters.push(
-        `resource_specification_id IN (SELECT id FROM tmf_resource_specification
+        `resource_specification_id IN (SELECT id FROM resource_specification
            WHERE resource_type_id IN (${placeholders(resourceTypeIdIn)}))`,
       );
       filterParams.push(...resourceTypeIdIn);
@@ -395,10 +395,10 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     const where = filters.join(' AND ');
     const union = `SELECT u.id, u.entity_type, u.name, u.spec_id, u.status, u.status_code, u.place_id FROM (
         SELECT id, 'PhysicalResource' AS entity_type, name, resource_specification_id AS spec_id, status, status_code, place_id
-          FROM tmf_physical_resource WHERE ${where}
+          FROM resource_physical WHERE ${where}
         UNION ALL
         SELECT id, 'LogicalResource' AS entity_type, name, resource_specification_id AS spec_id, status, CAST(NULL AS VARCHAR(100)) AS status_code, place_id
-          FROM tmf_logical_resource WHERE ${where}
+          FROM resource_logical WHERE ${where}
       ) u`;
     const unionParams = [...filterParams, ...filterParams];
 
@@ -462,8 +462,8 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     }>(
       `SELECT rs.id AS spec_id, rs.name AS spec_name, rt.id AS type_id, rt.code AS type_code,
               rt.name AS type_name, rt.icon_code AS icon_code, rt.icon_asset_id AS icon_asset_id
-         FROM tmf_resource_specification rs
-         JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
+         FROM resource_specification rs
+         JOIN resource_type rt ON rt.id = rs.resource_type_id
         WHERE rs.id IN (${placeholders(ids)})`,
       ids,
     );
@@ -497,7 +497,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       `SELECT CONNECT_BY_ROOT x.id AS root_id, CONNECT_BY_ROOT x.name AS root_name,
               LEVEL AS lvl,
               x.administrative_city_id AS city_id
-         FROM tmf_geographic_site x
+         FROM geographic_site x
         START WITH x.id IN (${placeholders(ids)})
       CONNECT BY NOCYCLE PRIOR x.parent_site_id = x.id`,
       ids,
@@ -518,7 +518,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     const cities = new Map<string, { uf: string; city: string }>();
     if (cityIds.length > 0) {
       const rows = await this.db.all<{ id: string; state_code: string; city_name: string }>(
-        `SELECT id, state_code, city_name FROM geo_administrative_city
+        `SELECT id, state_code, city_name FROM geographic_administrative_city
           WHERE id IN (${placeholders(cityIds)})`,
         cityIds,
       );

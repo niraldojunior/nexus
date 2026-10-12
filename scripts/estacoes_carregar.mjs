@@ -750,7 +750,7 @@ async function main() {
 // de migração, não mudança operacional feita por um usuário. Ainda assim:
 //   · gera os mesmos UUID v7 (`createCanonicalId`, mesmo gerador da app);
 //   · grava `characteristics` no mesmo formato `_origin.*` (C5);
-//   · grava `tmf_geographic_site_status_history` (histórico de status fica
+//   · grava `geographic_site_status_history` (histórico de status fica
 //     íntegro mesmo sem os outros efeitos colaterais do backend);
 //   · é idempotente por sigla/nome, igual `main()` — seguro rodar de novo.
 // Exige que as specs "Central Office"/"Room" (com containment declarado) já
@@ -788,7 +788,7 @@ async function resetStations(client) {
   console.log('Identificando estações e salas para remoção…');
   const { rows: stations } = await client.query(`
     SELECT id, geographic_address_id, geographic_location_id
-      FROM tmf_geographic_site s
+      FROM geographic_site s
      WHERE EXISTS (
        SELECT 1
          FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (
@@ -811,7 +811,7 @@ async function resetStations(client) {
     `${column} IN (SELECT id FROM JSON_TABLE($1, '$[*]' COLUMNS (id VARCHAR2(36) PATH '$')))`;
   const { rows: salas } = await client.query(
     `SELECT id, geographic_address_id, geographic_location_id
-       FROM tmf_geographic_site
+       FROM geographic_site
       WHERE ${idsInJson('parent_site_id')}`,
     [JSON.stringify(stationIds)],
   );
@@ -823,17 +823,17 @@ async function resetStations(client) {
   if (allIds.length) {
     const allIdsJson = JSON.stringify(allIds);
     await client.query(
-      `DELETE FROM tmf_geographic_site_status_history WHERE ${idsInJson('site_id')}`,
+      `DELETE FROM geographic_site_status_history WHERE ${idsInJson('site_id')}`,
       [allIdsJson],
     );
-    await client.query(`DELETE FROM tmf_geographic_site WHERE ${idsInJson('id')}`, [allIdsJson]);
+    await client.query(`DELETE FROM geographic_site WHERE ${idsInJson('id')}`, [allIdsJson]);
   }
   if (addrIds.length)
-    await client.query(`DELETE FROM tmf_geographic_address WHERE ${idsInJson('id')}`, [
+    await client.query(`DELETE FROM geographic_address WHERE ${idsInJson('id')}`, [
       JSON.stringify(addrIds),
     ]);
   if (locIds.length)
-    await client.query(`DELETE FROM tmf_geographic_location WHERE ${idsInJson('id')}`, [
+    await client.query(`DELETE FROM geographic_location WHERE ${idsInJson('id')}`, [
       JSON.stringify(locIds),
     ]);
 
@@ -846,7 +846,7 @@ async function resetStations(client) {
 async function loadSpecsFast(client) {
   const { rows } = await client.query(
     `SELECT id, name, allowed_parent_spec_ids, allowed_child_spec_ids
-     FROM tmf_geographic_site_specification WHERE name IN ('Central Office', 'Room')`,
+     FROM geographic_site_specification WHERE name IN ('Central Office', 'Room')`,
   );
   const byName = new Map(rows.map((r) => [r.name, r]));
   const co = byName.get('Central Office');
@@ -873,7 +873,7 @@ async function loadSpecsFast(client) {
 // numa única query em vez de 1 GET por página.
 async function loadExistingIndexFast(client) {
   const { rows } = await client.query(
-    `SELECT id, name, parent_site_id, status, characteristics FROM tmf_geographic_site
+    `SELECT id, name, parent_site_id, status, characteristics FROM geographic_site
      WHERE status NOT IN ('Retired', 'terminated')`,
   );
   const siteBySigla = new Map();
@@ -1162,7 +1162,7 @@ async function mainFast() {
     try {
       await bulkInsert(
         client,
-        'tmf_geographic_location',
+        'geographic_location',
         [
           'id',
           'tenant_id',
@@ -1177,7 +1177,7 @@ async function mainFast() {
       await linkAdministrativeCities(client, newAddresses);
       await bulkInsert(
         client,
-        'tmf_geographic_address',
+        'geographic_address',
         [
           'id',
           'tenant_id',
@@ -1195,7 +1195,7 @@ async function mainFast() {
       await linkSiteAdministrativeCities(client, newSites, newAddresses);
       await bulkInsert(
         client,
-        'tmf_geographic_site',
+        'geographic_site',
         [
           'id',
           'tenant_id',
@@ -1215,7 +1215,7 @@ async function mainFast() {
       );
       await bulkInsert(
         client,
-        'tmf_geographic_site_status_history',
+        'geographic_site_status_history',
         [
           'id',
           'site_id',
@@ -1237,7 +1237,7 @@ async function mainFast() {
           rows: [check],
         } = await client.query(
           `SELECT COUNT(*) AS n
-             FROM tmf_geographic_site
+             FROM geographic_site
             WHERE id IN (
               SELECT id FROM JSON_TABLE($1, '$[*]' COLUMNS (id VARCHAR2(36) PATH '$'))
             )`,
@@ -1254,14 +1254,14 @@ async function mainFast() {
       // Atualiza sites existentes com campos divergentes (characteristics e/ou status).
       for (const patch of toUpdate) {
         if (patch.characteristics !== undefined) {
-          await client.query('UPDATE tmf_geographic_site SET characteristics = $2 WHERE id = $1', [
+          await client.query('UPDATE geographic_site SET characteristics = $2 WHERE id = $1', [
             patch.id,
             patch.characteristics,
           ]);
         }
         if (patch.status !== undefined) {
           await client.query(
-            'UPDATE tmf_geographic_site SET status = $2, status_date = $3 WHERE id = $1',
+            'UPDATE geographic_site SET status = $2, status_date = $3 WHERE id = $1',
             [patch.id, patch.status, patch.statusDate],
           );
           // `newHistory` já foi gravado no bulkInsert acima — esta transição só existe
@@ -1269,7 +1269,7 @@ async function mainFast() {
           // real que a leitura de `loadExistingIndexFast` capturou.
           const h = historyRow(patch.id, patch.statusDate, patch.status);
           await client.query(
-            `INSERT INTO tmf_geographic_site_status_history
+            `INSERT INTO geographic_site_status_history
              (id, site_id, tenant_id, from_status, to_status, status_date, status_reason, actor_sub, trace_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
@@ -1303,10 +1303,10 @@ async function mainFast() {
     await recountAdministrativeCityTenant(client);
     console.log('\nAtualizando estatísticas...');
     for (const table of [
-      'tmf_geographic_location',
-      'tmf_geographic_address',
-      'tmf_geographic_site',
-      'tmf_geographic_site_status_history',
+      'geographic_location',
+      'geographic_address',
+      'geographic_site',
+      'geographic_site_status_history',
     ]) {
       await client.gatherStats(table);
     }

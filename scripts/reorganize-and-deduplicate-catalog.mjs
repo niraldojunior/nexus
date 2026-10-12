@@ -614,7 +614,7 @@ async function run() {
 
   // 1. Obter catálogo
   const catalogRes = await db.query(
-    `SELECT id, code, name FROM tmf_resource_catalog WHERE tenant_id = $1 AND code = $2`,
+    `SELECT id, code, name FROM resource_catalog WHERE tenant_id = $1 AND code = $2`,
     [TENANT_ID, CATALOG_CODE],
   );
   const catalog = catalogRes.rows[0];
@@ -625,7 +625,7 @@ async function run() {
 
   // 2. Obter todos os ResourceTypes
   const typesRes = await db.query(
-    `SELECT id, code, name FROM tmf_resource_type WHERE tenant_id = $1`,
+    `SELECT id, code, name FROM resource_type WHERE tenant_id = $1`,
     [TENANT_ID],
   );
   const typeByCode = new Map(typesRes.rows.map((t) => [t.code, t]));
@@ -633,7 +633,7 @@ async function run() {
   // 3. Obter todos os nós atuais do catálogo
   const nodesRes = await db.query(
     `SELECT id, code, name, kind, parent_node_id, resource_type_id, status, sort_order
-       FROM tmf_resource_catalog_node
+       FROM resource_catalog_node
       WHERE tenant_id = $1 AND catalog_id = $2`,
     [TENANT_ID, catalogId],
   );
@@ -681,7 +681,7 @@ async function run() {
       console.log(`  (+) Novo grupo necessário: "${groupDef.name}" (code: ${groupDef.code})`);
       if (APPLY) {
         await db.query(
-          `INSERT INTO tmf_resource_catalog_node
+          `INSERT INTO resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, $4, $5, 'GROUP', null, 'active', $6, $7, $8)`,
           [
@@ -804,7 +804,7 @@ async function run() {
       );
       if (APPLY) {
         await db.query(
-          `INSERT INTO tmf_resource_catalog_node
+          `INSERT INTO resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, $4, $5, 'RESOURCE_TYPE', $6, 'active', $7, $8, $9)`,
           [
@@ -856,7 +856,7 @@ async function run() {
     console.log(`\n--- 4. Removendo ${nodesToDelete.length} nós duplicados ---`);
     if (APPLY) {
       for (const delId of nodesToDelete) {
-        await db.query(`DELETE FROM tmf_resource_catalog_node WHERE id = $1`, [delId]);
+        await db.query(`DELETE FROM resource_catalog_node WHERE id = $1`, [delId]);
       }
       console.log(`  (✓) Duplicatas removidas com sucesso.`);
     } else {
@@ -874,7 +874,7 @@ async function run() {
       console.log(`(+) Criando Grupo 'Sobra'`);
       if (APPLY) {
         await db.query(
-          `INSERT INTO tmf_resource_catalog_node
+          `INSERT INTO resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, 'sobra', 'Sobra', 'GROUP', null, 'active', 99, $4, $5)`,
           [sobraGroupId, TENANT_ID, catalogId, now, now],
@@ -885,7 +885,7 @@ async function run() {
       // Garante que o grupo Sobra em si seja raiz
       if (APPLY) {
         await db.query(
-          `UPDATE tmf_resource_catalog_node SET parent_node_id = null, sort_order = 99 WHERE id = $1`,
+          `UPDATE resource_catalog_node SET parent_node_id = null, sort_order = 99 WHERE id = $1`,
           [sobraGroupId],
         );
       }
@@ -901,7 +901,7 @@ async function run() {
     );
     if (APPLY) {
       await db.query(
-        `UPDATE tmf_resource_catalog_node
+        `UPDATE resource_catalog_node
             SET name = $1, parent_node_id = $2, sort_order = $3, resource_type_id = $4, status = 'active', updated_at = $5
           WHERE id = $6`,
         [item.name, parentId, item.sortOrder, item.resourceTypeId, now, item.id],
@@ -917,7 +917,7 @@ async function run() {
       console.log(`  📦 Movendo para 'Sobra': "${sNode.name}"`);
       if (APPLY) {
         await db.query(
-          `UPDATE tmf_resource_catalog_node
+          `UPDATE resource_catalog_node
               SET parent_node_id = $1, sort_order = $2, updated_at = $3
             WHERE id = $4`,
           [sobraGroupId, sOrder++, now, sNode.id],

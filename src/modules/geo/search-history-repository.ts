@@ -65,13 +65,13 @@ export class GeoSearchHistoryRepository {
     const now = new Date().toISOString();
     const payload = JSON.stringify(input.payload ?? null);
     const existing = await this.db.get<{ id: string }>(
-      `SELECT id FROM geo_search_history WHERE user_id = ? AND entry_key = ?`,
+      `SELECT id FROM user_search_history WHERE user_id = ? AND entry_key = ?`,
       [userId, input.entryKey],
     );
     if (existing) {
       // O rótulo/snapshot mais recente vence — um endereço pode ter sido re-resolvido.
       await this.db.run(
-        `UPDATE geo_search_history
+        `UPDATE user_search_history
             SET visit_count = visit_count + 1,
                 last_visited_at = ?,
                 label = ?,
@@ -81,7 +81,7 @@ export class GeoSearchHistoryRepository {
       );
     } else {
       await this.db.run(
-        `INSERT INTO geo_search_history
+        `INSERT INTO user_search_history
             (id, user_id, entry_key, kind, label, payload, visit_count, last_visited_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         [randomUUID(), userId, input.entryKey, input.kind, input.label, payload, now, now],
@@ -94,7 +94,7 @@ export class GeoSearchHistoryRepository {
     const rows = await this.db.all<HistoryRow>(
       `SELECT entry_key AS entryKey, kind, label, payload,
               visit_count AS visitCount, last_visited_at AS lastVisitedAt
-         FROM geo_search_history
+         FROM user_search_history
         WHERE user_id = ?
         ORDER BY visit_count DESC, last_visited_at DESC
         LIMIT ?`,
@@ -105,24 +105,24 @@ export class GeoSearchHistoryRepository {
 
   async remove(userId: string, entryKey: string): Promise<boolean> {
     const result = await this.db.run(
-      `DELETE FROM geo_search_history WHERE user_id = ? AND entry_key = ?`,
+      `DELETE FROM user_search_history WHERE user_id = ? AND entry_key = ?`,
       [userId, entryKey],
     );
     return result.changes > 0;
   }
 
   async clear(userId: string): Promise<void> {
-    await this.db.run(`DELETE FROM geo_search_history WHERE user_id = ?`, [userId]);
+    await this.db.run(`DELETE FROM user_search_history WHERE user_id = ?`, [userId]);
   }
 
   // Mantém apenas os MAX_ENTRIES melhores do usuário — mesmo ORDER do list, para a poda ser
   // consistente com o que o usuário vê.
   private async prune(userId: string): Promise<void> {
     await this.db.run(
-      `DELETE FROM geo_search_history
+      `DELETE FROM user_search_history
         WHERE user_id = ?
           AND entry_key NOT IN (
-            SELECT entry_key FROM geo_search_history
+            SELECT entry_key FROM user_search_history
              WHERE user_id = ?
              ORDER BY visit_count DESC, last_visited_at DESC
              LIMIT ?

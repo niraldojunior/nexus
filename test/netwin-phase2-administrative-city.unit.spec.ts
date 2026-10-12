@@ -18,7 +18,7 @@ const makeCtx = (apply: boolean, existingCity: boolean) => {
     }
     if (/SELECT COUNT\(\*\)/i.test(sql))
       return { rows: [{ N: existingCity ? 1 : inserts.length }] };
-    if (/FROM .*GEO_ADMINISTRATIVE_CITY/i.test(sql) && /WHERE country_code/i.test(sql)) {
+    if (/FROM .*GEOGRAPHIC_ADMINISTRATIVE_CITY/i.test(sql) && /WHERE country_code/i.test(sql)) {
       return { rows: existingCity ? [{ ID: 'city-1' }] : [] };
     }
     if (/INSERT INTO/i.test(sql)) {

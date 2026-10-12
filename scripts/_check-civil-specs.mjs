@@ -4,7 +4,7 @@ loadEnv({ quiet: true });
 async function main() {
   const db = await openLoaderDb();
   const res = await db.query(
-    `SELECT id, name, category, resource_type FROM tmf_resource_specification WHERE category = $1`,
+    `SELECT id, name, category, resource_type FROM resource_specification WHERE category = $1`,
     ['Infrastructure.CivilWorks'],
   );
   console.log(JSON.stringify(res.rows, null, 2));

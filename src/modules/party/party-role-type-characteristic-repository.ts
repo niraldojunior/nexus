@@ -234,7 +234,7 @@ export class PartyRoleTypeCharacteristicRepository {
     return this.update(tenantId, id, { active: false });
   }
 
-  // Seed idempotente: hoje `cnpj` é gravado livre em `tmf_party_role.characteristics` sem estar
+  // Seed idempotente: hoje `cnpj` é gravado livre em `party_role.characteristics` sem estar
   // declarado em catálogo algum (ver ConfigurationPage.tsx). Garante que a aba "Características
   // Gerais" do tipo `manufacturer` não comece vazia de forma enganosa, sem migrar nenhum valor de
   // fornecedor já cadastrado — só declara a característica no catálogo.

@@ -297,7 +297,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     if (target) {
       const existingTypes = await target.execute<{ ID: string; CODE: string; TENANT_ID: string }>(
         `SELECT id, code, tenant_id
-           FROM ${ctx.t('tmf_resource_type')}
+           FROM ${ctx.t('resource_type')}
           WHERE tenant_id IN (:1, 'default')
           ORDER BY CASE WHEN tenant_id = 'default' THEN 0 ELSE 1 END, id`,
         [ctx.options.tenantId],
@@ -330,7 +330,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         // cópia tenant-local. Ainda assim, suas definitions precisam ser reconciliadas para que
         // Port e Splitter usados nas specifications do tenant recebam o contrato da Fase 2.C.
         if (!sharedTypeCodes.has(rt.code)) {
-          await merge(target, ctx.t, 'tmf_resource_type', ['tenant_id', 'code'], {
+          await merge(target, ctx.t, 'resource_type', ['tenant_id', 'code'], {
             id: typeId,
             tenant_id: ctx.options.tenantId,
             code: rt.code,
@@ -345,7 +345,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           await reconcileCatalogCharacteristics(
             target,
             ctx.t,
-            'tmf_resource_type',
+            'resource_type',
             typeId,
             rt.resourceTypeCharacteristic,
           );
@@ -361,7 +361,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       const splitterTypeId = resourceTypeIdByCode.get('Splitter')!;
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
+        await merge(target, ctx.t, 'resource_specification', ['id'], {
           id: specId,
           tenant_id: ctx.options.tenantId,
           name: specName,
@@ -370,7 +370,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         });
         // Aditivo (não MERGE do array inteiro): reexecutar a Fase 1 não pode apagar
         // characteristics de specification que alguém tenha acrescentado pelo Studio.
-        await reconcileCatalogCharacteristics(target, ctx.t, 'tmf_resource_specification', specId, [
+        await reconcileCatalogCharacteristics(target, ctx.t, 'resource_specification', specId, [
           ...netwinOriginCharacteristics('RESOURCE_SPECIFICATION', specId),
           { name: 'splitRatio', value: `1:${ratio}`, valueType: 'string' },
           { name: 'inputPorts', value: 1, valueType: 'integer' },
@@ -415,7 +415,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${b.name}`);
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
+        await merge(target, ctx.t, 'resource_specification', ['id'], {
           id: specId,
           tenant_id: ctx.options.tenantId,
           name: b.name,
@@ -425,7 +425,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         await reconcileCatalogCharacteristics(
           target,
           ctx.t,
-          'tmf_resource_specification',
+          'resource_specification',
           specId,
           netwinOriginCharacteristics('RESOURCE_SPECIFICATION', specId),
         );
@@ -459,14 +459,14 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       );
 
       if (target) {
-        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
+        await merge(target, ctx.t, 'resource_specification', ['id'], {
           id: specId,
           tenant_id: ctx.options.tenantId,
           name: nome,
           resource_type_id: typeId,
           description: `Modelo de cabo Netwin ${nome} (${cap} FO)`,
         });
-        await reconcileCatalogCharacteristics(target, ctx.t, 'tmf_resource_specification', specId, [
+        await reconcileCatalogCharacteristics(target, ctx.t, 'resource_specification', specId, [
           ...netwinOriginCharacteristics('REC_CAT_CABOS', cm.ID),
           { name: 'fiberCount', value: cap, valueType: 'integer' },
         ]);
@@ -521,7 +521,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           RELATED_PARTY: string | null;
         }>(
           `SELECT id AS "ID", characteristics AS "CHARACTERISTICS", related_party AS "RELATED_PARTY"
-             FROM ${ctx.t('tmf_resource_specification')} WHERE tenant_id = :1`,
+             FROM ${ctx.t('resource_specification')} WHERE tenant_id = :1`,
           [ctx.options.tenantId],
           { outFormat: oracledb.OUT_FORMAT_OBJECT },
         );
@@ -567,7 +567,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         await bulkMergeRows(
           target,
           ctx.t,
-          'tmf_resource_specification',
+          'resource_specification',
           ['id'],
           [
             'id',
@@ -691,7 +691,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       await bulkMergeRows(
         target,
         ctx.t,
-        'tmf_resource_type',
+        'resource_type',
         ['tenant_id', 'code'],
         ['id', 'tenant_id', 'code', 'name', 'status', 'description', 'map_presence'],
         dynamicTypeRows,
@@ -700,7 +700,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         await reconcileCatalogCharacteristics(
           target,
           ctx.t,
-          'tmf_resource_type',
+          'resource_type',
           row.id as string,
           EQUIPMENT_INSTANCE_CHARACTERISTICS,
         );
@@ -709,7 +709,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           await reconcileCatalogCharacteristics(
             target,
             ctx.t,
-            'tmf_resource_type',
+            'resource_type',
             row.id as string,
             radioCellInstanceDefinitions(),
           );
@@ -725,7 +725,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         await reconcileCatalogCharacteristics(
           target,
           ctx.t,
-          'tmf_resource_type',
+          'resource_type',
           typeId,
           EQUIPMENT_INSTANCE_CHARACTERISTICS,
         );
@@ -1023,14 +1023,14 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     await flushConcreteSpecs();
     console.log(`Tipos de porta física em uso (concretos): ${portRows.length}`);
 
-    // 5. Carga de Catálogo e Árvore de Nós no Studio (tmf_resource_catalog & tmf_resource_catalog_node)
+    // 5. Carga de Catálogo e Árvore de Nós no Studio (resource_catalog & resource_catalog_node)
     if (target) {
       console.log('Garantindo Catálogo de Recursos e Árvore do Studio...');
 
       // Resolve o catálogo padrão do tenant
       let catalogId: string | null = null;
       const catRes = await target.execute<{ ID: string }>(
-        `SELECT id FROM ${ctx.t('tmf_resource_catalog')} WHERE tenant_id = :1 AND is_default = 1 FETCH FIRST 1 ROWS ONLY`,
+        `SELECT id FROM ${ctx.t('resource_catalog')} WHERE tenant_id = :1 AND is_default = 1 FETCH FIRST 1 ROWS ONLY`,
         [ctx.options.tenantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
@@ -1038,7 +1038,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
 
       if (!catalogId) {
         const anyCat = await target.execute<{ ID: string }>(
-          `SELECT id FROM ${ctx.t('tmf_resource_catalog')} WHERE tenant_id = :1 FETCH FIRST 1 ROWS ONLY`,
+          `SELECT id FROM ${ctx.t('resource_catalog')} WHERE tenant_id = :1 FETCH FIRST 1 ROWS ONLY`,
           [ctx.options.tenantId],
           { outFormat: oracledb.OUT_FORMAT_OBJECT },
         );
@@ -1047,7 +1047,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
 
       if (!catalogId) {
         catalogId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `CATALOG:${ctx.options.tenantId}`);
-        await merge(target, ctx.t, 'tmf_resource_catalog', ['id'], {
+        await merge(target, ctx.t, 'resource_catalog', ['id'], {
           id: catalogId,
           tenant_id: ctx.options.tenantId,
           code: 'default-catalog',
@@ -1065,7 +1065,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         CODE: string;
         RESOURCE_TYPE_ID: string | null;
       }>(
-        `SELECT id, code, resource_type_id FROM ${ctx.t('tmf_resource_catalog_node')} WHERE tenant_id = :1 AND catalog_id = :2`,
+        `SELECT id, code, resource_type_id FROM ${ctx.t('resource_catalog_node')} WHERE tenant_id = :1 AND catalog_id = :2`,
         [ctx.options.tenantId, catalogId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
@@ -1176,7 +1176,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
         if (grp.types.length > 0) continue;
         const emptyId = existingNodeIdByCode.get(grp.groupCode);
         if (emptyId) {
-          await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+          await merge(target, ctx.t, 'resource_catalog_node', ['id'], {
             id: emptyId,
             tenant_id: ctx.options.tenantId,
             catalog_id: catalogId,
@@ -1207,7 +1207,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
             `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${grp.groupCode}`,
           );
 
-        await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+        await merge(target, ctx.t, 'resource_catalog_node', ['id'], {
           id: grpNodeId,
           tenant_id: ctx.options.tenantId,
           catalog_id: catalogId,
@@ -1237,7 +1237,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
               `CATALOG_NODE:${ctx.options.tenantId}:${catalogId}:${typeCode}`,
             );
 
-          await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+          await merge(target, ctx.t, 'resource_catalog_node', ['id'], {
             id: leafNodeId,
             tenant_id: ctx.options.tenantId,
             catalog_id: catalogId,
@@ -1256,7 +1256,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       // A pasta única de execuções anteriores fica sem filhos; desativa para não poluir a árvore.
       const legacyGroupId = existingNodeIdByCode.get('grp-equipamentos-netwin');
       if (legacyGroupId) {
-        await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+        await merge(target, ctx.t, 'resource_catalog_node', ['id'], {
           id: legacyGroupId,
           tenant_id: ctx.options.tenantId,
           catalog_id: catalogId,
@@ -1284,7 +1284,7 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       for (const suffix of oldFolders) {
         const oldId = existingNodeIdByCode.get(`grp-netwin-${suffix}`);
         if (!oldId) continue;
-        await merge(target, ctx.t, 'tmf_resource_catalog_node', ['id'], {
+        await merge(target, ctx.t, 'resource_catalog_node', ['id'], {
           id: oldId,
           tenant_id: ctx.options.tenantId,
           catalog_id: catalogId,
@@ -1314,10 +1314,10 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
                 COUNT(CASE WHEN n.kind = 'RESOURCE_TYPE' AND n.status = 'active' THEN 1 END) AS resource_type_node_count,
                 COUNT(DISTINCT CASE WHEN n.kind = 'RESOURCE_TYPE' AND n.status = 'active' THEN n.resource_type_id END) AS referenced_resource_type_count,
                 (SELECT COUNT(*)
-                   FROM ${ctx.t('tmf_resource_specification')} s
+                   FROM ${ctx.t('resource_specification')} s
                   WHERE s.tenant_id = :tenantId) AS resource_specification_count
-           FROM ${ctx.t('tmf_resource_catalog')} c
-           LEFT JOIN ${ctx.t('tmf_resource_catalog_node')} n
+           FROM ${ctx.t('resource_catalog')} c
+           LEFT JOIN ${ctx.t('resource_catalog_node')} n
              ON n.catalog_id = c.id
             AND n.tenant_id = c.tenant_id
           WHERE c.id = :catalogId

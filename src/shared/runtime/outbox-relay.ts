@@ -1,7 +1,7 @@
 import type { DatabaseClient } from '../persistence/database-client.js';
 import type { Logger } from '../logging/logger.js';
 
-// Relay do outbox (C7): tmf_outbox acumulava linhas 'pending' sem nenhum consumidor — a garantia
+// Relay do outbox (C7): environment_outbox acumulava linhas 'pending' sem nenhum consumidor — a garantia
 // "todo evento relevante publica via outbox" existia só na intenção. Este módulo fecha o loop:
 // varre linhas pendentes em lote e as publica através de um sink plugável. No laboratório o sink
 // é um log estruturado (abaixo); a fronteira já fica pronta para o Kafka entrar sem tocar quem
@@ -48,7 +48,7 @@ export const runOutboxRelayOnce = async (
   const batchSize = options.batchSize ?? 50;
   const rows = await db.all<OutboxRow>(
     `SELECT id, tenant_id, event_id, topic, payload, status, created_at, published_at
-     FROM tmf_outbox
+     FROM environment_outbox
      WHERE status = 'pending'
      ORDER BY created_at ASC
      LIMIT ?`,
@@ -67,7 +67,7 @@ export const runOutboxRelayOnce = async (
         payload: JSON.parse(row.payload) as unknown,
         createdAt: row.created_at,
       });
-      await db.run(`UPDATE tmf_outbox SET status = 'published', published_at = ? WHERE id = ?`, [
+      await db.run(`UPDATE environment_outbox SET status = 'published', published_at = ? WHERE id = ?`, [
         new Date().toISOString(),
         row.id,
       ]);

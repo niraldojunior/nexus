@@ -35,7 +35,7 @@ test.skipIf(!oracleConfigured)(
         tenant?: string;
       }) =>
         db.run(
-          `INSERT INTO geo_map_feature
+          `INSERT INTO geographic_map_feature
              (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, feature_kind, entity_type,
               source_model_type, source_model_id, status, label, lng, lat, rank)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,

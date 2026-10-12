@@ -1,4 +1,4 @@
-// Leitura da densidade agregada da planta (geo_map_density — Fase 4 da issue #69).
+// Leitura da densidade agregada da planta (geographic_map_density — Fase 4 da issue #69).
 //
 // Diferente de GeoMapTileService, que serve UM tile por requisição (o cliente sabe quais tiles
 // z16 faltam no cache local), aqui a leitura é por BBOX: em zoom aberto a viewport cobre poucas
@@ -63,7 +63,7 @@ export class GeoMapDensityService {
     // ter que reconstruir tileBounds no SQL (trigonometria de Mercator inverso).
     const rows = await this.db.all<DensityRow>(
       `SELECT tile_x, tile_y, feature_count, resource_count, site_count, lng, lat
-         FROM geo_map_density
+         FROM geographic_map_density
         WHERE tenant_id = ? AND tile_z = ?
           AND lng BETWEEN ? AND ?
           AND lat BETWEEN ? AND ?

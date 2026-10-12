@@ -49,7 +49,7 @@ test('roots monta Brasil/UF/município só com Sites ativos e omite o ramo sem m
       ['city:c1', 'uf:BR|RJ'],
     ],
   );
-  assert.match(calls[0]!.sql, /geo_administrative_city_tenant/);
+  assert.match(calls[0]!.sql, /geographic_administrative_city_tenant/);
   assert.match(calls[0]!.sql, /active_site_count > 0/);
   assert.deepEqual(calls[0]!.params, ['tenant-a']);
 });
@@ -75,7 +75,7 @@ test('city devolve tipos de Site raiz com volume, isolado por tenant', async () 
   assert.equal(result.nodes[0]?.childCount, 1234);
   assert.equal(result.total, 1);
   assert.deepEqual(calls[0]?.params.slice(0, 2), ['tenant-a', 'c1']);
-  assert.doesNotMatch(calls[0]!.sql, /geo_site_administrative_city|UNION ALL/);
+  assert.doesNotMatch(calls[0]!.sql, /geographic_site_administrative_city|UNION ALL/);
   assert.match(calls[0]!.sql, /parent_site_id IS NULL/);
 });
 

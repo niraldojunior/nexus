@@ -221,7 +221,7 @@ async function run(): Promise<void> {
         console.log(JSON.stringify({ jobId, recursosCsvLimpos: cleared }));
 
         await target.execute(
-          `INSERT INTO ${t('netwin_mig_job')} (id,source_scn,mapping_version,last_pi_id,state,loaded_count,rejected_count,deferred_count,created_at,updated_at) VALUES (:1,'CURRENT',:2,0,'running',0,0,0,SYSTIMESTAMP,SYSTIMESTAMP)`,
+          `INSERT INTO ${t('migration_netwin_job')} (id,source_scn,mapping_version,last_pi_id,state,loaded_count,rejected_count,deferred_count,created_at,updated_at) VALUES (:1,'CURRENT',:2,0,'running',0,0,0,SYSTIMESTAMP,SYSTIMESTAMP)`,
           [jobId, MAPPING_VERSION],
         );
 
@@ -307,7 +307,7 @@ async function run(): Promise<void> {
         const mapFeatures = await refreshMapFeatures(target, t, args.tenantId, jobId);
 
         await target.execute(
-          `UPDATE ${t('netwin_mig_job')} SET state='loaded', loaded_count=:1, completed_at=SYSTIMESTAMP WHERE id=:2`,
+          `UPDATE ${t('migration_netwin_job')} SET state='loaded', loaded_count=:1, completed_at=SYSTIMESTAMP WHERE id=:2`,
           [equipmentRows.length + cableRows.length + routeRows.length, jobId],
         );
         await target.execute('COMMIT');
@@ -792,7 +792,7 @@ async function upsertPointLocation(
 ): Promise<void> {
   const point = parseWktPoint(wkt);
   assertBrazilBounds(point.coordinates);
-  await merge(target, t, 'tmf_geographic_location', ['id'], {
+  await merge(target, t, 'geographic_location', ['id'], {
     id,
     tenant_id: tenantId,
     geometry_type: 'Point',
@@ -813,7 +813,7 @@ async function upsertLineLocation(
 ): Promise<void> {
   const line = parseWktLineString(wkt);
   for (const coordinate of line.coordinates) assertBrazilBounds(coordinate);
-  await merge(target, t, 'tmf_geographic_location', ['id'], {
+  await merge(target, t, 'geographic_location', ['id'], {
     id,
     tenant_id: tenantId,
     geometry_type: 'LineString',
@@ -925,7 +925,7 @@ async function persistEquipment(
     input.tenantId,
     node.name || `Equipamento ${node.id}`,
   );
-  await merge(target, t, 'tmf_physical_resource', ['id'], {
+  await merge(target, t, 'resource_physical', ['id'], {
     id: nexusId,
     tenant_id: input.tenantId,
     name: cut(node.name || `Equipamento ${node.id}`, 255),
@@ -996,7 +996,7 @@ async function persistCable(
     input.tenantId,
     node.name || `Cabo ${node.id}`,
   );
-  await merge(target, t, 'tmf_physical_resource', ['id'], {
+  await merge(target, t, 'resource_physical', ['id'], {
     id: nexusId,
     tenant_id: input.tenantId,
     name: cut(node.name || `Cabo ${node.id}`, 255),
@@ -1071,7 +1071,7 @@ async function persistRoute(
     input.tenantId,
     node.name || `Lance ${node.id}`,
   );
-  await merge(target, t, 'tmf_physical_resource', ['id'], {
+  await merge(target, t, 'resource_physical', ['id'], {
     id: nexusId,
     tenant_id: input.tenantId,
     name: cut(node.name || `Lance ${node.id}`, 255),
@@ -1117,7 +1117,7 @@ async function ensureRelationship(
 ): Promise<void> {
   try {
     await target.execute(
-      `INSERT INTO ${t('tmf_resource_relationship')} (resource_from_id, resource_to_id, relationship_type) VALUES (:1,:2,:3)`,
+      `INSERT INTO ${t('resource_relationship')} (resource_from_id, resource_to_id, relationship_type) VALUES (:1,:2,:3)`,
       [fromId, toId, type],
     );
   } catch (error) {
@@ -1146,11 +1146,11 @@ async function refreshMapFeatures(
   tenantId: string,
   jobId: string,
 ): Promise<number> {
-  const touch = t('netwin_mig_touch');
-  const identities = t('netwin_mig_identity');
+  const touch = t('migration_netwin_touch');
+  const identities = t('migration_netwin_identity');
   const lineTiling = await loadPublishedLineTiling(target, t, tenantId);
   await target.execute(
-    `DELETE FROM ${t('geo_map_feature')} feature
+    `DELETE FROM ${t('geographic_map_feature')} feature
       WHERE feature.tenant_id=:1
         AND EXISTS (
           SELECT 1 FROM ${touch} touch JOIN ${identities} identity
@@ -1174,11 +1174,11 @@ async function refreshMapFeatures(
        FROM ${touch} touch
        JOIN ${identities} identity ON identity.source_entity IN ('OSP_EQUIPMENT','OSP_CABLE','OSP_ROUTE')
         AND identity.source_id=touch.source_id AND identity.target_role='primary'
-       JOIN ${t('tmf_physical_resource')} r ON r.id=identity.nexus_id
-       JOIN ${t('tmf_resource_specification')} rs
+       JOIN ${t('resource_physical')} r ON r.id=identity.nexus_id
+       JOIN ${t('resource_specification')} rs
          ON rs.id=r.resource_specification_id AND rs.tenant_id=r.tenant_id
-       JOIN ${t('tmf_resource_type')} rt ON rt.id=rs.resource_type_id
-       JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
+       JOIN ${t('resource_type')} rt ON rt.id=rs.resource_type_id
+       JOIN ${t('geographic_location')} l ON l.id=r.place_id
       WHERE touch.job_id=:jobId AND r.tenant_id=:tenantId AND r.status <> 'terminated'
         AND ${excludeInternalResourceTypesSql('rt')}
         AND COALESCE(rt.map_presence, 1) = 1`,
@@ -1262,7 +1262,7 @@ async function upsertMapFeatureRows(
   t: TablePrefixer,
   rows: unknown[][],
 ): Promise<void> {
-  const mergeSql = `MERGE INTO ${t('geo_map_feature')} tgt
+  const mergeSql = `MERGE INTO ${t('geographic_map_feature')} tgt
     USING (SELECT :1 tenant_id, :2 tile_z, :3 tile_x, :4 tile_y, :5 entity_id, :6 shape,
                   :7 feature_kind, :8 entity_type, :9 type_code, :10 site_category,
                   :11 source_model_type, :12 source_model_id, :13 status, :14 label,
@@ -1308,11 +1308,11 @@ async function reindexPointFeatures(
     }>(
       `SELECT r.id AS "ID", rt.code AS "RESOURCE_TYPE", r.status AS "STATUS", r.name AS "NAME",
               l.geometry AS "GEOMETRY"
-         FROM ${t('tmf_physical_resource')} r
-         JOIN ${t('tmf_resource_specification')} rs
+         FROM ${t('resource_physical')} r
+         JOIN ${t('resource_specification')} rs
            ON rs.id=r.resource_specification_id AND rs.tenant_id=r.tenant_id
-         JOIN ${t('tmf_resource_type')} rt ON rt.id=rs.resource_type_id
-         JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
+         JOIN ${t('resource_type')} rt ON rt.id=rs.resource_type_id
+         JOIN ${t('geographic_location')} l ON l.id=r.place_id
         WHERE r.id IN (${binds}) AND r.tenant_id=:${chunk.length + 1}
           AND r.status <> 'terminated' AND ${excludeInternalResourceTypesSql('rt')}
           AND COALESCE(rt.map_presence, 1) = 1 AND l.geometry_type='Point'`,
@@ -1401,7 +1401,7 @@ async function resolveServingSiteBySigla(
   sigla: string,
 ): Promise<string | null> {
   const rows = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_geographic_site')} WHERE status <> 'terminated' AND UPPER(name) LIKE '%(' || UPPER(:1) || ')' FETCH FIRST 2 ROWS ONLY`,
+    `SELECT id AS "ID" FROM ${t('geographic_site')} WHERE status <> 'terminated' AND UPPER(name) LIKE '%(' || UPPER(:1) || ')' FETCH FIRST 2 ROWS ONLY`,
     [sigla],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
@@ -1412,7 +1412,7 @@ async function resolveServingSiteBySigla(
 async function ensureClearedTable(target: Connection, t: TablePrefixer): Promise<void> {
   try {
     await target.execute(
-      `CREATE TABLE ${t('netwin_mig_cleared')} (job_id VARCHAR2(36 CHAR) NOT NULL, nexus_id VARCHAR2(36 CHAR) NOT NULL, previous_status VARCHAR2(32 CHAR) NOT NULL, previous_administrative_state VARCHAR2(32 CHAR), cleared_at TIMESTAMP(6) WITH TIME ZONE NOT NULL, PRIMARY KEY(job_id, nexus_id))`,
+      `CREATE TABLE ${t('migration_netwin_cleared')} (job_id VARCHAR2(36 CHAR) NOT NULL, nexus_id VARCHAR2(36 CHAR) NOT NULL, previous_status VARCHAR2(32 CHAR) NOT NULL, previous_administrative_state VARCHAR2(32 CHAR), cleared_at TIMESTAMP(6) WITH TIME ZONE NOT NULL, PRIMARY KEY(job_id, nexus_id))`,
     );
   } catch (error) {
     if (!/ORA-00955/.test(String(error))) throw error;
@@ -1436,8 +1436,8 @@ async function clearArea(
     GEOMETRY: string;
   }>(
     `SELECT r.id AS "ID", r.status AS "STATUS", r.administrative_state AS "ADMINISTRATIVE_STATE", l.geometry AS "GEOMETRY"
-       FROM ${t('tmf_physical_resource')} r
-       JOIN ${t('tmf_geographic_location')} l ON l.id = r.place_id
+       FROM ${t('resource_physical')} r
+       JOIN ${t('geographic_location')} l ON l.id = r.place_id
       WHERE r.characteristics LIKE '%recursos-netwin%' AND r.status <> 'terminated'
         AND l.geometry_type = 'Point' ${scope}`,
     binds,
@@ -1461,11 +1461,11 @@ async function clearArea(
 
   for (const item of toClear) {
     await target.execute(
-      `INSERT INTO ${t('netwin_mig_cleared')} (job_id, nexus_id, previous_status, previous_administrative_state, cleared_at) VALUES (:1,:2,:3,:4,SYSTIMESTAMP)`,
+      `INSERT INTO ${t('migration_netwin_cleared')} (job_id, nexus_id, previous_status, previous_administrative_state, cleared_at) VALUES (:1,:2,:3,:4,SYSTIMESTAMP)`,
       [jobId, item.id, item.status, item.administrativeState],
     );
     await target.execute(
-      `UPDATE ${t('tmf_physical_resource')} SET status='terminated', administrative_state='locked' WHERE id=:1`,
+      `UPDATE ${t('resource_physical')} SET status='terminated', administrative_state='locked' WHERE id=:1`,
       [item.id],
     );
   }
@@ -1475,7 +1475,7 @@ async function clearArea(
     const chunk = ids.slice(offset, offset + 500);
     const binds2 = chunk.map((_, i) => `:${i + 1}`).join(',');
     await target.execute(
-      `DELETE FROM ${t('geo_map_feature')} WHERE tenant_id=:${chunk.length + 1} AND entity_id IN (${binds2})`,
+      `DELETE FROM ${t('geographic_map_feature')} WHERE tenant_id=:${chunk.length + 1} AND entity_id IN (${binds2})`,
       [...chunk, tenantId],
     );
   }
@@ -1494,7 +1494,7 @@ async function restoreArea(
     PREVIOUS_STATUS: string;
     PREVIOUS_ADMINISTRATIVE_STATE: string | null;
   }>(
-    `SELECT nexus_id AS "NEXUS_ID", previous_status AS "PREVIOUS_STATUS", previous_administrative_state AS "PREVIOUS_ADMINISTRATIVE_STATE" FROM ${t('netwin_mig_cleared')} WHERE job_id=:1`,
+    `SELECT nexus_id AS "NEXUS_ID", previous_status AS "PREVIOUS_STATUS", previous_administrative_state AS "PREVIOUS_ADMINISTRATIVE_STATE" FROM ${t('migration_netwin_cleared')} WHERE job_id=:1`,
     [jobId],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
@@ -1505,11 +1505,11 @@ async function restoreArea(
   }
   for (const item of items) {
     await target.execute(
-      `UPDATE ${t('tmf_physical_resource')} SET status=:1, administrative_state=:2 WHERE id=:3`,
+      `UPDATE ${t('resource_physical')} SET status=:1, administrative_state=:2 WHERE id=:3`,
       [item.PREVIOUS_STATUS, item.PREVIOUS_ADMINISTRATIVE_STATE, item.NEXUS_ID],
     );
   }
-  await target.execute(`DELETE FROM ${t('netwin_mig_cleared')} WHERE job_id=:1`, [jobId]);
+  await target.execute(`DELETE FROM ${t('migration_netwin_cleared')} WHERE job_id=:1`, [jobId]);
   await target.execute('COMMIT');
   const restored = await reindexPointFeatures(
     target,

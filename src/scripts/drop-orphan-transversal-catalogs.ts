@@ -1,8 +1,8 @@
 // Remove `tmf_relationship_type_catalog` e `tmf_characteristic_group_catalog` (issue #231):
 // tabelas criadas com a intenção de virar o catálogo transversal de #159 (DEV-X-003), mas nunca
 // ligadas a nenhum repositório/serviço em `src/`. Resource e Geographic mantêm catálogos de
-// RelationshipType próprios e funcionais (`tmf_resource_relationship_type`,
-// `tmf_geographic_relationship_type`) — nada os referencia.
+// RelationshipType próprios e funcionais (`resource_relationship_type`,
+// `geographic_relationship_type`) — nada os referencia.
 //
 // Uso (somente auditoria, seguro):
 //   ORACLE_OBJECT_PREFIX=NEXUS_DEV_ npx tsx src/scripts/drop-orphan-transversal-catalogs.ts

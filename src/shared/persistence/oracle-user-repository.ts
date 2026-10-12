@@ -118,7 +118,7 @@ export class OracleUserRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO users
+      `INSERT INTO user_account
          (id, external_id, name, email, status, roles, tenant_id, token_version,
           password_hash, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
@@ -152,20 +152,20 @@ export class OracleUserRepository {
   }
 
   async getById(id: string): Promise<UserRecord | undefined> {
-    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE id = ?`, [id]);
+    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM user_account WHERE id = ?`, [id]);
     return row ? toRecord(row) : undefined;
   }
 
   async getByExternalId(externalId: string): Promise<UserRecord | undefined> {
     const row = await this.db.get<UserRow>(
-      `SELECT ${CORE_COLUMNS} FROM users WHERE external_id = ?`,
+      `SELECT ${CORE_COLUMNS} FROM user_account WHERE external_id = ?`,
       [externalId],
     );
     return row ? toRecord(row) : undefined;
   }
 
   async getByEmail(email: string): Promise<UserRecord | undefined> {
-    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM users WHERE email = ?`, [
+    const row = await this.db.get<UserRow>(`SELECT ${CORE_COLUMNS} FROM user_account WHERE email = ?`, [
       email,
     ]);
     return row ? toRecord(row) : undefined;
@@ -175,7 +175,7 @@ export class OracleUserRepository {
   // que o hash nunca escape por engano num handler que so precisa do perfil publico.
   async getCredentialsByEmail(email: string): Promise<UserCredentials | undefined> {
     const row = await this.db.get<UserRow>(
-      `SELECT ${CORE_COLUMNS}, password_hash AS passwordHash FROM users WHERE email = ?`,
+      `SELECT ${CORE_COLUMNS}, password_hash AS passwordHash FROM user_account WHERE email = ?`,
       [email],
     );
     if (!row) return undefined;
@@ -186,7 +186,7 @@ export class OracleUserRepository {
 
   async list(): Promise<UserRecord[]> {
     const rows = await this.db.all<UserRow>(
-      `SELECT ${CORE_COLUMNS} FROM users ORDER BY created_at DESC`,
+      `SELECT ${CORE_COLUMNS} FROM user_account ORDER BY created_at DESC`,
     );
     return rows.map(toRecord);
   }
@@ -197,7 +197,7 @@ export class OracleUserRepository {
 
     const now = new Date().toISOString();
     await this.db.run(
-      `UPDATE users SET name = ?, email = ?, tenant_id = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE user_account SET name = ?, email = ?, tenant_id = ?, updated_at = ? WHERE id = ?`,
       [
         input.name || existing.name,
         input.email || existing.email || null,
@@ -249,7 +249,7 @@ export class OracleUserRepository {
     params.push(new Date().toISOString());
     params.push(id);
 
-    await this.db.run(`UPDATE users SET ${assignments.join(', ')} WHERE id = ?`, params);
+    await this.db.run(`UPDATE user_account SET ${assignments.join(', ')} WHERE id = ?`, params);
 
     return await this.getById(id);
   }
@@ -278,24 +278,24 @@ export class OracleUserRepository {
     params.push(new Date().toISOString());
     params.push(id);
 
-    await this.db.run(`UPDATE users SET ${assignments.join(', ')} WHERE id = ?`, params);
+    await this.db.run(`UPDATE user_account SET ${assignments.join(', ')} WHERE id = ?`, params);
 
     return await this.getById(id);
   }
 
-  // `searches` e `geo_search_history` referenciam users(id) sem ON DELETE CASCADE — excluir a
+  // `searches` e `user_search_history` referenciam users(id) sem ON DELETE CASCADE — excluir a
   // conta sem limpar essas linhas primeiro derruba a FK e a API responde 500 (era o caso de
   // qualquer usuário que já tivesse feito uma busca). Conta é a única entidade com exclusão
   // física de verdade no produto (C6 cobre inventário, não credenciais de acesso).
   async delete(id: string): Promise<boolean> {
-    await this.db.run(`DELETE FROM geo_search_history WHERE user_id = ?`, [id]);
-    await this.db.run(`DELETE FROM searches WHERE user_id = ?`, [id]);
-    const result = await this.db.run(`DELETE FROM users WHERE id = ?`, [id]);
+    await this.db.run(`DELETE FROM user_search_history WHERE user_id = ?`, [id]);
+    await this.db.run(`DELETE FROM user_searches WHERE user_id = ?`, [id]);
+    const result = await this.db.run(`DELETE FROM user_account WHERE id = ?`, [id]);
     return result.changes > 0;
   }
 
   async count(): Promise<number> {
-    const result = await this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM users`);
+    const result = await this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM user_account`);
     return result?.count || 0;
   }
 }

@@ -211,7 +211,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
     };
     if (target) {
       const found = await target.execute<{ ID: string }>(
-        `SELECT id FROM ${ctx.t('tmf_resource_specification')} WHERE id IN (:1, :2)`,
+        `SELECT id FROM ${ctx.t('resource_specification')} WHERE id IN (:1, :2)`,
         [specIds.rack, specIds.subrack],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
@@ -262,7 +262,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
         ])) {
           const clause = chunk.map((_, i) => `:${i + 1}`).join(',');
           const found = await target.execute<{ ID: string }>(
-            `SELECT id FROM ${ctx.t('tmf_geographic_site')} WHERE id IN (${clause})`,
+            `SELECT id FROM ${ctx.t('geographic_site')} WHERE id IN (${clause})`,
             chunk,
             { outFormat: oracledb.OUT_FORMAT_OBJECT },
           );
@@ -361,7 +361,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_physical_resource',
+            'resource_physical',
             ['id'],
             resourceColumns,
             resources,
@@ -371,7 +371,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
             await bulkMergeRows(
               target,
               ctx.t,
-              'tmf_resource_relationship',
+              'resource_relationship',
               relationshipColumns,
               relationshipColumns,
               relationships,

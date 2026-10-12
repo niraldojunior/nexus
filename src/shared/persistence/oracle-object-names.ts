@@ -1,7 +1,7 @@
 // Single-schema object prefixing for Oracle.
 //
 // The corporate Oracle instance hosts DEV/HML/PRD (and the test suite) in ONE schema, so every
-// object name carries a per-environment prefix — `NEXUS_DEV_tmf_party`, `NEXUS_HML_tmf_party`, etc.
+// object name carries a per-environment prefix — `NEXUS_DEV_party`, `NEXUS_HML_party`, etc.
 // The application SQL is authored with bare, Postgres-style table names; this module rewrites those
 // names for the Oracle path only. Postgres keeps the bare names untouched.
 //
@@ -12,9 +12,9 @@
 
 import { TABLE_NAMES } from './schema.js';
 
-// OracleDatabase creates and queries `schema_migrations` itself (it is not part of TABLE_NAMES), but
+// OracleDatabase creates and queries `migration_schema` itself (it is not part of TABLE_NAMES), but
 // it must also be per-environment, so it joins the set of names that get prefixed.
-export const PREFIXABLE_TABLE_NAMES: readonly string[] = [...TABLE_NAMES, 'schema_migrations'];
+export const PREFIXABLE_TABLE_NAMES: readonly string[] = [...TABLE_NAMES, 'migration_schema'];
 
 export const ORACLE_OBJECT_PREFIX_PATTERN = /^[A-Za-z][A-Za-z0-9_]*_$/;
 
@@ -29,8 +29,8 @@ export const normalizeOracleObjectPrefix = (value: string): string => {
   return normalized;
 };
 
-// Longest names first so a longer name (tmf_resource_relationship_generic) is attempted before a
-// shorter one it contains (tmf_resource_relationship). The trailing \b in the pattern already guards
+// Longest names first so a longer name (resource_relationship_generic) is attempted before a
+// shorter one it contains (resource_relationship). The trailing \b in the pattern already guards
 // this, but ordering keeps the intent explicit and the regex robust.
 const TABLES_BY_LENGTH = [...PREFIXABLE_TABLE_NAMES].sort((a, b) => b.length - a.length);
 
@@ -45,15 +45,15 @@ const TABLE_REFERENCE = new RegExp(
 );
 
 // Postgres/SQLite let a statement reference its own table by its bare name anywhere in it — e.g.
-// `UPDATE tmf_geographic_address SET x = (SELECT ... WHERE tmf_geographic_address.id = ...)`, a
+// `UPDATE geographic_address SET x = (SELECT ... WHERE geographic_address.id = ...)`, a
 // correlated subquery using the updated table as its own implicit alias. TABLE_REFERENCE only
-// prefixes the `UPDATE tmf_geographic_address` occurrence (keyword-anchored); the bare correlated
+// prefixes the `UPDATE geographic_address` occurrence (keyword-anchored); the bare correlated
 // reference stays unprefixed and Oracle can't resolve it (ORA-00904). Matches only a managed table
 // name immediately followed by `.`, so a column or alias that happens to share the name is untouched
 // — same closed-set guarantee as TABLE_REFERENCE, just anchored on the trailing dot instead.
 const TABLE_DOT_REFERENCE = new RegExp(`\\b(${TABLE_ALTERNATION})(?=\\.)`, 'gi');
 
-/** `tmf_party` + `NEXUS_DEV_` → `NEXUS_DEV_tmf_party`. */
+/** `party` + `NEXUS_DEV_` → `NEXUS_DEV_party`. */
 export const prefixed = (name: string, prefix: string): string => `${prefix}${name}`;
 
 // Column names that are Oracle reserved words and must be double-quoted (lowercase) in both the DDL

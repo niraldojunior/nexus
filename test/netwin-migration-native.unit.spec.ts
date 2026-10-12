@@ -515,7 +515,7 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(siteCount).not.toContain(':lastId');
   });
 
-  it('dimensiona o bind de geo_map_feature pelo lote e isola a geometria larga', () => {
+  it('dimensiona o bind de geographic_map_feature pelo lote e isola a geometria larga', () => {
     const columns = ['entity_id', 'tile_x', 'geometry'];
     // Feature de ponto: geometry null. É a maioria esmagadora das linhas e não deve pagar CLOB.
     const point = { entity_id: 'a'.repeat(36), tile_x: 1, geometry: null };
@@ -552,39 +552,39 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(
       stalePhase3Statistics([
         {
-          TABLE_NAME: 'NX_TEST_TMF_PHYSICAL_RESOURCE',
+          TABLE_NAME: 'NX_TEST_RESOURCE_PHYSICAL',
           NUM_ROWS: 1,
           LAST_ANALYZED: null,
           STALE_STATS: 'NO',
         },
         {
-          TABLE_NAME: 'NX_TEST_TMF_RESOURCE_SPECIFICATION',
+          TABLE_NAME: 'NX_TEST_RESOURCE_SPECIFICATION',
           NUM_ROWS: 1,
           LAST_ANALYZED: new Date(),
           STALE_STATS: 'YES',
         },
         {
-          TABLE_NAME: 'NX_TEST_TMF_RESOURCE_TYPE',
+          TABLE_NAME: 'NX_TEST_RESOURCE_TYPE',
           NUM_ROWS: 1,
           LAST_ANALYZED: new Date(),
           STALE_STATS: 'NO',
         },
       ]),
-    ).toEqual(['NX_TEST_TMF_PHYSICAL_RESOURCE', 'NX_TEST_TMF_RESOURCE_SPECIFICATION']);
+    ).toEqual(['NX_TEST_RESOURCE_PHYSICAL', 'NX_TEST_RESOURCE_SPECIFICATION']);
   });
 
   it('consulta as views USER_* pelo nome físico, sem as aspas do identificador', () => {
     // `makeTablePrefixer` devolve o identificador quoted, que é o correto no SQL de aplicação.
     // USER_IND_COLUMNS/USER_TAB_STATISTICS guardam o nome como VALOR de coluna, sempre sem aspas:
-    // comparar `table_name` com `"NX_DEV2_TMF_PHYSICAL_RESOURCE"` não casa nenhuma linha e o
+    // comparar `table_name` com `"NX_DEV2_RESOURCE_PHYSICAL"` não casa nenhuma linha e o
     // diagnóstico acusava "falta índice" mesmo com a migration v25 aplicada.
     const prefixer = makeTablePrefixer('NX_TEST_');
-    expect(prefixer('tmf_physical_resource')).toBe('"NX_TEST_TMF_PHYSICAL_RESOURCE"');
-    expect(oracleDictionaryObjectName(prefixer('tmf_physical_resource'))).toBe(
-      'NX_TEST_TMF_PHYSICAL_RESOURCE',
+    expect(prefixer('resource_physical')).toBe('"NX_TEST_RESOURCE_PHYSICAL"');
+    expect(oracleDictionaryObjectName(prefixer('resource_physical'))).toBe(
+      'NX_TEST_RESOURCE_PHYSICAL',
     );
-    expect(oracleDictionaryObjectName('nx_test_tmf_resource_type')).toBe(
-      'NX_TEST_TMF_RESOURCE_TYPE',
+    expect(oracleDictionaryObjectName('nx_test_resource_type')).toBe(
+      'NX_TEST_RESOURCE_TYPE',
     );
   });
 
@@ -594,7 +594,7 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     );
     expect(batch?.version).toBe(25);
     expect(batch?.sql).toContain(
-      'ON tmf_physical_resource(tenant_id, resource_specification_id, id)',
+      'ON resource_physical(tenant_id, resource_specification_id, id)',
     );
   });
 
@@ -692,7 +692,7 @@ describe('netwin-migration: relações topológicas pendentes', () => {
     );
 
     expect(calls).toHaveLength(2);
-    expect(calls[0]?.sql).toContain('INSERT INTO NX_TEST_NETWIN_MIG_NATIVE_RELATIONSHIP');
+    expect(calls[0]?.sql).toContain('INSERT INTO NX_TEST_MIGRATION_NETWIN_NATIVE_RELATIONSHIP');
     expect(calls[0]?.sql).not.toContain('MERGE');
     expect(calls[0]?.sql).toContain('created_at');
     expect(calls[0]?.binds).toHaveLength(2);
@@ -795,8 +795,8 @@ describe('netwin-migration: relações topológicas pendentes', () => {
       missingBoth: 2,
     });
     expect(sql).toContain('pending.job_id = :jobId');
-    expect(sql).toContain('LEFT JOIN NX_TEST_TMF_PHYSICAL_RESOURCE source_resource');
-    expect(sql).toContain('LEFT JOIN NX_TEST_TMF_PHYSICAL_RESOURCE target_resource');
+    expect(sql).toContain('LEFT JOIN NX_TEST_RESOURCE_PHYSICAL source_resource');
+    expect(sql).toContain('LEFT JOIN NX_TEST_RESOURCE_PHYSICAL target_resource');
     expect(sql).toContain('source_resource.tenant_id = :tenantId');
     expect(sql).toContain('target_resource.tenant_id = :tenantId');
   });
@@ -948,7 +948,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
   it('gera MERGE sem UPDATE quando todas as colunas compõem a chave', () => {
     const sql = mergeSql(
       t,
-      'tmf_resource_relationship',
+      'resource_relationship',
       ['resource_from_id', 'resource_to_id', 'relationship_type'],
       ['resource_from_id', 'resource_to_id', 'relationship_type'],
     );
@@ -974,7 +974,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
     await bulkMergeRows(
       connection as never,
       t,
-      'tmf_physical_resource',
+      'resource_physical',
       ['id'],
       ['id', 'name'],
       rows,
@@ -997,7 +997,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
       },
     };
     await expect(
-      bulkMergeRows(connection as never, t, 'tmf_physical_resource', ['id'], ['id'], []),
+      bulkMergeRows(connection as never, t, 'resource_physical', ['id'], ['id'], []),
     ).resolves.toBe(0);
   });
 
@@ -1021,7 +1021,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
   });
 
   it('não usa bind CLOB quando o lote inteiro cabe em VARCHAR2: o LOB temporário custa ~400x', () => {
-    // Medido no Oracle dev: 2.000 linhas de tmf_geographic_site com related_party (46B) e
+    // Medido no Oracle dev: 2.000 linhas de geographic_site com related_party (46B) e
     // characteristics (221B) levaram 77.970ms com bind CLOB contra 196ms com bind VARCHAR2.
     const bindDefs = bulkMergeBindDefs(
       ['related_party', 'characteristics'],
@@ -1078,7 +1078,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
     const merged = await bulkMergeRows(
       connection as never,
       t,
-      'tmf_geographic_location',
+      'geographic_location',
       ['id'],
       ['id', 'geometry'],
       [
@@ -1109,7 +1109,7 @@ describe('netwin-migration: Oracle MERGE em lote', () => {
     await bulkMergeRows(
       connection as never,
       t,
-      'tmf_geographic_location',
+      'geographic_location',
       ['id'],
       ['id', 'geometry'],
       [

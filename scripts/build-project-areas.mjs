@@ -9,10 +9,10 @@
  * src/modules/geo/coverage-grid.ts — grade Mercator + componente conexo + contorno suavizado
  * via src/modules/geo/project-area-grid.ts) e grava:
  *
- *   · um POLÍGONO por mancha → tmf_geographic_location (Polygon, TMF675), `reference_point`
+ *   · um POLÍGONO por mancha → geographic_location (Polygon, TMF675), `reference_point`
  *     "PROJECT:<projectId>". É a geometria que o mapa desenha em qualquer escala.
- *   · o VÍNCULO com o projeto → geo_project_area (kind, siteCount, siteIds de amostra,
- *     centroide, área), gêmea de geo_project_site.
+ *   · o VÍNCULO com o projeto → project_area (kind, siteCount, siteIds de amostra,
+ *     centroide, área), gêmea de project_site.
  *
  * Mancha com `--min-sites` locais (default 5) ou mais é "concentration" (azul); abaixo disso é
  * "dispersion" (roxo) — candidato a erro de coordenada. O relatório lista as dispersões com a
@@ -20,7 +20,7 @@
  *
  * Idempotente por projeto: cada execução SUBSTITUI a geração anterior DAQUELE projeto (apaga as
  * Locations "PROJECT:<id>" e os vínculos, e regrava) — artefato derivado e regenerável, exceção
- * consciente a C6 (mesmo trade-off de geo_coverage_cell/build-coverage.mjs).
+ * consciente a C6 (mesmo trade-off de geographic_coverage_cell/build-coverage.mjs).
  *
  * Requer o dist compilado (npm run build) — importa o algoritmo de project-area-grid.
  *
@@ -94,13 +94,13 @@ async function main() {
 async function resolveProjects(client) {
   if (ALL) {
     const { rows } = await client.query(
-      `SELECT id, name FROM geo_project WHERE tenant_id = $1 ORDER BY name`,
+      `SELECT id, name FROM project WHERE tenant_id = $1 ORDER BY name`,
       [TENANT],
     );
     return rows;
   }
   const { rows } = await client.query(
-    `SELECT id, name FROM geo_project WHERE tenant_id = $1 AND name = $2`,
+    `SELECT id, name FROM project WHERE tenant_id = $1 AND name = $2`,
     [TENANT, PROJECT_NAME],
   );
   if (rows.length === 0) {
@@ -119,9 +119,9 @@ async function processProject(client, project) {
 
   const { rows } = await client.query(
     `SELECT s.id, l.geometry
-       FROM geo_project_site ps
-       JOIN tmf_geographic_site s ON s.id = ps.site_id
-       LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
+       FROM project_site ps
+       JOIN geographic_site s ON s.id = ps.site_id
+       LEFT JOIN geographic_location l ON l.id = s.geographic_location_id
       WHERE ps.project_id = $1`,
     [project.id],
   );
@@ -220,21 +220,21 @@ async function processProject(client, project) {
   await client.query('BEGIN');
   try {
     const { rows: existing } = await client.query(
-      `SELECT location_id FROM geo_project_area WHERE project_id = $1`,
+      `SELECT location_id FROM project_area WHERE project_id = $1`,
       [project.id],
     );
     if (existing.length > 0) {
-      await client.query(`DELETE FROM geo_project_area WHERE project_id = $1`, [project.id]);
+      await client.query(`DELETE FROM project_area WHERE project_id = $1`, [project.id]);
       await deleteByIds(
         client,
-        'tmf_geographic_location',
+        'geographic_location',
         'id',
         existing.map((row) => row.location_id),
       );
     }
 
     const insertedLocations = await client.bulkInsert(
-      'tmf_geographic_location',
+      'geographic_location',
       ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
       locations.map((entry) => ({
         id: entry.id,
@@ -247,7 +247,7 @@ async function processProject(client, project) {
     );
 
     const insertedAreas = await client.bulkInsert(
-      'geo_project_area',
+      'project_area',
       [
         'project_id',
         'location_id',
@@ -272,7 +272,7 @@ async function processProject(client, project) {
       })),
     );
 
-    await client.query(`UPDATE geo_project SET updated_at = $1 WHERE id = $2`, [
+    await client.query(`UPDATE project SET updated_at = $1 WHERE id = $2`, [
       GENERATED_AT,
       project.id,
     ]);
@@ -311,11 +311,11 @@ async function deleteByIds(client, table, column, ids) {
   }
 }
 
-// Garante geo_project_area — a tabela já entra no schema init do app (schema.ts), mas o script
+// Garante project_area — a tabela já entra no schema init do app (schema.ts), mas o script
 // pode rodar contra um banco de dev que ainda não subiu o backend depois da migração; cria se
 // faltar em vez de depender de um restart (mesmo raciocínio de ensureCoverageTable).
 async function ensureProjectAreaTable(client) {
-  const ddl = `CREATE TABLE geo_project_area (
+  const ddl = `CREATE TABLE project_area (
     project_id VARCHAR2(36 CHAR) NOT NULL,
     location_id VARCHAR2(36 CHAR) NOT NULL,
     kind VARCHAR2(255 CHAR) NOT NULL,
@@ -330,7 +330,7 @@ async function ensureProjectAreaTable(client) {
   )`;
   try {
     await client.query(ddl);
-    console.log('Tabela geo_project_area criada no Oracle.');
+    console.log('Tabela project_area criada no Oracle.');
   } catch (error) {
     if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }

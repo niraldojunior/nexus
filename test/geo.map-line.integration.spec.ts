@@ -48,7 +48,7 @@ test.skipIf(!oracleConfigured)(
       }) => {
         const tile = lngLatToTile(CENTER[0], CENTER[1], o.tileZ);
         await db.run(
-          `INSERT INTO geo_map_feature
+          `INSERT INTO geographic_map_feature
              (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, feature_kind, entity_type,
               type_code, source_model_type, source_model_id, label, lng, lat, geometry, lod_key, rank)
            VALUES (?, ?, ?, ?, ?, 'line', 'resource', 'PhysicalResource', ?, 'RESOURCE_TYPE', ?, ?, ?, ?, ?, ?, ?)`,
@@ -144,7 +144,7 @@ test.skipIf(!oracleConfigured)(
 
       // Índice desatualizado: manifesto existe só com 'regional'; pedir 'detail' sinaliza stale.
       await db.run(
-        `INSERT INTO geo_map_line_index
+        `INSERT INTO geographic_map_line_index
            (tenant_id, source_model_id, lod_key, tile_z, simplify_tolerance_meters, fragments, vertices)
          VALUES ('default', ?, 'regional', 8, 150, 1, 2)`,
         [SPEC],
@@ -174,7 +174,7 @@ test.skipIf(!oracleConfigured)('GET /v1/geo/map/lines marca truncated acima do t
     // caminho de limite no serviço (unit). Aqui garante-se só que o conjunto pequeno NÃO trunca.
     for (const rank of [0, 1, 2]) {
       await db.run(
-        `INSERT INTO geo_map_feature
+        `INSERT INTO geographic_map_feature
            (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, feature_kind, entity_type,
             type_code, source_model_type, source_model_id, label, lng, lat, geometry, lod_key, rank)
          VALUES ('default', 8, ?, ?, 'cccccccc-0000-0000-0000-000000000001', 'line', 'resource',

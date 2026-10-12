@@ -23,7 +23,7 @@ export class OracleOrderRepository implements IOrderRepository {
   ): Promise<ServiceQualification> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_service_qualification
+      `INSERT INTO service_qualification
        (id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -65,7 +65,7 @@ export class OracleOrderRepository implements IOrderRepository {
     }
     const row = await this.db.get<ServiceQualificationRow>(
       `SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_service_qualification
+       FROM service_qualification
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -78,7 +78,7 @@ export class OracleOrderRepository implements IOrderRepository {
   ): Promise<ServiceQualification[]> {
     const rows = (
       await this.db.all<ServiceQualificationRow>(
-        'SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end FROM tmf_service_qualification ORDER BY id',
+        'SELECT id, state, place, related_party, service_characteristic, service_qualification_item, tenant_id, valid_for_start, valid_for_end FROM service_qualification ORDER BY id',
       )
     )
       .map((row) => this.mapQualification(row))
@@ -90,7 +90,7 @@ export class OracleOrderRepository implements IOrderRepository {
   public async upsertServiceOrder(order: ServiceOrder): Promise<ServiceOrder> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_service_order
+      `INSERT INTO order_service
        (id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -132,7 +132,7 @@ export class OracleOrderRepository implements IOrderRepository {
     }
     const row = await this.db.get<ServiceOrderRow>(
       `SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_service_order
+       FROM order_service
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -143,7 +143,7 @@ export class OracleOrderRepository implements IOrderRepository {
   public async listServiceOrders(query?: ServiceOrderQuery): Promise<ServiceOrder[]> {
     const rows = (
       await this.db.all<ServiceOrderRow>(
-        'SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_service_order ORDER BY id',
+        'SELECT id, state, description, related_party, service_order_item, note, tenant_id, valid_for_start, valid_for_end FROM order_service ORDER BY id',
       )
     )
       .map((row) => this.mapOrder(row))
@@ -155,7 +155,7 @@ export class OracleOrderRepository implements IOrderRepository {
   public async upsertResourceOrder(order: ResourceOrder): Promise<ResourceOrder> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_resource_order
+      `INSERT INTO order_resource
        (id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -197,7 +197,7 @@ export class OracleOrderRepository implements IOrderRepository {
     }
     const row = await this.db.get<ResourceOrderRow>(
       `SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end
-       FROM tmf_resource_order
+       FROM order_resource
        WHERE ${conditions.join(' AND ')}`,
       params,
     );
@@ -208,7 +208,7 @@ export class OracleOrderRepository implements IOrderRepository {
   public async listResourceOrders(query?: ResourceOrderQuery): Promise<ResourceOrder[]> {
     const rows = (
       await this.db.all<ResourceOrderRow>(
-        'SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end FROM tmf_resource_order ORDER BY id',
+        'SELECT id, state, description, related_party, resource_order_item, note, tenant_id, valid_for_start, valid_for_end FROM order_resource ORDER BY id',
       )
     )
       .map((row) => this.mapResourceOrder(row))

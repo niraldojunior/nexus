@@ -6,7 +6,7 @@
 // Escrita (Fase A — aditiva/backfill, nunca Fase B destrutiva):
 //   npm run migrate:resource-catalog -- --apply --confirm-resource-catalog-backfill
 //
-// A escrita relaxa a unicidade global de `code` em tmf_resource_category/tmf_resource_type para
+// A escrita relaxa a unicidade global de `code` em tmf_resource_category/resource_type para
 // `UNIQUE(tenant_id, code)` (lookup de nome de constraint em runtime, nunca hardcoded — mesmo
 // padrão de `drop-href-columns.ts`), materializa ResourceType por tenant `vtal`, migra as tabelas
 // do módulo Resource de `default` para `vtal`, converte Category/Layer/Type em
@@ -37,15 +37,15 @@ type AuditReport = {
 
 const ALLOWED_TENANTS = ['default', 'vtal', 'tecto'] as const;
 const RESOURCE_TENANT_TABLES = [
-  'tmf_resource_catalog',
+  'resource_catalog',
   'tmf_resource_category',
   'tmf_resource_layer',
-  'tmf_resource_type',
-  'tmf_resource_specification',
-  'tmf_resource_function_specification',
-  'tmf_resource_status_catalog',
-  'tmf_physical_resource',
-  'tmf_logical_resource',
+  'resource_type',
+  'resource_specification',
+  'resource_function_specification',
+  'resource_status_catalog',
+  'resource_physical',
+  'resource_logical',
 ] as const;
 const SAMPLE_LIMIT = 20;
 
@@ -74,27 +74,27 @@ const SOURCE_TENANT = 'default';
 const DESTINATION_TENANT = 'vtal';
 const CHUNK_SIZE = 20_000;
 
-// Tabelas do módulo Resource que só precisam de reclassificação de tenant_id — tmf_resource_type
+// Tabelas do módulo Resource que só precisam de reclassificação de tenant_id — resource_type
 // fica de fora: é materializado (cópia com novo id), não relabeled, ver `materializeResourceTypes`.
 const TENANT_MIGRATE_TABLES = [
-  'tmf_resource_catalog',
+  'resource_catalog',
   'tmf_resource_category',
   'tmf_resource_layer',
-  'tmf_resource_specification',
-  'tmf_resource_function_specification',
-  'tmf_resource_status_catalog',
-  'tmf_physical_resource',
-  'tmf_logical_resource',
+  'resource_specification',
+  'resource_function_specification',
+  'resource_status_catalog',
+  'resource_physical',
+  'resource_logical',
 ] as const;
 
 // Nomes de constraint tenant-scoped que este script cria — seguem a mesma convenção
-// `<tabela>_<colunas>_key` já usada em `tmf_resource_type_tenant_id_id_key` (batch v2). O nome da
+// `<tabela>_<colunas>_key` já usada em `resource_uq_type_tenant_id_id_key` (batch v2). O nome da
 // constraint global antiga (`code TEXT NOT NULL UNIQUE` inline) nunca é hardcoded: é resolvido em
 // runtime via metadata (`findUniqueConstraintOnColumn`), pois o nome pode variar conforme o
 // histórico de migrations do ambiente.
 const RELAX_GLOBAL_CODE_UNIQUENESS_TARGETS = [
   { table: 'tmf_resource_category', constraintName: 'tmf_resource_category_tenant_id_code_key' },
-  { table: 'tmf_resource_type', constraintName: 'tmf_resource_type_tenant_id_code_key' },
+  { table: 'resource_type', constraintName: 'tmf_resource_type_tenant_id_code_key' },
 ] as const;
 
 const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
@@ -141,10 +141,10 @@ const auditResourceTypesForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_TYPE_CODE_EMPTY',
-    'tmf_resource_type',
-    `SELECT COUNT(*) AS count FROM tmf_resource_type
+    'resource_type',
+    `SELECT COUNT(*) AS count FROM resource_type
       WHERE tenant_id = ? AND (code IS NULL OR TRIM(code) = '')`,
-    `SELECT id FROM tmf_resource_type
+    `SELECT id FROM resource_type
       WHERE tenant_id = ? AND (code IS NULL OR TRIM(code) = '') ORDER BY id`,
     [tenantId],
   );
@@ -152,15 +152,15 @@ const auditResourceTypesForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_TYPE_CODE_DUPLICATE_DESTINATION',
-    'tmf_resource_type',
+    'resource_type',
     `SELECT COUNT(*) AS count FROM (
        SELECT LOWER(code) AS normalized_code
-         FROM tmf_resource_type
+         FROM resource_type
         WHERE tenant_id = ?
         GROUP BY LOWER(code)
        HAVING COUNT(*) > 1
      ) duplicates`,
-    `SELECT MIN(id) AS id FROM tmf_resource_type
+    `SELECT MIN(id) AS id FROM resource_type
       WHERE tenant_id = ?
       GROUP BY LOWER(code)
      HAVING COUNT(*) > 1 ORDER BY id`,
@@ -174,8 +174,8 @@ const auditDefaultDestinationCollisions = async (
 ): Promise<void> => {
   const incompatible = await db.queryMany<IdRow>(
     `SELECT source.id
-       FROM tmf_resource_type source
-       JOIN tmf_resource_type destination
+       FROM resource_type source
+       JOIN resource_type destination
          ON destination.tenant_id = 'vtal'
         AND LOWER(destination.code) = LOWER(source.code)
       WHERE source.tenant_id = 'default'
@@ -189,7 +189,7 @@ const auditDefaultDestinationCollisions = async (
   if (incompatible.length > 0) {
     findings.push({
       code: 'RESOURCE_CATALOG_TYPE_DESTINATION_INCOMPATIBLE',
-      table: 'tmf_resource_type',
+      table: 'resource_type',
       count: incompatible.length,
       sampleIds: incompatible.slice(0, SAMPLE_LIMIT).map((row) => row.id),
     });
@@ -203,19 +203,19 @@ const auditResourceRowsForTenant = async (
 ): Promise<void> => {
   // O join aceita a categoria tanto no mesmo tenant do tipo quanto em DESTINATION_TENANT quando o
   // tipo é SOURCE_TENANT ('default'): a etapa 3 (`migrateTenantChunked`) já pode ter relabelado
-  // `tmf_resource_category` para `vtal` sem que os `tmf_resource_type` originais de `default`
+  // `tmf_resource_category` para `vtal` sem que os `resource_type` originais de `default`
   // tenham sido tocados (são mantidos como fonte de materialização, nunca migrados — C6). É estado
   // transitório válido de uma reexecução (--apply resumido), não divergência de dado.
   await addFinding(
     db,
     findings,
     'RESOURCE_CATALOG_TYPE_CATEGORY_MISSING',
-    'tmf_resource_type',
-    `SELECT COUNT(*) AS count FROM tmf_resource_type rt
+    'resource_type',
+    `SELECT COUNT(*) AS count FROM resource_type rt
        LEFT JOIN tmf_resource_category rc ON rc.code = rt.category_code
         AND (rc.tenant_id = rt.tenant_id OR (rt.tenant_id = ? AND rc.tenant_id = ?))
       WHERE rt.tenant_id = ? AND rc.id IS NULL`,
-    `SELECT rt.id FROM tmf_resource_type rt
+    `SELECT rt.id FROM resource_type rt
        LEFT JOIN tmf_resource_category rc ON rc.code = rt.category_code
         AND (rc.tenant_id = rt.tenant_id OR (rt.tenant_id = ? AND rc.tenant_id = ?))
       WHERE rt.tenant_id = ? AND rc.id IS NULL ORDER BY rt.id`,
@@ -225,12 +225,12 @@ const auditResourceRowsForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_SPEC_TYPE_UNRESOLVED',
-    'tmf_resource_specification',
-    `SELECT COUNT(*) AS count FROM tmf_resource_specification rs
-       LEFT JOIN tmf_resource_type rt ON rt.tenant_id = rs.tenant_id AND rt.code = rs.resource_type
+    'resource_specification',
+    `SELECT COUNT(*) AS count FROM resource_specification rs
+       LEFT JOIN resource_type rt ON rt.tenant_id = rs.tenant_id AND rt.code = rs.resource_type
       WHERE rs.tenant_id = ? AND rt.id IS NULL`,
-    `SELECT rs.id FROM tmf_resource_specification rs
-       LEFT JOIN tmf_resource_type rt ON rt.tenant_id = rs.tenant_id AND rt.code = rs.resource_type
+    `SELECT rs.id FROM resource_specification rs
+       LEFT JOIN resource_type rt ON rt.tenant_id = rs.tenant_id AND rt.code = rs.resource_type
       WHERE rs.tenant_id = ? AND rt.id IS NULL ORDER BY rs.id`,
     [tenantId],
   );
@@ -238,11 +238,11 @@ const auditResourceRowsForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_SPEC_CATEGORY_MISSING',
-    'tmf_resource_specification',
-    `SELECT COUNT(*) AS count FROM tmf_resource_specification rs
+    'resource_specification',
+    `SELECT COUNT(*) AS count FROM resource_specification rs
        LEFT JOIN tmf_resource_category rc ON rc.tenant_id = rs.tenant_id AND rc.code = rs.category
       WHERE rs.tenant_id = ? AND rc.id IS NULL`,
-    `SELECT rs.id FROM tmf_resource_specification rs
+    `SELECT rs.id FROM resource_specification rs
        LEFT JOIN tmf_resource_category rc ON rc.tenant_id = rs.tenant_id AND rc.code = rs.category
       WHERE rs.tenant_id = ? AND rc.id IS NULL ORDER BY rs.id`,
     [tenantId],
@@ -251,11 +251,11 @@ const auditResourceRowsForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_SPEC_LAYER_CROSS_TENANT_OR_MISSING',
-    'tmf_resource_specification',
-    `SELECT COUNT(*) AS count FROM tmf_resource_specification rs
+    'resource_specification',
+    `SELECT COUNT(*) AS count FROM resource_specification rs
        LEFT JOIN tmf_resource_layer rl ON rl.id = rs.resource_layer_id AND rl.tenant_id = rs.tenant_id
       WHERE rs.tenant_id = ? AND rs.resource_layer_id IS NOT NULL AND rl.id IS NULL`,
-    `SELECT rs.id FROM tmf_resource_specification rs
+    `SELECT rs.id FROM resource_specification rs
        LEFT JOIN tmf_resource_layer rl ON rl.id = rs.resource_layer_id AND rl.tenant_id = rs.tenant_id
       WHERE rs.tenant_id = ? AND rs.resource_layer_id IS NOT NULL AND rl.id IS NULL ORDER BY rs.id`,
     [tenantId],
@@ -264,13 +264,13 @@ const auditResourceRowsForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_SPEC_TYPE_ID_DIVERGENT',
-    'tmf_resource_specification',
-    `SELECT COUNT(*) AS count FROM tmf_resource_specification rs
-       LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+    'resource_specification',
+    `SELECT COUNT(*) AS count FROM resource_specification rs
+       LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
       WHERE rs.tenant_id = ? AND rs.resource_type_id IS NOT NULL
         AND (rt.id IS NULL OR rt.code <> rs.resource_type)`,
-    `SELECT rs.id FROM tmf_resource_specification rs
-       LEFT JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+    `SELECT rs.id FROM resource_specification rs
+       LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
       WHERE rs.tenant_id = ? AND rs.resource_type_id IS NOT NULL
         AND (rt.id IS NULL OR rt.code <> rs.resource_type) ORDER BY rs.id`,
     [tenantId],
@@ -279,12 +279,12 @@ const auditResourceRowsForTenant = async (
     db,
     findings,
     'RESOURCE_CATALOG_STATUS_TYPE_UNRESOLVED',
-    'tmf_resource_status_catalog',
-    `SELECT COUNT(*) AS count FROM tmf_resource_status_catalog sc
-       LEFT JOIN tmf_resource_type rt ON rt.tenant_id = sc.tenant_id AND rt.code = sc.resource_type
+    'resource_status_catalog',
+    `SELECT COUNT(*) AS count FROM resource_status_catalog sc
+       LEFT JOIN resource_type rt ON rt.tenant_id = sc.tenant_id AND rt.code = sc.resource_type
       WHERE sc.tenant_id = ? AND sc.resource_type IS NOT NULL AND rt.id IS NULL`,
-    `SELECT sc.code AS id FROM tmf_resource_status_catalog sc
-       LEFT JOIN tmf_resource_type rt ON rt.tenant_id = sc.tenant_id AND rt.code = sc.resource_type
+    `SELECT sc.code AS id FROM resource_status_catalog sc
+       LEFT JOIN resource_type rt ON rt.tenant_id = sc.tenant_id AND rt.code = sc.resource_type
       WHERE sc.tenant_id = ? AND sc.resource_type IS NOT NULL AND rt.id IS NULL ORDER BY sc.code`,
     [tenantId],
   );
@@ -294,8 +294,8 @@ const auditResourceSpecTenants = async (
   db: DatabaseSession,
   findings: AuditFinding[],
 ): Promise<void> => {
-  // `TENANT_MIGRATE_TABLES` migra `tmf_resource_specification` antes de
-  // `tmf_physical_resource`/`tmf_logical_resource` (passo 3) — um `resource` ainda em
+  // `TENANT_MIGRATE_TABLES` migra `resource_specification` antes de
+  // `resource_physical`/`resource_logical` (passo 3) — um `resource` ainda em
   // SOURCE_TENANT apontando para uma `specification` já em DESTINATION_TENANT é a ordem esperada
   // de uma reexecução (--apply resumido), não divergência real. Qualquer outra combinação
   // continua reprovando.
@@ -303,13 +303,13 @@ const auditResourceSpecTenants = async (
     db,
     findings,
     'RESOURCE_CATALOG_PHYSICAL_SPEC_TENANT_DIVERGENCE',
-    'tmf_physical_resource',
-    `SELECT COUNT(*) AS count FROM tmf_physical_resource r
-       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    'resource_physical',
+    `SELECT COUNT(*) AS count FROM resource_physical r
+       JOIN resource_specification rs ON rs.id = r.resource_specification_id
       WHERE r.tenant_id <> rs.tenant_id
         AND NOT (r.tenant_id = ? AND rs.tenant_id = ?)`,
-    `SELECT r.id FROM tmf_physical_resource r
-       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    `SELECT r.id FROM resource_physical r
+       JOIN resource_specification rs ON rs.id = r.resource_specification_id
       WHERE r.tenant_id <> rs.tenant_id
         AND NOT (r.tenant_id = ? AND rs.tenant_id = ?) ORDER BY r.id`,
     [SOURCE_TENANT, DESTINATION_TENANT],
@@ -318,13 +318,13 @@ const auditResourceSpecTenants = async (
     db,
     findings,
     'RESOURCE_CATALOG_LOGICAL_SPEC_TENANT_DIVERGENCE',
-    'tmf_logical_resource',
-    `SELECT COUNT(*) AS count FROM tmf_logical_resource r
-       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    'resource_logical',
+    `SELECT COUNT(*) AS count FROM resource_logical r
+       JOIN resource_specification rs ON rs.id = r.resource_specification_id
       WHERE r.tenant_id <> rs.tenant_id
         AND NOT (r.tenant_id = ? AND rs.tenant_id = ?)`,
-    `SELECT r.id FROM tmf_logical_resource r
-       JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
+    `SELECT r.id FROM resource_logical r
+       JOIN resource_specification rs ON rs.id = r.resource_specification_id
       WHERE r.tenant_id <> rs.tenant_id
         AND NOT (r.tenant_id = ? AND rs.tenant_id = ?) ORDER BY r.id`,
     [SOURCE_TENANT, DESTINATION_TENANT],
@@ -459,7 +459,7 @@ const findUniqueConstraintOnColumn = async (
 type ForeignKeyDependentRow = { tableName: string; name: string };
 
 /**
- * Ex.: `tmf_resource_type.category_code` referencia `tmf_resource_category(code)` via FK —
+ * Ex.: `resource_type.category_code` referencia `tmf_resource_category(code)` via FK —
  * Oracle recusa (`ORA-02273`) dropar a `UNIQUE`/`PK` alvo enquanto essa FK existir. Achamos e
  * removemos essas FKs dependentes antes de relaxar a constraint; não as recriamos: a coluna que
  * elas protegiam (`category_code`) só sai de vez na Fase B, e o Gate A já garante que os valores
@@ -533,11 +533,11 @@ const relaxGlobalCodeUniqueness = async (
 
 /**
  * Tabelas migradas cuja chave é natural (`tenant_id, code`), sem coluna `id` própria —
- * `tmf_resource_status_catalog` é a única no módulo Resource (§2.5 do plano). O chunking por `id`
+ * `resource_status_catalog` é a única no módulo Resource (§2.5 do plano). O chunking por `id`
  * não se aplica; como o Gate A já mostrou uma dezena de linhas nessa tabela (bem abaixo de
  * `CHUNK_SIZE`), um único `UPDATE` direto por `tenant_id` substitui o laço de chunking.
  */
-const NO_ID_COLUMN_TABLES = new Set<string>(['tmf_resource_status_catalog']);
+const NO_ID_COLUMN_TABLES = new Set<string>(['resource_status_catalog']);
 
 /**
  * `UPDATE ... WHERE id IN (SELECT ... FETCH FIRST n ROWS ONLY)` em loop até zerar. Cada chunk é
@@ -601,14 +601,14 @@ const materializeResourceTypes = async (
 ): Promise<Map<string, MaterializedType>> => {
   const sourceTypes = await db.queryMany<TypeRow>(
     `SELECT id, code, name, category_code, description, status, map_presence
-       FROM tmf_resource_type WHERE tenant_id = ? ORDER BY code`,
+       FROM resource_type WHERE tenant_id = ? ORDER BY code`,
     [SOURCE_TENANT],
   );
   const map = new Map<string, MaterializedType>();
   const now = new Date().toISOString();
   for (const source of sourceTypes) {
     const existing = await db.queryOne<{ id: string }>(
-      `SELECT id FROM tmf_resource_type WHERE tenant_id = ? AND code = ?`,
+      `SELECT id FROM resource_type WHERE tenant_id = ? AND code = ?`,
       [DESTINATION_TENANT, source.code],
     );
     if (existing) {
@@ -617,7 +617,7 @@ const materializeResourceTypes = async (
     }
     const newId = createCanonicalId();
     await db.execute(
-      `INSERT INTO tmf_resource_type
+      `INSERT INTO resource_type
        (id, tenant_id, code, name, category_code, description, status, map_presence, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -646,14 +646,14 @@ const materializeResourceTypes = async (
  */
 const ensureDefaultCatalog = async (db: DatabaseSession): Promise<string> => {
   const existing = await db.queryOne<{ id: string }>(
-    `SELECT id FROM tmf_resource_catalog WHERE tenant_id = ? AND code = ?`,
+    `SELECT id FROM resource_catalog WHERE tenant_id = ? AND code = ?`,
     [DESTINATION_TENANT, RESOURCE_CATALOG_BOOTSTRAP.code],
   );
   if (existing) return existing.id;
   const id = createCanonicalId();
   const now = new Date().toISOString();
   await db.execute(
-    `INSERT INTO tmf_resource_catalog
+    `INSERT INTO resource_catalog
      (id, tenant_id, code, name, description, status, is_default, sort_order, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 'active', 1, 0, ?, ?)`,
     [
@@ -686,14 +686,14 @@ const ensureNode = async (
   fields: NodeFields,
 ): Promise<string> => {
   const existing = await db.queryOne<{ id: string }>(
-    `SELECT id FROM tmf_resource_catalog_node WHERE tenant_id = ? AND catalog_id = ? AND code = ?`,
+    `SELECT id FROM resource_catalog_node WHERE tenant_id = ? AND catalog_id = ? AND code = ?`,
     [DESTINATION_TENANT, catalogId, code],
   );
   if (existing) return existing.id;
   const id = createCanonicalId();
   const now = new Date().toISOString();
   await db.execute(
-    `INSERT INTO tmf_resource_catalog_node
+    `INSERT INTO resource_catalog_node
      (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, metadata, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
     [
@@ -790,7 +790,7 @@ const buildComboAndLayerNodes = async (
 ): Promise<{ combos: ComboRow[]; comboGroupNodeId: Map<string, string> }> => {
   const combos = await db.queryMany<ComboRow>(
     `SELECT DISTINCT s.category AS category_code, l.code AS layer_code, s.resource_type AS type_code
-       FROM tmf_resource_specification s
+       FROM resource_specification s
        LEFT JOIN tmf_resource_layer l ON l.id = s.resource_layer_id AND l.tenant_id = s.tenant_id
       WHERE s.tenant_id = ?`,
     [DESTINATION_TENANT],
@@ -862,7 +862,7 @@ const buildResourceTypeNodes = async (
 ): Promise<void> => {
   const destinationTypes = await db.queryMany<TypeRow>(
     `SELECT id, code, name, category_code, description, status, map_presence
-       FROM tmf_resource_type WHERE tenant_id = ? ORDER BY code`,
+       FROM resource_type WHERE tenant_id = ? ORDER BY code`,
     [DESTINATION_TENANT],
   );
   const typeByCode = new Map(destinationTypes.map((row) => [row.code, row]));
@@ -909,7 +909,7 @@ const buildResourceTypeNodes = async (
 
 /**
  * Passo 7 do plano §7 Fase A: em lote por tipo (uma `UPDATE` por código, não por linha) —
- * `NULL` continua "vale para qualquer tipo" em `tmf_resource_status_catalog`.
+ * `NULL` continua "vale para qualquer tipo" em `resource_status_catalog`.
  */
 const backfillResourceTypeIds = async (
   db: DatabaseSession,
@@ -920,7 +920,7 @@ const backfillResourceTypeIds = async (
     if (seen.has(materialized.code)) continue;
     seen.add(materialized.code);
     const specResult = await db.execute(
-      `UPDATE tmf_resource_specification SET resource_type_id = ?
+      `UPDATE resource_specification SET resource_type_id = ?
         WHERE tenant_id = ? AND resource_type = ? AND (resource_type_id IS NULL OR resource_type_id <> ?)`,
       [
         materialized.destinationId,
@@ -930,7 +930,7 @@ const backfillResourceTypeIds = async (
       ],
     );
     const statusResult = await db.execute(
-      `UPDATE tmf_resource_status_catalog SET resource_type_id = ?
+      `UPDATE resource_status_catalog SET resource_type_id = ?
         WHERE tenant_id = ? AND resource_type = ? AND (resource_type_id IS NULL OR resource_type_id <> ?)`,
       [
         materialized.destinationId,
@@ -952,9 +952,9 @@ const auditGateB = async (db: DatabaseSession): Promise<AuditReport> => {
     db,
     report.findings,
     'RESOURCE_CATALOG_BACKFILL_SPEC_TYPE_ID_MISSING',
-    'tmf_resource_specification',
-    `SELECT COUNT(*) AS count FROM tmf_resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL`,
-    `SELECT id FROM tmf_resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL ORDER BY id`,
+    'resource_specification',
+    `SELECT COUNT(*) AS count FROM resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL`,
+    `SELECT id FROM resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL ORDER BY id`,
     [DESTINATION_TENANT],
   );
   return {
@@ -970,9 +970,9 @@ const auditGateD = async (db: DatabaseSession): Promise<AuditReport> => {
     db,
     findings,
     'RESOURCE_CATALOG_CUTOVER_SPEC_TYPE_ID_MISSING',
-    'tmf_resource_specification',
-    `SELECT COUNT(*) AS count FROM tmf_resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL`,
-    `SELECT id FROM tmf_resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL ORDER BY id`,
+    'resource_specification',
+    `SELECT COUNT(*) AS count FROM resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL`,
+    `SELECT id FROM resource_specification WHERE tenant_id = ? AND resource_type_id IS NULL ORDER BY id`,
     [DESTINATION_TENANT],
   );
   return {
@@ -1033,22 +1033,22 @@ const dropTableIfExists = async (db: DatabaseSession, table: string): Promise<bo
 
 /**
  * Executa a limpeza física da Fase B (Issue #188 §7 Fase B):
- * 1. Remove colunas legadas em tmf_resource_specification (category, resource_type, resource_layer_id)
- * 2. Remove category_code em tmf_resource_type
- * 3. Remove resource_type em tmf_resource_status_catalog (se existente)
+ * 1. Remove colunas legadas em resource_specification (category, resource_type, resource_layer_id)
+ * 2. Remove category_code em resource_type
+ * 3. Remove resource_type em resource_status_catalog (se existente)
  * 4. Remove tabelas tmf_resource_layer e tmf_resource_category
  */
 const executePhaseBCutover = async (db: DatabaseSession): Promise<void> => {
-  process.stdout.write('1/4 — removendo colunas legadas de tmf_resource_specification...\n');
-  await dropColumnIfExists(db, 'tmf_resource_specification', 'category');
-  await dropColumnIfExists(db, 'tmf_resource_specification', 'resource_type');
-  await dropColumnIfExists(db, 'tmf_resource_specification', 'resource_layer_id');
+  process.stdout.write('1/4 — removendo colunas legadas de resource_specification...\n');
+  await dropColumnIfExists(db, 'resource_specification', 'category');
+  await dropColumnIfExists(db, 'resource_specification', 'resource_type');
+  await dropColumnIfExists(db, 'resource_specification', 'resource_layer_id');
 
-  process.stdout.write('2/4 — removendo coluna legada de tmf_resource_type...\n');
-  await dropColumnIfExists(db, 'tmf_resource_type', 'category_code');
+  process.stdout.write('2/4 — removendo coluna legada de resource_type...\n');
+  await dropColumnIfExists(db, 'resource_type', 'category_code');
 
-  process.stdout.write('3/4 — removendo coluna legada de tmf_resource_status_catalog...\n');
-  await dropColumnIfExists(db, 'tmf_resource_status_catalog', 'resource_type');
+  process.stdout.write('3/4 — removendo coluna legada de resource_status_catalog...\n');
+  await dropColumnIfExists(db, 'resource_status_catalog', 'resource_type');
 
   process.stdout.write('4/4 — dropando tabelas legadas...\n');
   await dropTableIfExists(db, 'tmf_resource_layer');

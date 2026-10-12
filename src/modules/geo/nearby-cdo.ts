@@ -35,14 +35,14 @@ type CdoRow = {
 const CDO_NAME = /^\s*CDO/i;
 
 // As duas expressões de coordenada abaixo precisam ficar exatamente nesta forma textual: é o que
-// casa com o índice parcial idx_tmf_geographic_location_point_lnglat no Postgres (ver schema.ts) e
+// casa com o índice parcial geographic_idx_location_point_lnglat no Postgres (ver schema.ts) e
 // o que os regex de transformOracleQuery reescrevem para Oracle (ver oracle-database.ts).
 const NEARBY_CDO_SQL = `
   SELECT r.id, r.name, l.geometry
-    FROM tmf_physical_resource r
-    JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
-    JOIN tmf_geographic_location l ON l.id = r.place_id
+    FROM resource_physical r
+    JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    JOIN resource_type rt ON rt.id = rs.resource_type_id
+    JOIN geographic_location l ON l.id = r.place_id
    WHERE rt.code = 'CTO'
      AND r.status = 'active'
      AND UPPER(r.name) LIKE 'CDO%'

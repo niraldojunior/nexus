@@ -1,5 +1,5 @@
 // Leitura agregada das LINHAS do mapa por bbox (issue #317). Cada camada LINE do Studio GEO tem
-// perfis de LOD materializados em `geo_map_feature.lod_key`; o cliente pede, por camada, exatamente o
+// perfis de LOD materializados em `geographic_map_feature.lod_key`; o cliente pede, por camada, exatamente o
 // LOD da faixa de escala atual. Uma chamada por viewport devolve só os fragmentos ocupados — sem
 // enumerar tiles vazios. Fragmentos de tiles adjacentes são partes necessárias da geometria (a margem
 // de recorte evita costuras), por isso não há DISTINCT por entidade.
@@ -57,7 +57,7 @@ export class GeoMapLineService {
       // O zoom de armazenamento é propriedade do perfil: descobre-o no próprio índice.
       const zoomRow = await this.db.get<{ tile_z: number }>(
         `SELECT MIN(tile_z) AS tile_z
-           FROM geo_map_feature
+           FROM geographic_map_feature
           WHERE tenant_id = ? AND feature_kind = 'resource' AND shape IN ('line', 'polygon')
             AND source_model_id = ? AND lod_key = ?`,
         [tenantId, selection.sourceModelId, selection.lodKey],
@@ -73,7 +73,7 @@ export class GeoMapLineService {
         `SELECT entity_id, feature_kind, entity_type, shape, type_code, site_category,
                 source_model_type, source_model_id, status, label, sublabel, lng, lat, geometry,
                 tile_z
-           FROM geo_map_feature
+           FROM geographic_map_feature
           WHERE tenant_id = ? AND feature_kind = 'resource' AND shape IN ('line', 'polygon')
             AND source_model_id = ? AND lod_key = ? AND tile_z = ?
             AND tile_x >= ? AND tile_x <= ? AND tile_y >= ? AND tile_y <= ?
@@ -109,7 +109,7 @@ export class GeoMapLineService {
   private async manifestKeys(tenantId: string): Promise<Set<string> | null> {
     try {
       const rows = await this.db.all<{ source_model_id: string; lod_key: string }>(
-        'SELECT source_model_id, lod_key FROM geo_map_line_index WHERE tenant_id = ?',
+        'SELECT source_model_id, lod_key FROM geographic_map_line_index WHERE tenant_id = ?',
         [tenantId],
       );
       if (rows.length === 0) return null;

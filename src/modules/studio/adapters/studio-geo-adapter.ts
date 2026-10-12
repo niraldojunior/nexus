@@ -110,7 +110,7 @@ export type StudioGeoPointVisualConfig = {
 
 /** Perfil de LOD: um desenho derivado da linha, indexado num zoom e simplificado numa tolerância. */
 export type StudioGeoLineLodProfile = {
-  /** Identificador estável na camada; vira o `lod_key` do índice `geo_map_feature`. */
+  /** Identificador estável na camada; vira o `lod_key` do índice `geographic_map_feature`. */
   id: string;
   tileZoom: number;
   simplifyToleranceMeters: number;

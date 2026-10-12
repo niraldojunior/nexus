@@ -30,7 +30,7 @@ export const recordMutation = async (
   input: RecordMutationInput,
 ): Promise<void> => {
   await db.run(
-    `INSERT INTO tmf_audit_log
+    `INSERT INTO user_audit_log
      (id, tenant_id, actor_sub, action, entity_type, entity_id, event_time, before_state, after_state, trace_id, source_ip)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -49,7 +49,7 @@ export const recordMutation = async (
   );
 
   await db.run(
-    `INSERT INTO tmf_outbox (id, tenant_id, event_id, topic, payload, status, created_at, published_at)
+    `INSERT INTO environment_outbox (id, tenant_id, event_id, topic, payload, status, created_at, published_at)
      VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL)`,
     [
       createCanonicalId(),

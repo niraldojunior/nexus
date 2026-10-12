@@ -17,13 +17,13 @@ import { reconcileAdministrativeCitySiteCounts } from './administrative-city-sit
 import { composeNetwinSiteName } from './site-name.js';
 import { loadNativeCheckpoint, saveNativeCheckpoint } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
+import { createScopedInfranodePager } from './scoped-infranode-ids.js';
 import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
 import {
   chunksOf,
   namedInBinds,
   scopedInfranodeIdQuery,
   selectFullTableIds,
-  selectScopedInfranodeIds,
   structuredInfranodePredicates,
 } from './source-batches.js';
 import type { PhaseStats } from './types.js';
@@ -309,7 +309,12 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       'infranode',
       municipalityPrefilter,
     );
-    const scopeStrategy = municipalityPrefilter ? 'municipio-id+nome' : 'nome-only';
+    const pager = structuredScope
+      ? await createScopedInfranodePager(source, ctx.options.scope, municipalityPrefilter, {
+          cacheOwner: ctx,
+        })
+      : undefined;
+    const scopeStrategy = pager?.strategy ?? 'location-nacional';
     console.log(
       `[Escopo] Fase 2.A: ${structuredScope ? `DL_INFRANODE estruturado (${predicates.length} predicado(s); estratégia=${scopeStrategy})` : 'LOCATION nacional por ID'}.`,
     );
@@ -350,14 +355,8 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
         commitMs: 0,
       };
       let startedAt = Date.now();
-      const ids = structuredScope
-        ? await selectScopedInfranodeIds(
-            source,
-            ctx.options.scope,
-            lastId,
-            limit,
-            municipalityPrefilter,
-          )
+      const ids = pager
+        ? await pager.next(lastId, limit)
         : await selectFullTableIds(source, 'NETWIN.LOCATION', lastId, limit);
       timing.scopeSelectionMs = elapsed(startedAt);
       const configuredSlowSelectionMs = Number(process.env.NETWIN_SCOPE_SLOW_MS);

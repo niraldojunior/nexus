@@ -21,7 +21,8 @@ import {
   resolveNetwinPlantState,
 } from '../netwin-migration-kit.js';
 import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
-import { chunksOf, selectFullTableIds, selectScopedInfranodeIds } from './source-batches.js';
+import { chunksOf, selectFullTableIds } from './source-batches.js';
+import { createScopedInfranodePager } from './scoped-infranode-ids.js';
 import {
   loadInternalRacksByPlaceIds,
   loadInternalSubracksByRackIds,
@@ -201,6 +202,9 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
     const prefilter = structured
       ? await resolveMunicipalityScopePrefilter(source, scope)
       : undefined;
+    const pager = structured
+      ? await createScopedInfranodePager(source, scope, prefilter, { cacheOwner: ctx })
+      : undefined;
     const specIds = {
       rack: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${RACK_SPEC_NAME}`),
       subrack: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${SUBRACK_SPEC_NAME}`),
@@ -238,8 +242,8 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
     let lastId = 0;
     for (;;) {
       const limit = Math.min(900, ctx.options.batchSize);
-      const placeIds = structured
-        ? await selectScopedInfranodeIds(source, scope, lastId, limit, prefilter)
+      const placeIds = pager
+        ? await pager.next(lastId, limit)
         : await selectFullTableIds(source, 'NETWIN.LOCATION', lastId, limit);
       if (placeIds.length === 0) break;
       lastId = placeIds[placeIds.length - 1]!;

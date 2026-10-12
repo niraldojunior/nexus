@@ -14,7 +14,7 @@ import type { DatabaseClient, DatabaseSession } from '../src/shared/persistence/
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const loaderDbUrl = `${pathToFileURL(resolve(rootDir, 'scripts/loader-db.mjs')).href}?test`;
 
-// O write-through monta o INSERT de `geo_map_feature` à mão, com a lista de colunas e a de
+// O write-through monta o INSERT de `geographic_map_feature` à mão, com a lista de colunas e a de
 // VALUES em linhas separadas. Um `?` a mais não quebra typecheck nem lint — estoura só em
 // runtime ("INSERT has more expressions than target columns"), no primeiro recurso pontual que
 // passar pelo sincronizador. Foi o que aconteceu: a suíte só pegou pelo caminho indireto do
@@ -67,7 +67,7 @@ test('candidatesSql exclui todo tipo de recurso interno (Splitter e Porta)', () 
 });
 
 test('candidatesSql filtra recurso por map_presence do ResourceType canônico vinculado por FK', () => {
-  assert.match(CANDIDATES_SQL, /JOIN tmf_resource_type rt\s+ON rt\.id = rs\.resource_type_id/);
+  assert.match(CANDIDATES_SQL, /JOIN resource_type rt\s+ON rt\.id = rs\.resource_type_id/);
   assert.doesNotMatch(CANDIDATES_SQL, /rt\.tenant_id = rs\.tenant_id/);
   assert.doesNotMatch(CANDIDATES_SQL, /rt\.code = rs\.resource_type/);
   assert.match(CANDIDATES_SQL, /COALESCE\(rt\.map_presence, 1\) = 1/);
@@ -91,22 +91,22 @@ test('candidatesSql exige o tenant da entidade sem exigir o tenant da Location c
 test('candidatesSql resolve a Location por Site ou Address quando place_id não aponta direto', () => {
   assert.match(
     CANDIDATES_SQL,
-    /LEFT JOIN tmf_geographic_site place_site\s+ON place_site\.id = r\.place_id AND place_site\.tenant_id = r\.tenant_id/,
+    /LEFT JOIN geographic_site place_site\s+ON place_site\.id = r\.place_id AND place_site\.tenant_id = r\.tenant_id/,
   );
   assert.match(
     CANDIDATES_SQL,
-    /LEFT JOIN tmf_geographic_address place_address\s+ON place_address\.id = r\.place_id/,
+    /LEFT JOIN geographic_address place_address\s+ON place_address\.id = r\.place_id/,
   );
   assert.match(
     CANDIDATES_SQL,
-    /JOIN tmf_geographic_location l\s+ON l\.id = COALESCE\(place_site\.geographic_location_id, place_address\.geographic_location_id, r\.place_id\)/,
+    /JOIN geographic_location l\s+ON l\.id = COALESCE\(place_site\.geographic_location_id, place_address\.geographic_location_id, r\.place_id\)/,
   );
 });
 
 test('candidatesSql restringe site a category = Site, fora de projeto em curso', () => {
   assert.match(CANDIDATES_SQL, /spec\.category = 'Site'/);
   assert.doesNotMatch(CANDIDATES_SQL, /'SubSite'/);
-  assert.match(CANDIDATES_SQL, /geo_project_site/);
+  assert.match(CANDIDATES_SQL, /project_site/);
   assert.match(CANDIDATES_SQL, /p\.status <> 'terminated'/);
 });
 
@@ -164,7 +164,7 @@ test('syncLocation procura dependentes no tenant informado mesmo com Location co
   ]);
   assert.match(
     lookupCalls[0]?.sql ?? '',
-    /tmf_physical_resource WHERE place_id = \? AND tenant_id = \?/,
+    /resource_physical WHERE place_id = \? AND tenant_id = \?/,
   );
 });
 
@@ -232,7 +232,7 @@ test('rebuild filtra a entidade pelo tenant e preserva Location compartilhada', 
 test('rebuild de densidade com --apply aborta antes de limpar tenant sem features', async () => {
   const script = await readFile(resolve(rootDir, 'scripts/build-map-density.mjs'), 'utf8');
   const emptyGuard = script.indexOf('if (sourceRows === 0)');
-  const deleteTenant = script.indexOf('DELETE FROM geo_map_density WHERE tenant_id');
+  const deleteTenant = script.indexOf('DELETE FROM geographic_map_density WHERE tenant_id');
   assert.ok(emptyGuard >= 0);
   assert.ok(deleteTenant > emptyGuard);
   assert.match(script, /if \(APPLY\) throw new Error\(`Rebuild de densidade abortado:/);
@@ -241,8 +241,8 @@ test('rebuild de densidade com --apply aborta antes de limpar tenant sem feature
 test('loaders Netwin preservam tenant, map_presence e identidade publicada do ResourceType', async () => {
   for (const file of ['migrate-netwin-osp.ts', 'migrate-netwin-infranode.ts']) {
     const script = await readFile(resolve(rootDir, 'src/scripts', file), 'utf8');
-    assert.match(script, /JOIN \$\{t\('tmf_resource_specification'\)\} rs/);
-    assert.match(script, /JOIN \$\{t\('tmf_resource_type'\)\} rt ON rt\.id=rs\.resource_type_id/);
+    assert.match(script, /JOIN \$\{t\('resource_specification'\)\} rs/);
+    assert.match(script, /JOIN \$\{t\('resource_type'\)\} rt ON rt\.id=rs\.resource_type_id/);
     assert.match(script, /COALESCE\(rt\.map_presence, 1\) = 1/);
     assert.match(script, /source_model_type/);
     assert.match(script, /source_model_id/);

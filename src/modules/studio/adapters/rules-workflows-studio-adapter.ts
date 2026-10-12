@@ -324,15 +324,15 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
     const typed = snapshot as unknown as GeoProjectWorkflowSnapshot;
     const incomingCodes = new Set(typed.states.map((state) => state.code));
 
-    // Sincroniza estados declarados no read-model de compatibilidade geo_project_status_catalog
+    // Sincroniza estados declarados no read-model de compatibilidade project_status_catalog
     for (const state of typed.states) {
       const existing = await this.db.get<{ code: string }>(
-        `SELECT code FROM geo_project_status_catalog WHERE tenant_id = ? AND code = ?`,
+        `SELECT code FROM project_status_catalog WHERE tenant_id = ? AND code = ?`,
         [context.tenantId, state.code],
       );
       if (existing) {
         await this.db.run(
-          `UPDATE geo_project_status_catalog
+          `UPDATE project_status_catalog
               SET name = ?, sort_order = ?, active = ?, behavior = ?
             WHERE tenant_id = ? AND code = ?`,
           [
@@ -346,7 +346,7 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
         );
       } else {
         await this.db.run(
-          `INSERT INTO geo_project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
+          `INSERT INTO project_status_catalog (tenant_id, code, name, sort_order, active, behavior)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [
             context.tenantId,
@@ -362,13 +362,13 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
 
     // Inativa estados ausentes no snapshot sem apagar registros (C6: soft-termination)
     const allDbStates = await this.db.all<{ code: string; active: number }>(
-      `SELECT code, active FROM geo_project_status_catalog WHERE tenant_id = ?`,
+      `SELECT code, active FROM project_status_catalog WHERE tenant_id = ?`,
       [context.tenantId],
     );
     for (const dbState of allDbStates) {
       if (!incomingCodes.has(dbState.code) && dbState.active === 1) {
         await this.db.run(
-          `UPDATE geo_project_status_catalog SET active = 0 WHERE tenant_id = ? AND code = ?`,
+          `UPDATE project_status_catalog SET active = 0 WHERE tenant_id = ? AND code = ?`,
           [context.tenantId, dbState.code],
         );
       }

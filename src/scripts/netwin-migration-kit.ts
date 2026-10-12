@@ -318,7 +318,7 @@ export function mergeCharacteristicDefinitions(
 export async function reconcileCatalogCharacteristics(
   target: Connection,
   t: TablePrefixer,
-  table: 'tmf_resource_type' | 'tmf_geographic_site_specification' | 'tmf_resource_specification',
+  table: 'resource_type' | 'geographic_site_specification' | 'resource_specification',
   id: string,
   canonical: MigrationCharacteristic[],
 ): Promise<void> {
@@ -420,7 +420,7 @@ const MAX_VARCHAR2_BIND_BYTES = 4000;
 //
 // Para colunas CLOB a escolha é por TAMANHO MEDIDO no lote, não pelo nome da coluna. Bind CLOB
 // materializa um LOB temporário por valor no servidor, com round-trips próprios: medido no Oracle
-// dev, 2.000 linhas de `tmf_geographic_site` (related_party 46B, characteristics 221B) levaram
+// dev, 2.000 linhas de `geographic_site` (related_party 46B, characteristics 221B) levaram
 // 77.970ms com bind CLOB contra 196ms com bind VARCHAR2 — ~400x. Na Fase 2.A do Netwin isso era
 // ~105s dos ~109s de cada lote. Quando o lote realmente passa de VARCHAR2 (geometria grande, o
 // caso do ORA-01461 acima), o bind volta a ser CLOB automaticamente.
@@ -527,7 +527,7 @@ export async function resolveAdministrativeCityIds(
   for (const tuple of tuples) unique.set(administrativeCityNaturalKey(tuple), tuple);
   const ids = new Map<string, string>();
   if (unique.size === 0) return ids;
-  const table = t('geo_administrative_city');
+  const table = t('geographic_administrative_city');
   const select = `SELECT id AS "ID" FROM ${table}
      WHERE country_code=:countryCode AND state_code=:stateCode AND city_key=:cityKey`;
   for (const [key, tuple] of unique) {
@@ -564,7 +564,7 @@ export async function ensureResourceType(
   tenantId: string,
 ): Promise<string> {
   const existing = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_resource_type')}
+    `SELECT id AS "ID" FROM ${t('resource_type')}
       WHERE code=:code AND tenant_id IN (:tenantId,'default')
       ORDER BY CASE WHEN tenant_id=:tenantId THEN 0 ELSE 1 END
       FETCH FIRST 1 ROWS ONLY`,
@@ -573,7 +573,7 @@ export async function ensureResourceType(
   );
   if (existing.rows?.[0]?.ID) return existing.rows[0].ID;
   const id = createCanonicalId();
-  await merge(target, t, 'tmf_resource_type', ['tenant_id', 'code'], {
+  await merge(target, t, 'resource_type', ['tenant_id', 'code'], {
     id,
     tenant_id: tenantId,
     code,
@@ -591,14 +591,14 @@ export async function ensureSiteSpec(
   siteRole: string,
 ): Promise<void> {
   const exists = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_geographic_site_specification')} WHERE code=:1`,
+    `SELECT id AS "ID" FROM ${t('geographic_site_specification')} WHERE code=:1`,
     [code],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   if (exists.rows?.[0]) return;
   const id = createCanonicalId();
   await target.execute(
-    `INSERT INTO ${t('tmf_geographic_site_specification')} (id,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,'Active','[]',0)`,
+    `INSERT INTO ${t('geographic_site_specification')} (id,name,code,category,site_role,lifecycle_status,characteristics,is_bootstrap) VALUES (:1,:2,:3,:4,:5,'Active','[]',0)`,
     [id, code, code, category, siteRole],
   );
 }
@@ -609,7 +609,7 @@ export async function siteSpecId(
   code: string,
 ): Promise<string> {
   const row = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_geographic_site_specification')} WHERE code=:1 FETCH FIRST 1 ROWS ONLY`,
+    `SELECT id AS "ID" FROM ${t('geographic_site_specification')} WHERE code=:1 FETCH FIRST 1 ROWS ONLY`,
     [code],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
@@ -633,14 +633,14 @@ export async function resourceSpecId(
     tenantId,
   );
   const row = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_resource_specification')} WHERE tenant_id=:1 AND name=:2 AND resource_type_id=:3 FETCH FIRST 1 ROWS ONLY`,
+    `SELECT id AS "ID" FROM ${t('resource_specification')} WHERE tenant_id=:1 AND name=:2 AND resource_type_id=:3 FETCH FIRST 1 ROWS ONLY`,
     [tenantId, name, resourceTypeId],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   if (row.rows?.[0]?.ID) return row.rows[0].ID;
   const id = createCanonicalId();
   await target.execute(
-    `INSERT INTO ${t('tmf_resource_specification')} (id,tenant_id,name,resource_type_id,characteristics) VALUES (:1,:2,:3,:4,'[]')`,
+    `INSERT INTO ${t('resource_specification')} (id,tenant_id,name,resource_type_id,characteristics) VALUES (:1,:2,:3,:4,'[]')`,
     [id, tenantId, name, resourceTypeId],
   );
   return id;
@@ -659,7 +659,7 @@ export async function identity(
   adopt?: () => Promise<string | null>,
 ): Promise<string> {
   const existing = await target.execute<{ NEXUS_ID: string }>(
-    `SELECT nexus_id AS "NEXUS_ID" FROM ${t('netwin_mig_identity')}
+    `SELECT nexus_id AS "NEXUS_ID" FROM ${t('migration_netwin_identity')}
       WHERE source_entity=:1 AND source_id=:2 AND target_role=:3`,
     [sourceEntity, sourceId, role],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -669,7 +669,7 @@ export async function identity(
   const adopted = adopt ? await adopt() : null;
   if (adopted) {
     await target.execute(
-      `INSERT INTO ${t('netwin_mig_identity')}
+      `INSERT INTO ${t('migration_netwin_identity')}
        (source_entity, source_id, target_role, nexus_entity_type, nexus_id, source_hash, created_at)
        VALUES (:1,:2,:3,:4,:5,:6,SYSTIMESTAMP)`,
       [sourceEntity, sourceId, role, entityType, adopted, sourceHash ?? null],
@@ -679,7 +679,7 @@ export async function identity(
   const id = createCanonicalId();
   try {
     await target.execute(
-      `INSERT INTO ${t('netwin_mig_identity')}
+      `INSERT INTO ${t('migration_netwin_identity')}
        (source_entity, source_id, target_role, nexus_entity_type, nexus_id, created_at)
        VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
       [sourceEntity, sourceId, role, entityType, id],
@@ -699,7 +699,7 @@ export async function identityState(
   role: string,
 ): Promise<{ sourceHash: string | null } | null> {
   const result = await target.execute<{ SOURCE_HASH: string | null }>(
-    `SELECT source_hash AS "SOURCE_HASH" FROM ${t('netwin_mig_identity')}
+    `SELECT source_hash AS "SOURCE_HASH" FROM ${t('migration_netwin_identity')}
       WHERE source_entity=:1 AND source_id=:2 AND target_role=:3`,
     [sourceEntity, sourceId, role],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -717,7 +717,7 @@ export async function updateIdentityHash(
   sourceHash: string,
 ): Promise<void> {
   await target.execute(
-    `UPDATE ${t('netwin_mig_identity')} SET source_hash=:1
+    `UPDATE ${t('migration_netwin_identity')} SET source_hash=:1
       WHERE source_entity=:2 AND source_id=:3 AND target_role=:4`,
     [sourceHash, sourceEntity, sourceId, role],
   );
@@ -734,7 +734,7 @@ export async function reject(
   payload: string,
 ): Promise<void> {
   await target.execute(
-    `INSERT INTO ${t('netwin_mig_reject')} (id,job_id,source_id,reason,payload,created_at) VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
+    `INSERT INTO ${t('migration_netwin_reject')} (id,job_id,source_id,reason,payload,created_at) VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
     [randomUUID(), jobId, sourceId, code, payload],
   );
 }
@@ -748,7 +748,7 @@ export async function defer(
   payload: string,
 ): Promise<void> {
   await target.execute(
-    `INSERT INTO ${t('netwin_mig_deferred')} (id,job_id,source_id,reason,payload,created_at) VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
+    `INSERT INTO ${t('migration_netwin_deferred')} (id,job_id,source_id,reason,payload,created_at) VALUES (:1,:2,:3,:4,:5,SYSTIMESTAMP)`,
     [randomUUID(), jobId, sourceId, reason, payload],
   );
 }
@@ -762,7 +762,7 @@ export async function recordParent(
 ): Promise<void> {
   try {
     await target.execute(
-      `INSERT INTO ${t('netwin_mig_parent')} (job_id,source_id,parent_source_id,created_at) VALUES (:1,:2,:3,SYSTIMESTAMP)`,
+      `INSERT INTO ${t('migration_netwin_parent')} (job_id,source_id,parent_source_id,created_at) VALUES (:1,:2,:3,SYSTIMESTAMP)`,
       [jobId, sourceId, parentSourceId],
     );
   } catch (error) {
@@ -778,7 +778,7 @@ export async function recordTouches(
 ): Promise<void> {
   if (sourceIds.length === 0) return;
   await target.executeMany(
-    `MERGE INTO ${t('netwin_mig_touch')} target
+    `MERGE INTO ${t('migration_netwin_touch')} target
      USING (SELECT :1 job_id,:2 source_id FROM DUAL) source
      ON (target.job_id=source.job_id AND target.source_id=source.source_id)
      WHEN NOT MATCHED THEN INSERT (job_id,source_id,created_at)
@@ -791,12 +791,12 @@ export async function recordTouches(
 
 export async function ensureControlTables(target: Connection, t: TablePrefixer): Promise<void> {
   const ddls = [
-    `CREATE TABLE ${t('netwin_mig_job')} (id VARCHAR2(36 CHAR) PRIMARY KEY,source_scn VARCHAR2(32 CHAR) NOT NULL,uf_id NUMBER,municipio_id NUMBER,mapping_version VARCHAR2(64 CHAR) NOT NULL,last_pi_id NUMBER DEFAULT 0 NOT NULL,state VARCHAR2(32 CHAR) NOT NULL,loaded_count NUMBER DEFAULT 0 NOT NULL,rejected_count NUMBER DEFAULT 0 NOT NULL,deferred_count NUMBER DEFAULT 0 NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,completed_at TIMESTAMP(6) WITH TIME ZONE)`,
-    `CREATE TABLE ${t('netwin_mig_identity')} (source_entity VARCHAR2(64 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,target_role VARCHAR2(32 CHAR) NOT NULL,nexus_entity_type VARCHAR2(64 CHAR) NOT NULL,nexus_id VARCHAR2(36 CHAR) NOT NULL,source_hash VARCHAR2(64 CHAR),created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(source_entity,source_id,target_role))`,
-    `CREATE TABLE ${t('netwin_mig_parent')} (job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,parent_source_id VARCHAR2(64 CHAR) NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(job_id,source_id))`,
-    `CREATE TABLE ${t('netwin_mig_touch')} (job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(job_id,source_id))`,
-    `CREATE TABLE ${t('netwin_mig_reject')} (id VARCHAR2(36 CHAR) PRIMARY KEY,job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,reason VARCHAR2(128 CHAR) NOT NULL,payload CLOB NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
-    `CREATE TABLE ${t('netwin_mig_deferred')} (id VARCHAR2(36 CHAR) PRIMARY KEY,job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,reason VARCHAR2(128 CHAR) NOT NULL,payload CLOB NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
+    `CREATE TABLE ${t('migration_netwin_job')} (id VARCHAR2(36 CHAR) PRIMARY KEY,source_scn VARCHAR2(32 CHAR) NOT NULL,uf_id NUMBER,municipio_id NUMBER,mapping_version VARCHAR2(64 CHAR) NOT NULL,last_pi_id NUMBER DEFAULT 0 NOT NULL,state VARCHAR2(32 CHAR) NOT NULL,loaded_count NUMBER DEFAULT 0 NOT NULL,rejected_count NUMBER DEFAULT 0 NOT NULL,deferred_count NUMBER DEFAULT 0 NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,completed_at TIMESTAMP(6) WITH TIME ZONE)`,
+    `CREATE TABLE ${t('migration_netwin_identity')} (source_entity VARCHAR2(64 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,target_role VARCHAR2(32 CHAR) NOT NULL,nexus_entity_type VARCHAR2(64 CHAR) NOT NULL,nexus_id VARCHAR2(36 CHAR) NOT NULL,source_hash VARCHAR2(64 CHAR),created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(source_entity,source_id,target_role))`,
+    `CREATE TABLE ${t('migration_netwin_parent')} (job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,parent_source_id VARCHAR2(64 CHAR) NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(job_id,source_id))`,
+    `CREATE TABLE ${t('migration_netwin_touch')} (job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,PRIMARY KEY(job_id,source_id))`,
+    `CREATE TABLE ${t('migration_netwin_reject')} (id VARCHAR2(36 CHAR) PRIMARY KEY,job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,reason VARCHAR2(128 CHAR) NOT NULL,payload CLOB NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
+    `CREATE TABLE ${t('migration_netwin_deferred')} (id VARCHAR2(36 CHAR) PRIMARY KEY,job_id VARCHAR2(36 CHAR) NOT NULL,source_id VARCHAR2(64 CHAR) NOT NULL,reason VARCHAR2(128 CHAR) NOT NULL,payload CLOB NOT NULL,created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL)`,
   ];
   for (const ddl of ddls)
     try {
@@ -806,7 +806,7 @@ export async function ensureControlTables(target: Connection, t: TablePrefixer):
     }
   try {
     await target.execute(
-      `ALTER TABLE ${t('netwin_mig_identity')} ADD (source_hash VARCHAR2(64 CHAR))`,
+      `ALTER TABLE ${t('migration_netwin_identity')} ADD (source_hash VARCHAR2(64 CHAR))`,
     );
   } catch (error) {
     // ORA-01430: a coluna já existe (nova execução ou base criada pelo script anterior).
@@ -821,8 +821,8 @@ export async function ensureMapEntityIndex(
 ): Promise<void> {
   try {
     await target.execute(
-      `CREATE INDEX ${quote(prefixed('i_nw_map_entity', targetPrefix ?? required('TARGET_ORACLE_OBJECT_PREFIX')))}
-         ON ${t('geo_map_feature')} (tenant_id,entity_id)`,
+      `CREATE INDEX ${quote(prefixed('geographic_idx_map_entity', targetPrefix ?? required('TARGET_ORACLE_OBJECT_PREFIX')))}
+         ON ${t('geographic_map_feature')} (tenant_id,entity_id)`,
     );
   } catch (error) {
     // ORA-01031 não inviabiliza ondas pequenas, mas deixa explícito que o DBA precisa criar o

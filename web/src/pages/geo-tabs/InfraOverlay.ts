@@ -4,7 +4,7 @@
 // interação (nenhum agrupamento — ver GeoPage); canvas desenha tudo em poucos ms, mesma
 // técnica de CoverageOverlay.ts (OverlayView + canvas no pane `overlayLayer`).
 //
-// Fonte dos dados é o índice de tile (geo_map_feature, via useMapTiles) — MapTileFeature, não
+// Fonte dos dados é o índice de tile (geographic_map_feature, via useMapTiles) — MapTileFeature, não
 // GeoTreeNode: mais enxuto de propósito (sem `detail`, sem a rota inteira de um cabo, só o
 // trecho recortado no tile). O nó SELECIONADO nunca é desenhado aqui — GeoPage mantém um
 // google.maps.Marker/Polyline real pra ele (âncora de balão, destaque nativo) e passa o id dele

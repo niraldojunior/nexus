@@ -156,12 +156,12 @@ centraliza essa decisão; nenhum outro ponto do frontend reimplementa a lógica.
 **Indexação de linhas por camada (LOD multirresolução, #317).** Cada camada LINE de RESOURCE_TYPE
 declara no Studio GEO `visualConfig.lodProfiles` (`id`, `tileZoom` 6–16, `simplifyToleranceMeters`
 0–500 m) e cada faixa de escala escolhe um perfil via `scaleBands[*].lodProfileId`. Camada sem
-perfis usa o perfil único `legacy` (par `tileZoom`/tolerância antigo). O índice `geo_map_feature`
+perfis usa o perfil único `legacy` (par `tileZoom`/tolerância antigo). O índice `geographic_map_feature`
 materializa uma vez cada perfil referenciado, gravado em `lod_key` (PK V27:
 `tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank`); pontos usam `lod_key='base'`.
 Todo escritor (`build-map-features.mjs`, migradores Netwin) lê a mesma configuração publicada via
 `studioGeoLineLodIndex` / `tileSegmentsForLineLods` (`src/modules/geo/map-tile.ts`). A geometria
-canônica em `tmf_geographic_location` não é alterada — o LOD é só read-model derivado.
+canônica em `geographic_location` não é alterada — o LOD é só read-model derivado.
 
 **Leitura.** `GET /v1/geo/map/tile` devolve somente pontos. As linhas vêm de
 `GET /v1/geo/map/lines` (`line=<sourceModelId>:<lodKey>`, repetível, até 50 seleções, bbox): uma
@@ -173,9 +173,9 @@ bbox expandida, promise em voo) faz a chamada.
 
 **Operação.** Alterar a definição de um perfil exige reindexar (`build-map-features`); publicar só
 estilo/visibilidade, não. V27 e V28 precisam ser migradas (`db:migrate`) em cada schema antes de
-novas cargas. A densidade (`geo_map_density`) agrega apenas `lod_key='base'`.
+novas cargas. A densidade (`geographic_map_density`) agrega apenas `lod_key='base'`.
 
-**Manifesto do índice (#318).** `geo_map_line_index` (V28) guarda, por camada × LOD, o `tile_z`, a
+**Manifesto do índice (#318).** `geographic_map_line_index` (V28) guarda, por camada × LOD, o `tile_z`, a
 tolerância, o número de fragmentos e de vértices gerados. `build-map-features` o grava na mesma
 transação do rebuild do tenant inteiro (recortes por UF/cidade não o tocam) e o dry-run compara
 perfis publicados × manifesto (`ok`/`stale`/`missing`, `map-line-manifest.ts`). O endpoint marca
@@ -234,7 +234,7 @@ HTTP, TMF APIs, MCP e frontend consomem esse mesmo contrato. Oracle usa `node-or
 mode. Configuração inválida, schema incompatível ou conexão indisponível falham o boot, sem
 fallback.
 
-As migrations são versionadas em `schema_migrations`. Em produção o runtime somente valida a
+As migrations são versionadas em `migration_schema`. Em produção o runtime somente valida a
 versão; DDL usa credencial separada. UUID permanece `VARCHAR2(36 CHAR)`, JSON/GeoJSON usa
 `CLOB IS JSON`, booleanos usam `NUMBER(1)` e datas `TIMESTAMP(6) WITH TIME ZONE` nesta fase.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Alinha e estrutura a árvore do Catálogo Mestre V.tal Nexus (tmf_resource_catalog_node)
- * e seus ResourceTypes (tmf_resource_type) de acordo com a hierarquia canônica de:
+ * Alinha e estrutura a árvore do Catálogo Mestre V.tal Nexus (resource_catalog_node)
+ * e seus ResourceTypes (resource_type) de acordo com a hierarquia canônica de:
  *  - Infraestrutura Passiva (Aérea, Subterrânea, Estruturas Internas, Infraestrutura Óptica Compartilhada)
  *  - Rede de Telecom (Rede de Acesso, Transporte, IP, Móvel, Energia & Facilities)
  *
@@ -26,7 +26,7 @@ const CATALOG_CODE = 'nexus-master-resource-catalog';
 // 1. Definição do Catálogo Canônico e Taxonomia
 // ==============================================================================
 
-/** Novos tipos de recurso a garantir em tmf_resource_type */
+/** Novos tipos de recurso a garantir em resource_type */
 const REQUIRED_RESOURCE_TYPES = [
   // Infra Aérea
   { code: 'Pole', name: 'Poste', categoryCode: 'Infrastructure.Passive.Aerial' },
@@ -627,7 +627,7 @@ async function run() {
 
   // 1. Obter ou criar o catálogo
   let catalogRes = await db.query(
-    `SELECT id, code, name FROM tmf_resource_catalog WHERE tenant_id = $1 AND code = $2`,
+    `SELECT id, code, name FROM resource_catalog WHERE tenant_id = $1 AND code = $2`,
     [TENANT_ID, CATALOG_CODE],
   );
   let catalogId = catalogRes.rows[0]?.id;
@@ -639,7 +639,7 @@ async function run() {
       catalogId = crypto.randomUUID();
       const now = new Date().toISOString();
       await db.query(
-        `INSERT INTO tmf_resource_catalog (id, tenant_id, code, name, description, status, is_default, sort_order, created_at, updated_at)
+        `INSERT INTO resource_catalog (id, tenant_id, code, name, description, status, is_default, sort_order, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, 'active', 1, 0, $6, $7)`,
         [
           catalogId,
@@ -662,7 +662,7 @@ async function run() {
 
   // 2. Obter e garantir ResourceTypes necessários
   const existingTypesRes = await db.query(
-    `SELECT id, code, name FROM tmf_resource_type WHERE tenant_id = $1`,
+    `SELECT id, code, name FROM resource_type WHERE tenant_id = $1`,
     [TENANT_ID],
   );
   const typeMapByCode = new Map(existingTypesRes.rows.map((r) => [r.code, r.id]));
@@ -678,7 +678,7 @@ async function run() {
         const rtId = `rt-${rt.code.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`;
         const now = new Date().toISOString();
         await db.query(
-          `INSERT INTO tmf_resource_type (id, tenant_id, code, name, status, created_at, updated_at)
+          `INSERT INTO resource_type (id, tenant_id, code, name, status, created_at, updated_at)
            VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
           [rtId, TENANT_ID, rt.code, rt.name, now, now],
         );
@@ -705,7 +705,7 @@ async function run() {
   // 3. Buscar nós atuais da árvore
   const currentNodesRes = await db.query(
     `SELECT id, code, name, kind, parent_node_id, resource_type_id, status, sort_order
-       FROM tmf_resource_catalog_node
+       FROM resource_catalog_node
       WHERE tenant_id = $1 AND catalog_id = $2`,
     [TENANT_ID, catalogId],
   );
@@ -741,7 +741,7 @@ async function run() {
       if (APPLY) {
         const now = new Date().toISOString();
         await db.query(
-          `INSERT INTO tmf_resource_catalog_node
+          `INSERT INTO resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, $4, $5, $6, $7, 'active', $8, $9, $10)`,
           [
@@ -768,7 +768,7 @@ async function run() {
       if (APPLY) {
         const now = new Date().toISOString();
         await db.query(
-          `UPDATE tmf_resource_catalog_node
+          `UPDATE resource_catalog_node
               SET name = $1, kind = $2, resource_type_id = $3, status = 'active', sort_order = $4, updated_at = $5
             WHERE id = $6`,
           [
@@ -794,7 +794,7 @@ async function run() {
     );
     if (APPLY) {
       await db.query(
-        `UPDATE tmf_resource_catalog_node
+        `UPDATE resource_catalog_node
             SET parent_node_id = $1, sort_order = $2
           WHERE id = $3`,
         [parentNodeId, nodeDef.sortOrder, nodeId],
@@ -813,7 +813,7 @@ async function run() {
       if (APPLY) {
         const now = new Date().toISOString();
         await db.query(
-          `INSERT INTO tmf_resource_catalog_node
+          `INSERT INTO resource_catalog_node
            (id, tenant_id, catalog_id, parent_node_id, code, name, kind, resource_type_id, status, sort_order, created_at, updated_at)
            VALUES ($1, $2, $3, null, 'sobra', 'Sobra', 'GROUP', null, 'active', 99, $4, $5)`,
           [sobraGroupId, TENANT_ID, catalogId, now, now],
@@ -831,7 +831,7 @@ async function run() {
         console.log(`  📦 Movendo para 'Sobra': ${sNode.name} (${sNode.code})`);
         if (APPLY) {
           await db.query(
-            `UPDATE tmf_resource_catalog_node
+            `UPDATE resource_catalog_node
                 SET parent_node_id = $1, sort_order = $2
               WHERE id = $3`,
             [sobraGroupId, sOrder++, sNode.id],
@@ -847,7 +847,7 @@ async function run() {
   console.log(`\n--- Verificação pós-seed: unicidade 1:1 folha↔ResourceType ---`);
   const dupCheckRes = await db.query(
     `SELECT resource_type_id, COUNT(*) AS leaf_count
-       FROM tmf_resource_catalog_node
+       FROM resource_catalog_node
       WHERE tenant_id = $1 AND kind = 'RESOURCE_TYPE' AND status = 'active' AND resource_type_id IS NOT NULL
       GROUP BY resource_type_id
      HAVING COUNT(*) > 1`,

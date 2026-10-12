@@ -36,7 +36,7 @@ export class OracleSearchRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO searches (id, user_id, query, filters, results, created_at)
+      `INSERT INTO user_searches (id, user_id, query, filters, results, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         id,
@@ -64,7 +64,7 @@ export class OracleSearchRepository {
   async getById(id: string): Promise<SearchRecord | undefined> {
     const row = await this.db.get<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
-       FROM searches WHERE id = ?`,
+       FROM user_searches WHERE id = ?`,
       [id],
     );
     if (!row) return undefined;
@@ -85,7 +85,7 @@ export class OracleSearchRepository {
   async listByUserId(userId: string): Promise<SearchRecord[]> {
     const rows = await this.db.all<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
-       FROM searches WHERE user_id = ? ORDER BY created_at DESC`,
+       FROM user_searches WHERE user_id = ? ORDER BY created_at DESC`,
       [userId],
     );
 
@@ -105,7 +105,7 @@ export class OracleSearchRepository {
   async list(): Promise<SearchRecord[]> {
     const rows = await this.db.all<SearchRow>(
       `SELECT id, user_id AS userId, query, filters, results, created_at AS createdAt
-       FROM searches ORDER BY created_at DESC`,
+       FROM user_searches ORDER BY created_at DESC`,
     );
 
     return rows.map((row) => {
@@ -125,7 +125,7 @@ export class OracleSearchRepository {
     const existing = await this.getById(id);
     if (!existing) return undefined;
 
-    await this.db.run(`UPDATE searches SET query = ?, filters = ?, results = ? WHERE id = ?`, [
+    await this.db.run(`UPDATE user_searches SET query = ?, filters = ?, results = ? WHERE id = ?`, [
       input.query || existing.query,
       input.filters
         ? JSON.stringify(input.filters)
@@ -144,23 +144,23 @@ export class OracleSearchRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.db.run(`DELETE FROM searches WHERE id = ?`, [id]);
+    const result = await this.db.run(`DELETE FROM user_searches WHERE id = ?`, [id]);
     return result.changes > 0;
   }
 
   async deleteByUserId(userId: string): Promise<number> {
-    const result = await this.db.run(`DELETE FROM searches WHERE user_id = ?`, [userId]);
+    const result = await this.db.run(`DELETE FROM user_searches WHERE user_id = ?`, [userId]);
     return result.changes;
   }
 
   async count(): Promise<number> {
-    const result = await this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM searches`);
+    const result = await this.db.get<{ count: number }>(`SELECT COUNT(*) as count FROM user_searches`);
     return result?.count || 0;
   }
 
   async countByUserId(userId: string): Promise<number> {
     const result = await this.db.get<{ count: number }>(
-      `SELECT COUNT(*) as count FROM searches WHERE user_id = ?`,
+      `SELECT COUNT(*) as count FROM user_searches WHERE user_id = ?`,
       [userId],
     );
     return result?.count || 0;

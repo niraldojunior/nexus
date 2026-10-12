@@ -137,7 +137,7 @@ export interface IResourceRepository {
     tenantId?: string,
   ): Awaitable<ResourceStatusCatalogEntry | undefined>;
 
-  // Histórico do recurso — leitura de tmf_audit_log, sem tabela própria (issue #171).
+  // Histórico do recurso — leitura de user_audit_log, sem tabela própria (issue #171).
   listResourceAudit(
     resourceId: string,
     scope?: ResourceTenantScope & { limit?: number },

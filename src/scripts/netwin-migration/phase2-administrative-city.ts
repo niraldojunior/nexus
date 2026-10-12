@@ -28,12 +28,12 @@ type AddressRow = {
  * Fase 2.E — diretório geográfico canônico (issue #329).
  *
  * A master de municípios nasce na Fase 1 (CITYAREA); aqui se preenche o município direto do Site
- * (`tmf_geographic_site.administrative_city_id`, issue #339) a partir da tupla postal do endereço e
+ * (`geographic_site.administrative_city_id`, issue #339) a partir da tupla postal do endereço e
  * se reconcilia a quantidade de Sites ativos por município.
  *
  * As Fases 2.A/2.B já gravam `administrative_city_id` junto de cada endereço importado. Esta etapa
  * fecha a execução: garante que todo município/UF/país dos endereços do tenant esteja no diretório
- * `geo_administrative_city` e que todo endereço elegível esteja ligado a ele — inclusive os de
+ * `geographic_administrative_city` e que todo endereço elegível esteja ligado a ele — inclusive os de
  * cargas anteriores. Idempotente: município existente (chave país+UF+município normalizada) é
  * reaproveitado, nunca duplicado; endereço já ligado não é tocado; incompleto/inválido é ignorado.
  */
@@ -41,10 +41,10 @@ export async function runPhase2AdministrativeCity(ctx: MigrationContext): Promis
   const stats: PhaseStats = { loaded: 0, updated: 0, skipped: 0, rejected: 0, errors: 0 };
   console.log('\n=== Fase 2.E: Diretório geográfico (país, UF, município) ===');
   const { tenantId, batchSize } = ctx.options;
-  const address = ctx.t('tmf_geographic_address');
-  const site = ctx.t('tmf_geographic_site');
-  const cityTenant = ctx.t('geo_administrative_city_tenant');
-  const directory = ctx.t('geo_administrative_city');
+  const address = ctx.t('geographic_address');
+  const site = ctx.t('geographic_site');
+  const cityTenant = ctx.t('geographic_administrative_city_tenant');
+  const directory = ctx.t('geographic_administrative_city');
 
   const target = ctx.options.apply ? await ctx.getTargetConnection() : null;
   const reader = target ?? (await ctx.getTargetReadConnection());

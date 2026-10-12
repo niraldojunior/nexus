@@ -7,22 +7,66 @@ import { OracleUserRepository } from './oracle-user-repository.js';
 import { EnvironmentProfileRepository } from './environment-profile-repository.js';
 import { createDatabaseClient } from './database-factory.js';
 import type { DatabaseClient } from './database-client.js';
+import { normalizeOracleObjectPrefix, PREFIXABLE_TABLE_NAMES } from './oracle-object-names.js';
 import {
-  normalizeOracleObjectPrefix,
-  PREFIXABLE_TABLE_NAMES,
-  prefixed,
-} from './oracle-object-names.js';
+  LEGACY_TABLE_NAMES,
+  MIGRATION_TABLE_NAMES,
+  TABLE_RENAMES,
+} from './database-object-names.js';
+import { RESTRUCTURE_LEDGER_TABLE } from './object-restructure.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
 import { buildHref } from '../tmf/href.js';
 
 const ADMIN_EMAIL = 'admin@vtal.com';
 const TENANT_ROLE_NAME = 'tenant';
 const MIN_PARTIAL_TABLES = 2;
+const LEGACY_MIGRATION_LEDGER = 'schema_migrations';
+// Tabelas que o Nexus já criou em algum momento e que o schema atual não declara mais. Sem elas a
+// exclusão deixaria lixo no schema compartilhado, que ninguém mais saberia remover.
+const OBSOLETE_TABLE_NAMES = [
+  'geo_gpon_coverage_area',
+  'geo_gpon_coverage_cell',
+  'nexus_migration_checkpoint',
+  'tmf_relationship_type_catalog',
+  'tmf_characteristic_group_catalog',
+  'tmf_resource_category',
+  'tmf_resource_layer',
+] as const;
+
+// Tudo que a exclusão de um ambiente pode derrubar: nomes atuais, legados (ainda não convertidos),
+// tabelas de migração/Netwin, o ledger do cutover e as obsoletas. Nunca "tudo que começa com o prefixo".
+const OWNED_TABLE_SUFFIXES: ReadonlySet<string> = new Set(
+  [
+    ...PREFIXABLE_TABLE_NAMES,
+    ...LEGACY_TABLE_NAMES,
+    ...MIGRATION_TABLE_NAMES,
+    RESTRUCTURE_LEDGER_TABLE,
+    ...OBSOLETE_TABLE_NAMES,
+  ].map((name) => name.toLowerCase()),
+);
+
+// [nome canônico, nome físico a procurar]: cada tabela é reconhecida tanto pelo nome novo quanto
+// pelo legado (ambiente ainda não convertido), sempre contabilizada pelo nome canônico.
+const DISCOVERABLE_TABLES: ReadonlyArray<readonly [string, string]> = [
+  ...PREFIXABLE_TABLE_NAMES.map((table) => [table, table] as const),
+  ...LEGACY_TABLE_NAMES.filter((legacy) => TABLE_RENAMES[legacy] !== legacy).map(
+    (legacy) => [TABLE_RENAMES[legacy], legacy] as const,
+  ),
+  ...[...OBSOLETE_TABLE_NAMES, RESTRUCTURE_LEDGER_TABLE].map((table) => [table, table] as const),
+];
+
+const LEDGER_SUFFIXES: ReadonlySet<string> = new Set([
+  'migration_schema',
+  LEGACY_MIGRATION_LEDGER,
+  RESTRUCTURE_LEDGER_TABLE,
+]);
 
 export const orderedTablesForDestruction = (tables: readonly string[]): string[] =>
   [...tables].sort((left, right) => {
-    if (left === 'schema_migrations') return 1;
-    if (right === 'schema_migrations') return -1;
+    // Os ledgers saem por último: se a exclusão for interrompida, o ambiente continua descobrível.
+    const leftLedger = LEDGER_SUFFIXES.has(left);
+    const rightLedger = LEDGER_SUFFIXES.has(right);
+    if (leftLedger !== rightLedger) return leftLedger ? 1 : -1;
     return PREFIXABLE_TABLE_NAMES.indexOf(right) - PREFIXABLE_TABLE_NAMES.indexOf(left);
   });
 
@@ -30,10 +74,21 @@ export const discoverOracleEnvironments = (
   physicalTableNames: readonly string[],
 ): OracleEnvironment[] => {
   const grouped = new Map<string, Set<string>>();
+  // Issue #344: um nome novo (PARTY) é sufixo de um legado (TMF_PARTY), o que geraria o prefixo
+  // fantasma `NX_DEV_TMF_`. Os prefixos reais são ancorados no ledger de migrations (novo ou
+  // legado); prefixos que são uma âncora seguida de fragmento legado (NX_DEV_ + TMF_) são descartados.
+  const anchors = new Set<string>();
+  for (const name of physicalTableNames) {
+    for (const ledger of ['migration_schema', LEGACY_MIGRATION_LEDGER]) {
+      const prefix = candidatePrefix(name, ledger);
+      if (prefix) anchors.add(prefix);
+    }
+  }
   for (const physicalTableName of physicalTableNames) {
-    for (const table of PREFIXABLE_TABLE_NAMES) {
-      const prefix = candidatePrefix(physicalTableName, table);
+    for (const [table, legacy] of DISCOVERABLE_TABLES) {
+      const prefix = candidatePrefix(physicalTableName, legacy);
       if (!prefix) continue;
+      if ([...anchors].some((anchor) => prefix !== anchor && prefix.startsWith(anchor))) continue;
       const tables = grouped.get(prefix) ?? new Set<string>();
       tables.add(table);
       grouped.set(prefix, tables);
@@ -41,7 +96,7 @@ export const discoverOracleEnvironments = (
   }
   const environments: OracleEnvironment[] = [];
   for (const [prefix, tables] of grouped.entries()) {
-    if (!tables.has('schema_migrations') && tables.size < MIN_PARTIAL_TABLES) continue;
+    if (!tables.has('migration_schema') && tables.size < MIN_PARTIAL_TABLES) continue;
     environments.push({
       prefix,
       tableCount: tables.size,
@@ -49,7 +104,7 @@ export const discoverOracleEnvironments = (
         (left, right) =>
           PREFIXABLE_TABLE_NAMES.indexOf(left) - PREFIXABLE_TABLE_NAMES.indexOf(right),
       ),
-      status: tables.size === PREFIXABLE_TABLE_NAMES.length ? 'complete' : 'partial',
+      status: PREFIXABLE_TABLE_NAMES.every((table) => tables.has(table)) ? 'complete' : 'partial',
     });
   }
   return environments.sort((left, right) => left.prefix.localeCompare(right.prefix));
@@ -78,15 +133,13 @@ export type DestroyedOracleEnvironment = {
 
 type TableRow = { table_name: string };
 
-const physicalName = (prefix: string, table: string): string =>
-  prefixed(table, prefix).toUpperCase();
-
-const tableOfPhysicalName = (name: string, prefix: string): string | undefined => {
+// Sufixo (minúsculo) de uma tabela física que pertence ao Nexus sob o prefixo, ou undefined.
+const ownedSuffixOf = (name: string, prefix: string): string | undefined => {
   const upperName = name.toUpperCase();
   const upperPrefix = prefix.toUpperCase();
   if (!upperName.startsWith(upperPrefix)) return undefined;
-  const table = upperName.slice(upperPrefix.length).toLowerCase();
-  return PREFIXABLE_TABLE_NAMES.includes(table) ? table : undefined;
+  const suffix = upperName.slice(upperPrefix.length).toLowerCase();
+  return OWNED_TABLE_SUFFIXES.has(suffix) ? suffix : undefined;
 };
 
 const candidatePrefix = (name: string, table: string): string | undefined => {
@@ -182,7 +235,8 @@ export class OracleEnvironmentManager {
       const physicalTables = orderedTablesForDestruction(environment.managedTables).map(
         (table) => ({
           table,
-          name: physicalName(prefix, table),
+          // Nome real encontrado no schema (atual ou legado), nunca reescrito pelo dialeto.
+          name: `${prefix}${table}`.toUpperCase(),
         }),
       );
       const droppedTables: string[] = [];
@@ -251,7 +305,7 @@ export class OracleEnvironmentManager {
     const environment = await this.discover().then((items) =>
       items.find((item) => item.prefix === prefix),
     );
-    if (!environment || environment.managedTables.length !== PREFIXABLE_TABLE_NAMES.length) {
+    if (!environment || environment.status !== 'complete') {
       throw new Error(`O schema criado sob ${prefix} está incompleto.`);
     }
     const user = await new OracleUserRepository(db).getByEmail(ADMIN_EMAIL);
@@ -293,7 +347,9 @@ export class OracleEnvironmentManager {
         (left, right) =>
           PREFIXABLE_TABLE_NAMES.indexOf(left) - PREFIXABLE_TABLE_NAMES.indexOf(right),
       ),
-      status: managedTables.length === PREFIXABLE_TABLE_NAMES.length ? 'complete' : 'partial',
+      status: PREFIXABLE_TABLE_NAMES.every((table) => managedTables.includes(table))
+        ? 'complete'
+        : 'partial',
     };
   }
 
@@ -304,7 +360,7 @@ export class OracleEnvironmentManager {
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     return (result.rows ?? [])
-      .map((row) => tableOfPhysicalName(String(row.table_name), prefix))
+      .map((row) => ownedSuffixOf(String(row.table_name), prefix))
       .filter((table): table is string => Boolean(table));
   }
 

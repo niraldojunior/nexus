@@ -146,7 +146,7 @@ const lineVisualConfig = (color: string): StudioGeoLineVisualConfig => ({
   strokeStyle: 'solid',
   opacity: 1,
   // Infraestrutura longa: pirâmide de LOD (#317/#318). Cada faixa de escala usa um perfil; senão
-  // cada linha viraria ~1.100 linhas de geo_map_feature em z16. Ajustável no Studio (exige reindexar).
+  // cada linha viraria ~1.100 linhas de geographic_map_feature em z16. Ajustável no Studio (exige reindexar).
   lodProfiles: LINE_LOD_PROFILES.map((profile) => ({ ...profile })),
   scaleBands: Object.fromEntries(
     SCALE_BAND_KEYS.map((key) => [

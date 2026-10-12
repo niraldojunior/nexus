@@ -55,7 +55,7 @@
  *   como recurso avulso, com Location própria. Nenhum recurso fica de fora.
  *
  * TRUNCATE: por padrão a carga zera as tabelas de recurso antes de gravar
- *   (tmf_physical_resource, tmf_logical_resource e as duas de relationship —
+ *   (resource_physical, resource_logical e as duas de relationship —
  *   não toca no catálogo de specs nem nas tabelas de Geo). Use --no-truncate
  *   para a carga incremental idempotente antiga (pela chave natural em _origin).
  *
@@ -112,16 +112,16 @@ const ORPHAN_SITE_NAME = 'SEM ESTAÇÃO (SEM)';
 const BOX_TYPES = new Set(['CDOE', 'CDOI', 'CEO', 'CEOS', 'Indefinido']);
 
 // Tabelas de recurso zeradas antes de cada carga (autorizado pelo usuário). NÃO
-// inclui o catálogo (tmf_resource_specification) — é compartilhado e a carga o
+// inclui o catálogo (resource_specification) — é compartilhado e a carga o
 // reusa — nem as tabelas de Geo (Location/Address), que são responsabilidade do
 // ciclo de carga Geo. As quatro entram em uma única limpeza; as FKs entre elas
 // (logical→physical, relationship→physical) são removidas na ordem filha→pai, e
 // nenhuma outra tabela referencia recurso por FK.
 const RESOURCE_TABLES = [
-  'tmf_resource_relationship',
-  'tmf_resource_relationship_generic',
-  'tmf_logical_resource',
-  'tmf_physical_resource',
+  'resource_relationship',
+  'resource_relationship_generic',
+  'resource_logical',
+  'resource_physical',
 ];
 
 // ------------------------------------------------------------ status/substatus
@@ -441,7 +441,7 @@ async function main() {
   try {
     // ---- estado atual (índices de idempotência) ----
     const { rows: siteRows } = await client.query(
-      `SELECT id, name FROM tmf_geographic_site WHERE status <> 'terminated'`,
+      `SELECT id, name FROM geographic_site WHERE status <> 'terminated'`,
     );
     const siteBySigla = new Map();
     for (const s of siteRows) {
@@ -471,11 +471,11 @@ async function main() {
     }
 
     const { rows: specRows } = await client.query(
-      `SELECT id, name FROM tmf_resource_specification`,
+      `SELECT id, name FROM resource_specification`,
     );
     const specByName = new Map(specRows.map((r) => [r.name, r.id]));
     const { rows: resourceTypeRows } = await client.query(
-      `SELECT id, code FROM tmf_resource_type WHERE tenant_id = 'vtal' AND code IN ('CTO', 'Splitter')`,
+      `SELECT id, code FROM resource_type WHERE tenant_id = 'vtal' AND code IN ('CTO', 'Splitter')`,
     );
     const resourceTypeIdByCode = new Map(resourceTypeRows.map((row) => [row.code, row.id]));
     for (const code of ['CTO', 'Splitter']) {
@@ -496,7 +496,7 @@ async function main() {
     let preNetwinCount = 0;
     if (!TRUNCATE) {
       const { rows: existingRows } = await client.query(
-        `SELECT id, characteristics FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
+        `SELECT id, characteristics FROM resource_physical WHERE characteristics LIKE '%"Netwin"%'`,
       );
       preNetwinCount = existingRows.length;
       for (const r of existingRows) {
@@ -565,7 +565,7 @@ async function main() {
     // é reusado (idempotente). Reaproveita a site-spec "Central Office" do load-estacoes.
     if (criarNoOrfao) {
       const { rows: specSite } = await client.query(
-        `SELECT id FROM tmf_geographic_site_specification WHERE name = 'Central Office' LIMIT 1`,
+        `SELECT id FROM geographic_site_specification WHERE name = 'Central Office' LIMIT 1`,
       );
       const siteSpecId = specSite[0]?.id;
       if (!siteSpecId) {
@@ -574,7 +574,7 @@ async function main() {
         );
       }
       await client.query(
-        `INSERT INTO tmf_geographic_site
+        `INSERT INTO geographic_site
            (id, tenant_id, name, site_specification_id, status, characteristics)
          VALUES ($1, 'default', $2, $3, 'Active', $4)`,
         [
@@ -615,7 +615,7 @@ async function main() {
     }
     await bulkInsert(
       client,
-      'tmf_resource_specification',
+      'resource_specification',
       ['id', 'name', 'resource_type_id', 'description', 'characteristics'],
       novasSpecs,
     );
@@ -660,7 +660,7 @@ async function main() {
         status_code: resolveStatusCode(substatus) ?? null,
         // `place_id`/`place_type` são as colunas que o repositório de recursos
         // realmente lê. `geographic_location_id` era um espelho morto (nunca lido
-        // pelo app) e foi removida de tmf_physical_resource (issue #254).
+        // pelo app) e foi removida de resource_physical (issue #254).
         place_id: locId,
         place_type: 'GeographicLocation',
         serving_site_id: siteBySigla.get(b.sigla) ?? null,
@@ -741,14 +741,14 @@ async function main() {
 
     await bulkInsert(
       client,
-      'tmf_geographic_location',
+      'geographic_location',
       ['id', 'geometry_type', 'geometry', 'spatial_ref', 'reference_point', 'characteristics'],
       locations,
     );
     await linkAdministrativeCities(client, addresses);
     await bulkInsert(
       client,
-      'tmf_geographic_address',
+      'geographic_address',
       [
         'id',
         'street_name',
@@ -774,7 +774,7 @@ async function main() {
       'serving_site_id',
       'characteristics',
     ];
-    await bulkInsert(client, 'tmf_physical_resource', boxCols, boxResources);
+    await bulkInsert(client, 'resource_physical', boxCols, boxResources);
 
     // 3. Splitters — reaproveitam a Location da caixa (mesmo ponto físico).
     const boxIdByKey = new Map(novasCaixas.map((b) => [b.key, b]));
@@ -823,12 +823,12 @@ async function main() {
       });
     }
 
-    await bulkInsert(client, 'tmf_physical_resource', boxCols, splitterResources);
+    await bulkInsert(client, 'resource_physical', boxCols, splitterResources);
     // Splitters órfãos avulsos (sem relacionamento containsAsChild).
-    await bulkInsert(client, 'tmf_physical_resource', boxCols, orphanResources);
+    await bulkInsert(client, 'resource_physical', boxCols, orphanResources);
     await bulkInsert(
       client,
-      'tmf_resource_relationship',
+      'resource_relationship',
       ['resource_from_id', 'resource_to_id', 'relationship_type'],
       relationships,
       { ignoreDuplicates: true },
@@ -838,7 +838,7 @@ async function main() {
     const {
       rows: [check],
     } = await client.query(
-      `SELECT COUNT(*) AS n FROM tmf_physical_resource WHERE characteristics LIKE '%"Netwin"%'`,
+      `SELECT COUNT(*) AS n FROM resource_physical WHERE characteristics LIKE '%"Netwin"%'`,
     );
     const actualCount = Number(check.n ?? check.N ?? 0);
     const esperado =
@@ -864,11 +864,11 @@ async function main() {
 
     console.log('\nAtualizando estatísticas...');
     for (const table of [
-      'tmf_resource_specification',
-      'tmf_geographic_location',
-      'tmf_geographic_address',
-      'tmf_physical_resource',
-      'tmf_resource_relationship',
+      'resource_specification',
+      'geographic_location',
+      'geographic_address',
+      'resource_physical',
+      'resource_relationship',
     ]) {
       await client.gatherStats(table);
     }

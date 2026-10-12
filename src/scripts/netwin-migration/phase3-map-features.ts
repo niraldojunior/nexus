@@ -77,15 +77,15 @@ const PHASE3_MAP_PAGE_SIZE = 5000;
 
 const PHYSICAL_RESOURCE_INDEX_COLUMNS = ['TENANT_ID', 'RESOURCE_SPECIFICATION_ID', 'ID'];
 const DIAGNOSTIC_TABLES = [
-  'tmf_physical_resource',
-  'tmf_resource_specification',
-  'tmf_resource_type',
-  'tmf_geographic_site',
-  'tmf_geographic_address',
-  'tmf_geographic_location',
+  'resource_physical',
+  'resource_specification',
+  'resource_type',
+  'geographic_site',
+  'geographic_address',
+  'geographic_location',
 ] as const;
 
-// `ctx.t()` devolve o identificador já quoted (`"NX_DEV2_TMF_PHYSICAL_RESOURCE"`) — a forma correta
+// `ctx.t()` devolve o identificador já quoted (`"NX_DEV2_RESOURCE_PHYSICAL"`) — a forma correta
 // em SQL de aplicação. Já as views do dicionário (USER_IND_COLUMNS, USER_TAB_STATISTICS) guardam o
 // nome do objeto como VALOR de coluna, sempre sem aspas. Comparar `table_name` com o identificador
 // quoted nunca casa: o diagnóstico dava falso negativo ("falta índice") mesmo com a migration v25
@@ -96,8 +96,8 @@ export function oracleDictionaryObjectName(identifier: string): string {
 
 export function phase3VisibleMapSpecificationsSql(t: (table: string) => string): string {
   return `SELECT rs.id AS "ID", rt.code AS "TYPE_CODE"
-            FROM ${t('tmf_resource_specification')} rs
-            JOIN ${t('tmf_resource_type')} rt ON rt.id = rs.resource_type_id
+            FROM ${t('resource_specification')} rs
+            JOIN ${t('resource_type')} rt ON rt.id = rs.resource_type_id
            WHERE rs.tenant_id = :tenantId
              AND ${excludeInternalResourceTypesSql('rt')}
              AND COALESCE(rt.map_presence, 1) = 1
@@ -112,7 +112,7 @@ export function phase3VisibleMapSpecificationsSql(t: (table: string) => string):
 // efetiva é o primeiro que resolver. Escrever esse COALESCE dentro da condição de join do
 // Location (como era antes) produz um predicado não-sargável: o otimizador não consegue propagar
 // a seletividade para o índice único de Address e resolve o join por HASH JOIN OUTER, varrendo
-// `tmf_geographic_address` INTEIRA (2,1M linhas medidas) a cada página de 5.000 candidatos. Medido
+// `geographic_address` INTEIRA (2,1M linhas medidas) a cada página de 5.000 candidatos. Medido
 // por isolamento de cada join nesta base: CTE sozinho 132ms, + site 111ms, + address 104ms,
 // + location direto 160ms, mas os três via COALESCE no join 5.288ms (~40x).
 //
@@ -133,7 +133,7 @@ export function phase3VisibleMapSpecificationsSql(t: (table: string) => string):
 export function phase3MapResourcePageSql(t: (table: string) => string): string {
   return `WITH resource_page AS (
             SELECT r.id, r.name, r.status, r.place_id, r.tenant_id
-              FROM ${t('tmf_physical_resource')} r
+              FROM ${t('resource_physical')} r
              WHERE r.tenant_id = :tenantId
                AND r.resource_specification_id = :specificationId
                AND (:lastId IS NULL OR r.id > :lastId)
@@ -145,9 +145,9 @@ export function phase3MapResourcePageSql(t: (table: string) => string): string {
                    r.id, r.name, r.status, r.tenant_id,
                    COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id) AS location_id
               FROM resource_page r
-              LEFT JOIN ${t('tmf_geographic_site')} place_site
+              LEFT JOIN ${t('geographic_site')} place_site
                 ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
-              LEFT JOIN ${t('tmf_geographic_address')} place_address
+              LEFT JOIN ${t('geographic_address')} place_address
                 ON place_address.id = r.place_id AND place_address.tenant_id = r.tenant_id
           )
           SELECT /*+ USE_NL(l) */
@@ -156,7 +156,7 @@ export function phase3MapResourcePageSql(t: (table: string) => string): string {
                  'RESOURCE_TYPE' AS "SOURCE_MODEL_TYPE", :typeCode AS "SOURCE_MODEL_ID", r.status AS "STATUS",
                  NULL AS "SUBLABEL", l.geometry_type AS "GEOMETRY_TYPE", l.geometry AS "GEOMETRY"
             FROM resolved r
-            LEFT JOIN ${t('tmf_geographic_location')} l
+            LEFT JOIN ${t('geographic_location')} l
               ON l.id = r.location_id AND l.tenant_id = r.tenant_id
            ORDER BY r.id`;
 }
@@ -166,9 +166,9 @@ export function phase3MapSitePageSql(t: (table: string) => string): string {
                  'GeographicSite' AS "ENTITY_TYPE", NULL AS "TYPE_CODE", spec.category AS "SITE_CATEGORY",
                  'GEOGRAPHIC_SITE_SPECIFICATION' AS "SOURCE_MODEL_TYPE", spec.code AS "SOURCE_MODEL_ID",
                  s.status AS "STATUS", spec.code AS "SUBLABEL", l.geometry_type AS "GEOMETRY_TYPE", l.geometry AS "GEOMETRY"
-            FROM ${t('tmf_geographic_site')} s
-            JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id = s.site_specification_id
-            JOIN ${t('tmf_geographic_location')} l
+            FROM ${t('geographic_site')} s
+            JOIN ${t('geographic_site_specification')} spec ON spec.id = s.site_specification_id
+            JOIN ${t('geographic_location')} l
               ON l.id = s.geographic_location_id AND l.tenant_id = s.tenant_id
            WHERE s.tenant_id = :tenantId
              AND (:lastId IS NULL OR s.id > :lastId)
@@ -176,8 +176,8 @@ export function phase3MapSitePageSql(t: (table: string) => string): string {
              AND s.status NOT IN ('Retired', 'terminated')
              AND l.geometry_type = 'Point'
              AND NOT EXISTS (
-               SELECT 1 FROM ${t('geo_project_site')} ps
-               JOIN ${t('geo_project')} p ON p.id = ps.project_id
+               SELECT 1 FROM ${t('project_site')} ps
+               JOIN ${t('project')} p ON p.id = ps.project_id
               WHERE ps.site_id = s.id AND p.status <> 'terminated'
              )
            ORDER BY s.id
@@ -190,7 +190,7 @@ export function phase3MapSitePageSql(t: (table: string) => string): string {
 // não muda a contagem e evita varrer Geo à toa.
 export function phase3MapResourceCountSql(t: (table: string) => string): string {
   return `SELECT COUNT(*) AS "TOTAL"
-            FROM ${t('tmf_physical_resource')} r
+            FROM ${t('resource_physical')} r
            WHERE r.tenant_id = :tenantId
              AND r.resource_specification_id = :specificationId
              AND r.status <> 'terminated'`;
@@ -200,17 +200,17 @@ export function phase3MapResourceCountSql(t: (table: string) => string): string 
 // todos precisam ser replicados para a contagem bater com o que a paginação vai percorrer.
 export function phase3MapSiteCountSql(t: (table: string) => string): string {
   return `SELECT COUNT(*) AS "TOTAL"
-            FROM ${t('tmf_geographic_site')} s
-            JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id = s.site_specification_id
-            JOIN ${t('tmf_geographic_location')} l
+            FROM ${t('geographic_site')} s
+            JOIN ${t('geographic_site_specification')} spec ON spec.id = s.site_specification_id
+            JOIN ${t('geographic_location')} l
               ON l.id = s.geographic_location_id AND l.tenant_id = s.tenant_id
            WHERE s.tenant_id = :tenantId
              AND spec.category = 'Site'
              AND s.status NOT IN ('Retired', 'terminated')
              AND l.geometry_type = 'Point'
              AND NOT EXISTS (
-               SELECT 1 FROM ${t('geo_project_site')} ps
-               JOIN ${t('geo_project')} p ON p.id = ps.project_id
+               SELECT 1 FROM ${t('project_site')} ps
+               JOIN ${t('project')} p ON p.id = ps.project_id
               WHERE ps.site_id = s.id AND p.status <> 'terminated'
              )`;
 }
@@ -356,7 +356,7 @@ async function insertFeatures(
 ): Promise<void> {
   if (rows.length === 0) return;
   const columns = [...FEATURE_COLUMNS];
-  const sql = `INSERT INTO ${ctx.t('geo_map_feature')} (${FEATURE_COLUMNS.map((column) => `"${column.toUpperCase()}"`).join(',')}) VALUES (${FEATURE_COLUMNS.map((_, index) => `:${index + 1}`).join(',')})`;
+  const sql = `INSERT INTO ${ctx.t('geographic_map_feature')} (${FEATURE_COLUMNS.map((column) => `"${column.toUpperCase()}"`).join(',')}) VALUES (${FEATURE_COLUMNS.map((_, index) => `:${index + 1}`).join(',')})`;
   for (const partition of Object.values(partitionByBindWidth(columns, rows))) {
     if (partition.length === 0) continue;
     await conn.executeMany(
@@ -387,7 +387,7 @@ type CandidateScan = Omit<Phase3MapStats, 'densityCells'> & {
 };
 
 async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext): Promise<void> {
-  const tableName = oracleDictionaryObjectName(ctx.t('tmf_physical_resource'));
+  const tableName = oracleDictionaryObjectName(ctx.t('resource_physical'));
   const result = await conn.execute<IndexColumn>(
     `SELECT index_name AS "INDEX_NAME", column_name AS "COLUMN_NAME", column_position AS "COLUMN_POSITION"
        FROM user_ind_columns
@@ -407,7 +407,7 @@ async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext):
   );
 }
 
-const MAP_INDEX_TABLES = ['geo_map_feature', 'geo_map_density'] as const;
+const MAP_INDEX_TABLES = ['geographic_map_feature', 'geographic_map_density'] as const;
 
 type PlainIndexStatus = { indexName: string; status: string };
 type UniqueConstraintInfo = {
@@ -843,12 +843,12 @@ async function rebuildDensity(conn: Connection, ctx: MigrationContext): Promise<
     // Linhas indexadas em z < MAP_TILE_ZOOM (zoom por camada) entram só nos níveis de densidade
     // iguais ou mais grossos que o seu z; o fator é relativo ao tile_z de cada linha.
     const result = await conn.execute(
-      `INSERT INTO ${ctx.t('geo_map_density')}
+      `INSERT INTO ${ctx.t('geographic_map_density')}
         (tenant_id,tile_z,tile_x,tile_y,feature_count,resource_count,site_count,lng,lat)
         SELECT tenant_id,${zoom},FLOOR(tile_x/POWER(2,tile_z-${zoom})),FLOOR(tile_y/POWER(2,tile_z-${zoom})),COUNT(DISTINCT entity_id),
                COUNT(DISTINCT CASE WHEN feature_kind='resource' THEN entity_id END),
                COUNT(DISTINCT CASE WHEN feature_kind='site' THEN entity_id END),AVG(lng),AVG(lat)
-          FROM ${ctx.t('geo_map_feature')}
+          FROM ${ctx.t('geographic_map_feature')}
          WHERE tenant_id=:tenantId AND tile_z>=${zoom}
          GROUP BY tenant_id,FLOOR(tile_x/POWER(2,tile_z-${zoom})),FLOOR(tile_y/POWER(2,tile_z-${zoom}))`,
       { tenantId: ctx.options.tenantId },
@@ -905,8 +905,8 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         // um índice de constraint que não foi desabilitado corretamente), o catch ainda tenta o
         // rebuild de emergência antes de propagar — sem isso, um erro aqui deixava o índice
         // UNUSABLE sem nenhuma tentativa de reparo até a próxima execução.
-        await disableMapIndexes(conn, ctx, 'geo_map_feature');
-        await conn.execute(`DELETE FROM ${ctx.t('geo_map_feature')} WHERE tenant_id=:tenantId`, {
+        await disableMapIndexes(conn, ctx, 'geographic_map_feature');
+        await conn.execute(`DELETE FROM ${ctx.t('geographic_map_feature')} WHERE tenant_id=:tenantId`, {
           tenantId: ctx.options.tenantId,
         });
         scan = await scanCandidates(
@@ -927,15 +927,15 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         if (scan.features === 0) {
           throw new Error('Rebuild de mapa abortado: candidatos elegíveis sem features válidas.');
         }
-        await rebuildMapIndexes(conn, ctx, 'geo_map_feature');
+        await rebuildMapIndexes(conn, ctx, 'geographic_map_feature');
         // A densidade agrega a tabela inteira, então só pode ser reconstruída depois que todas as
         // features existem — permanece um passo final único, junto do commit que o fecha.
-        await disableMapIndexes(conn, ctx, 'geo_map_density');
-        await conn.execute(`DELETE FROM ${ctx.t('geo_map_density')} WHERE tenant_id=:tenantId`, {
+        await disableMapIndexes(conn, ctx, 'geographic_map_density');
+        await conn.execute(`DELETE FROM ${ctx.t('geographic_map_density')} WHERE tenant_id=:tenantId`, {
           tenantId: ctx.options.tenantId,
         });
         densityCells = await rebuildDensity(conn, ctx);
-        await rebuildMapIndexes(conn, ctx, 'geo_map_density');
+        await rebuildMapIndexes(conn, ctx, 'geographic_map_density');
         await conn.execute('COMMIT');
       } catch (error) {
         // Paliativo de disponibilidade: tenta deixar os índices VALID mesmo no caminho de erro,

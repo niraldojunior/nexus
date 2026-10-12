@@ -113,7 +113,7 @@ try {
       await resolveParents(target, job.id);
       const mapFeatures = await refreshMapFeatures(target, job.id);
       await target.execute(
-        `UPDATE ${t('netwin_mig_job')} SET state='loaded', completed_at=SYSTIMESTAMP WHERE id=:1`,
+        `UPDATE ${t('migration_netwin_job')} SET state='loaded', completed_at=SYSTIMESTAMP WHERE id=:1`,
         [job.id],
         { autoCommit: true },
       );
@@ -158,7 +158,7 @@ async function runLoad(
     try {
       await persistBatch(target, jobId, prepared);
       await target.execute(
-        `UPDATE ${t('netwin_mig_job')}
+        `UPDATE ${t('migration_netwin_job')}
             SET last_pi_id=:1, loaded_count=loaded_count+:2, rejected_count=rejected_count+:3,
                 deferred_count=deferred_count+:4, updated_at=SYSTIMESTAMP
           WHERE id=:5`,
@@ -327,7 +327,7 @@ async function findExistingNexusEntity(
 ): Promise<string | null> {
   if (entityType !== 'GeographicSite') return null;
   const result = await target.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_geographic_site')}
+    `SELECT id AS "ID" FROM ${t('geographic_site')}
       WHERE LOWER(name)=LOWER(:1) FETCH FIRST 2 ROWS ONLY`,
     [item.name],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -340,7 +340,7 @@ async function upsertLocation(target: Connection, id: string, item: ReturnType<t
     type: 'Point',
     coordinates: [numberOf(item.row.LONGITUDE), numberOf(item.row.LATITUDE)],
   });
-  await merge(target, 'tmf_geographic_location', ['id'], {
+  await merge(target, 'geographic_location', ['id'], {
     id,
     tenant_id: args.tenantId,
     geometry_type: 'Point',
@@ -360,7 +360,7 @@ async function upsertSite(
   item: ReturnType<typeof prepare>,
 ) {
   const specId = await siteSpecId(target, item.mapping.spec!);
-  await merge(target, 'tmf_geographic_site', ['id'], {
+  await merge(target, 'geographic_site', ['id'], {
     id,
     tenant_id: args.tenantId,
     name: cut(item.name, 255),
@@ -379,7 +379,7 @@ async function upsertResource(
   item: ReturnType<typeof prepare>,
 ) {
   const specId = await resourceSpecId(target, item.mapping.spec!, item.mapping.resourceType!);
-  await merge(target, 'tmf_physical_resource', ['id'], {
+  await merge(target, 'resource_physical', ['id'], {
     id,
     tenant_id: args.tenantId,
     name: cut(item.name, 255),
@@ -478,10 +478,10 @@ async function recordTouches(target: Connection, jobId: string, sourceIds: strin
 // Resolve depois da carga principal: assim uma onda pode conter filhos cujo pai aparece somente
 // em lote posterior, e tambem pode ser reexecutada quando a onda do pai terminar.
 async function resolveParents(target: Connection, jobId: string) {
-  const parents = t('netwin_mig_parent');
-  const identities = t('netwin_mig_identity');
+  const parents = t('migration_netwin_parent');
+  const identities = t('migration_netwin_identity');
   await target.execute(
-    `MERGE INTO ${t('tmf_geographic_site')} child
+    `MERGE INTO ${t('geographic_site')} child
      USING (SELECT child_i.nexus_id child_id, parent_i.nexus_id parent_id
               FROM ${parents} link JOIN ${identities} child_i
                 ON child_i.source_entity='${SOURCE_ENTITY}' AND child_i.source_id=link.source_id AND child_i.target_role='primary'
@@ -492,7 +492,7 @@ async function resolveParents(target: Connection, jobId: string) {
     [jobId],
   );
   await target.execute(
-    `MERGE INTO ${t('tmf_physical_resource')} child
+    `MERGE INTO ${t('resource_physical')} child
      USING (SELECT child_i.nexus_id child_id, parent_i.nexus_id parent_id
               FROM ${parents} link JOIN ${identities} child_i
                 ON child_i.source_entity='${SOURCE_ENTITY}' AND child_i.source_id=link.source_id AND child_i.target_role='primary'
@@ -503,7 +503,7 @@ async function resolveParents(target: Connection, jobId: string) {
     [jobId],
   );
   await target.execute(
-    `MERGE INTO ${t('tmf_resource_relationship')} relationship
+    `MERGE INTO ${t('resource_relationship')} relationship
      USING (SELECT parent_i.nexus_id parent_id, child_i.nexus_id child_id
               FROM ${parents} link JOIN ${identities} child_i
                 ON child_i.source_entity='${SOURCE_ENTITY}' AND child_i.source_id=link.source_id AND child_i.target_role='primary'
@@ -519,13 +519,13 @@ async function resolveParents(target: Connection, jobId: string) {
 // Atualiza somente as entidades tocadas pela onda. O índice de mapa passa a fazer parte
 // da conclusão do job: se esta etapa falhar, o job não recebe state=loaded.
 async function refreshMapFeatures(target: Connection, jobId: string): Promise<number> {
-  const touch = t('netwin_mig_touch');
-  const identities = t('netwin_mig_identity');
+  const touch = t('migration_netwin_touch');
+  const identities = t('migration_netwin_identity');
   console.log(JSON.stringify({ jobId, stage: 'map-index', action: 'delete' }));
   // Uma única exclusão relacional substitui N DELETEs (um por feature). O índice
   // auxiliar tenant/entity evita varredura da PK por tile quando a base crescer.
   await target.execute(
-    `DELETE FROM ${t('geo_map_feature')} feature
+    `DELETE FROM ${t('geographic_map_feature')} feature
       WHERE feature.tenant_id=:1
         AND EXISTS (
           SELECT 1 FROM ${touch} touch JOIN ${identities} identity
@@ -558,11 +558,11 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
        FROM ${touch} touch
        JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
         AND identity.source_id=touch.source_id AND identity.target_role='primary'
-       JOIN ${t('tmf_physical_resource')} r ON r.id=identity.nexus_id
-       JOIN ${t('tmf_resource_specification')} rs
+       JOIN ${t('resource_physical')} r ON r.id=identity.nexus_id
+       JOIN ${t('resource_specification')} rs
          ON rs.id=r.resource_specification_id AND rs.tenant_id=r.tenant_id
-       JOIN ${t('tmf_resource_type')} rt ON rt.id=rs.resource_type_id
-       JOIN ${t('tmf_geographic_location')} l ON l.id=r.place_id
+       JOIN ${t('resource_type')} rt ON rt.id=rs.resource_type_id
+       JOIN ${t('geographic_location')} l ON l.id=r.place_id
       WHERE touch.job_id=:jobId AND r.tenant_id=:tenantId AND r.status <> 'terminated'
         AND ${excludeInternalResourceTypesSql('rt')}
         AND COALESCE(rt.map_presence, 1) = 1 AND l.geometry_type='Point'
@@ -574,9 +574,9 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
        FROM ${touch} touch
        JOIN ${identities} identity ON identity.source_entity='${SOURCE_ENTITY}'
         AND identity.source_id=touch.source_id AND identity.target_role='primary'
-       JOIN ${t('tmf_geographic_site')} s ON s.id=identity.nexus_id
-       JOIN ${t('tmf_geographic_site_specification')} spec ON spec.id=s.site_specification_id
-       JOIN ${t('tmf_geographic_location')} l ON l.id=s.geographic_location_id
+       JOIN ${t('geographic_site')} s ON s.id=identity.nexus_id
+       JOIN ${t('geographic_site_specification')} spec ON spec.id=s.site_specification_id
+       JOIN ${t('geographic_location')} l ON l.id=s.geographic_location_id
       WHERE touch.job_id=:jobId AND s.tenant_id=:tenantId AND spec.category = 'Site'
         AND s.status NOT IN ('Retired','terminated') AND l.geometry_type='Point'`,
     { jobId, tenantId: args.tenantId },
@@ -625,7 +625,7 @@ async function refreshMapFeatures(target: Connection, jobId: string): Promise<nu
     }
   }
 
-  const insertSql = `INSERT INTO ${t('geo_map_feature')}
+  const insertSql = `INSERT INTO ${t('geographic_map_feature')}
     (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
      type_code,site_category,source_model_type,source_model_id,status,label,sublabel,lng,lat,
      geometry,rank,generated_at)
@@ -657,7 +657,7 @@ async function openJob(source: Connection, target: Connection, input: Args) {
       MUNICIPIO_ID: number | null;
       MAPPING_VERSION: string;
     }>(
-      `SELECT id AS "ID",source_scn AS "SOURCE_SCN",last_pi_id AS "LAST_PI_ID",uf_id AS "UF_ID",municipio_id AS "MUNICIPIO_ID",mapping_version AS "MAPPING_VERSION" FROM ${t('netwin_mig_job')} WHERE id=:1`,
+      `SELECT id AS "ID",source_scn AS "SOURCE_SCN",last_pi_id AS "LAST_PI_ID",uf_id AS "UF_ID",municipio_id AS "MUNICIPIO_ID",mapping_version AS "MAPPING_VERSION" FROM ${t('migration_netwin_job')} WHERE id=:1`,
       [input.jobId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
@@ -683,7 +683,7 @@ async function openJob(source: Connection, target: Connection, input: Args) {
   const scn = input.sourceScn ?? (await currentScn(source)) ?? 'CURRENT';
   const id = randomUUID();
   await target.execute(
-    `INSERT INTO ${t('netwin_mig_job')} (id,source_scn,uf_id,municipio_id,mapping_version,last_pi_id,state,loaded_count,rejected_count,deferred_count,created_at,updated_at) VALUES (:1,:2,:3,:4,:5,0,'running',0,0,0,SYSTIMESTAMP,SYSTIMESTAMP)`,
+    `INSERT INTO ${t('migration_netwin_job')} (id,source_scn,uf_id,municipio_id,mapping_version,last_pi_id,state,loaded_count,rejected_count,deferred_count,created_at,updated_at) VALUES (:1,:2,:3,:4,:5,0,'running',0,0,0,SYSTIMESTAMP,SYSTIMESTAMP)`,
     [id, scn, input.ufId ?? null, input.municipioId ?? null, MAPPING_VERSION],
     { autoCommit: true },
   );

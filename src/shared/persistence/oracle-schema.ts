@@ -62,8 +62,8 @@ const JSON_COLUMNS = new Set(
         'avatar_url',
         'observation',
         // `note` é anotação de plataforma em texto livre em toda tabela onde aparece
-        // (geo_project_site, tmf_service_order, tmf_resource_order, tmf_geographic_site) —
-        // nunca JSON. Mesma classe do bug de research_session.context (ORA-02290): o check
+        // (project_site, order_service, order_resource, geographic_site) —
+        // nunca JSON. Mesma classe do bug de user_research_session.context (ORA-02290): o check
         // IS JSON é global por nome de coluna, então "note" precisa da mesma exclusão.
         'note',
       ].includes(column),
@@ -71,7 +71,7 @@ const JSON_COLUMNS = new Set(
 );
 
 // Colunas que terminam em `_id` mas NÃO guardam UUID — o dimensionamento por sufixo abaixo as
-// truncaria. `geo_map_feature.source_model_id` guarda o `code` do ResourceType/Specification do
+// truncaria. `geographic_map_feature.source_model_id` guarda o `code` do ResourceType/Specification do
 // Studio, que é um caminho de categoria e passa fácil de 36 chars
 // ('category:Infrastructure.CivilWorks:type:Pole' tem 44, ORA-12899 no rebuild do índice do mapa).
 // Mesma classe do CHECK(col IS JSON) global por nome de coluna: a inferência por nome acerta o
@@ -110,7 +110,7 @@ export const transformOracleSchemaSql = (sql: string): string => {
     'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN detached_at IS NULL THEN resource_id END)',
   );
   // No máximo um ResourceCatalog default por tenant (issue #188 §2.1) — mesma técnica de índice
-  // funcional acima, aplicada a tmf_resource_catalog.is_default em vez de detached_at.
+  // funcional acima, aplicada a resource_catalog.is_default em vez de detached_at.
   output = output.replace(
     /CREATE UNIQUE INDEX\s+([a-zA-Z0-9_]+)\s+ON\s+([a-zA-Z0-9_]+)\s*\(tenant_id\)\s+WHERE\s+is_default\s*=\s*1/gi,
     'CREATE UNIQUE INDEX $1 ON $2(CASE WHEN is_default = 1 THEN tenant_id END)',
@@ -156,7 +156,7 @@ export const transformOracleSchemaSql = (sql: string): string => {
   output = output.replace(/\s+text_pattern_ops\b/gi, '');
   // Postgres widens a column with `ALTER COLUMN <col> TYPE <type>`; Oracle spells the same thing
   // `MODIFY (<col> <type>)`. Sem esta reescrita o lote 16 (alargamento de
-  // geo_map_feature.source_model_id) chegaria ao Oracle como sintaxe inválida.
+  // geographic_map_feature.source_model_id) chegaria ao Oracle como sintaxe inválida.
   output = output.replace(
     /\bALTER COLUMN\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+TYPE\s+VARCHAR\((\d+)\)/gi,
     'MODIFY ($1 VARCHAR2($2 CHAR))',
@@ -178,10 +178,10 @@ export const ORACLE_MIGRATION_BATCHES: readonly MigrationBatch[] = MIGRATION_BAT
   (batch) => ({ ...batch, sql: transformOracleSchemaSql(batch.sql) }),
 );
 
-// `context` holds JSON in mcp_confirmation but free-form markdown (the Nexus Copilot system prompt)
-// in research_session, so the IS JSON check must be skipped for that column there. Keyed by
+// `context` holds JSON in user_mcp_confirmation but free-form markdown (the Nexus Copilot system prompt)
+// in user_research_session, so the IS JSON check must be skipped for that column there. Keyed by
 // `table.column` so the exclusion is surgical — every other `context` column stays constrained.
-const JSON_CONSTRAINT_EXCLUSIONS = new Set(['research_session.context']);
+const JSON_CONSTRAINT_EXCLUSIONS = new Set(['user_research_session.context']);
 
 let jsonConstraintIndex = 0;
 export const ORACLE_JSON_CONSTRAINTS_SQL = splitOracleStatements(ORACLE_SCHEMA_SQL)

@@ -12,21 +12,21 @@ import {
 // schema.ts) so this test fails loudly if the migration block is ever edited without updating this
 // contract too.
 const TENANT_SCOPED_TABLES = [
-  'tmf_resource_specification',
-  'tmf_resource_type',
-  'tmf_resource_function_specification',
-  'tmf_physical_resource',
-  'tmf_logical_resource',
-  'tmf_service_specification',
-  'tmf_service_category',
-  'tmf_service_candidate',
-  'tmf_resource_facing_service',
-  'tmf_customer_facing_service',
-  'tmf_service_qualification',
-  'tmf_service_order',
-  'tmf_resource_order',
-  'tmf_party',
-  'tmf_party_role',
+  'resource_specification',
+  'resource_type',
+  'resource_function_specification',
+  'resource_physical',
+  'resource_logical',
+  'service_specification',
+  'service_category',
+  'service_candidate',
+  'service_resource_facing',
+  'service_customer_facing',
+  'service_qualification',
+  'order_service',
+  'order_resource',
+  'party',
+  'party_role',
 ];
 
 test('parseDeclaredColumns covers every table in TABLE_NAMES', () => {
@@ -66,9 +66,9 @@ test('findColumnDrift is silent when the live database matches the declared sche
 
 test('findColumnDrift ignores a whole missing table (different failure mode, not column drift)', () => {
   const actual = new Map(DECLARED_COLUMNS);
-  actual.delete('tmf_party_role');
+  actual.delete('party_role');
   const missing = findColumnDrift(actual);
-  assert.ok(!missing.some((entry) => entry.startsWith('tmf_party_role.')));
+  assert.ok(!missing.some((entry) => entry.startsWith('party_role.')));
 });
 
 test('findColumnDrift compares column names case-insensitively (Oracle uppercase-folds, Postgres does not)', () => {

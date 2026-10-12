@@ -2,8 +2,8 @@ import type { Connection } from 'oracledb';
 import type { MigrationContext } from './context.js';
 
 /**
- * Recontagem set-based (idempotente) de `geo_administrative_city_tenant` do tenant: Sites raiz com
- * status <> 'Retired' por `tmf_geographic_site.administrative_city_id`. Garante antes a linha
+ * Recontagem set-based (idempotente) de `geographic_administrative_city_tenant` do tenant: Sites raiz com
+ * status <> 'Retired' por `geographic_site.administrative_city_id`. Garante antes a linha
  * tenant–município de todo Site com município (FK composta, inclusive Retired). Linhas sem Site
  * ativo ficam com 0 — nunca são apagadas. Nunca incrementa: reexecutar (retry, resume, pausa)
  * converge para o mesmo resultado. Não faz COMMIT.
@@ -13,8 +13,8 @@ export async function reconcileAdministrativeCitySiteCounts(
   target: Connection,
 ): Promise<{ upserted: number; removed: number }> {
   const { tenantId } = ctx.options;
-  const site = ctx.t('tmf_geographic_site');
-  const counts = ctx.t('geo_administrative_city_tenant');
+  const site = ctx.t('geographic_site');
+  const counts = ctx.t('geographic_administrative_city_tenant');
 
   await ensureTenantCityLinks(ctx, target);
 
@@ -61,9 +61,9 @@ export async function ensureTenantCityLinks(
 ): Promise<void> {
   const { tenantId } = ctx.options;
   await target.execute(
-    `MERGE INTO ${ctx.t('geo_administrative_city_tenant')} k
+    `MERGE INTO ${ctx.t('geographic_administrative_city_tenant')} k
      USING (SELECT DISTINCT s.administrative_city_id AS city_id
-              FROM ${ctx.t('tmf_geographic_site')} s
+              FROM ${ctx.t('geographic_site')} s
              WHERE s.tenant_id = :tenantId AND s.administrative_city_id IS NOT NULL) c
         ON (k.tenant_id = :tenantId AND k.administrative_city_id = c.city_id)
       WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)

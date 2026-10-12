@@ -85,7 +85,7 @@ export function selectPinLocation(
 }
 
 // Normaliza o texto cru de precisão de qualquer fonte (Google ou GEONET) para o vocabulário
-// de `GeoAccuracyLevel` gravado em `tmf_geographic_location.accuracy_level` — reaproveita os
+// de `GeoAccuracyLevel` gravado em `geographic_location.accuracy_level` — reaproveita os
 // mesmos ranques de GOOGLE_PRECISION_RANK/geonetPrecision já usados para decidir a base
 // vencedora, em vez de manter um terceiro dicionário de precisão.
 export function accuracyLevelOf(

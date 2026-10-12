@@ -17,7 +17,7 @@ export class OracleSearchRepository {
     const now = new Date().toISOString();
 
     await this.db.run(
-      `INSERT INTO research_session
+      `INSERT INTO user_research_session
        (id, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -41,7 +41,7 @@ export class OracleSearchRepository {
   public async getSession(id: string): Promise<ResearchSession | undefined> {
     const row = await this.db.get<ResearchSessionRow>(
       `SELECT id, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
-       FROM research_session WHERE id = ?`,
+       FROM user_research_session WHERE id = ?`,
       [id],
     );
 
@@ -70,7 +70,7 @@ export class OracleSearchRepository {
   public async listSessionsByUser(userId: string, limit = 50): Promise<ResearchSession[]> {
     const rows = await this.db.all<ResearchSessionRow>(
       `SELECT id, user_id, title, description, context, status, model, temperature, max_tokens, created_at, updated_at
-       FROM research_session WHERE user_id = ? AND status != 'deleted'
+       FROM user_research_session WHERE user_id = ? AND status != 'deleted'
        ORDER BY created_at DESC
        LIMIT ?`,
       [userId, limit],
@@ -104,7 +104,7 @@ export class OracleSearchRepository {
     title: string,
   ): Promise<ResearchSession | undefined> {
     const now = new Date().toISOString();
-    await this.db.run(`UPDATE research_session SET title = ?, updated_at = ? WHERE id = ?`, [
+    await this.db.run(`UPDATE user_research_session SET title = ?, updated_at = ? WHERE id = ?`, [
       title,
       now,
       sessionId,
@@ -115,7 +115,7 @@ export class OracleSearchRepository {
   public async archiveSession(sessionId: string): Promise<ResearchSession | undefined> {
     const now = new Date().toISOString();
     await this.db.run(
-      `UPDATE research_session SET status = 'archived', updated_at = ? WHERE id = ?`,
+      `UPDATE user_research_session SET status = 'archived', updated_at = ? WHERE id = ?`,
       [now, sessionId],
     );
     return await this.getSession(sessionId);
@@ -128,7 +128,7 @@ export class OracleSearchRepository {
     message: AddMessageInput & { id: string },
   ): Promise<ResearchMessage> {
     await this.db.run(
-      `INSERT INTO research_message (id, research_session_id, role, content, tokens_used, metadata, created_at)
+      `INSERT INTO user_research_message (id, research_session_id, role, content, tokens_used, metadata, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         message.id,
@@ -147,7 +147,7 @@ export class OracleSearchRepository {
   public async getMessage(id: string): Promise<ResearchMessage | undefined> {
     const row = await this.db.get<ResearchMessageRow>(
       `SELECT id, research_session_id, role, content, tokens_used, metadata, created_at
-       FROM research_message WHERE id = ?`,
+       FROM user_research_message WHERE id = ?`,
       [id],
     );
 
@@ -170,7 +170,7 @@ export class OracleSearchRepository {
   private async getSessionMessages(sessionId: string): Promise<ResearchMessage[]> {
     const rows = await this.db.all<ResearchMessageRow>(
       `SELECT id, research_session_id, role, content, tokens_used, metadata, created_at
-       FROM research_message WHERE research_session_id = ?
+       FROM user_research_message WHERE research_session_id = ?
        ORDER BY created_at ASC`,
       [sessionId],
     );

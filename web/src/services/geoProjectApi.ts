@@ -75,7 +75,7 @@ export type GeoProjectDeleteSummary = {
 };
 
 // Local de um projeto, na mesma forma de nó que a árvore usa, acrescido da anotação de
-// trabalho e do endereço GEONET de origem (ver geo_project_site em schema.ts). `projectId` é
+// trabalho e do endereço GEONET de origem (ver project_site em schema.ts). `projectId` é
 // carimbado pelo cliente (não vem do servidor) — o nó sobrevive em `nodeByIdRef` dentro de
 // GoogleMapPanel e volta carimbado no clique do marcador, para o roteamento do clique no mapa
 // (GeoPage.selectNodeFromMap) reconhecer um local de projeto mesmo quando ele não está na

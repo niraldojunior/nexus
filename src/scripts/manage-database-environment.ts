@@ -96,20 +96,39 @@ const destroyEnvironment = async (): Promise<void> => {
   );
 };
 
+const describeFailure = (error: unknown): string => {
+  const reasons: string[] = [];
+  for (let current: unknown = error; current !== undefined && reasons.length < 5;) {
+    reasons.push(current instanceof Error ? current.message : String(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return reasons.join('\n  causa: ');
+};
+
 try {
-  output.write('Gerenciador de ambientes Oracle Nexus\n\n');
-  output.write('  1. Criar ambiente\n');
-  output.write('  2. Excluir ambiente\n');
-  output.write('  0. Cancelar\n');
-  const operation = await ask('\nEscolha uma opção: ');
-  if (operation === '1') await createEnvironment();
-  else if (operation === '2') await destroyEnvironment();
-  else output.write('Operação cancelada.\n');
-} catch (error) {
-  output.write(
-    `\nFalha ao gerenciar o ambiente: ${error instanceof Error ? error.message : String(error)}\n`,
-  );
-  process.exitCode = 1;
+  output.write('Gerenciador de ambientes Oracle Nexus\n');
+  // Menu em laço: cada operação (ou falha) devolve ao menu; só "0" ou o fim da entrada encerra.
+  for (;;) {
+    output.write('\n  1. Criar ambiente\n');
+    output.write('  2. Excluir ambiente\n');
+    output.write('  0. Sair\n');
+    let operation: string;
+    try {
+      operation = await ask('\nEscolha uma opção: ');
+    } catch {
+      break; // entrada encerrada (Ctrl+C / EOF)
+    }
+    if (operation === '0') break;
+    try {
+      if (operation === '1') await createEnvironment();
+      else if (operation === '2') await destroyEnvironment();
+      else output.write('Opção inválida.\n');
+    } catch (error) {
+      output.write(`\nFalha ao gerenciar o ambiente: ${describeFailure(error)}\n`);
+      process.exitCode = 1;
+    }
+  }
+  output.write('Encerrado.\n');
 } finally {
   prompt.close();
 }

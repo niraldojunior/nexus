@@ -34,7 +34,7 @@ export class OraclePartyRepository implements IPartyRepository {
         const partyId = `party-${slug}`;
         const roleId = `party-role-${slug}-manufacturer`;
         await this.db.run(
-          `INSERT INTO tmf_party
+          `INSERT INTO party
            (id, name, party_type, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
@@ -48,7 +48,7 @@ export class OraclePartyRepository implements IPartyRepository {
           [partyId, name, 'Organization', 'active', null, null, '[]', now, now],
         );
         await this.db.run(
-          `INSERT INTO tmf_party_role
+          `INSERT INTO party_role
            (id, name, party_id, status, valid_for_start, valid_for_end, characteristics, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
@@ -68,7 +68,7 @@ export class OraclePartyRepository implements IPartyRepository {
   public async upsertParty(party: Party): Promise<Party> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_party
+      `INSERT INTO party
        (id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -109,7 +109,7 @@ export class OraclePartyRepository implements IPartyRepository {
       tenant_id: string;
     }>(
       `SELECT id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id
-       FROM tmf_party
+       FROM party
        WHERE id = ?`,
       [id],
     );
@@ -144,7 +144,7 @@ export class OraclePartyRepository implements IPartyRepository {
     const offsetClause = hasOffset ? 'OFFSET ?' : '';
 
     const sql = [
-      'SELECT id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM tmf_party',
+      'SELECT id, name, party_type, status, valid_for_start, valid_for_end, characteristics, tenant_id FROM party',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY name ASC, id ASC',
       limitClause,
@@ -175,7 +175,7 @@ export class OraclePartyRepository implements IPartyRepository {
   public async upsertPartyRole(role: PartyRole): Promise<PartyRole> {
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO tmf_party_role
+      `INSERT INTO party_role
        (id, name, role_type_id, party_id, status, valid_for_start, valid_for_end, characteristics, tenant_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
@@ -221,9 +221,9 @@ export class OraclePartyRepository implements IPartyRepository {
       party_type: 'Organization' | 'Individual';
     }>(
       `SELECT role.id, role.name, role.role_type_id, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,
-              party.name AS party_name, party.party_type AS party_type
-       FROM tmf_party_role role
-       INNER JOIN tmf_party party ON party.id = role.party_id
+              pty.name AS party_name, pty.party_type AS party_type
+       FROM party_role role
+       INNER JOIN party pty ON pty.id = role.party_id
        WHERE role.id = ?`,
       [id],
     );
@@ -263,9 +263,9 @@ export class OraclePartyRepository implements IPartyRepository {
 
     const sql = [
       'SELECT role.id, role.name, role.role_type_id, role.party_id, role.status, role.valid_for_start, role.valid_for_end, role.characteristics, role.tenant_id,',
-      '       party.name AS party_name, party.party_type AS party_type',
-      'FROM tmf_party_role role',
-      'INNER JOIN tmf_party party ON party.id = role.party_id',
+      '       pty.name AS party_name, pty.party_type AS party_type',
+      'FROM party_role role',
+      'INNER JOIN party pty ON pty.id = role.party_id',
       conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
       'ORDER BY role.name ASC, role.id ASC',
       limitClause,
@@ -298,7 +298,7 @@ export class OraclePartyRepository implements IPartyRepository {
     relationship: PartyRelationship,
   ): Promise<PartyRelationship> {
     await this.db.run(
-      `INSERT INTO tmf_party_relationship
+      `INSERT INTO party_relationship
        (party_from_id, party_to_id, relationship_type, valid_for_start, valid_for_end)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(party_from_id, party_to_id, relationship_type) DO UPDATE SET
@@ -322,7 +322,7 @@ export class OraclePartyRepository implements IPartyRepository {
     relationshipType: string,
   ): Promise<boolean> {
     const result = await this.db.run(
-      `DELETE FROM tmf_party_relationship
+      `DELETE FROM party_relationship
        WHERE party_from_id = ? AND party_to_id = ? AND relationship_type = ?`,
       [partyFromId, partyToId, relationshipType],
     );
@@ -338,7 +338,7 @@ export class OraclePartyRepository implements IPartyRepository {
       valid_for_end?: string | null;
     }>(
       `SELECT party_from_id, party_to_id, relationship_type, valid_for_start, valid_for_end
-       FROM tmf_party_relationship
+       FROM party_relationship
        WHERE party_from_id = ?
        ORDER BY relationship_type, party_to_id`,
       [partyId],

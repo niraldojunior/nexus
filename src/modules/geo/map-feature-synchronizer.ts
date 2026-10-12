@@ -1,9 +1,9 @@
-// Write-through do índice de mapa. `geo_map_feature` é um read-model derivado:
+// Write-through do índice de mapa. `geographic_map_feature` é um read-model derivado:
 // este sincronizador o mantém alinhado aos writes unitários da API, sem tornar o
 // mapa dependente de um rebuild batch. A régua de visibilidade (item interno,
 // map_presence do catálogo, categoria de site, projeto em curso) espelha
 // scripts/build-map-features.mjs de propósito — as duas fontes de escrita de
-// geo_map_feature têm que concordar, ou um recurso aparece/some conforme foi
+// geographic_map_feature têm que concordar, ou um recurso aparece/some conforme foi
 // criado pela API ou por rebuild batch (foi assim que Porta de Splitter vazou
 // no mapa: batch excluía por map_presence do catálogo, write-through não).
 
@@ -39,9 +39,9 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
 
   public async syncLocation(locationId: string, tenantId: string): Promise<void> {
     const rows = await this.db.all<{ id: string }>(
-      `SELECT id FROM tmf_physical_resource WHERE place_id = ? AND tenant_id = ?
+      `SELECT id FROM resource_physical WHERE place_id = ? AND tenant_id = ?
        UNION
-       SELECT id FROM tmf_geographic_site WHERE geographic_location_id = ? AND tenant_id = ?`,
+       SELECT id FROM geographic_site WHERE geographic_location_id = ? AND tenant_id = ?`,
       [locationId, tenantId, locationId, tenantId],
     );
     await this.syncEntities(
@@ -56,7 +56,7 @@ export class GeoMapFeatureSynchronizer implements MapFeatureSynchronizer {
     await this.db.transaction(async (session) => {
       const placeholders = ids.map(() => '?').join(',');
       await session.execute(
-        `DELETE FROM geo_map_feature
+        `DELETE FROM geographic_map_feature
           WHERE tenant_id = ? AND entity_id IN (${placeholders})`,
         [tenantId, ...ids],
       );
@@ -80,16 +80,16 @@ export function candidatesSql(idPlaceholders: string): string {
   return `SELECT r.id entity_id, 'resource' feature_kind, 'PhysicalResource' entity_type,
                 rt.code type_code, NULL site_category, 'RESOURCE_TYPE' source_model_type,
                 rt.code source_model_id, r.status status, r.name label, NULL sublabel, l.geometry geometry
-           FROM tmf_physical_resource r
-           JOIN tmf_resource_specification rs
+           FROM resource_physical r
+           JOIN resource_specification rs
              ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
-           JOIN tmf_resource_type rt
+           JOIN resource_type rt
              ON rt.id = rs.resource_type_id
-           LEFT JOIN tmf_geographic_site place_site
+           LEFT JOIN geographic_site place_site
              ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
-           LEFT JOIN tmf_geographic_address place_address
+           LEFT JOIN geographic_address place_address
              ON place_address.id = r.place_id
-           JOIN tmf_geographic_location l
+           JOIN geographic_location l
              ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
           WHERE r.id IN (${idPlaceholders}) AND r.tenant_id = ? AND r.status <> 'terminated'
             AND ${excludeInternalResourceTypesSql('rt')}
@@ -100,14 +100,14 @@ export function candidatesSql(idPlaceholders: string): string {
                 NULL type_code, spec.category site_category,
                 'GEOGRAPHIC_SITE_SPECIFICATION' source_model_type, spec.code source_model_id,
                 s.status status, s.name label, spec.code sublabel, l.geometry geometry
-           FROM tmf_geographic_site s
-           JOIN tmf_geographic_site_specification spec ON spec.id = s.site_specification_id
-           JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
+           FROM geographic_site s
+           JOIN geographic_site_specification spec ON spec.id = s.site_specification_id
+           JOIN geographic_location l ON l.id = s.geographic_location_id
           WHERE s.id IN (${idPlaceholders}) AND s.tenant_id = ? AND spec.category = 'Site'
             AND s.status NOT IN ('Retired', 'terminated') AND l.geometry_type = 'Point'
             AND NOT EXISTS (
-                  SELECT 1 FROM geo_project_site ps
-                    JOIN geo_project p ON p.id = ps.project_id
+                  SELECT 1 FROM project_site ps
+                    JOIN project p ON p.id = ps.project_id
                    WHERE ps.site_id = s.id AND p.status <> 'terminated'
                 )`;
 }
@@ -117,7 +117,7 @@ export function candidatesSql(idPlaceholders: string): string {
 // Exportado para o teste de aridade: a lista de colunas e a de VALUES são escritas à mão em
 // linhas diferentes, e um `?` sobrando não quebra typecheck nem lint — só estoura em runtime,
 // no primeiro recurso pontual que passar por aqui.
-export const MAP_FEATURE_POINT_INSERT_SQL = `INSERT INTO geo_map_feature
+export const MAP_FEATURE_POINT_INSERT_SQL = `INSERT INTO geographic_map_feature
       (tenant_id,tile_z,tile_x,tile_y,entity_id,shape,feature_kind,entity_type,
        type_code,site_category,source_model_type,source_model_id,status,label,sublabel,lng,lat,geometry,rank)
      VALUES (?,?,?,?,?,'point',?,?,?,?,?,?,?,?,?,?,?,NULL,0)`;

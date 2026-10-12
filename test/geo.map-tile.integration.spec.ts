@@ -31,7 +31,7 @@ type MapTileFeature = {
 const ICARAI: [number, number] = [-43.106, -22.906];
 
 test.skipIf(!oracleConfigured)(
-  'GET /v1/geo/map/tile lê o índice geo_map_feature por igualdade de tile, isolado da bbox',
+  'GET /v1/geo/map/tile lê o índice geographic_map_feature por igualdade de tile, isolado da bbox',
   async () => {
     const server = createApp({
       config: createTestConfig(0),
@@ -41,7 +41,7 @@ test.skipIf(!oracleConfigured)(
     try {
       // Mesma instância de banco que o app usa: o índice é semeado direto na tabela de
       // projeção, como faz scripts/build-map-features.mjs — o write-through ainda não existe
-      // (ver comentário de geo_map_feature em schema.ts).
+      // (ver comentário de geographic_map_feature em schema.ts).
       const db = await getOracleTestClient();
 
       const tile = lngLatToTile(ICARAI[0], ICARAI[1], MAP_TILE_ZOOM);
@@ -62,7 +62,7 @@ test.skipIf(!oracleConfigured)(
         tenantId?: string;
       }) => {
         await db.run(
-          `INSERT INTO geo_map_feature
+          `INSERT INTO geographic_map_feature
              (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, feature_kind, entity_type,
               type_code, label, lng, lat, geometry, rank)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,

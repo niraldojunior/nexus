@@ -13,8 +13,8 @@
  * um UPDATE em massa na coluna é equivalente ao que o PATCH faria, sem o custo por linha.
  *
  * O que este script faz, numa única transação:
- *   1. UPDATE tmf_geographic_site: site_specification_id das specs duplicadas → "Room".
- *   2. UPDATE tmf_geographic_site_specification: lifecycle_status='Retired' nas duplicadas.
+ *   1. UPDATE geographic_site: site_specification_id das specs duplicadas → "Room".
+ *   2. UPDATE geographic_site_specification: lifecycle_status='Retired' nas duplicadas.
  *
  * Uso:
  *   node scripts/merge-sala-into-room-sql.mjs            # dry-run (só mostra as contagens)
@@ -41,7 +41,7 @@ async function main() {
     await db.query('BEGIN');
 
     const specsResult = await db.query(
-      `SELECT id, code, name, lifecycle_status FROM tmf_geographic_site_specification WHERE category = $1`,
+      `SELECT id, code, name, lifecycle_status FROM geographic_site_specification WHERE category = $1`,
       ['SubSite'],
     );
     const specs = specsResult.rows;
@@ -64,7 +64,7 @@ async function main() {
 
     for (const dup of duplicates) {
       const countResult = await db.query(
-        `SELECT COUNT(*) as count FROM tmf_geographic_site WHERE site_specification_id = $1`,
+        `SELECT COUNT(*) as count FROM geographic_site WHERE site_specification_id = $1`,
         [dup.id],
       );
       const count = Number(countResult.rows[0].count);
@@ -72,7 +72,7 @@ async function main() {
       console.log(`[1/2] ${count} site(s) usando "${dup.name}".`);
       if (APPLY) {
         const updateResult = await db.query(
-          `UPDATE tmf_geographic_site SET site_specification_id = $1 WHERE site_specification_id = $2`,
+          `UPDATE geographic_site SET site_specification_id = $1 WHERE site_specification_id = $2`,
           [room.id, dup.id],
         );
         console.log(`  repontados: ${updateResult.rowCount}`);
@@ -83,7 +83,7 @@ async function main() {
       console.log(`[2/2] Aposentando "${dup.name}"…`);
       if (APPLY) {
         await db.query(
-          `UPDATE tmf_geographic_site_specification SET lifecycle_status = $1 WHERE id = $2`,
+          `UPDATE geographic_site_specification SET lifecycle_status = $1 WHERE id = $2`,
           ['Retired', dup.id],
         );
         console.log(`  "${dup.name}" aposentada (lifecycleStatus=Retired).`);

@@ -26,7 +26,7 @@ export class EnvironmentProfileRepository {
     try {
       const row = await this.db.get<EnvironmentRow>(
         `SELECT id, bootstrap_mode AS bootstrapMode, tenant_id AS tenantId
-           FROM nexus_environment
+           FROM environment
           ORDER BY created_at
           LIMIT 1`,
       );
@@ -47,7 +47,7 @@ export class EnvironmentProfileRepository {
     const environmentId = createCanonicalId();
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO nexus_environment (id, bootstrap_mode, tenant_id, created_at, updated_at)
+      `INSERT INTO environment (id, bootstrap_mode, tenant_id, created_at, updated_at)
        VALUES (?, 'empty', ?, ?, ?)`,
       [environmentId, tenantId, now, now],
     );
@@ -56,7 +56,7 @@ export class EnvironmentProfileRepository {
 
   public async markEmpty(environmentId: string, tenantId: string): Promise<void> {
     await this.db.run(
-      `UPDATE nexus_environment
+      `UPDATE environment
           SET bootstrap_mode = 'empty', tenant_id = ?, updated_at = ?
         WHERE id = ?`,
       [tenantId, new Date().toISOString(), environmentId],

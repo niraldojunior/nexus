@@ -1,5 +1,5 @@
 // Manifesto do índice de linhas do mapa (issue #318): uma linha por camada/LOD em
-// `geo_map_line_index`, gravada por build-map-features na mesma transação do rebuild. Funções puras,
+// `geographic_map_line_index`, gravada por build-map-features na mesma transação do rebuild. Funções puras,
 // compartilhadas pelo builder (resumo + diagnóstico) e testáveis sem banco.
 
 import type { LineLodProfile } from './map-tile.js';

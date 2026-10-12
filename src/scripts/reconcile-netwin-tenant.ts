@@ -318,11 +318,11 @@ async function applyReconciliation(client: DatabaseClient, report: AuditReport):
       // tipo canônico `default` com o mesmo code, a folha deve apontar para ele.
       // Isto corrige Port/Splitter sem recriar suas instâncias nem relacionamentos.
       const normalizedNodes = await session.execute(
-        `UPDATE tmf_resource_catalog_node node
+        `UPDATE resource_catalog_node node
             SET resource_type_id = (
               SELECT shared.id
-                FROM tmf_resource_type local_type
-                JOIN tmf_resource_type shared
+                FROM resource_type local_type
+                JOIN resource_type shared
                   ON shared.code = local_type.code
                  AND shared.tenant_id = 'default'
                WHERE local_type.id = node.resource_type_id
@@ -331,8 +331,8 @@ async function applyReconciliation(client: DatabaseClient, report: AuditReport):
           WHERE node.tenant_id = ?
             AND EXISTS (
               SELECT 1
-                FROM tmf_resource_type local_type
-                JOIN tmf_resource_type shared
+                FROM resource_type local_type
+                JOIN resource_type shared
                   ON shared.code = local_type.code
                  AND shared.tenant_id = 'default'
                WHERE local_type.id = node.resource_type_id
@@ -341,7 +341,7 @@ async function applyReconciliation(client: DatabaseClient, report: AuditReport):
         [NETWIN_SOURCE_TENANT, NETWIN_SOURCE_TENANT, NETWIN_SOURCE_TENANT],
       );
       process.stdout.write(
-        `  tmf_resource_catalog_node: ${normalizedNodes.changes} folha(s) normalizada(s) para ResourceType compartilhado.\n`,
+        `  resource_catalog_node: ${normalizedNodes.changes} folha(s) normalizada(s) para ResourceType compartilhado.\n`,
       );
 
       // NX_DEV1_ já possui o catálogo mestre default do tenant vtal. O catálogo
@@ -350,7 +350,7 @@ async function applyReconciliation(client: DatabaseClient, report: AuditReport):
       // nós importados e preservamos o catálogo histórico como não-default.
       const destinationCatalog = await session.queryOne<{ id: string }>(
         `SELECT id
-           FROM tmf_resource_catalog
+           FROM resource_catalog
           WHERE tenant_id = ?
             AND is_default = 1
           FETCH FIRST 1 ROWS ONLY`,
@@ -358,7 +358,7 @@ async function applyReconciliation(client: DatabaseClient, report: AuditReport):
       );
       const sourceCatalog = await session.queryOne<{ id: string }>(
         `SELECT id
-           FROM tmf_resource_catalog
+           FROM resource_catalog
           WHERE tenant_id = ?
             AND is_default = 1
           FETCH FIRST 1 ROWS ONLY`,
@@ -369,21 +369,21 @@ async function applyReconciliation(client: DatabaseClient, report: AuditReport):
       }
 
       const remappedNodes = await session.execute(
-        `UPDATE tmf_resource_catalog_node
+        `UPDATE resource_catalog_node
             SET catalog_id = ?
           WHERE tenant_id = ?
             AND catalog_id = ?`,
         [destinationCatalog.id, NETWIN_SOURCE_TENANT, sourceCatalog.id],
       );
       const demotedCatalog = await session.execute(
-        `UPDATE tmf_resource_catalog
+        `UPDATE resource_catalog
             SET is_default = 0
           WHERE id = ?
             AND tenant_id = ?`,
         [sourceCatalog.id, NETWIN_SOURCE_TENANT],
       );
       process.stdout.write(
-        `  tmf_resource_catalog: ${demotedCatalog.changes} catálogo(s) histórico(s) marcado(s) como não-default; ${remappedNodes.changes} nó(s) movido(s) ao catálogo mestre vtal.\n`,
+        `  resource_catalog: ${demotedCatalog.changes} catálogo(s) histórico(s) marcado(s) como não-default; ${remappedNodes.changes} nó(s) movido(s) ao catálogo mestre vtal.\n`,
       );
 
       for (const table of report.tables) {

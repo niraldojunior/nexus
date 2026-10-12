@@ -26,7 +26,7 @@ export class OracleMcpConfirmationRepository {
     const createdAt = input.createdAt ?? new Date().toISOString();
     const token = input.token ?? createCanonicalId();
     await this.db.run(
-      `INSERT INTO mcp_confirmation
+      `INSERT INTO user_mcp_confirmation
        (token, domain, operation, payload, summary, warnings, context, created_at, expires_at, consumed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(token) DO UPDATE SET
@@ -70,7 +70,7 @@ export class OracleMcpConfirmationRepository {
       consumed_at?: string | null;
     }>(
       `SELECT token, domain, operation, payload, summary, warnings, context, created_at, expires_at, consumed_at
-       FROM mcp_confirmation
+       FROM user_mcp_confirmation
        WHERE token = ?`,
       [token],
     );
@@ -98,7 +98,7 @@ export class OracleMcpConfirmationRepository {
     if (!current) return undefined;
 
     await this.db.run(
-      `UPDATE mcp_confirmation
+      `UPDATE user_mcp_confirmation
        SET consumed_at = ?
        WHERE token = ?`,
       [consumedAt, token],

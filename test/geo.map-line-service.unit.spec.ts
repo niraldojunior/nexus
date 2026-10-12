@@ -35,7 +35,7 @@ const fakeDb = (
   const all = vi
     .fn()
     .mockImplementation(async (sql: string) =>
-      sql.includes('geo_map_line_index') ? manifest : rows,
+      sql.includes('geographic_map_line_index') ? manifest : rows,
     );
   return { db: { get, all } as unknown as DatabaseClient, get, all };
 };
@@ -49,7 +49,7 @@ describe('GeoMapLineService', () => {
     expect(result.truncated).toBe(false);
     expect(result.selections[0]).toMatchObject({ tileZoom: null, fragments: 0 });
     expect(all).not.toHaveBeenCalledWith(
-      expect.stringContaining('FROM geo_map_feature'),
+      expect.stringContaining('FROM geographic_map_feature'),
       expect.anything(),
     );
     expect(result.selections[0]?.stale).toBe(false);
@@ -75,7 +75,7 @@ describe('GeoMapLineService', () => {
     const { db, all } = fakeDb(8, [row('a')]);
     const result = await new GeoMapLineService(db).lines(bounds, [sel], { tenantId: 'vtal' });
     const binds = all.mock.calls.find(([sql]) =>
-      String(sql).includes('FROM geo_map_feature'),
+      String(sql).includes('FROM geographic_map_feature'),
     )?.[1] as unknown[];
     expect(binds.slice(0, 4)).toEqual(['vtal', sel.sourceModelId, 'regional', 8]);
     const [x0, x1, y0, y1] = binds.slice(4, 8) as number[];

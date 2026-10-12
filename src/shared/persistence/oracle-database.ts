@@ -25,6 +25,7 @@ import {
   rewriteTableReferences,
 } from './oracle-object-names.js';
 import { replaceQuestionBinds } from './question-binds.js';
+import { LEGACY_TABLE_NAMES, TABLE_RENAMES } from './database-object-names.js';
 import { checksumMigrationBatch, findColumnDrift, MIGRATION_BATCHES } from './schema.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
 import {
@@ -210,8 +211,36 @@ export class OracleDatabase implements DatabaseClient {
   // de MIGRATION_BATCHES em schema.ts (issue #188 §7.0). ORACLE_SCHEMA_SQL e
   // ORACLE_JSON_CONSTRAINTS_SQL executam em todo boot: são DDLs idempotentes de criação ou ajuste
   // de constraints. Os lotes, que podem conter mudanças destrutivas, têm versão persistida.
+  // Issue #344: namespace com nomes pré-reestruturação não pode receber o schema canônico (criaria
+  // tabelas novas vazias ao lado das legadas). O cutover é explícito, nunca automático no boot.
+  private async assertNoLegacyObjectNames(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    const legacy = LEGACY_TABLE_NAMES.filter((name) => TABLE_RENAMES[name] !== name).map((name) =>
+      prefixed(name, prefix).toUpperCase(),
+    );
+    const found: string[] = [];
+    for (let i = 0; i < legacy.length; i += 500) {
+      const chunk = legacy.slice(i, i + 500);
+      const result = await connection.execute<{ name: string }>(
+        `SELECT table_name AS "name" FROM user_tables
+          WHERE table_name IN (${chunk.map((_, j) => `:${j + 1}`).join(', ')})`,
+        chunk,
+        QUERY_OPTIONS,
+      );
+      found.push(...(result.rows ?? []).map((row) => row.name));
+    }
+    if (found.length > 0) {
+      throw new Error(
+        `Namespace Oracle ${prefix} ainda usa nomes legados (${found.slice(0, 5).join(', ')}` +
+          `${found.length > 5 ? ', ...' : ''}). Execute o cutover explícito ` +
+          '(npm run db:restructure -- --dry-run, depois --apply) antes de iniciar o Nexus.',
+      );
+    }
+  }
+
   private async applyMigrations(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
+    await this.assertNoLegacyObjectNames(connection);
     const prefixDdl = (sql: string): string =>
       rewriteTableReferences(rewriteDdlObjectNames(sql, prefix), prefix);
     // A fresh Oracle namespace has table dependencies that are not topologically ordered in the
@@ -235,7 +264,7 @@ export class OracleDatabase implements DatabaseClient {
       }
       pendingSchemaStatements = deferred;
     }
-    const migrations = prefixed('schema_migrations', prefix);
+    const migrations = prefixed('migration_schema', prefix);
     await executeOracleDdl(
       connection,
       `CREATE TABLE ${migrations} (
@@ -323,13 +352,13 @@ export class OracleDatabase implements DatabaseClient {
     }
   }
 
-  // V35 (issue #339): geo_administrative_city_tenant é o renome lógico de
-  // geo_administrative_city_site_count. Copia as linhas existentes (idempotente); a tabela antiga
+  // V35 (issue #339): geographic_administrative_city_tenant é o renome lógico de
+  // geographic_administrative_city_site_count. Copia as linhas existentes (idempotente); a tabela antiga
   // só é removida na V36.
   private async copyAdministrativeCitySiteCountToTenant(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
-    const legacy = prefixed('geo_administrative_city_site_count', prefix);
-    const target = prefixed('geo_administrative_city_tenant', prefix);
+    const legacy = prefixed('geographic_administrative_city_site_count', prefix);
+    const target = prefixed('geographic_administrative_city_tenant', prefix);
     try {
       await connection.execute(
         `MERGE INTO ${target} t
@@ -352,10 +381,10 @@ export class OracleDatabase implements DatabaseClient {
   // os objetos não existem e tudo é ignorado.
   private async contractLegacyAdministrativeCity(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
-    const site = prefixed('tmf_geographic_site', prefix);
-    const address = prefixed('tmf_geographic_address', prefix);
-    const projection = prefixed('geo_site_administrative_city', prefix);
-    const legacyCount = prefixed('geo_administrative_city_site_count', prefix);
+    const site = prefixed('geographic_site', prefix);
+    const address = prefixed('geographic_address', prefix);
+    const projection = prefixed('geographic_site_administrative_city', prefix);
+    const legacyCount = prefixed('geographic_administrative_city_site_count', prefix);
     const columnExists = async (table: string, column: string): Promise<boolean> => {
       const result = await connection.execute<{ n: number }>(
         `SELECT COUNT(*) AS "n" FROM user_tab_columns WHERE table_name = :1 AND column_name = :2`,
@@ -409,21 +438,21 @@ export class OracleDatabase implements DatabaseClient {
 
   private async applySharedResourceTypeCatalogMigration(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
-    const typeTable = prefixed('tmf_resource_type', prefix);
+    const typeTable = prefixed('resource_type', prefix);
     const references = [
       {
-        table: prefixed('tmf_resource_specification', prefix),
-        name: `${prefix}tmf_resource_specification_type_fk`,
+        table: prefixed('resource_specification', prefix),
+        name: `${prefix}resource_fk_specification_type`,
       },
       {
-        table: prefixed('tmf_resource_catalog_node', prefix),
-        name: `${prefix}tmf_resource_catalog_node_type_fk`,
+        table: prefixed('resource_catalog_node', prefix),
+        name: `${prefix}resource_fk_catalog_node_type`,
       },
     ];
 
     for (const reference of references) {
       // Em um namespace criado do zero, a tabela de specification pode estar na fila de DDLs
-      // adiados: o SCHEMA_SQL a declara antes de tmf_resource_type, sua referência ainda não
+      // adiados: o SCHEMA_SQL a declara antes de resource_type, sua referência ainda não
       // existe e ela só será criada depois dos batches. Nesse caso o CREATE TABLE canônico já
       // contém a FK simples correta; a conversão abaixo é necessária apenas para tabelas legadas
       // materializadas antes da mudança de contrato.
@@ -453,7 +482,7 @@ export class OracleDatabase implements DatabaseClient {
   // alcança esse caso porque a coluna já existe. Oracle não converte VARCHAR2→NUMBER via MODIFY
   // com dados presentes (ORA-01439), então troca por coluna nova + cópia + rename.
   private async applyResourceTypeMapPresenceNumeric(connection: Connection): Promise<void> {
-    const table = prefixed('tmf_resource_type', this.config.objectPrefix);
+    const table = prefixed('resource_type', this.config.objectPrefix);
     const result = await connection.execute<{ data_type: string }>(
       `SELECT data_type AS "data_type" FROM user_tab_columns
         WHERE table_name = :1 AND column_name = 'MAP_PRESENCE'`,
@@ -484,9 +513,9 @@ export class OracleDatabase implements DatabaseClient {
    */
   private async applyResourceTypeLeafIdentityMigration(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
-    const nodes = prefixed('tmf_resource_catalog_node', prefix);
-    const types = prefixed('tmf_resource_type', prefix);
-    const ledger = prefixed('tmf_resource_type_clone_ledger', prefix);
+    const nodes = prefixed('resource_catalog_node', prefix);
+    const types = prefixed('resource_type', prefix);
+    const ledger = prefixed('migration_resource_type_clone_ledger', prefix);
     const duplicates = await connection.execute<{
       resource_type_id: string;
       count: number | string;
@@ -625,7 +654,7 @@ export class OracleDatabase implements DatabaseClient {
     }
     await executeOracleDdl(
       connection,
-      `CREATE UNIQUE INDEX ${prefix}idx_tmf_resource_catalog_node_active_type
+      `CREATE UNIQUE INDEX ${prefix}resource_uq_catalog_node_active_type
        ON ${nodes}(CASE WHEN kind = 'RESOURCE_TYPE' AND status = 'active' THEN resource_type_id END)`,
     );
   }
@@ -637,7 +666,7 @@ export class OracleDatabase implements DatabaseClient {
    * retorna, e cada passo verifica o estado antes de escrever. Um boot interrompido no meio
    * reexecuta tudo sem efeito colateral.
    *
-   * 1. Amplia o CHECK de `geo_map_feature.shape` para aceitar `polygon`. A constraint original é
+   * 1. Amplia o CHECK de `geographic_map_feature.shape` para aceitar `polygon`. A constraint original é
    *    anônima no SQL canônico, logo o Oracle a nomeou `SYS_C######`; descobrimos pelo texto em
    *    `user_constraints` e recriamos com nome determinístico, para que uma futura ampliação não
    *    precise repetir a descoberta.
@@ -652,8 +681,8 @@ export class OracleDatabase implements DatabaseClient {
     const prefix = this.config.objectPrefix;
     await this.widenGeoMapFeatureShapeCheck(connection);
 
-    const types = prefixed('tmf_resource_type', prefix);
-    const ledger = prefixed('tmf_resource_type_clone_ledger', prefix);
+    const types = prefixed('resource_type', prefix);
+    const ledger = prefixed('migration_resource_type_clone_ledger', prefix);
     await connection.execute(
       `UPDATE ${types} clone
           SET geometry_kind = (
@@ -672,7 +701,7 @@ export class OracleDatabase implements DatabaseClient {
     // (ao menos um nó ativo no catálogo) precisam de geometria agora. Tipos com map_presence NULL
     // (bootstrap sem backfill) e tipos cujos nós estão todos inativos ficam fora — o usuário os
     // resolve via Modelagem de Recursos quando/se reativar.
-    const nodes = prefixed('tmf_resource_catalog_node', prefix);
+    const nodes = prefixed('resource_catalog_node', prefix);
     const pending = await connection.execute<{ id: string; code: string }>(
       `SELECT id AS "id", code AS "code"
          FROM ${types}
@@ -725,13 +754,13 @@ export class OracleDatabase implements DatabaseClient {
    */
   private async applyVisualIdentityAuthorityMigration(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
-    const workspace = prefixed('studio_workspace', prefix);
-    const version = prefixed('studio_version', prefix);
-    const assets = prefixed('studio_asset', prefix);
-    const types = prefixed('tmf_resource_type', prefix);
-    const nodes = prefixed('tmf_resource_catalog_node', prefix);
-    const specs = prefixed('tmf_geographic_site_specification', prefix);
-    const specIdentities = prefixed('tmf_geo_site_spec_visual_identity', prefix);
+    const workspace = prefixed('environment_studio_workspace', prefix);
+    const version = prefixed('environment_studio_version', prefix);
+    const assets = prefixed('environment_studio_asset', prefix);
+    const types = prefixed('resource_type', prefix);
+    const nodes = prefixed('resource_catalog_node', prefix);
+    const specs = prefixed('geographic_site_specification', prefix);
+    const specIdentities = prefixed('geographic_site_spec_visual_identity', prefix);
 
     const publications = await connection.execute<{ tenant_id: string; snapshot: string | null }>(
       `SELECT w.tenant_id AS "tenant_id", v.snapshot AS "snapshot"
@@ -903,8 +932,8 @@ export class OracleDatabase implements DatabaseClient {
   }
 
   private async widenGeoMapFeatureShapeCheck(connection: Connection): Promise<void> {
-    const table = prefixed('geo_map_feature', this.config.objectPrefix);
-    const constraintName = `${this.config.objectPrefix}geo_map_feature_shape_ck`;
+    const table = prefixed('geographic_map_feature', this.config.objectPrefix);
+    const constraintName = `${this.config.objectPrefix}geographic_ck_map_feature_shape`;
     const existing = await connection.execute<{
       constraint_name: string;
       search_condition: string;
@@ -977,7 +1006,7 @@ export class OracleDatabase implements DatabaseClient {
   }
 
   /**
-   * V24: `tmf_party_role` precisa de `role_type_id` para vincular cada atribuição operacional ao
+   * V24: `party_role` precisa de `role_type_id` para vincular cada atribuição operacional ao
    * `party_role_type` exato que lhe deu origem — sem ele, a UI resolvia o PartyRoleType por
    * `roleName` (ambíguo quando 2+ role types compartilham o mesmo nome). O backfill é best-effort:
    * se existirem múltiplos PartyRoleType com o mesmo roleName, associa o mais antigo (`ORDER BY
@@ -985,7 +1014,7 @@ export class OracleDatabase implements DatabaseClient {
    */
   private async backfillPartyRoleRoleTypeId(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
-    const roles = prefixed('tmf_party_role', prefix);
+    const roles = prefixed('party_role', prefix);
     const roleTypes = prefixed('party_role_type', prefix);
     await connection.execute(
       `UPDATE ${roles} r
@@ -1009,8 +1038,8 @@ export class OracleDatabase implements DatabaseClient {
   private async publishedStudioGeoGeometryIndex(
     connection: Connection,
   ): Promise<Map<string, 'POINT' | 'LINE' | 'POLYGON'>> {
-    const workspace = prefixed('studio_workspace', this.config.objectPrefix);
-    const version = prefixed('studio_version', this.config.objectPrefix);
+    const workspace = prefixed('environment_studio_workspace', this.config.objectPrefix);
+    const version = prefixed('environment_studio_version', this.config.objectPrefix);
     const published = await connection.execute<{ snapshot: string | null }>(
       `SELECT v.snapshot AS "snapshot"
          FROM ${workspace} w
@@ -1049,9 +1078,9 @@ export class OracleDatabase implements DatabaseClient {
     connection: Connection,
   ): Promise<Map<string, string[]>> {
     const prefix = this.config.objectPrefix;
-    const resources = prefixed('tmf_physical_resource', prefix);
-    const specifications = prefixed('tmf_resource_specification', prefix);
-    const locations = prefixed('tmf_geographic_location', prefix);
+    const resources = prefixed('resource_physical', prefix);
+    const specifications = prefixed('resource_specification', prefix);
+    const locations = prefixed('geographic_location', prefix);
     const result = await connection.execute<{
       resource_type_id: string;
       geometry_type: string | null;
@@ -1143,7 +1172,7 @@ export class OracleDatabase implements DatabaseClient {
   }
 
   private async applyGeoMapFeatureSegmentRankPrimaryKey(connection: Connection): Promise<void> {
-    const tableName = prefixed('geo_map_feature', this.config.objectPrefix).toUpperCase();
+    const tableName = prefixed('geographic_map_feature', this.config.objectPrefix).toUpperCase();
     // Tabela já criada com `lod_key` (namespace novo): a PK com LOD é a vigente e é o batch 27 que
     // a garante; recriar aqui a chave sem LOD a regrediria.
     const lodColumn = await connection.execute(
@@ -1172,18 +1201,18 @@ export class OracleDatabase implements DatabaseClient {
     );
     const columns = (result.rows ?? []).map((row) => row.column_name.toUpperCase());
     if (columns.join(',') === expected.join(',')) return;
-    const table = prefixed('geo_map_feature', this.config.objectPrefix);
+    const table = prefixed('geographic_map_feature', this.config.objectPrefix);
     await connection.execute(`ALTER TABLE ${table} DROP PRIMARY KEY`);
     await connection.execute(
       `ALTER TABLE ${table} ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, rank)`,
     );
   }
 
-  // Batch 27 (issue #317): a PK de geo_map_feature passa a incluir `lod_key`, para uma mesma
+  // Batch 27 (issue #317): a PK de geographic_map_feature passa a incluir `lod_key`, para uma mesma
   // entidade/tile coexistir em vários LODs. A coluna entra pelo DDL aditivo do batch (DEFAULT 'base'
   // preenche as linhas existentes), então só a chave precisa de adapter. Idempotente.
   private async applyGeoMapFeatureLodPrimaryKey(connection: Connection): Promise<void> {
-    const tableName = prefixed('geo_map_feature', this.config.objectPrefix).toUpperCase();
+    const tableName = prefixed('geographic_map_feature', this.config.objectPrefix).toUpperCase();
     const expected = [
       'TENANT_ID',
       'TILE_Z',
@@ -1214,7 +1243,7 @@ export class OracleDatabase implements DatabaseClient {
       const columns = (result.rows ?? []).map((row) => row.column_name.toUpperCase());
       if (columns.join(',') === expected.join(',')) return;
     }
-    const table = prefixed('geo_map_feature', this.config.objectPrefix);
+    const table = prefixed('geographic_map_feature', this.config.objectPrefix);
     if (name) await connection.execute(`ALTER TABLE ${table} DROP PRIMARY KEY DROP INDEX`);
     await connection.execute(
       `ALTER TABLE ${table} ADD PRIMARY KEY (${expected.join(', ').toLowerCase()})`,
@@ -1225,7 +1254,7 @@ export class OracleDatabase implements DatabaseClient {
     const highestBatchVersion = Math.max(...MIGRATION_BATCHES.map((batch) => batch.version));
     try {
       const result = await connection.execute<Record<string, unknown>>(
-        `SELECT version AS "version" FROM ${prefixed('schema_migrations', this.config.objectPrefix)}
+        `SELECT version AS "version" FROM ${prefixed('migration_schema', this.config.objectPrefix)}
          ORDER BY version DESC FETCH FIRST 1 ROWS ONLY`,
         [],
         QUERY_OPTIONS,

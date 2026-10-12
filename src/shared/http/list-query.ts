@@ -1,6 +1,6 @@
 // Teto compartilhado para endpoints de listagem Geo que historicamente não tinham LIMIT algum
 // (parseGeoListQuery, parseGeoSpecificationListQuery) — ver issue #291. A query sem filtro
-// `GET /v1/geo/sites` varreu `tmf_geographic_site` inteira pós-migração RJ (192.698 ms) e
+// `GET /v1/geo/sites` varreu `geographic_site` inteira pós-migração RJ (192.698 ms) e
 // derrubou o processo por OOM.
 //
 // Semântica deliberada: nunca truncar em silêncio. Scripts de carga (scripts/estacoes_carregar.mjs,

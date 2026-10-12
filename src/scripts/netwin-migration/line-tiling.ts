@@ -13,8 +13,8 @@ export async function loadPublishedLineTiling(
 ): Promise<Map<string, LineLodProfile[]>> {
   const result = await conn.execute<{ SNAPSHOT: string }>(
     `SELECT v.snapshot AS "SNAPSHOT"
-       FROM ${t('studio_workspace')} w
-       JOIN ${t('studio_version')} v ON v.id = w.published_version_id
+       FROM ${t('environment_studio_workspace')} w
+       JOIN ${t('environment_studio_version')} v ON v.id = w.published_version_id
       WHERE w.domain = 'studio-geo' AND w.tenant_id = :tenantId`,
     { tenantId },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },

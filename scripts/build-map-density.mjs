@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Gera a densidade agregada da planta (`geo_map_density` — Fase 4 da issue #69). Artefato
+ * Gera a densidade agregada da planta (`geographic_map_density` — Fase 4 da issue #69). Artefato
  * derivado e regenerável, no mesmo espírito de `build-map-features.mjs`.
  *
  * É a camada que o mapa desenha ACIMA da escala em que a feature individual some
- * (PASSIVE_INFRA_MAX_SCALE_METERS, 50 m). Abaixo disso o mapa lê `geo_map_feature` tile a tile;
+ * (PASSIVE_INFRA_MAX_SCALE_METERS, 50 m). Abaixo disso o mapa lê `geographic_map_feature` tile a tile;
  * acima, desenhar centenas de milhares de pontos não é só caro — vira borrão ilegível. Esta
  * tabela responde "onde HÁ planta", não "qual é cada item".
  *
- * A agregação NÃO cria uma grade métrica nova: reduz o próprio tile de `geo_map_feature` (z16)
+ * A agregação NÃO cria uma grade métrica nova: reduz o próprio tile de `geographic_map_feature` (z16)
  * por potência de 2 — z13 (~4,6 km), z10 (~36 km) e z7 (~300 km), ver
  * `src/modules/geo/map-density.js`. Isso mantém um só endereçamento entre índice, densidade,
  * servidor e cliente, e faz a redução virar divisão inteira: um GROUP BY por nível, inteiramente
@@ -55,7 +55,7 @@ const APPLY = has('--apply');
 const TENANT = argOf('--tenant', 'default');
 
 async function ensureDensityTable(client) {
-  const ddl = `CREATE TABLE geo_map_density (
+  const ddl = `CREATE TABLE geographic_map_density (
     tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
     tile_z NUMBER(10) NOT NULL,
     tile_x NUMBER(10) NOT NULL,
@@ -70,7 +70,7 @@ async function ensureDensityTable(client) {
   )`;
   try {
     await client.query(ddl);
-    console.log('Tabela geo_map_density criada no Oracle.');
+    console.log('Tabela geographic_map_density criada no Oracle.');
   } catch (error) {
     if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }
@@ -84,7 +84,7 @@ async function ensureDensityTable(client) {
 // agregação padrão. Nada volta para o Node — a fonte tem centenas de milhares de linhas.
 const aggregateSql = (zoom, placeholder) => {
   // Linhas indexadas em z < 16 (zoom por camada) entram nos níveis iguais ou mais grossos que o seu z.
-  return `INSERT INTO geo_map_density
+  return `INSERT INTO geographic_map_density
     (tenant_id, tile_z, tile_x, tile_y, feature_count, resource_count, site_count, lng, lat)
    SELECT tenant_id,
           ${zoom},
@@ -95,7 +95,7 @@ const aggregateSql = (zoom, placeholder) => {
           COUNT(DISTINCT CASE WHEN feature_kind = 'site' THEN entity_id END),
           AVG(lng),
           AVG(lat)
-     FROM geo_map_feature
+     FROM geographic_map_feature
     WHERE tenant_id = ${placeholder} AND tile_z >= ${zoom} AND lod_key = 'base'
     GROUP BY tenant_id, FLOOR(tile_x / POWER(2, tile_z - ${zoom})), FLOOR(tile_y / POWER(2, tile_z - ${zoom}))`;
 };
@@ -109,15 +109,15 @@ async function main() {
 
     const placeholder = ':1';
     const source = await client.query(
-      `SELECT COUNT(*) AS n FROM geo_map_feature WHERE tenant_id = ${placeholder} AND tile_z = ${MAP_TILE_ZOOM} AND lod_key = 'base'`,
+      `SELECT COUNT(*) AS n FROM geographic_map_feature WHERE tenant_id = ${placeholder} AND tile_z = ${MAP_TILE_ZOOM} AND lod_key = 'base'`,
       [TENANT],
     );
     const sourceRows = Number(source.rows[0]?.n ?? source.rows[0]?.N ?? 0);
-    console.log(`Fonte    : ${sourceRows} linhas em geo_map_feature (z${MAP_TILE_ZOOM})`);
+    console.log(`Fonte    : ${sourceRows} linhas em geographic_map_feature (z${MAP_TILE_ZOOM})`);
 
     if (sourceRows === 0) {
       console.log(
-        '\n⚠️  geo_map_feature está vazio para este tenant. Rode build-map-features.mjs antes.',
+        '\n⚠️  geographic_map_feature está vazio para este tenant. Rode build-map-features.mjs antes.',
       );
       if (APPLY) throw new Error(`Rebuild de densidade abortado: tenant ${TENANT} sem features.`);
     }
@@ -131,7 +131,7 @@ async function main() {
 
     await client.query('BEGIN');
     try {
-      await client.query(`DELETE FROM geo_map_density WHERE tenant_id = ${placeholder}`, [TENANT]);
+      await client.query(`DELETE FROM geographic_map_density WHERE tenant_id = ${placeholder}`, [TENANT]);
       let total = 0;
       for (const zoom of MAP_DENSITY_ZOOMS) {
         const result = await client.query(aggregateSql(zoom, placeholder), [TENANT]);
@@ -146,7 +146,7 @@ async function main() {
       throw error;
     }
 
-    await client.gatherStats('geo_map_density');
+    await client.gatherStats('geographic_map_density');
   } finally {
     await client.close();
   }

@@ -110,7 +110,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
         );
       }
 
-      // Carrega mapeamento de IDs de PartyRoleType para vincular em tmf_party_role
+      // Carrega mapeamento de IDs de PartyRoleType para vincular em party_role
       const roleTypeRes = await target.execute<{ ID: string; TYPE_KEY: string; ROLE_NAME: string }>(
         `SELECT id, type_key, role_name FROM ${ctx.t('party_role_type')} WHERE tenant_id = :1`,
         [ctx.options.tenantId],
@@ -126,7 +126,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
 
       // Garante a organização dona da infraestrutura (V.tal)
       const ownerId = ctx.options.ownerPartyId;
-      await merge(target, ctx.t, 'tmf_party', ['id'], {
+      await merge(target, ctx.t, 'party', ['id'], {
         id: ownerId,
         tenant_id: ctx.options.tenantId,
         name: 'V.tal - Rede Neutra Telecomunicações S.A.',
@@ -139,7 +139,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
       });
 
       const ownerRoleId = roleTypeIdMap.get('infrastructure_owner');
-      await merge(target, ctx.t, 'tmf_party_role', ['id'], {
+      await merge(target, ctx.t, 'party_role', ['id'], {
         id: `role-${ownerId}-owner`,
         tenant_id: ctx.options.tenantId,
         party_id: ownerId,
@@ -178,7 +178,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
 
       if (target) {
         // Upsert Organization
-        await merge(target, ctx.t, 'tmf_party', ['id'], {
+        await merge(target, ctx.t, 'party', ['id'], {
           id: partyId,
           tenant_id: ctx.options.tenantId,
           name: partyName,
@@ -195,7 +195,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
         });
 
         // Upsert PartyRole (Manufacturer) com vínculo ao role_type_id
-        await merge(target, ctx.t, 'tmf_party_role', ['id'], {
+        await merge(target, ctx.t, 'party_role', ['id'], {
           id: roleId,
           tenant_id: ctx.options.tenantId,
           party_id: partyId,
@@ -227,7 +227,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
       }
       const partyId = netwinOwnerPartyId(o.ID);
       if (target) {
-        await merge(target, ctx.t, 'tmf_party', ['id'], {
+        await merge(target, ctx.t, 'party', ['id'], {
           id: partyId,
           tenant_id: ctx.options.tenantId,
           name: ownerName,
@@ -239,7 +239,7 @@ export async function runPhase1Parties(ctx: MigrationContext): Promise<PhaseStat
             { group: '_origin', name: 'id', value: String(o.ID), valueType: 'string' },
           ]),
         });
-        await merge(target, ctx.t, 'tmf_party_role', ['id'], {
+        await merge(target, ctx.t, 'party_role', ['id'], {
           id: netwinPartyRoleId(partyId, 'InfrastructureOwner'),
           tenant_id: ctx.options.tenantId,
           party_id: partyId,

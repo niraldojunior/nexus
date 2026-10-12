@@ -2,7 +2,7 @@
 //
 // Snapshot-local e upsert-only:
 // `materialize()` é upsert-only e NUNCA desativa por ausência. Organização ausente do snapshot
-// é ignorada, não inativada. Diferente dos demais adapters porque `tmf_party` é escrita também por
+// é ignorada, não inativada. Diferente dos demais adapters porque `party` é escrita também por
 // MCP (`party.create_party`), seeds de bootstrap e chamadas server-to-server — desativar por
 // ausência apagaria registros criados fora do Studio enquanto o draft estava aberto. Inativação é
 // sempre explícita (`status: 'terminated'` ou `status: 'inactive'` no snapshot).
@@ -22,7 +22,7 @@ import type { Characteristic } from '../../../shared/tmf/types.js';
 
 // Recusa um logotipo (`_profile.logo`) maior que ORGANIZATION_LOGO_MAX_CHARS antes de publicar —
 // a validação do cliente (ImageCharacteristicInput, 5 MB) não pode ser a única barreira contra um
-// upload não processado indo parar na CLOB `tmf_party.characteristics`.
+// upload não processado indo parar na CLOB `party.characteristics`.
 const ORGANIZATION_LOGO_MAX_CHARS = 200_000;
 
 export type OrganizationSnapshotItem = {

@@ -233,7 +233,7 @@ async function relationshipsForPorts(
     const batch = portIds.slice(offset, offset + ORACLE_IN_BATCH_SIZE);
     const rows = await db.queryMany<ResourceRelationshipRow>(
       `SELECT resource_to_id AS "resourceToId", resource_from_id AS "resourceFromId"
-         FROM tmf_resource_relationship
+         FROM resource_relationship
         WHERE relationship_type = 'containsAsChild'
           AND resource_to_id IN (${batch.map(() => '?').join(', ')})`,
       batch,
@@ -267,7 +267,7 @@ async function canonicalParentsFor(
     const batch = parentIds.slice(offset, offset + ORACLE_IN_BATCH_SIZE);
     const rows = await db.queryMany<ParentRow>(
       `SELECT id, tenant_id AS "tenantId"
-         FROM tmf_physical_resource
+         FROM resource_physical
         WHERE id IN (${batch.map(() => '?').join(', ')})`,
       batch,
     );
@@ -302,7 +302,7 @@ async function audit(
   for (;;) {
     const ports: PortRow[] = await db.queryMany<PortRow>(
       `SELECT id, characteristics
-         FROM tmf_physical_resource
+         FROM resource_physical
         WHERE tenant_id = ?
           AND (? IS NULL OR id > ?)
           AND INSTR(characteristics, ?) > 0
@@ -379,7 +379,7 @@ async function applyRepair(client: DatabaseClient, report: AuditReport): Promise
     for (;;) {
       const ports: PortRow[] = await session.queryMany<PortRow>(
         `SELECT id, characteristics
-           FROM tmf_physical_resource
+           FROM resource_physical
           WHERE tenant_id = ?
             AND (? IS NULL OR id > ?)
             AND INSTR(characteristics, ?) > 0
@@ -414,11 +414,11 @@ async function applyRepair(client: DatabaseClient, report: AuditReport): Promise
         }
         if (!candidate.parentIds.includes(candidate.canonicalParentId)) {
           const inserted = await session.execute(
-            `INSERT INTO tmf_resource_relationship
+            `INSERT INTO resource_relationship
              (resource_from_id, resource_to_id, relationship_type)
              SELECT ?, ?, 'containsAsChild'
                WHERE NOT EXISTS (
-                 SELECT 1 FROM tmf_resource_relationship
+                 SELECT 1 FROM resource_relationship
                   WHERE resource_from_id = ? AND resource_to_id = ? AND relationship_type = 'containsAsChild'
                )`,
             [
@@ -432,7 +432,7 @@ async function applyRepair(client: DatabaseClient, report: AuditReport): Promise
         }
         if (candidate.parentIds.includes(candidate.legacyParentId)) {
           const removed = await session.execute(
-            `DELETE FROM tmf_resource_relationship
+            `DELETE FROM resource_relationship
               WHERE resource_from_id = ?
                 AND resource_to_id = ?
                 AND relationship_type = 'containsAsChild'`,

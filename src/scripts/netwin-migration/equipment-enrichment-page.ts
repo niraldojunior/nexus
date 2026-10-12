@@ -162,7 +162,7 @@ export async function enrichEquipmentPage(
   const geoProjects = target
     ? await resolveGeoProjectIds(
         target,
-        ctx.t('geo_project'),
+        ctx.t('project'),
         ctx.options.tenantId,
         projectNames,
         normalizeTypeKey,
@@ -172,7 +172,7 @@ export async function enrichEquipmentPage(
   const existing = target
     ? await readExisting(
         target,
-        ctx.t('tmf_physical_resource'),
+        ctx.t('resource_physical'),
         ctx.options.tenantId,
         inputs.map((i) => i.resourceId),
       )
@@ -194,7 +194,7 @@ export async function enrichEquipmentPage(
     ),
   ];
   const holders = target
-    ? await readSerialHolders(target, ctx.t('tmf_physical_resource'), candidateSerials)
+    ? await readSerialHolders(target, ctx.t('resource_physical'), candidateSerials)
     : new Map<string, string>();
   const serials = resolveSerials(rawSerials, holders);
 

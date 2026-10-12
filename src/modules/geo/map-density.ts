@@ -1,10 +1,10 @@
 // Níveis de densidade agregada da planta (Fase 4 da issue #69) — função pura, sem I/O.
 //
-// `geo_map_density` é uma representação agregada opcional da planta. A visibilidade das
+// `geographic_map_density` é uma representação agregada opcional da planta. A visibilidade das
 // features individuais é decidida exclusivamente pelas faixas publicadas no Studio GEO; esta
 // camada responde "onde há planta", não "qual é cada item".
 //
-// A grade não é métrica nova: é o PRÓPRIO tile de `geo_map_feature` (z16) reduzido por potência
+// A grade não é métrica nova: é o PRÓPRIO tile de `geographic_map_feature` (z16) reduzido por potência
 // de 2. Isso mantém um só endereçamento entre índice, densidade, servidor e cliente, e faz a
 // agregação virar divisão inteira — barata em SQL, sem trigonometria e sem materializar
 // geometria no processo.

@@ -7,7 +7,7 @@
  * bootstrap (ver BOOTSTRAP_SPECIFICATIONS em src/modules/geo/service.ts). `INSTALLATION_POINT`
  * permanece no catálogo com lifecycleStatus 'Retired' — C6, nunca DELETE físico.
  *
- * O script também corrige `geo_map_feature.sublabel` das linhas afetadas (guarda o code da spec,
+ * O script também corrige `geographic_map_feature.sublabel` das linhas afetadas (guarda o code da spec,
  * ver src/modules/geo/map-feature-synchronizer.ts) — esse índice já ficou desatualizado no Oracle
  * uma vez antes depois de uma migração de spec (ver memória `geo-map-feature-oracle-migration-gap`),
  * então este script fecha os dois bancos antes de terminar.
@@ -33,7 +33,7 @@ async function main() {
   const client = await openLoaderDb();
   try {
     const { rows: customerSiteRows } = await client.query(
-      `SELECT id FROM tmf_geographic_site_specification WHERE code = 'CUSTOMER_SITE'`,
+      `SELECT id FROM geographic_site_specification WHERE code = 'CUSTOMER_SITE'`,
     );
     const customerSiteId = customerSiteRows[0]?.id ?? customerSiteRows[0]?.ID;
     if (!customerSiteId) {
@@ -43,7 +43,7 @@ async function main() {
     }
 
     const { rows: installationPointRows } = await client.query(
-      `SELECT id FROM tmf_geographic_site_specification WHERE code = 'INSTALLATION_POINT'`,
+      `SELECT id FROM geographic_site_specification WHERE code = 'INSTALLATION_POINT'`,
     );
     const installationPointIds = installationPointRows.map((row) => row.id ?? row.ID);
     if (installationPointIds.length === 0) {
@@ -57,17 +57,17 @@ async function main() {
 
     const placeholders = installationPointIds.map((_, i) => `$${i + 1}`).join(', ');
     const { rows: countRows } = await client.query(
-      `SELECT COUNT(*) AS n FROM tmf_geographic_site WHERE site_specification_id IN (${placeholders})`,
+      `SELECT COUNT(*) AS n FROM geographic_site WHERE site_specification_id IN (${placeholders})`,
       installationPointIds,
     );
     const siteCount = Number(countRows[0]?.n ?? countRows[0]?.N ?? 0);
     console.log(`Sites apontando para INSTALLATION_POINT: ${siteCount}`);
 
     const { rows: mapFeatureCountRows } = await client.query(
-      `SELECT COUNT(*) AS n FROM geo_map_feature WHERE feature_kind = 'site' AND sublabel = 'INSTALLATION_POINT'`,
+      `SELECT COUNT(*) AS n FROM geographic_map_feature WHERE feature_kind = 'site' AND sublabel = 'INSTALLATION_POINT'`,
     );
     const mapFeatureCount = Number(mapFeatureCountRows[0]?.n ?? mapFeatureCountRows[0]?.N ?? 0);
-    console.log(`Linhas de geo_map_feature com sublabel INSTALLATION_POINT: ${mapFeatureCount}`);
+    console.log(`Linhas de geographic_map_feature com sublabel INSTALLATION_POINT: ${mapFeatureCount}`);
 
     if (siteCount === 0 && mapFeatureCount === 0) {
       console.log('Nada a fazer.');
@@ -82,24 +82,24 @@ async function main() {
     await client.query('BEGIN');
 
     const { rowCount: sitesUpdated } = await client.query(
-      `UPDATE tmf_geographic_site SET site_specification_id = $${installationPointIds.length + 1}
+      `UPDATE geographic_site SET site_specification_id = $${installationPointIds.length + 1}
         WHERE site_specification_id IN (${placeholders})`,
       [...installationPointIds, customerSiteId],
     );
     console.log(`Sites migrados: ${sitesUpdated ?? siteCount}`);
 
     const { rowCount: mapFeaturesUpdated } = await client.query(
-      `UPDATE geo_map_feature SET sublabel = 'CUSTOMER_SITE'
+      `UPDATE geographic_map_feature SET sublabel = 'CUSTOMER_SITE'
         WHERE feature_kind = 'site' AND sublabel = 'INSTALLATION_POINT'`,
     );
-    console.log(`Linhas de geo_map_feature corrigidas: ${mapFeaturesUpdated ?? mapFeatureCount}`);
+    console.log(`Linhas de geographic_map_feature corrigidas: ${mapFeaturesUpdated ?? mapFeatureCount}`);
 
     const ruleParentPlaceholders = installationPointIds.map((_, i) => `$${i + 1}`).join(', ');
     const ruleChildPlaceholders = installationPointIds
       .map((_, i) => `$${installationPointIds.length + i + 1}`)
       .join(', ');
     await client.query(
-      `DELETE FROM tmf_geographic_site_spec_containment_rule
+      `DELETE FROM geographic_site_spec_containment_rule
         WHERE parent_spec_id IN (${ruleParentPlaceholders}) OR child_spec_id IN (${ruleChildPlaceholders})`,
       [...installationPointIds, ...installationPointIds],
     );
@@ -108,8 +108,8 @@ async function main() {
     await client.query('COMMIT');
     console.log(`Gravado em ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
 
-    await client.gatherStats('tmf_geographic_site');
-    await client.gatherStats('geo_map_feature');
+    await client.gatherStats('geographic_site');
+    await client.gatherStats('geographic_map_feature');
     console.log('Estatísticas atualizadas.');
   } finally {
     await client.close();

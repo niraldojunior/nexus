@@ -22,7 +22,7 @@ type FakeOutboxRow = {
 const createFakeDb = (rows: FakeOutboxRow[]): DatabaseClient => {
   const db = {
     async run(sql: string, params: unknown[] = []): Promise<DatabaseRunResult> {
-      if (sql.includes("UPDATE tmf_outbox SET status = 'published'")) {
+      if (sql.includes("UPDATE environment_outbox SET status = 'published'")) {
         const [publishedAt, id] = params as [string, string];
         const row = rows.find((item) => item.id === id);
         if (row) {
@@ -37,7 +37,7 @@ const createFakeDb = (rows: FakeOutboxRow[]): DatabaseClient => {
       throw new Error('unexpected get()');
     },
     async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-      if (sql.includes('FROM tmf_outbox')) {
+      if (sql.includes('FROM environment_outbox')) {
         const [limit] = params as [number];
         return rows.filter((row) => row.status === 'pending').slice(0, limit) as unknown as T[];
       }

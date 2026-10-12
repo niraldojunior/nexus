@@ -34,7 +34,7 @@ export const COVERAGE_CELL_METERS = 50;
 export const COVERAGE_COARSE_FACTOR = 5;
 
 // Célula de traçado dos níveis agregados (escala de município/estado) que
-// scripts/build-coverage.mjs grava em geo_coverage_area (ver GeoCoverageService). Estes
+// scripts/build-coverage.mjs grava em geographic_coverage_area (ver GeoCoverageService). Estes
 // níveis NÃO re-estampam os pontos com um raio maior — isso incharia a mancha muito além da
 // cobertura real (uma CDO isolada "pintando" um disco de 2 km em vez dos 200 m reais, criando
 // falso positivo de cobertura em área sem CDO nenhuma). Em vez disso, `aggregateCells` agrega a

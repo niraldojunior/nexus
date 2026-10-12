@@ -296,7 +296,7 @@ export class GeoTreeService {
     // Um jogo de 4 (minLng, maxLng, minLat, maxLat) por bloco do UNION ALL de
     // viewportResourceSource — um por shape incluído (1, 2 ou 4 blocos). Ponto e cabo ficam
     // em blocos separados (não num OR) para o bloco de ponto poder usar o índice de expressão
-    // idx_tmf_geographic_location_point_lnglat.
+    // geographic_idx_location_point_lnglat.
     const bboxQuad = [bounds.minLng, bounds.maxLng, bounds.minLat, bounds.maxLat];
     const source = viewportResourceSource(shapes);
     const blockCount = (shapes.point ? 2 : 0) + (shapes.line ? 2 : 0);
@@ -355,7 +355,7 @@ export class GeoTreeService {
 
     const rows = await this.db.all<SiteRow>(
       `${SITE_SELECT}
-       JOIN geo_project_site ps ON ps.site_id = s.id AND ps.project_id = ?
+       JOIN project_site ps ON ps.site_id = s.id AND ps.project_id = ?
        WHERE ${SITE_VIEWPORT_POINT_WHERE}
        LIMIT ?`,
       [projectId, ...bboxQuad, limit],
@@ -502,7 +502,7 @@ export class GeoTreeService {
    * `LIMIT` (Oracle: `WINDOW SORT PUSHED RANK` sobre a `UNION-ALL`), porque duas correntes
    * só ordenadas *dentro de si* não bastam para saber os N menores do total sem examinar as
    * duas por completo. Com prefixo comum no acervo (ex.: "CDOE", ~1,7M de ~1,5M linhas de
-   * `tmf_physical_resource` em dev) isso mediu **58s** mesmo já com o índice em jogo. Cada
+   * `resource_physical` em dev) isso mediu **58s** mesmo já com o índice em jogo. Cada
    * tabela sozinha, com `ORDER BY LOWER(name) LIMIT` batendo com o índice, para assim que
    * acha os primeiros N (Oracle: `WINDOW NOSORT STOPKEY` sobre `INDEX RANGE SCAN`) — 20ms no
    * mesmo teste. O merge final é só ordenar ≤ 2×limit linhas já em memória.
@@ -560,7 +560,7 @@ export class GeoTreeService {
    * sem o filtro de exclusão de Projeto (REQ-MOD01-015): é exatamente o caminho pelo qual
    * um local de projeto ganha pin no mapa quando o projeto está aberto. A ordem dos ids de
    * entrada é preservada na saída, para o chamador manter a posição salva em
-   * `geo_project_site.position`.
+   * `project_site.position`.
    */
   public async sitesByIds(ids: string[]): Promise<GeoTreeNode[]> {
     if (ids.length === 0) return [];
@@ -578,10 +578,10 @@ export class GeoTreeService {
   /**
    * Locais de um Projeto de trabalho, paginados, com a nota e o endereço GEONET de origem
    * (REQ-MOD01-015) já na mesma linha — substitui o par `listSiteLinksPage` (project-
-   * repository) + `sitesByIds` por um único JOIN direto em `geo_project_site`, e
+   * repository) + `sitesByIds` por um único JOIN direto em `project_site`, e
    * COUNT(*) OVER() evita a segunda ida ao banco só para o total. Mesma projeção de
-   * SITE_SELECT, mantida em sincronia à mão: o JOIN extra em `geo_project_site`/
-   * `geo_project`, o `ORDER BY ps.position` e as colunas `note`/`geonet_address_id` não
+   * SITE_SELECT, mantida em sincronia à mão: o JOIN extra em `project_site`/
+   * `project`, o `ORDER BY ps.position` e as colunas `note`/`geonet_address_id` não
    * cabem na string fixa reaproveitada pelos outros seis chamadores de SITE_SELECT.
    */
   public async projectSitePage(
@@ -606,12 +606,12 @@ export class GeoTreeService {
               a.city AS city, a.state_or_province AS uf, a.street_name AS street,
               ps.note, ps.geonet_address_id,
               count(*) OVER () AS total_count
-         FROM tmf_geographic_site s
-         JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
-         LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
-         LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
-         JOIN geo_project_site ps ON ps.site_id = s.id
-         JOIN geo_project p ON p.id = ps.project_id
+         FROM geographic_site s
+         JOIN geographic_site_specification sp ON sp.id = s.site_specification_id
+         LEFT JOIN geographic_location l ON l.id = s.geographic_location_id
+         LEFT JOIN geographic_address a ON a.id = s.geographic_address_id
+         JOIN project_site ps ON ps.site_id = s.id
+         JOIN project p ON p.id = ps.project_id
         WHERE p.tenant_id = ? AND ps.project_id = ?
         ORDER BY ps.position
         LIMIT ? OFFSET ?`,
@@ -632,8 +632,8 @@ export class GeoTreeService {
         : ((
             await this.db.get<{ n: number }>(
               `SELECT count(*) AS n
-                 FROM geo_project_site ps
-                 JOIN geo_project p ON p.id = ps.project_id
+                 FROM project_site ps
+                 JOIN project p ON p.id = ps.project_id
                 WHERE p.tenant_id = ? AND ps.project_id = ?`,
               [tenantId, projectId],
             )
@@ -698,7 +698,7 @@ export class GeoTreeService {
       }
 
       const parentEdge = await this.db.get<{ resource_from_id: string }>(
-        `SELECT resource_from_id FROM tmf_resource_relationship
+        `SELECT resource_from_id FROM resource_relationship
           WHERE resource_to_id = ? AND relationship_type IN ('containsAsChild', 'connectedTo')
           LIMIT 1`,
         [resourceId],
@@ -742,7 +742,7 @@ export class GeoTreeService {
   public async schematicPath(resourceId: string): Promise<GeoSchematicPath> {
     const edges = await this.db.all<{ resource_to_id: string; resource_from_id: string }>(
       `SELECT resource_to_id, resource_from_id
-         FROM tmf_resource_relationship
+         FROM resource_relationship
         START WITH resource_to_id = ? AND relationship_type = 'connectedTo'
       CONNECT BY NOCYCLE LEVEL <= ? AND PRIOR resource_from_id = resource_to_id
              AND relationship_type = 'connectedTo'`,
@@ -812,7 +812,7 @@ export class GeoTreeService {
   // equipamento mais a montante do traçado, não precisa da checagem de "raiz").
   private async resourceServingSiteId(resourceId: string): Promise<string | null> {
     const row = await this.db.get<{ serving_site_id: string | null }>(
-      'SELECT serving_site_id FROM tmf_physical_resource WHERE id = ?',
+      'SELECT serving_site_id FROM resource_physical WHERE id = ?',
       [resourceId],
     );
     return row?.serving_site_id ?? null;
@@ -826,10 +826,10 @@ export class GeoTreeService {
   ): Promise<{ types: string[]; count: number } | undefined> {
     const rows = await this.db.all<{ resource_type: string | null }>(
       `SELECT rt.code AS resource_type
-         FROM tmf_resource_relationship e
-         JOIN tmf_physical_resource r ON r.id = e.resource_to_id
-         LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-         LEFT JOIN tmf_resource_type rt
+         FROM resource_relationship e
+         JOIN resource_physical r ON r.id = e.resource_to_id
+         LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+         LEFT JOIN resource_type rt
            ON rt.id = rs.resource_type_id
         WHERE e.resource_from_id = ? AND e.relationship_type = 'supportedBy'`,
       [cableId],
@@ -953,7 +953,7 @@ export class GeoTreeService {
     scope: GeoTreeScope,
   ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
     const site = await this.db.get<{ id: string }>(
-      'SELECT id FROM tmf_geographic_site WHERE id = ?',
+      'SELECT id FROM geographic_site WHERE id = ?',
       [siteId],
     );
     if (!site) return { nodes: [], total: 0 };
@@ -1217,9 +1217,9 @@ export class GeoTreeService {
     }
     const rows = await this.db.all<{ uf: string; city: string; n: number | string }>(
       `SELECT ${STATION_UF_SQL} AS uf, ${STATION_CITY_SQL} AS city, count(*) AS n
-         FROM tmf_geographic_site s
-         JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
-         LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+         FROM geographic_site s
+         JOIN geographic_site_specification sp ON sp.id = s.site_specification_id
+         LEFT JOIN geographic_address a ON a.id = s.geographic_address_id
         WHERE ${STATION_WHERE}
         ${PROJECT_SITE_EXCLUSION_SQL}
         ${extra}
@@ -1262,9 +1262,9 @@ export class GeoTreeService {
       const row: StationAncestorRow | undefined = await this.db.get<StationAncestorRow>(
         `SELECT s.id, s.parent_site_id, sp.code,
                 a.city AS city, a.state_or_province AS uf
-           FROM tmf_geographic_site s
-           JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
-           LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+           FROM geographic_site s
+           JOIN geographic_site_specification sp ON sp.id = s.site_specification_id
+           LEFT JOIN geographic_address a ON a.id = s.geographic_address_id
           WHERE s.id = ?`,
         [currentId],
       );
@@ -1283,23 +1283,23 @@ export class GeoTreeService {
   private async findDirectOwningSite(resourceId: string): Promise<string | null> {
     const resource =
       (await this.db.get<{ place_id: string | null; serving_site_id: string | null }>(
-        'SELECT place_id, serving_site_id FROM tmf_physical_resource WHERE id = ?',
+        'SELECT place_id, serving_site_id FROM resource_physical WHERE id = ?',
         [resourceId],
       )) ??
       (await this.db.get<{ place_id: string | null; serving_site_id: string | null }>(
-        'SELECT place_id, serving_site_id FROM tmf_logical_resource WHERE id = ?',
+        'SELECT place_id, serving_site_id FROM resource_logical WHERE id = ?',
         [resourceId],
       ));
     if (!resource) return null;
 
     if (resource.place_id) {
       const byOwnId = await this.db.get<{ id: string }>(
-        'SELECT id FROM tmf_geographic_site WHERE id = ?',
+        'SELECT id FROM geographic_site WHERE id = ?',
         [resource.place_id],
       );
       if (byOwnId) return byOwnId.id;
       const byLocationId = await this.db.get<{ id: string }>(
-        'SELECT id FROM tmf_geographic_site WHERE geographic_location_id = ?',
+        'SELECT id FROM geographic_site WHERE geographic_location_id = ?',
         [resource.place_id],
       );
       if (byLocationId) return byLocationId.id;
@@ -1307,7 +1307,7 @@ export class GeoTreeService {
 
     if (resource.serving_site_id) {
       const incoming = await this.db.get<{ n: number }>(
-        `SELECT count(*) AS n FROM tmf_resource_relationship
+        `SELECT count(*) AS n FROM resource_relationship
           WHERE resource_to_id = ? AND relationship_type IN ('containsAsChild', 'connectedTo')`,
         [resourceId],
       );
@@ -1321,9 +1321,9 @@ export class GeoTreeService {
   private async isInternalResource(resourceId: string): Promise<boolean> {
     const row = await this.db.get<{ n: number }>(
       `SELECT count(*) AS n
-         FROM tmf_physical_resource r
-         JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-         JOIN tmf_resource_type rt
+         FROM resource_physical r
+         JOIN resource_specification rs ON rs.id = r.resource_specification_id
+         JOIN resource_type rt
            ON rt.id = rs.resource_type_id
         WHERE r.id = ? AND rt.code IN (${placeholders([...INTERNAL_RESOURCE_TYPES])})`,
       [resourceId, ...INTERNAL_RESOURCE_TYPES],
@@ -1351,7 +1351,7 @@ export class GeoTreeService {
 
     // (1) sub-locais
     for (const row of await this.db.all<{ id: string }>(
-      `SELECT DISTINCT parent_site_id AS id FROM tmf_geographic_site
+      `SELECT DISTINCT parent_site_id AS id FROM geographic_site
         WHERE parent_site_id IN (${placeholders(siteIds)}) AND status NOT IN ('Retired', 'terminated')`,
       siteIds,
     )) {
@@ -1361,9 +1361,9 @@ export class GeoTreeService {
     // (2) recursos cujo place é o próprio local ou a Location dele
     const placeIds = [...siteIds, ...siteByLocationId.keys()];
     for (const row of await this.db.all<{ id: string }>(
-      `SELECT DISTINCT place_id AS id FROM tmf_physical_resource WHERE place_id IN (${placeholders(placeIds)})
+      `SELECT DISTINCT place_id AS id FROM resource_physical WHERE place_id IN (${placeholders(placeIds)})
        UNION
-       SELECT DISTINCT place_id AS id FROM tmf_logical_resource WHERE place_id IN (${placeholders(placeIds)})`,
+       SELECT DISTINCT place_id AS id FROM resource_logical WHERE place_id IN (${placeholders(placeIds)})`,
       [...placeIds, ...placeIds],
     )) {
       withChildren.add(siteByLocationId.get(row.id) ?? row.id);
@@ -1372,10 +1372,10 @@ export class GeoTreeService {
     // (3) planta externa da estação que ainda não pende de outro recurso
     for (const row of await this.db.all<{ id: string }>(
       `SELECT DISTINCT r.serving_site_id AS id
-         FROM tmf_physical_resource r
+         FROM resource_physical r
         WHERE r.serving_site_id IN (${placeholders(siteIds)})
           AND NOT EXISTS (
-            SELECT 1 FROM tmf_resource_relationship e
+            SELECT 1 FROM resource_relationship e
              WHERE e.resource_to_id = r.id
                AND e.relationship_type IN ('containsAsChild', 'connectedTo')
           )`,
@@ -1402,7 +1402,7 @@ export class GeoTreeService {
     if (scope === 'all') {
       const rows = await this.db.all<{ resource_from_id: string }>(
         `SELECT DISTINCT resource_from_id
-         FROM tmf_resource_relationship
+         FROM resource_relationship
          WHERE resource_from_id IN (${placeholders(resourceIds)})
            AND relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})`,
         [...resourceIds, ...TREE_EDGE_TYPES],
@@ -1424,12 +1424,12 @@ export class GeoTreeService {
     const seed = dialectFor().inlineRows(resourceIds, 'v', 'id');
     const rows = await this.db.all<{ root_id: string }>(
       `SELECT DISTINCT CONNECT_BY_ROOT e.resource_from_id AS root_id
-         FROM tmf_resource_relationship e
+         FROM resource_relationship e
         WHERE e.relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
           AND NOT EXISTS (
-            SELECT 1 FROM tmf_physical_resource p
-              JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-              JOIN tmf_resource_type rt
+            SELECT 1 FROM resource_physical p
+              JOIN resource_specification rs ON rs.id = p.resource_specification_id
+              JOIN resource_type rt
                 ON rt.id = rs.resource_type_id
              WHERE p.id = e.resource_to_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
           )
@@ -1439,9 +1439,9 @@ export class GeoTreeService {
          AND e.relationship_type IN (${placeholders([...TREE_EDGE_TYPES])})
          AND LEVEL <= ${PASS_THROUGH_MAX_DEPTH}
          AND EXISTS (
-             SELECT 1 FROM tmf_physical_resource p
-               JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-               JOIN tmf_resource_type rt
+             SELECT 1 FROM resource_physical p
+               JOIN resource_specification rs ON rs.id = p.resource_specification_id
+               JOIN resource_type rt
                  ON rt.id = rs.resource_type_id
               WHERE p.id = e.resource_from_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
          )`,
@@ -1459,21 +1459,21 @@ const SITE_SELECT = `
          sp.code AS spec_code, sp.name AS spec_name, sp.category AS spec_category,
          l.geometry_type, l.geometry,
          a.city AS city, a.state_or_province AS uf, a.street_name AS street
-    FROM tmf_geographic_site s
-    JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
-    LEFT JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
-    LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id`;
+    FROM geographic_site s
+    JOIN geographic_site_specification sp ON sp.id = s.site_specification_id
+    LEFT JOIN geographic_location l ON l.id = s.geographic_location_id
+    LEFT JOIN geographic_address a ON a.id = s.geographic_address_id`;
 
 // Exclui da navegação (árvore, mapa de Estações e busca) qualquer Site vinculado a um
 // Projeto de trabalho EM CURSO (REQ-MOD01-015): local criado para um recorte de trabalho
 // fica visível só com o projeto aberto — nunca na Hierarquia geral. Uma vez que o projeto
 // termina, o local ganha vida própria (RF-010) e volta a esta navegação — o vínculo em
-// geo_project_site permanece (não é apagado), só deixa de esconder o Site; é o que sustenta
+// project_site permanece (não é apagado), só deixa de esconder o Site; é o que sustenta
 // a Origem "Projeto XPTO" no painel de Local. Não se aplica a `childrenOfSite`: um local de
 // projeto nasce sem `parent_site_id`, então nunca aparece como filho de outro.
 const PROJECT_SITE_EXCLUSION_SQL = `AND NOT EXISTS (
-  SELECT 1 FROM geo_project_site ps
-    JOIN geo_project p ON p.id = ps.project_id
+  SELECT 1 FROM project_site ps
+    JOIN project p ON p.id = ps.project_id
    WHERE ps.site_id = s.id AND p.status <> 'terminated'
 )`;
 
@@ -1500,7 +1500,7 @@ const STATION_CITY_SQL = `CASE WHEN TRIM(a.city) IS NULL OR TRIM(a.city) = '' TH
 // tipo de Site (POP, CDO, Ponto de Instalação…) só aparece no mapa em escala de detalhe
 // (≤ 50 m), pela mesma régua de tier de um Recurso. Mesmo predicado de bbox de
 // VIEWPORT_POINT_WHERE, para aproveitar o índice de expressão
-// idx_tmf_geographic_location_point_lnglat. 4 parâmetros: minLng, maxLng, minLat, maxLat.
+// geographic_idx_location_point_lnglat. 4 parâmetros: minLng, maxLng, minLat, maxLat.
 const SITE_VIEWPORT_POINT_WHERE = `
   sp.category = 'Site'
   AND s.status NOT IN ('Retired', 'terminated')
@@ -1513,15 +1513,15 @@ const SITE_VIEWPORT_POINT_WHERE = `
 // entrada ainda. As três viviam num único OR (RESOURCE_AT_SITE_WHERE); combinado assim, o
 // NOT EXISTS da terceira forma fica preso dentro do OR e o CBO do Oracle não consegue mais
 // desmembrá-lo num HASH JOIN ANTI — cai num FILTER correlacionado que varre
-// tmf_resource_relationship inteira (1,3M linhas) a cada linha candidata de recurso, travando
+// resource_relationship inteira (1,3M linhas) a cada linha candidata de recurso, travando
 // a expansão de uma Estação com planta externa densa (minutos, não segundos). Separadas em
 // blocos UNION ALL próprios (ver siteResourceIdSource), cada forma fica livre para usar seu
-// próprio índice — a terceira usa idx_tmf_resource_relationship_reverse como anti-join.
+// próprio índice — a terceira usa resource_idx_relationship_reverse como anti-join.
 const RESOURCE_BY_PLACE_WHERE = 'r.place_id = ?';
 const RESOURCE_BY_SERVING_SITE_WHERE = `
   r.serving_site_id = ?
   AND NOT EXISTS (
-    SELECT 1 FROM tmf_resource_relationship e
+    SELECT 1 FROM resource_relationship e
      WHERE e.resource_to_id = r.id
        AND e.relationship_type IN ('containsAsChild', 'connectedTo')
   )`;
@@ -1557,7 +1557,7 @@ const siteResourceEntityBlock = (
   where: string,
   extra: string,
 ): string => {
-  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  const table = entity === 'PhysicalResource' ? 'resource_physical' : 'resource_logical';
   const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
   const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
@@ -1567,10 +1567,10 @@ const siteResourceEntityBlock = (
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM ${table} r
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN geographic_location l ON l.id = r.place_id
    WHERE (${where}) ${extra}`;
 };
 
@@ -1584,9 +1584,9 @@ const siteResourceEntityBlock = (
 const siteResourceIdSource = (scope: GeoTreeScope): string => {
   const extra = hideInternalResourceSql(scope);
   const idBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
-    const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
-    return `SELECT r.id, r.name, '${entity}' AS entity_type FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    const table = entity === 'PhysicalResource' ? 'resource_physical' : 'resource_logical';
+    return `SELECT r.id, r.name, '${entity}' AS entity_type FROM ${table} r LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id WHERE (${where}) ${extra}`;
   };
   // Só dois blocos por entidade — não três. Havia um `idBlock(entity, RESOURCE_BY_PLACE_WHERE)`
@@ -1611,7 +1611,7 @@ const siteResourceIdSource = (scope: GeoTreeScope): string => {
 
 // Recursos cuja geometria cai num bbox do mapa. Ponto e cabo ficam em blocos separados
 // (não num OR) de propósito: só assim o Postgres consegue usar o índice de expressão
-// idx_tmf_geographic_location_point_lnglat no bloco de ponto — com o OR ele cai num seq
+// geographic_idx_location_point_lnglat no bloco de ponto — com o OR ele cai num seq
 // scan de toda a tabela de Locations parseando JSON linha a linha. Ponto casa pela própria
 // coordenada; cabo (LineString) casa se qualquer vértice da rota cair no bbox. `l.geometry`
 // é GeoJSON em texto; o worker Postgres deixa os operadores `::jsonb` passarem intactos (só
@@ -1642,7 +1642,7 @@ const VIEWPORT_LINE_WHERE = `
 // no viewport, ou some do mapa ao fechar o painel (issue reportada: CDOE sumindo após editar
 // Endereço).
 const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: string): string => {
-  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  const table = entity === 'PhysicalResource' ? 'resource_physical' : 'resource_logical';
   const serial = entity === 'PhysicalResource' ? 'r.serial_number' : 'NULL';
   const substatus = entity === 'PhysicalResource' ? RESOURCE_SUBSTATUS_SQL : 'NULL';
   return `
@@ -1652,14 +1652,14 @@ const viewportBlock = (entity: 'PhysicalResource' | 'LogicalResource', where: st
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
     FROM ${table} r
-    LEFT JOIN tmf_geographic_site place_site
+    LEFT JOIN geographic_site place_site
       ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
-    LEFT JOIN tmf_geographic_address place_address
+    LEFT JOIN geographic_address place_address
       ON place_address.id = r.place_id
-    JOIN tmf_geographic_location l
+    JOIN geographic_location l
       ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id
    WHERE r.status <> 'terminated' AND (${where})`;
 };
@@ -1701,13 +1701,13 @@ const searchResourceIdBlock = (
   entity: 'PhysicalResource' | 'LogicalResource',
   resourceTypes?: string[],
 ): string => {
-  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  const table = entity === 'PhysicalResource' ? 'resource_physical' : 'resource_logical';
   const typeFilter =
     resourceTypes && resourceTypes.length > 0
       ? ` AND rt.code IN (${placeholders(resourceTypes)})`
       : '';
-  return `SELECT r.id, r.name FROM ${table} r LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+  return `SELECT r.id, r.name FROM ${table} r LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id WHERE (${SEARCH_RESOURCE_ID_WHERE}${typeFilter})`;
 };
 
@@ -1729,12 +1729,12 @@ const RESOURCE_CHILD_SOURCE = `
          ${RESOURCE_SUBSTATUS_SQL} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
-    FROM tmf_resource_relationship e
-    JOIN tmf_physical_resource r ON r.id = e.resource_to_id
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    FROM resource_relationship e
+    JOIN resource_physical r ON r.id = e.resource_to_id
+    LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
   UNION ALL
@@ -1743,12 +1743,12 @@ const RESOURCE_CHILD_SOURCE = `
          NULL AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
-    FROM tmf_resource_relationship e
-    JOIN tmf_logical_resource r ON r.id = e.resource_to_id
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    FROM resource_relationship e
+    JOIN resource_logical r ON r.id = e.resource_to_id
+    LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id = ?
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')`;
 
@@ -1763,14 +1763,14 @@ const RESOURCE_CHILD_TREE_SOURCE = `
     UNION ALL
     SELECT e.resource_to_id, h.depth + 1
       FROM hidden_chain h
-      JOIN tmf_resource_relationship e
+      JOIN resource_relationship e
         ON e.resource_from_id = h.id
        AND e.relationship_type IN ('containsAsChild', 'connectedTo')
      WHERE h.depth < ${PASS_THROUGH_MAX_DEPTH}
        AND EXISTS (
-         SELECT 1 FROM tmf_physical_resource p
-           JOIN tmf_resource_specification rs ON rs.id = p.resource_specification_id
-           JOIN tmf_resource_type rt
+         SELECT 1 FROM resource_physical p
+           JOIN resource_specification rs ON rs.id = p.resource_specification_id
+           JOIN resource_type rt
              ON rt.id = rs.resource_type_id
           WHERE p.id = e.resource_to_id AND rt.code IN (${INTERNAL_RESOURCE_TYPES_SQL})
        )
@@ -1780,12 +1780,12 @@ const RESOURCE_CHILD_TREE_SOURCE = `
          ${RESOURCE_SUBSTATUS_SQL} AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
-    FROM tmf_resource_relationship e
-    JOIN tmf_physical_resource r ON r.id = e.resource_to_id
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    FROM resource_relationship e
+    JOIN resource_physical r ON r.id = e.resource_to_id
+    LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
      AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})
@@ -1795,12 +1795,12 @@ const RESOURCE_CHILD_TREE_SOURCE = `
          NULL AS substatus,
          ${RESOURCE_SOURCE_SYSTEM_SQL} AS source_system,
          l.geometry_type, l.geometry
-    FROM tmf_resource_relationship e
-    JOIN tmf_logical_resource r ON r.id = e.resource_to_id
-    LEFT JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-    LEFT JOIN tmf_resource_type rt
+    FROM resource_relationship e
+    JOIN resource_logical r ON r.id = e.resource_to_id
+    LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id
+    LEFT JOIN resource_type rt
       ON rt.id = rs.resource_type_id
-    LEFT JOIN tmf_geographic_location l ON l.id = r.place_id
+    LEFT JOIN geographic_location l ON l.id = r.place_id
    WHERE e.resource_from_id IN (SELECT id FROM hidden_chain)
      AND e.relationship_type IN ('containsAsChild', 'connectedTo')
      AND rt.code NOT IN (${INTERNAL_RESOURCE_TYPES_SQL})`;

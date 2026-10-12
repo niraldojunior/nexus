@@ -33,7 +33,7 @@ const studioContext = (tenantId: string) => ({
   tenantId,
   actorSub: 'studio-adapter',
   roles: ['studio.admin', 'geo.admin', 'platform.admin'],
-  // traceId vira correlationId em tmf_event (correlation_id) — coluna dimensionada para UUID
+  // traceId vira correlationId em environment_event (correlation_id) — coluna dimensionada para UUID
   // (VARCHAR2(36) no Oracle, ver oracle-schema.ts), não string legível com prefixo.
   traceId: createCanonicalId(),
 });

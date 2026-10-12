@@ -599,7 +599,7 @@ test.skipIf(!oracleConfigured)(
       assert.deepEqual(boxHydrated.geometry?.coordinates, [-43.108, -22.907]);
 
       // O cabo secundário vem com a rota INTEIRA (2 vértices) — não um trecho recortado por tile,
-      // ao contrário do que uma feature do índice `geo_map_feature` traria.
+      // ao contrário do que uma feature do índice `geographic_map_feature` traria.
       const cableNodeById = await requestJson(
         port,
         'GET',
@@ -1182,7 +1182,7 @@ test.skipIf(!oracleConfigured)(
         ]);
 
       // Bbox fixo do polígono semeado (as duas áreas do teste compartilham o mesmo quadrado, por
-      // simplicidade) — geo_coverage_area guarda o bbox pronto, como build-coverage.mjs.
+      // simplicidade) — geographic_coverage_area guarda o bbox pronto, como build-coverage.mjs.
       const AREA_BOUNDS = { minLng: -43.108, minLat: -22.908, maxLng: -43.1, maxLat: -22.902 };
 
       const seedArea = async (
@@ -1198,7 +1198,7 @@ test.skipIf(!oracleConfigured)(
         cells: Array<{ gx: number; gy: number; total: number; avail: number }>,
       ) => {
         await db.run(
-          `INSERT INTO tmf_geographic_location
+          `INSERT INTO geographic_location
          (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
        VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, ?)`,
           [
@@ -1221,16 +1221,16 @@ test.skipIf(!oracleConfigured)(
         );
         for (const cell of cells) {
           await db.run(
-            `INSERT INTO geo_coverage_cell
+            `INSERT INTO geographic_coverage_cell
            (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, unit_total, unit_available)
          VALUES ('default', ?, ?, ?, ?, ?, ?)`,
             [COVERAGE_CELL_METERS, cell.gx, cell.gy, locId, cell.total, cell.avail],
           );
         }
         // Índice de leitura por polígono (ver GeoCoverageService.areaIndexLevel) — o que o loader
-        // grava em geo_coverage_area para o nível neighborhood.
+        // grava em geographic_coverage_area para o nível neighborhood.
         await db.run(
-          `INSERT INTO geo_coverage_area
+          `INSERT INTO geographic_coverage_area
          (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
           area_key, neighborhood, city, uf, unit_total, unit_available, unit_label,
           covered_area_km2, source_type, source_id)
@@ -1339,7 +1339,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal(totalAvail, 3);
 
       // neighborhood: polígonos de bairro com geometria e estatística, lidos do índice
-      // geo_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
+      // geographic_coverage_area (1 round-trip, sem varrer a grade nem characteristics).
       const neighborhoodLevel = await requestJson(
         port,
         'GET',
@@ -1384,7 +1384,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal((areaAlias.body as { areas: unknown[] }).areas.length, 2);
 
       // Filtro por camada (source_type/source_id) — só atua no nível neighborhood/area, onde
-      // geo_coverage_area carrega essas colunas (fine/coarse leem geo_coverage_cell, sem camada).
+      // geographic_coverage_area carrega essas colunas (fine/coarse leem geographic_coverage_cell, sem camada).
       // Camada correta: mesmas 2 áreas de antes.
       const scoped = await requestJson(
         port,
@@ -1459,14 +1459,14 @@ test.skipIf(!oracleConfigured)(
 
       const locationId = '33333333-3333-7333-8333-333333333333';
       await db.run(
-        `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref)
+        `INSERT INTO geographic_location (id, geometry_type, geometry, spatial_ref)
      VALUES (?, 'Point', ?, 'EPSG:4326')`,
         [locationId, JSON.stringify({ type: 'Point', coordinates: [-43.106, -22.906] })],
       );
 
       const specId = '44444444-4444-7444-8444-444444444444';
       await db.run(
-        `INSERT INTO tmf_resource_specification
+        `INSERT INTO resource_specification
        (id, tenant_id, name, resource_type_id, related_party, characteristics)
      VALUES (?, 'default', 'CTO', 'rt-cto', '[]', '[]')`,
         [specId],
@@ -1474,14 +1474,14 @@ test.skipIf(!oracleConfigured)(
 
       const resourceId = '55555555-5555-7555-8555-555555555555';
       await db.run(
-        `INSERT INTO tmf_physical_resource
+        `INSERT INTO resource_physical
        (id, name, resource_specification_id, status, place_id, place_type)
      VALUES (?, 'CDOE-INV-01', ?, 'active', ?, 'GeographicLocation')`,
         [resourceId, specId, locationId],
       );
 
       await db.run(
-        `INSERT INTO geo_coverage_cell
+        `INSERT INTO geographic_coverage_cell
        (tenant_id, grid_size_m, grid_x, grid_y, coverage_area_id, unit_total, unit_available)
      VALUES ('default', ?, ?, ?, NULL, ?, ?)`,
         [COVERAGE_CELL_METERS, gx, gy, 3, 2],
@@ -1489,7 +1489,7 @@ test.skipIf(!oracleConfigured)(
 
       const areaLocationId = '66666666-6666-7666-8666-666666666666';
       await db.run(
-        `INSERT INTO tmf_geographic_location (id, geometry_type, geometry, spatial_ref, reference_point)
+        `INSERT INTO geographic_location (id, geometry_type, geometry, spatial_ref, reference_point)
      VALUES (?, 'Polygon', ?, 'EPSG:4326', 'GPON:RJ|Niterói|Icaraí')`,
         [
           areaLocationId,
@@ -1508,7 +1508,7 @@ test.skipIf(!oracleConfigured)(
         ],
       );
       await db.run(
-        `INSERT INTO geo_coverage_area
+        `INSERT INTO geographic_coverage_area
        (tenant_id, location_id, lod_level, cell_size_m, min_lng, min_lat, max_lng, max_lat,
         area_key, neighborhood, city, uf, unit_total, unit_available, unit_label,
         covered_area_km2, source_type, source_id)
@@ -1541,7 +1541,7 @@ test.skipIf(!oracleConfigured)(
       // Recurso sem geometria de ponto (place_id nulo) — 404, não erro genérico.
       const orphanResourceId = '77777777-7777-7777-8777-777777777777';
       await db.run(
-        `INSERT INTO tmf_physical_resource (id, name, resource_specification_id, status)
+        `INSERT INTO resource_physical (id, name, resource_specification_id, status)
      VALUES (?, 'CDOE-SEM-LOCAL', ?, 'active')`,
         [orphanResourceId, specId],
       );
@@ -2348,7 +2348,7 @@ test.skipIf(!oracleConfigured)(
     const port = await server.start();
     try {
       // Mesma instância que o app usa — a mancha é semeada direto nas tabelas de projeção, como
-      // faz scripts/build-project-areas.mjs (INSERT em tmf_geographic_location + geo_project_area).
+      // faz scripts/build-project-areas.mjs (INSERT em geographic_location + project_area).
       const db = await getOracleTestClient();
 
       const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
@@ -2377,10 +2377,10 @@ test.skipIf(!oracleConfigured)(
       const farSiteId = await createSite('Local Distante', [10, 10]);
 
       // Semeia a mancha de concentração cobrindo só o local de Icaraí — mesma forma que o script
-      // grava (Polygon em tmf_geographic_location + vínculo em geo_project_area).
+      // grava (Polygon em geographic_location + vínculo em project_area).
       const locationId = '33333333-3333-7333-8333-333333333333';
       await db.run(
-        `INSERT INTO tmf_geographic_location
+        `INSERT INTO geographic_location
        (id, geometry_type, geometry, spatial_ref, reference_point, characteristics)
      VALUES (?, 'Polygon', ?, 'EPSG:4326', ?, '[]')`,
         [
@@ -2401,7 +2401,7 @@ test.skipIf(!oracleConfigured)(
         ],
       );
       await db.run(
-        `INSERT INTO geo_project_area
+        `INSERT INTO project_area
        (project_id, location_id, kind, site_count, site_ids, centroid_lng, centroid_lat, area_km2, position)
      VALUES (?, ?, 'concentration', 1, ?, -43.106, -22.906, 0.25, 0)`,
         [projectId, locationId, JSON.stringify([nearSiteId])],
@@ -2520,7 +2520,7 @@ test.skipIf(!oracleConfigured)(
       const now = new Date().toISOString();
       for (let i = 0; i < MAX_LIST_LIMIT + 1; i += 1) {
         await client.run(
-          `INSERT INTO tmf_geographic_site
+          `INSERT INTO geographic_site
            (id, tenant_id, name, status, site_specification_id, related_party, site_addresses,
             characteristics, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2602,12 +2602,12 @@ test.skipIf(!oracleConfigured)(
       // ver plano da issue #291): apaga só a tabela de regras, mantendo a coluna JSON intacta.
       const client = await getOracleTestClient();
       await client.run(
-        `DELETE FROM tmf_geographic_site_spec_containment_rule
+        `DELETE FROM geographic_site_spec_containment_rule
          WHERE parent_spec_id = ? OR child_spec_id = ?`,
         [idOf(parentSpec), idOf(parentSpec)],
       );
       await client.run(
-        `DELETE FROM tmf_geographic_site_spec_containment_rule
+        `DELETE FROM geographic_site_spec_containment_rule
          WHERE parent_spec_id = ? OR child_spec_id = ?`,
         [idOf(childSpec), idOf(childSpec)],
       );

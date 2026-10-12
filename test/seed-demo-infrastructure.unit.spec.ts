@@ -485,7 +485,7 @@ describe('parseCliArgs', () => {
     expect(options.apply).toBe(false);
     expect(options.states).toEqual(['RJ', 'SP']);
     expect(options.limit).toBeUndefined();
-    // Sem default: a fase 0 resolve do `nexus_environment` do namespace de destino. Fixar
+    // Sem default: a fase 0 resolve do `environment` do namespace de destino. Fixar
     // 'default' gravaria num tenant que nenhuma tela lê (a DEMO provisionada registra 'vtal').
     expect(options.tenantId).toBeUndefined();
     expect(options.ownerPartyId).toBeUndefined();

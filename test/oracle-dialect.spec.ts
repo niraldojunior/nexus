@@ -26,23 +26,23 @@ const PREFIX = 'NEXUS_TEST_';
 // Oracle path emits it (VALUES already resolved to the DUAL form by the dialect) and must translate
 // to Oracle with no Postgres-ism left behind.
 const REPRESENTATIVE_SQL: Record<string, string> = {
-  eventLookup: `SELECT id FROM tmf_event WHERE json_extract(event_data, '$.entityId') = ? ORDER BY id LIMIT 1`,
-  scalarCharacteristic: `SELECT r.id, (SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce WHERE ce->>'name' = 'substatus' AND ce->>'group' IS NULL LIMIT 1) AS substatus FROM tmf_physical_resource r`,
-  derivedTableLimitOffset: `SELECT * FROM (SELECT count(*) AS n FROM tmf_geographic_site) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
-  rowNumberDedup: `SELECT id, name FROM ( SELECT dedup.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY id) AS rn FROM (SELECT r.id, r.name FROM tmf_physical_resource r) dedup ) d WHERE d.rn = 1`,
-  recursiveFrontier: `WITH RECURSIVE frontier(root_id, node_id, depth) AS ( SELECT v.id, v.id, 0 FROM (SELECT ? AS id FROM DUAL UNION ALL SELECT ? AS id FROM DUAL) v UNION ALL SELECT f.root_id, e.resource_to_id, f.depth+1 FROM frontier f JOIN tmf_resource_relationship e ON e.resource_from_id = f.node_id ) SELECT root_id, count(DISTINCT node_id) AS n FROM frontier GROUP BY root_id`,
-  upsert: `INSERT INTO tmf_party(id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
-  viewportLine: `SELECT r.id FROM tmf_logical_resource r JOIN tmf_geographic_location l ON l.id=r.place_id WHERE l.geometry_type='LineString' AND EXISTS (SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v WHERE (v->>0)::float8 BETWEEN ? AND ? AND (v->>1)::float8 BETWEEN ? AND ?)`,
+  eventLookup: `SELECT id FROM environment_event WHERE json_extract(event_data, '$.entityId') = ? ORDER BY id LIMIT 1`,
+  scalarCharacteristic: `SELECT r.id, (SELECT ce->>'value' FROM jsonb_array_elements(NULLIF(r.characteristics, '')::jsonb) AS ce WHERE ce->>'name' = 'substatus' AND ce->>'group' IS NULL LIMIT 1) AS substatus FROM resource_physical r`,
+  derivedTableLimitOffset: `SELECT * FROM (SELECT count(*) AS n FROM geographic_site) AS t ORDER BY name, id LIMIT ? OFFSET ?`,
+  rowNumberDedup: `SELECT id, name FROM ( SELECT dedup.*, ROW_NUMBER() OVER (PARTITION BY id ORDER BY id) AS rn FROM (SELECT r.id, r.name FROM resource_physical r) dedup ) d WHERE d.rn = 1`,
+  recursiveFrontier: `WITH RECURSIVE frontier(root_id, node_id, depth) AS ( SELECT v.id, v.id, 0 FROM (SELECT ? AS id FROM DUAL UNION ALL SELECT ? AS id FROM DUAL) v UNION ALL SELECT f.root_id, e.resource_to_id, f.depth+1 FROM frontier f JOIN resource_relationship e ON e.resource_from_id = f.node_id ) SELECT root_id, count(DISTINCT node_id) AS n FROM frontier GROUP BY root_id`,
+  upsert: `INSERT INTO party(id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
+  viewportLine: `SELECT r.id FROM resource_logical r JOIN geographic_location l ON l.id=r.place_id WHERE l.geometry_type='LineString' AND EXISTS (SELECT 1 FROM jsonb_array_elements(l.geometry::jsonb->'coordinates') AS v WHERE (v->>0)::float8 BETWEEN ? AND ? AND (v->>1)::float8 BETWEEN ? AND ?)`,
   // GeoTreeService.searchResourceCandidatesPass (barra de pesquisa) — só id/name, sem JOIN,
   // uma tabela por vez (nunca UNION ALL antes do ORDER BY/LIMIT — mata o NOSORT STOPKEY).
-  searchResourceCandidate: `SELECT id, name FROM (SELECT r.id, r.name FROM tmf_physical_resource r WHERE (r.place_id IS NOT NULL AND r.status <> 'terminated' AND r.resource_type IS DISTINCT FROM 'Splitter' AND LOWER(r.name) LIKE LOWER(?))) AS t ORDER BY LOWER(name) LIMIT ?`,
-  siteRelationshipHydration: `SELECT site_from_id, site_to_id, relationship_type FROM tmf_geographic_site_relationship WHERE site_from_id IN (SELECT id FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$'))) v) ORDER BY site_from_id, relationship_type, site_to_id`,
+  searchResourceCandidate: `SELECT id, name FROM (SELECT r.id, r.name FROM resource_physical r WHERE (r.place_id IS NOT NULL AND r.status <> 'terminated' AND r.resource_type IS DISTINCT FROM 'Splitter' AND LOWER(r.name) LIKE LOWER(?))) AS t ORDER BY LOWER(name) LIMIT ?`,
+  siteRelationshipHydration: `SELECT site_from_id, site_to_id, relationship_type FROM geographic_site_relationship WHERE site_from_id IN (SELECT id FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR2(4000) PATH '$'))) v) ORDER BY site_from_id, relationship_type, site_to_id`,
   // countSitesMissingCharacteristics — contagem agregada de Sites sem a característica, sem
   // hidratar linha nenhuma (a base nacional tem milhões de Sites por specification).
-  siteMissingCharacteristicCount: `SELECT COUNT(*) AS count FROM tmf_geographic_site s WHERE s.site_specification_id = ? AND EXISTS ( SELECT 1 FROM JSON_TABLE(?, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$')) expected WHERE NOT EXISTS ( SELECT 1 FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')) current_value WHERE LOWER(TRIM(current_value.name)) = expected.name ) )`,
+  siteMissingCharacteristicCount: `SELECT COUNT(*) AS count FROM geographic_site s WHERE s.site_specification_id = ? AND EXISTS ( SELECT 1 FROM JSON_TABLE(?, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$')) expected WHERE NOT EXISTS ( SELECT 1 FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')) current_value WHERE LOWER(TRIM(current_value.name)) = expected.name ) )`,
   // appendMissingSiteCharacteristics — um UPDATE set-based por definição migrada. Oracle 19c não
   // tem JSON_TRANSFORM, daí o append por SUBSTR/concat sobre o array JSON canônico.
-  siteCharacteristicBackfill: `UPDATE tmf_geographic_site s SET s.characteristics = CASE WHEN s.characteristics IS NULL OR TRIM(DBMS_LOB.SUBSTR(s.characteristics, 4000, 1)) = '[]' THEN TO_CLOB('[') || ? || TO_CLOB(']') ELSE SUBSTR(s.characteristics, 1, LENGTH(s.characteristics) - 1) || ',' || ? || ']' END, s.updated_at = ? WHERE s.site_specification_id = ? AND NOT EXISTS ( SELECT 1 FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')) current_value WHERE LOWER(TRIM(current_value.name)) = LOWER(TRIM(?)) )`,
+  siteCharacteristicBackfill: `UPDATE geographic_site s SET s.characteristics = CASE WHEN s.characteristics IS NULL OR TRIM(DBMS_LOB.SUBSTR(s.characteristics, 4000, 1)) = '[]' THEN TO_CLOB('[') || ? || TO_CLOB(']') ELSE SUBSTR(s.characteristics, 1, LENGTH(s.characteristics) - 1) || ',' || ? || ']' END, s.updated_at = ? WHERE s.site_specification_id = ? AND NOT EXISTS ( SELECT 1 FROM JSON_TABLE(s.characteristics, '$[*]' COLUMNS (name VARCHAR2(4000) PATH '$.name')) current_value WHERE LOWER(TRIM(current_value.name)) = LOWER(TRIM(?)) )`,
 };
 
 test('every representative query translates to Oracle without a Postgres-ism', () => {
@@ -56,7 +56,7 @@ test('every representative query translates to Oracle without a Postgres-ism', (
 
 test('translator rewrites the hard constructs to their Oracle form', () => {
   const upsert = transformOracleQuery(REPRESENTATIVE_SQL.upsert!, PREFIX);
-  assert.match(upsert, /MERGE INTO NEXUS_TEST_tmf_party/);
+  assert.match(upsert, /MERGE INTO NEXUS_TEST_party/);
   assert.doesNotMatch(upsert, /ON CONFLICT/i);
 
   const limit = transformOracleQuery(REPRESENTATIVE_SQL.derivedTableLimitOffset!, PREFIX);
@@ -74,20 +74,20 @@ test('translator rewrites the hard constructs to their Oracle form', () => {
   assert.match(event, /FETCH FIRST 1 ROWS ONLY/);
 
   const relationships = transformOracleQuery(REPRESENTATIVE_SQL.siteRelationshipHydration!, PREFIX);
-  assert.match(relationships, /FROM NEXUS_TEST_tmf_geographic_site_relationship/);
+  assert.match(relationships, /FROM NEXUS_TEST_geographic_site_relationship/);
   assert.match(relationships, /JSON_TABLE\(:1, '\$\[\*\]'/);
   assert.doesNotMatch(relationships, /IN \(:[0-9]+,\s*:[0-9]+/);
 });
 
 test('backfill de característica obrigatória é set-based e cabe no Oracle 19c (issue #266)', () => {
   const count = transformOracleQuery(REPRESENTATIVE_SQL.siteMissingCharacteristicCount!, PREFIX);
-  assert.match(count, /FROM NEXUS_TEST_tmf_geographic_site s/);
+  assert.match(count, /FROM NEXUS_TEST_geographic_site s/);
   // A lista de nomes esperados entra como um único bind de array JSON, não como IN-list expandido.
   assert.match(count, /JSON_TABLE\(:2, '\$\[\*\]'/);
   assert.doesNotMatch(count, /IN \(:[0-9]+,\s*:[0-9]+/);
 
   const backfill = transformOracleQuery(REPRESENTATIVE_SQL.siteCharacteristicBackfill!, PREFIX);
-  assert.match(backfill, /UPDATE NEXUS_TEST_tmf_geographic_site s/);
+  assert.match(backfill, /UPDATE NEXUS_TEST_geographic_site s/);
   // Um UPDATE filtrado pela specification — nunca um upsert por Site.
   assert.match(backfill, /WHERE s\.site_specification_id = :4/);
   assert.doesNotMatch(backfill, /MERGE INTO/i);
@@ -163,8 +163,8 @@ test('every managed table name is prefixed in a table position', () => {
 test('columns and CTE names that share a table name are left alone', () => {
   // `users` and `searches` are table names, but here they are select-list columns — not a table
   // position — so they must not be prefixed. Only the table after FROM is.
-  const rewritten = rewriteTableReferences('SELECT users, searches FROM tmf_party', PREFIX);
-  assert.equal(rewritten, `SELECT users, searches FROM ${prefixed('tmf_party', PREFIX)}`);
+  const rewritten = rewriteTableReferences('SELECT users, searches FROM party', PREFIX);
+  assert.equal(rewritten, `SELECT users, searches FROM ${prefixed('party', PREFIX)}`);
 
   // A CTE name is not a managed table name, so it is never touched even after FROM.
   const cte = rewriteTableReferences('WITH frontier AS (SELECT 1) SELECT * FROM frontier', PREFIX);
@@ -173,56 +173,56 @@ test('columns and CTE names that share a table name are left alone', () => {
 
 test('DDL prefixes tables, indexes, constraints and references', () => {
   assert.match(
-    rewriteDdlObjectNames('CREATE TABLE tmf_party (id VARCHAR2(36))', PREFIX),
-    /CREATE TABLE NEXUS_TEST_tmf_party/,
+    rewriteDdlObjectNames('CREATE TABLE party (id VARCHAR2(36))', PREFIX),
+    /CREATE TABLE NEXUS_TEST_party/,
   );
   assert.match(
-    rewriteDdlObjectNames('CREATE INDEX idx_party_name ON tmf_party(name)', PREFIX),
-    /CREATE INDEX NEXUS_TEST_idx_party_name ON NEXUS_TEST_tmf_party/,
+    rewriteDdlObjectNames('CREATE INDEX party_idx_name ON party(name)', PREFIX),
+    /CREATE INDEX NEXUS_TEST_party_idx_name ON NEXUS_TEST_party/,
   );
   assert.match(
-    rewriteDdlObjectNames('ALTER TABLE tmf_party ADD CONSTRAINT ck_1 CHECK (name IS JSON)', PREFIX),
-    /ALTER TABLE NEXUS_TEST_tmf_party ADD CONSTRAINT NEXUS_TEST_ck_1/,
+    rewriteDdlObjectNames('ALTER TABLE party ADD CONSTRAINT ck_1 CHECK (name IS JSON)', PREFIX),
+    /ALTER TABLE NEXUS_TEST_party ADD CONSTRAINT NEXUS_TEST_ck_1/,
   );
   assert.match(
-    rewriteDdlObjectNames('... REFERENCES tmf_party(id)', PREFIX),
-    /REFERENCES NEXUS_TEST_tmf_party/,
+    rewriteDdlObjectNames('... REFERENCES party(id)', PREFIX),
+    /REFERENCES NEXUS_TEST_party/,
   );
 });
 
-test('research_session.context is never IS JSON-constrained, but mcp_confirmation.context still is', () => {
-  // research_session.context holds the Nexus Copilot system prompt (free-form markdown), so an
-  // IS JSON check makes every session INSERT fail with ORA-02290. mcp_confirmation.context genuinely
+test('user_research_session.context is never IS JSON-constrained, but user_mcp_confirmation.context still is', () => {
+  // user_research_session.context holds the Nexus Copilot system prompt (free-form markdown), so an
+  // IS JSON check makes every session INSERT fail with ORA-02290. user_mcp_confirmation.context genuinely
   // stores JSON, so its constraint must remain — guards against over-broad removal.
   const statements = splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL);
   assert.ok(
-    !statements.some((s) => /\bresearch_session\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
-    'research_session.context must not carry an IS JSON constraint',
+    !statements.some((s) => /\buser_research_session\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
+    'user_research_session.context must not carry an IS JSON constraint',
   );
   assert.ok(
-    statements.some((s) => /\bmcp_confirmation\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
-    'mcp_confirmation.context should still carry its IS JSON constraint',
+    statements.some((s) => /\buser_mcp_confirmation\b[\s\S]*\(\s*context\s+IS JSON\s*\)/i.test(s)),
+    'user_mcp_confirmation.context should still carry its IS JSON constraint',
   );
 });
 
-test('geo_project_area (REQ-MOD01-017) survives the Oracle schema transform', () => {
+test('project_area (REQ-MOD01-017) survives the Oracle schema transform', () => {
   // TEXT -> VARCHAR2/CLOB, INTEGER -> NUMBER(10), REAL -> BINARY_DOUBLE, DATETIME -> TIMESTAMP,
   // NOT NULL DEFAULT reordered before the inline constraint (see transformOracleSchemaSql).
-  assert.match(ORACLE_SCHEMA_SQL, /CREATE TABLE geo_project_area/);
+  assert.match(ORACLE_SCHEMA_SQL, /CREATE TABLE project_area/);
   assert.match(ORACLE_SCHEMA_SQL, /site_count NUMBER\(10\) DEFAULT 0 NOT NULL/);
   assert.match(ORACLE_SCHEMA_SQL, /centroid_lng BINARY_DOUBLE/);
   assert.match(ORACLE_SCHEMA_SQL, /generated_at TIMESTAMP\(6\) WITH TIME ZONE/);
   assert.doesNotMatch(
-    ORACLE_SCHEMA_SQL.split('CREATE TABLE geo_project_area')[1]!.split(';')[0]!,
+    ORACLE_SCHEMA_SQL.split('CREATE TABLE project_area')[1]!.split(';')[0]!,
     /\bTEXT\b/,
   );
 
   // site_ids genuinely stores a JSON array (sample of Site ids) — its CHECK(... IS JSON) must
-  // be emitted, unlike the research_session.context exclusion above.
+  // be emitted, unlike the user_research_session.context exclusion above.
   const statements = splitOracleStatements(ORACLE_JSON_CONSTRAINTS_SQL);
   assert.ok(
-    statements.some((s) => /\bgeo_project_area\b[\s\S]*\(\s*site_ids\s+IS JSON\s*\)/i.test(s)),
-    'geo_project_area.site_ids should carry an IS JSON constraint',
+    statements.some((s) => /\bproject_area\b[\s\S]*\(\s*site_ids\s+IS JSON\s*\)/i.test(s)),
+    'project_area.site_ids should carry an IS JSON constraint',
   );
 });
 
@@ -240,18 +240,18 @@ test('text_pattern_ops index (search prefix path) survives the Oracle schema tra
   assert.doesNotMatch(ORACLE_MIGRATIONS_SQL, /text_pattern_ops/i);
   assert.match(
     ORACLE_MIGRATIONS_SQL,
-    /CREATE INDEX idx_tmf_physical_resource_name_lower\s+ON tmf_physical_resource \(LOWER\(name\)\)/,
+    /CREATE INDEX resource_idx_physical_name_lower\s+ON resource_physical \(LOWER\(name\)\)/,
   );
 });
 
 test('source_model_id escapa do dimensionamento por sufixo `_id`', () => {
   // A inferência de tipo do adaptador é por NOME de coluna: tudo que termina em `_id` vira
-  // VARCHAR2(36), o tamanho de um UUID. Mas geo_map_feature.source_model_id guarda o `code` do
+  // VARCHAR2(36), o tamanho de um UUID. Mas geographic_map_feature.source_model_id guarda o `code` do
   // ResourceType publicado pelo Studio — um caminho de categoria, não um id
   // ('category:Infrastructure.CivilWorks:type:Pole' tem 44 chars e estourou ORA-12899 no rebuild
   // do índice do mapa). Mesma classe do CHECK(col IS JSON) global por nome: a heurística acerta o
   // caso comum e precisa de exceção nominal quando o nome mente sobre o conteúdo.
-  const table = ORACLE_MIGRATIONS_SQL.split('CREATE TABLE geo_map_feature')[1]!.split(';')[0]!;
+  const table = ORACLE_MIGRATIONS_SQL.split('CREATE TABLE geographic_map_feature')[1]!.split(';')[0]!;
   assert.match(table, /source_model_id VARCHAR2\(255 CHAR\)/);
   assert.doesNotMatch(table, /source_model_id VARCHAR2\(36 CHAR\)/);
   // A regra geral continua valendo para as colunas que realmente guardam UUID.
@@ -276,7 +276,7 @@ test('ALTER COLUMN ... TYPE vira MODIFY no Oracle (lote 16)', () => {
   assert.equal(batch.version, 16);
   assert.match(
     batch.sql,
-    /ALTER TABLE geo_map_feature MODIFY \(source_model_id VARCHAR2\(255 CHAR\)\)/,
+    /ALTER TABLE geographic_map_feature MODIFY \(source_model_id VARCHAR2\(255 CHAR\)\)/,
   );
   assert.doesNotMatch(batch.sql, /ALTER COLUMN/i);
 });
@@ -285,7 +285,7 @@ test('geometria canônica do ResourceType atravessa o transform Oracle (lote 18)
   // A coluna nasce no CREATE TABLE (namespace novo) e no lote aditivo (namespace existente). As
   // duas formas precisam sobreviver ao transform, senão `findColumnDrift` derruba o boot de um dos
   // dois caminhos — exatamente a armadilha que já apareceu com map_presence.
-  const table = ORACLE_SCHEMA_SQL.split('CREATE TABLE tmf_resource_type')[1]!.split(';')[0]!;
+  const table = ORACLE_SCHEMA_SQL.split('CREATE TABLE resource_type')[1]!.split(';')[0]!;
   assert.match(table, /geometry_kind VARCHAR2\(255 CHAR\)/);
   assert.match(table, /geometry_kind IN \('POINT', 'LINE', 'POLYGON'\)/);
 
@@ -294,29 +294,29 @@ test('geometria canônica do ResourceType atravessa o transform Oracle (lote 18)
   );
   assert.ok(batch, 'lote da geometria canônica deve existir');
   assert.equal(batch.version, 18);
-  assert.match(batch.sql, /ALTER TABLE tmf_resource_type ADD geometry_kind VARCHAR2\(255 CHAR\)/);
+  assert.match(batch.sql, /ALTER TABLE resource_type ADD geometry_kind VARCHAR2\(255 CHAR\)/);
   assert.doesNotMatch(batch.sql, /ADD COLUMN/i);
 });
 
-test('geo_map_feature.shape aceita polygon em namespace novo (lote 18)', () => {
+test('geographic_map_feature.shape aceita polygon em namespace novo (lote 18)', () => {
   // Namespace novo cai só no CREATE TABLE: se o CHECK continuasse restrito a point/line, nenhuma
   // feature de polígono entraria no índice e o erro só apareceria no rebuild. Bases já existentes
   // dependem do callback do adapter, porque a constraint anônima virou SYS_C###### no Oracle.
-  const table = ORACLE_MIGRATIONS_SQL.split('CREATE TABLE geo_map_feature')[1]!.split(';')[0]!;
+  const table = ORACLE_MIGRATIONS_SQL.split('CREATE TABLE geographic_map_feature')[1]!.split(';')[0]!;
   assert.match(table, /shape IN \('point', 'line', 'polygon'\)/);
 });
 
 test('findPostgresisms catches constructs the translator cannot bridge', () => {
   // IS DISTINCT FROM against a column (not a quoted literal) is not handled by the translator.
   assert.throws(
-    () => assertOracleCompatible('SELECT 1 FROM tmf_party a WHERE a.x IS DISTINCT FROM a.y'),
+    () => assertOracleCompatible('SELECT 1 FROM party a WHERE a.x IS DISTINCT FROM a.y'),
     /IS DISTINCT FROM/,
   );
   // A JSON arrow on an unmapped alias survives translation.
-  assert.throws(() => assertOracleCompatible(`SELECT foo->>'bar' FROM tmf_party`), /->/);
+  assert.throws(() => assertOracleCompatible(`SELECT foo->>'bar' FROM party`), /->/);
   // A clean, already-Oracle string reports nothing.
   assert.deepEqual(
-    findPostgresisms('SELECT id FROM NEXUS_TEST_tmf_party FETCH FIRST 1 ROWS ONLY'),
+    findPostgresisms('SELECT id FROM NEXUS_TEST_party FETCH FIRST 1 ROWS ONLY'),
     [],
   );
 });

@@ -96,7 +96,7 @@ const matchesPrefix = (resourceName, prefix) => {
 
 async function instancesOf(db, specificationId, tenantId) {
   return await db.all(
-    `SELECT name FROM tmf_physical_resource
+    `SELECT name FROM resource_physical
       WHERE resource_specification_id = ? AND tenant_id = ?`,
     [specificationId, tenantId],
   );

@@ -1,6 +1,6 @@
 /**
  * Diretório geográfico canônico (issue #329) para os loaders diretos: resolve/insere municípios em
- * `geo_administrative_city` pela chave natural (país + UF + município normalizado), sem duplicar,
+ * `geographic_administrative_city` pela chave natural (país + UF + município normalizado), sem duplicar,
  * e devolve o `administrative_city_id` de cada endereço. Requer `npm run build` (usa dist/).
  */
 import {
@@ -30,7 +30,7 @@ export async function linkAdministrativeCities(client, rows) {
   const ids = new Map();
   if (tuples.size > 0) {
     const { rows: existing } = await client.query(
-      'SELECT id, country_code, state_code, city_key FROM geo_administrative_city',
+      'SELECT id, country_code, state_code, city_key FROM geographic_administrative_city',
     );
     for (const item of existing) {
       const key = `${item.country_code ?? item.COUNTRY_CODE}|${item.state_code ?? item.STATE_CODE}|${item.city_key ?? item.CITY_KEY}`;
@@ -40,7 +40,7 @@ export async function linkAdministrativeCities(client, rows) {
       if (ids.has(key)) continue;
       const id = createCanonicalId();
       await client.query(
-        `INSERT INTO geo_administrative_city
+        `INSERT INTO geographic_administrative_city
            (id, country_code, country_name, state_code, city_name, city_key)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [id, tuple.countryCode, tuple.countryName, tuple.stateCode, tuple.cityName, tuple.cityKey],
@@ -94,7 +94,7 @@ export async function linkSiteAdministrativeCities(client, siteRows, addressRows
     for (let i = 0; i < missing.length; i += 500) {
       const part = missing.slice(i, i + 500);
       const { rows } = await client.query(
-        `SELECT id, city, state_or_province, country FROM tmf_geographic_address
+        `SELECT id, city, state_or_province, country FROM geographic_address
           WHERE id IN (${part.map((_, index) => `$${index + 1}`).join(', ')})`,
         part,
       );
@@ -128,7 +128,7 @@ export async function linkSiteAdministrativeCities(client, siteRows, addressRows
   }
   for (const [tenantId, cityId] of pairs.values()) {
     await client.query(
-      `MERGE INTO geo_administrative_city_tenant k
+      `MERGE INTO geographic_administrative_city_tenant k
        USING (SELECT $1 AS tenant_id, $2 AS city_id FROM DUAL) c
           ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
         WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
@@ -140,14 +140,14 @@ export async function linkSiteAdministrativeCities(client, siteRows, addressRows
 }
 
 /**
- * Recontagem set-based de `geo_administrative_city_tenant.active_site_count` (Sites raiz
+ * Recontagem set-based de `geographic_administrative_city_tenant.active_site_count` (Sites raiz
  * não-Retired). Nunca incrementa; linhas sem Site ativo ficam com 0 (jamais apagadas).
  */
 export async function recountAdministrativeCityTenant(client) {
   await client.query(
-    `MERGE INTO geo_administrative_city_tenant k
+    `MERGE INTO geographic_administrative_city_tenant k
      USING (SELECT s.tenant_id, s.administrative_city_id AS city_id, COUNT(*) AS total
-              FROM tmf_geographic_site s
+              FROM geographic_site s
              WHERE s.parent_site_id IS NULL AND s.status <> 'Retired'
                AND s.administrative_city_id IS NOT NULL
              GROUP BY s.tenant_id, s.administrative_city_id) c
@@ -155,14 +155,14 @@ export async function recountAdministrativeCityTenant(client) {
       WHEN MATCHED THEN UPDATE SET k.active_site_count = c.total, k.updated_at = SYSTIMESTAMP`,
   );
   await client.query(
-    `UPDATE geo_administrative_city_tenant k
+    `UPDATE geographic_administrative_city_tenant k
         SET k.active_site_count = 0, k.updated_at = SYSTIMESTAMP
       WHERE k.active_site_count <> 0
-        AND NOT EXISTS (SELECT 1 FROM tmf_geographic_site s
+        AND NOT EXISTS (SELECT 1 FROM geographic_site s
                          WHERE s.tenant_id = k.tenant_id AND s.parent_site_id IS NULL
                            AND s.status <> 'Retired'
                            AND s.administrative_city_id = k.administrative_city_id)`,
   );
   await client.query('COMMIT');
-  await client.gatherStats('geo_administrative_city_tenant');
+  await client.gatherStats('geographic_administrative_city_tenant');
 }

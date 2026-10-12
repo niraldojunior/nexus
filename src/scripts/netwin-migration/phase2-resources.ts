@@ -111,7 +111,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
 
     if (target) {
       const specResult = await target.execute<{ ID: string }>(
-        `SELECT id FROM ${ctx.t('tmf_resource_specification')}`,
+        `SELECT id FROM ${ctx.t('resource_specification')}`,
         [],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
@@ -121,12 +121,12 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
 
       if (!validSpecs.has(defaultCableSpecId)) {
         const typeRes = await target.execute<{ ID: string }>(
-          `SELECT id FROM ${ctx.t('tmf_resource_type')} WHERE code = 'DistributionCable' FETCH FIRST 1 ROWS ONLY`,
+          `SELECT id FROM ${ctx.t('resource_type')} WHERE code = 'DistributionCable' FETCH FIRST 1 ROWS ONLY`,
           [],
           { outFormat: oracledb.OUT_FORMAT_OBJECT },
         );
         const distTypeId = typeRes.rows?.[0]?.ID ?? 'rt-distribution-cable';
-        await merge(target, ctx.t, 'tmf_resource_specification', ['id'], {
+        await merge(target, ctx.t, 'resource_specification', ['id'], {
           id: defaultCableSpecId,
           tenant_id: ctx.options.tenantId,
           name: 'Cabo de Distribuição Padrão',
@@ -534,7 +534,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             })
             .join(',');
           const found = await target.execute<{ ID: string }>(
-            `SELECT id FROM ${ctx.t('tmf_geographic_site')} WHERE id IN (${clause})`,
+            `SELECT id FROM ${ctx.t('geographic_site')} WHERE id IN (${clause})`,
             binds,
             { outFormat: oracledb.OUT_FORMAT_OBJECT },
           );
@@ -576,7 +576,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_location',
+            'geographic_location',
             ['id'],
             [
               'id',
@@ -595,7 +595,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_address',
+            'geographic_address',
             ['id'],
             [
               'id',
@@ -616,7 +616,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_physical_resource',
+            'resource_physical',
             ['id'],
             [
               'id',
@@ -821,7 +821,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_location',
+            'geographic_location',
             ['id'],
             [
               'id',
@@ -840,7 +840,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_physical_resource',
+            'resource_physical',
             ['id'],
             [
               'id',
@@ -1069,7 +1069,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_location',
+            'geographic_location',
             ['id'],
             [
               'id',
@@ -1088,7 +1088,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_physical_resource',
+            'resource_physical',
             ['id'],
             [
               'id',

@@ -289,7 +289,7 @@ export const createApp = ({ config, logger }: AppDependencies) => {
         });
       });
 
-      // C7: publica o que os módulos gravam em tmf_outbox (ver shared/persistence/audit-outbox.ts).
+      // C7: publica o que os módulos gravam em environment_outbox (ver shared/persistence/audit-outbox.ts).
       // Sink de log no laboratório — troca só o publisher quando o Kafka entrar.
       outboxRelayHandle = startOutboxRelay(db, createLoggingPublisher(logger), { logger });
 
@@ -2802,7 +2802,7 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, [...resources, ...sites]);
   }
 
-  // Leitura por tile do índice de exibição do mapa (geo_map_feature — Fase 2 da reengenharia
+  // Leitura por tile do índice de exibição do mapa (geographic_map_feature — Fase 2 da reengenharia
   // de performance, issue #69), substituto gradual de /v1/geo/tree/viewport no caminho quente
   // do mapa: uma igualdade de 4 colunas contra a PK, sem JOIN nem grafo — o custo não cresce
   // com o tamanho do acervo. Endereçável por tile (não por bbox) de propósito: o cliente decide
@@ -2918,7 +2918,7 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, result);
   }
 
-  // Densidade agregada opcional da planta (geo_map_density — Fase 4, issue #69). Por bbox,
+  // Densidade agregada opcional da planta (geographic_map_density — Fase 4, issue #69). Por bbox,
   // não por tile único como /v1/geo/map/tile — uma visualização agregada cobre poucas células
   // grossas, e pedir uma a uma custaria mais em ida-e-volta do que a consulta inteira. `z` tem
   // de ser um dos níveis gerados (MAP_DENSITY_ZOOMS); qualquer outro devolveria vazio
@@ -3190,9 +3190,9 @@ const routeGeoRequest = async ({
   // Origem do local (aba Visão Geral do painel unificado, REQ-MOD01-016): de onde este Site
   // veio — três formas mutuamente exclusivas, checadas nesta ordem. `_origin.system` (C5)
   // vem de uma carga de migração (ver scripts/estacoes_carregar.mjs); o vínculo em
-  // geo_project_site sobrevive ao término do projeto (Fase 2), então continua respondendo
+  // project_site sobrevive ao término do projeto (Fase 2), então continua respondendo
   // 'project' mesmo com o local já liberado; sem nenhum dos dois, cai no autor do evento de
-  // criação (tmf_audit_log) — cadastro manual pela UI.
+  // criação (user_audit_log) — cadastro manual pela UI.
   const originMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/origin$/);
   if (originMatch && request.method === 'GET') {
     const siteId = decodeURIComponent(originMatch[1] ?? '');

@@ -547,7 +547,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_location',
+            'geographic_location',
             ['id'],
             [
               'id',
@@ -571,7 +571,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_address',
+            'geographic_address',
             ['id'],
             [
               'id',
@@ -594,7 +594,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           await bulkMergeRows(
             target,
             ctx.t,
-            'tmf_geographic_site',
+            'geographic_site',
             ['id'],
             [
               'id',
@@ -641,7 +641,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           if (siteCities.size > 0) {
             for (const cityId of new Set(siteCities.values())) {
               await target.execute(
-                `MERGE INTO ${ctx.t('geo_administrative_city_tenant')} k
+                `MERGE INTO ${ctx.t('geographic_administrative_city_tenant')} k
                  USING (SELECT :tenantId AS tenant_id, :cityId AS city_id FROM DUAL) c
                     ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
                   WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
@@ -651,7 +651,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               );
             }
             await target.executeMany(
-              `UPDATE ${ctx.t('tmf_geographic_site')} SET administrative_city_id=:cityId WHERE id=:siteId AND administrative_city_id IS NULL`,
+              `UPDATE ${ctx.t('geographic_site')} SET administrative_city_id=:cityId WHERE id=:siteId AND administrative_city_id IS NULL`,
               [...siteCities].map(([siteId, cityId]) => ({ siteId, cityId })),
               {
                 autoCommit: false,
@@ -669,7 +669,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           // no array de dois elementos. Com nome, a repetição de :parentId resolve corretamente.
           if (associations.length > 0)
             await target.executeMany(
-              `UPDATE ${ctx.t('tmf_geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} parent WHERE parent.id=:parentId)`,
+              `UPDATE ${ctx.t('geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('geographic_site')} parent WHERE parent.id=:parentId)`,
               associations.map((association) => ({
                 parentId: netwinLocationId(association.ID_PARENT),
                 childId: netwinLocationId(association.ID_CHILD),
@@ -685,7 +685,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           // Depois das associações: sala → Floor → prédio sobrescreve sala → prédio.
           if (floorHierarchy.length > 0)
             await target.executeMany(
-              `UPDATE ${ctx.t('tmf_geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('tmf_geographic_site')} parent WHERE parent.id=:parentId)`,
+              `UPDATE ${ctx.t('geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('geographic_site')} parent WHERE parent.id=:parentId)`,
               floorHierarchy,
               {
                 autoCommit: false,

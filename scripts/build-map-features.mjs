@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Gera o índice de exibição do mapa (`geo_map_feature` — Fase 2 do plano de reengenharia da
+ * Gera o índice de exibição do mapa (`geographic_map_feature` — Fase 2 do plano de reengenharia da
  * performance do mapa, issue #69). Artefato derivado e regenerável, mesmo espírito de
  * `build-coverage.mjs`: varre a planta outdoor + Sites e grava, por tile (z16 — ver
  * `src/modules/geo/map-tile.js`), o que o endpoint `GET /v1/geo/map/tile` lê depois sem JOIN,
@@ -10,7 +10,7 @@
  *   · PhysicalResource com geometria própria (Point ou LineString), status <> 'terminated',
  *     resource_type <> 'Splitter' (ele não tem ponto próprio — mora na
  *     Location da caixa que o contém) e cujo ResourceType tem map_presence = 1 no catálogo (ou
- *     é desconhecido — tipo sem linha em tmf_resource_type entra por padrão, mesma régua de
+ *     é desconhecido — tipo sem linha em resource_type entra por padrão, mesma régua de
  *     resourcePlant() no cliente: esconder o que não se sabe classificar é pior que mostrar
  *     demais).
  *   · GeographicSite de categoria 'Site', fora de um Projeto de trabalho em curso — mesmo
@@ -94,7 +94,7 @@ async function ensureMapFeaturePrimaryKey(client) {
     'LOD_KEY',
     'RANK',
   ];
-  const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geo_map_feature`.toUpperCase();
+  const tableName = `${process.env.ORACLE_OBJECT_PREFIX ?? ''}geographic_map_feature`.toUpperCase();
   const primaryKey = (
     await client.query(
       `SELECT c.constraint_name
@@ -114,16 +114,16 @@ async function ensureMapFeaturePrimaryKey(client) {
     )
   ).rows.map((row) => String(row.column_name).toUpperCase());
   if (columns.join(',') === expected.join(',')) return;
-  await client.query('ALTER TABLE geo_map_feature DROP PRIMARY KEY');
+  await client.query('ALTER TABLE geographic_map_feature DROP PRIMARY KEY');
   await client.query(
-    'ALTER TABLE geo_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)',
+    'ALTER TABLE geographic_map_feature ADD PRIMARY KEY (tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank)',
   );
-  console.log('Chave primária de geo_map_feature atualizada para incluir lod_key e rank.');
+  console.log('Chave primária de geographic_map_feature atualizada para incluir lod_key e rank.');
 }
 
 async function ensureLineIndexTable(client) {
   try {
-    await client.query(`CREATE TABLE geo_map_line_index (
+    await client.query(`CREATE TABLE geographic_map_line_index (
       tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
       source_model_id VARCHAR2(255 CHAR) NOT NULL,
       lod_key VARCHAR2(64 CHAR) NOT NULL,
@@ -134,7 +134,7 @@ async function ensureLineIndexTable(client) {
       generated_at TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (tenant_id, source_model_id, lod_key)
     )`);
-    console.log('Tabela geo_map_line_index criada no Oracle.');
+    console.log('Tabela geographic_map_line_index criada no Oracle.');
   } catch (error) {
     if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }
@@ -143,7 +143,7 @@ async function ensureLineIndexTable(client) {
 async function readLineManifest(client) {
   try {
     const { rows } = await client.query(
-      'SELECT source_model_id, lod_key, tile_z, simplify_tolerance_meters, fragments, vertices FROM geo_map_line_index WHERE tenant_id = $1',
+      'SELECT source_model_id, lod_key, tile_z, simplify_tolerance_meters, fragments, vertices FROM geographic_map_line_index WHERE tenant_id = $1',
       [TENANT],
     );
     return rows.map((r) => ({
@@ -160,7 +160,7 @@ async function readLineManifest(client) {
 }
 
 async function ensureMapFeatureTable(client) {
-  const ddl = `CREATE TABLE geo_map_feature (
+  const ddl = `CREATE TABLE geographic_map_feature (
     tenant_id VARCHAR2(36 CHAR) DEFAULT 'default' NOT NULL,
     tile_z NUMBER(10) NOT NULL,
     tile_x NUMBER(10) NOT NULL,
@@ -186,7 +186,7 @@ async function ensureMapFeatureTable(client) {
   )`;
   try {
     await client.query(ddl);
-    console.log('Tabela geo_map_feature criada no Oracle.');
+    console.log('Tabela geographic_map_feature criada no Oracle.');
   } catch (error) {
     if (!/ORA-00955/.test(String(error?.message ?? error))) throw error;
   }
@@ -196,7 +196,7 @@ async function ensureMapFeatureTable(client) {
     // CREATE INDEX não tem uma posição "TABLE <nome>" que o adapter consiga prefixar; ao
     // contrário do CREATE/ALTER TABLE, os dois objetos precisam chegar explicitamente qualificados.
     await client.query(
-      `CREATE INDEX ${prefix}idx_geo_map_feature_tile ON ${prefix}geo_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
+      `CREATE INDEX ${prefix}geographic_idx_map_feature_tile ON ${prefix}geographic_map_feature(tenant_id, tile_z, tile_x, tile_y, rank)`,
     );
   } catch (error) {
     if (!/ORA-00955|ORA-01408/.test(String(error?.message ?? error))) throw error;
@@ -210,16 +210,16 @@ async function ensureMapFeatureTable(client) {
 // Porta de Splitter vazar no mapa. O ResourceType vem da FK tenant-safe da
 // ResourceSpecification; map_presence é INTEGER (1/0, não BOOLEAN — ver schema.ts).
 function resourceSource(entity, scopeWhere) {
-  const table = entity === 'PhysicalResource' ? 'tmf_physical_resource' : 'tmf_logical_resource';
+  const table = entity === 'PhysicalResource' ? 'resource_physical' : 'resource_logical';
   return `
     SELECT r.id, r.name, '${entity}' AS entity_type, rt.code AS resource_type, r.status,
            l.geometry_type, l.geometry
       FROM ${table} r
-      JOIN tmf_resource_specification rs
+      JOIN resource_specification rs
         ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
-      JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id
-      JOIN tmf_geographic_location l ON l.id = r.place_id
-      LEFT JOIN tmf_geographic_address a ON a.geographic_location_id = r.place_id
+      JOIN resource_type rt ON rt.id = rs.resource_type_id
+      JOIN geographic_location l ON l.id = r.place_id
+      LEFT JOIN geographic_address a ON a.geographic_location_id = r.place_id
      WHERE r.tenant_id = $1
        AND r.status <> 'terminated'
        AND ${excludeInternalResourceTypesSql('rt')}
@@ -232,17 +232,17 @@ function resourceSource(entity, scopeWhere) {
 // inteira do escopo).
 const SITE_SOURCE = (scopeWhere) => `
     SELECT s.id, s.name, s.status, sp.code AS spec_code, sp.category AS spec_category, l.geometry_type, l.geometry
-      FROM tmf_geographic_site s
-      JOIN tmf_geographic_site_specification sp ON sp.id = s.site_specification_id
-      JOIN tmf_geographic_location l ON l.id = s.geographic_location_id
-      LEFT JOIN tmf_geographic_address a ON a.id = s.geographic_address_id
+      FROM geographic_site s
+      JOIN geographic_site_specification sp ON sp.id = s.site_specification_id
+      JOIN geographic_location l ON l.id = s.geographic_location_id
+      LEFT JOIN geographic_address a ON a.id = s.geographic_address_id
      WHERE s.tenant_id = $1
        AND sp.category = 'Site'
        AND s.status NOT IN ('Retired', 'terminated')
        AND l.geometry_type = 'Point'
        AND NOT EXISTS (
-             SELECT 1 FROM geo_project_site ps
-               JOIN geo_project p ON p.id = ps.project_id
+             SELECT 1 FROM project_site ps
+               JOIN project p ON p.id = ps.project_id
               WHERE ps.site_id = s.id AND p.status <> 'terminated'
            )${scopeWhere}`;
 
@@ -267,7 +267,7 @@ async function deleteByEntityIds(client, entityIds) {
     const chunk = entityIds.slice(i, i + CHUNK);
     const placeholders = chunk.map((_, index) => `$${index + 2}`).join(', ');
     const result = await client.query(
-      `DELETE FROM geo_map_feature WHERE tenant_id = $1 AND entity_id IN (${placeholders})`,
+      `DELETE FROM geographic_map_feature WHERE tenant_id = $1 AND entity_id IN (${placeholders})`,
       [TENANT, ...chunk],
     );
     removed += result.rowCount ?? 0;
@@ -323,8 +323,8 @@ async function loadLineTiling(client) {
   const row = (
     await client.query(
       `SELECT v.snapshot
-         FROM studio_workspace w
-         JOIN studio_version v ON v.id = w.published_version_id
+         FROM environment_studio_workspace w
+         JOIN environment_studio_version v ON v.id = w.published_version_id
         WHERE w.domain = 'studio-geo' AND w.tenant_id = $1`,
       [TENANT],
     )
@@ -549,7 +549,7 @@ async function main() {
     }
 
     console.log(
-      `Features : ${features.length} linhas de geo_map_feature${skippedGeometry ? ` (${skippedGeometry} descartadas por geometria inválida)` : ''}`,
+      `Features : ${features.length} linhas de geographic_map_feature${skippedGeometry ? ` (${skippedGeometry} descartadas por geometria inválida)` : ''}`,
     );
 
     const perZoom = new Map();
@@ -605,7 +605,7 @@ async function main() {
         let batch;
         do {
           batch = await client.query(
-            `DELETE FROM geo_map_feature WHERE tenant_id = $1${shapeFilter} AND ROWNUM <= ${COMMIT_EVERY}`,
+            `DELETE FROM geographic_map_feature WHERE tenant_id = $1${shapeFilter} AND ROWNUM <= ${COMMIT_EVERY}`,
             [TENANT],
           );
           await client.query('COMMIT');
@@ -629,7 +629,7 @@ async function main() {
       let inserted = 0;
       for (let i = 0; i < features.length; i += COMMIT_EVERY) {
         inserted += await client.bulkInsert(
-          'geo_map_feature',
+          'geographic_map_feature',
           FEATURE_COLUMNS,
           features.slice(i, i + COMMIT_EVERY),
         );
@@ -638,9 +638,9 @@ async function main() {
       }
       // Manifesto só em rebuild do tenant inteiro: recorte por UF/cidade não representa a camada toda.
       if (!CITY && !UF) {
-        await client.query('DELETE FROM geo_map_line_index WHERE tenant_id = $1', [TENANT]);
+        await client.query('DELETE FROM geographic_map_line_index WHERE tenant_id = $1', [TENANT]);
         await client.bulkInsert(
-          'geo_map_line_index',
+          'geographic_map_line_index',
           [
             'tenant_id',
             'source_model_id',
@@ -673,7 +673,7 @@ async function main() {
       throw error;
     }
 
-    await client.gatherStats('geo_map_feature');
+    await client.gatherStats('geographic_map_feature');
   } finally {
     await client.close();
   }

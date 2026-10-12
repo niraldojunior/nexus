@@ -17,13 +17,13 @@ const SELECT_SET = `
   SELECT id, tenant_id AS tenantId, set_key AS "key", name, description,
          CASE WHEN active = 1 THEN 1 ELSE 0 END AS active,
          created_at AS createdAt, updated_at AS updatedAt
-    FROM reference_data_set`;
+    FROM environment_reference_data_set`;
 
 const SELECT_VALUE = `
   SELECT id, tenant_id AS tenantId, set_id AS setId, value_key AS "key", label,
          sort_order AS sortOrder, CASE WHEN active = 1 THEN 1 ELSE 0 END AS active,
          created_at AS createdAt, updated_at AS updatedAt
-    FROM reference_data_value`;
+    FROM environment_reference_data_value`;
 
 const setFromRow = (row: SetRow): ReferenceDataSet => ({
   ...row,
@@ -68,7 +68,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
     const id = createCanonicalId();
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO reference_data_set (id, tenant_id, set_key, name, description, active, created_at, updated_at)
+      `INSERT INTO environment_reference_data_set (id, tenant_id, set_key, name, description, active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, tenantId, input.key, input.name, input.description ?? null, 1, now, now],
     );
@@ -84,7 +84,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
     if (!current) return null;
     const now = new Date().toISOString();
     await this.db.run(
-      `UPDATE reference_data_set SET set_key = ?, name = ?, description = ?, updated_at = ?
+      `UPDATE environment_reference_data_set SET set_key = ?, name = ?, description = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`,
       [
         patch.key ?? current.key,
@@ -100,7 +100,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
 
   public async deactivateSet(tenantId: string, id: string): Promise<ReferenceDataSet | null> {
     const result = await this.db.run(
-      `UPDATE reference_data_set SET active = 0, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      `UPDATE environment_reference_data_set SET active = 0, updated_at = ? WHERE tenant_id = ? AND id = ?`,
       [new Date().toISOString(), tenantId, id],
     );
     return result.changes > 0 ? await this.getSet(tenantId, id) : null;
@@ -108,7 +108,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
 
   public async reactivateSet(tenantId: string, id: string): Promise<ReferenceDataSet | null> {
     const result = await this.db.run(
-      `UPDATE reference_data_set SET active = 1, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      `UPDATE environment_reference_data_set SET active = 1, updated_at = ? WHERE tenant_id = ? AND id = ?`,
       [new Date().toISOString(), tenantId, id],
     );
     return result.changes > 0 ? await this.getSet(tenantId, id) : null;
@@ -143,7 +143,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
     const id = createCanonicalId();
     const now = new Date().toISOString();
     await this.db.run(
-      `INSERT INTO reference_data_value
+      `INSERT INTO environment_reference_data_value
         (id, tenant_id, set_id, value_key, label, sort_order, active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, tenantId, setId, input.key, input.label, input.sortOrder ?? 100, 1, now, now],
@@ -160,7 +160,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
     if (!current) return null;
     const now = new Date().toISOString();
     await this.db.run(
-      `UPDATE reference_data_value
+      `UPDATE environment_reference_data_value
           SET value_key = ?, label = ?, sort_order = ?, active = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ?`,
       [
@@ -178,7 +178,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
 
   public async deactivateValue(tenantId: string, id: string): Promise<ReferenceDataValue | null> {
     const result = await this.db.run(
-      `UPDATE reference_data_value SET active = 0, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      `UPDATE environment_reference_data_value SET active = 0, updated_at = ? WHERE tenant_id = ? AND id = ?`,
       [new Date().toISOString(), tenantId, id],
     );
     return result.changes > 0 ? await this.getValue(tenantId, id) : null;
@@ -186,7 +186,7 @@ export class OracleReferenceDataRepository implements IReferenceDataRepository {
 
   public async reactivateValue(tenantId: string, id: string): Promise<ReferenceDataValue | null> {
     const result = await this.db.run(
-      `UPDATE reference_data_value SET active = 1, updated_at = ? WHERE tenant_id = ? AND id = ?`,
+      `UPDATE environment_reference_data_value SET active = 1, updated_at = ? WHERE tenant_id = ? AND id = ?`,
       [new Date().toISOString(), tenantId, id],
     );
     return result.changes > 0 ? await this.getValue(tenantId, id) : null;

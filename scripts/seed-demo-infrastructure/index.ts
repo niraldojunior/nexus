@@ -329,18 +329,18 @@ async function idByColumns(
  *
  * Não usa `ensureSiteSpec` do kit, que grava `name = code` e devolve sem atualizar. O id existente
  * é resolvido antes do MERGE porque `mergeSql` atualiza toda coluna fora da chave: repontar o `id`
- * de uma spec já referenciada quebraria a FK de `tmf_geographic_site`.
+ * de uma spec já referenciada quebraria a FK de `geographic_site`.
  */
 async function ensureSiteSpec(
   conn: Connection,
   t: TablePrefixer,
   definition: SiteSpecDef,
 ): Promise<string> {
-  const existing = await idByColumns(conn, t, 'tmf_geographic_site_specification', {
+  const existing = await idByColumns(conn, t, 'geographic_site_specification', {
     code: definition.code,
   });
   const id = existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `SITE_SPEC:${definition.code}`);
-  await merge(conn, t, 'tmf_geographic_site_specification', ['code'], {
+  await merge(conn, t, 'geographic_site_specification', ['code'], {
     id,
     name: definition.name,
     code: definition.code,
@@ -372,13 +372,13 @@ async function ensureResourceTypeForMap(
   definition: ResourceTypeDef,
   tenantId: string,
 ): Promise<string> {
-  const existing = await idByColumns(conn, t, 'tmf_resource_type', {
+  const existing = await idByColumns(conn, t, 'resource_type', {
     tenant_id: tenantId,
     code: definition.code,
   });
   const id =
     existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `RESOURCE_TYPE:${definition.code}`);
-  await merge(conn, t, 'tmf_resource_type', ['tenant_id', 'code'], {
+  await merge(conn, t, 'resource_type', ['tenant_id', 'code'], {
     id,
     tenant_id: tenantId,
     code: definition.code,
@@ -405,14 +405,14 @@ async function ensureResourceSpec(
   resourceTypeId: string,
   tenantId: string,
 ): Promise<string> {
-  const existing = await idByColumns(conn, t, 'tmf_resource_specification', {
+  const existing = await idByColumns(conn, t, 'resource_specification', {
     tenant_id: tenantId,
     name: definition.name,
     resource_type_id: resourceTypeId,
   });
   const id =
     existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `RESOURCE_SPEC:${definition.code}`);
-  await merge(conn, t, 'tmf_resource_specification', ['id'], {
+  await merge(conn, t, 'resource_specification', ['id'], {
     id,
     tenant_id: tenantId,
     name: definition.name,
@@ -430,7 +430,7 @@ async function ensureResourceCatalog(
   tenantId: string,
 ): Promise<string> {
   const preferred = await conn.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('tmf_resource_catalog')}
+    `SELECT id AS "ID" FROM ${t('resource_catalog')}
       WHERE tenant_id=:1
       ORDER BY is_default DESC, sort_order ASC
       FETCH FIRST 1 ROWS ONLY`,
@@ -441,7 +441,7 @@ async function ensureResourceCatalog(
   if (found) return found;
 
   const id = catalogId(tenantId);
-  await merge(conn, t, 'tmf_resource_catalog', ['id'], {
+  await merge(conn, t, 'resource_catalog', ['id'], {
     id,
     tenant_id: tenantId,
     code: 'default-catalog',
@@ -476,7 +476,7 @@ async function ensureCatalogNodes(
     RESOURCE_TYPE_ID: string | null;
   }>(
     `SELECT id AS "ID", code AS "CODE", resource_type_id AS "RESOURCE_TYPE_ID"
-       FROM ${t('tmf_resource_catalog_node')} WHERE tenant_id=:1 AND catalog_id=:2`,
+       FROM ${t('resource_catalog_node')} WHERE tenant_id=:1 AND catalog_id=:2`,
     [tenantId, catalog],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
@@ -494,7 +494,7 @@ async function ensureCatalogNodes(
   for (const domain of domains) {
     const group = CATALOG_GROUPS[domain];
     const groupId = nodeId(group.code);
-    await merge(conn, t, 'tmf_resource_catalog_node', ['id'], {
+    await merge(conn, t, 'resource_catalog_node', ['id'], {
       id: groupId,
       tenant_id: tenantId,
       catalog_id: catalog,
@@ -511,7 +511,7 @@ async function ensureCatalogNodes(
     for (const definition of RESOURCE_TYPES.filter((type) => type.domain === domain)) {
       const resourceTypeId = resourceTypeIdByCode.get(definition.code);
       if (!resourceTypeId) continue;
-      await merge(conn, t, 'tmf_resource_catalog_node', ['id'], {
+      await merge(conn, t, 'resource_catalog_node', ['id'], {
         id: idByTypeId.get(resourceTypeId) ?? nodeId(definition.code),
         tenant_id: tenantId,
         catalog_id: catalog,
@@ -733,9 +733,9 @@ const BATCH_SIZE = 500;
 /**
  * Resolve o tenant e a party dona a partir do próprio namespace.
  *
- * `nexus_environment.tenant_id` é o tenant que o provisionador gravou ao criar o ambiente — o mesmo
+ * `environment.tenant_id` é o tenant que o provisionador gravou ao criar o ambiente — o mesmo
  * que o token da sessão carrega. Um default fixo `'default'` gravaria dados que nenhuma tela lê: a
- * DEMO provisionada registra `vtal`, e `tmf_resource_type` tem linhas em **ambos** os tenants, então
+ * DEMO provisionada registra `vtal`, e `resource_type` tem linhas em **ambos** os tenants, então
  * nem a presença de catálogo distingue um do outro. As flags só entram como override explícito.
  */
 async function resolveTenant(
@@ -747,7 +747,7 @@ async function resolveTenant(
     return { tenantId: options.tenantId, ownerPartyId: options.ownerPartyId ?? options.tenantId };
   }
   const environment = await conn.execute<{ TENANT_ID: string | null }>(
-    `SELECT tenant_id AS "TENANT_ID" FROM ${t('nexus_environment')}
+    `SELECT tenant_id AS "TENANT_ID" FROM ${t('environment')}
       WHERE tenant_id IS NOT NULL FETCH FIRST 1 ROWS ONLY`,
     [],
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -755,7 +755,7 @@ async function resolveTenant(
   const tenantId = environment.rows?.[0]?.TENANT_ID;
   if (!tenantId) {
     throw new Error(
-      `Não foi possível resolver o tenant: ${t('nexus_environment')} não tem linha com tenant_id. ` +
+      `Não foi possível resolver o tenant: ${t('environment')} não tem linha com tenant_id. ` +
         'Informe --tenant-id explicitamente.',
     );
   }
@@ -796,11 +796,11 @@ async function runSeed(options: CliOptions): Promise<void> {
     const resolved = await resolveTenant(conn, t, options);
     tenantId = resolved.tenantId;
     const { ownerPartyId } = resolved;
-    const source = options.tenantId ? '--tenant-id' : `${prefix}nexus_environment`;
+    const source = options.tenantId ? '--tenant-id' : `${prefix}environment`;
     console.log(`    tenant: ${tenantId} · owner party: ${ownerPartyId} (de ${source})`);
 
     const party = await conn.execute<{ ID: string }>(
-      `SELECT id AS "ID" FROM ${t('tmf_party')} WHERE id=:1`,
+      `SELECT id AS "ID" FROM ${t('party')} WHERE id=:1`,
       [ownerPartyId],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
@@ -808,7 +808,7 @@ async function runSeed(options: CliOptions): Promise<void> {
       // Falha cedo: sem a party, `related_party` referenciaria uma Organization inexistente e os
       // painéis mostrariam o dono em branco em todo recurso carregado.
       throw new Error(
-        `Party "${ownerPartyId}" não existe em ${prefix}tmf_party. ` +
+        `Party "${ownerPartyId}" não existe em ${prefix}party. ` +
           'Informe --owner-party-id de uma Organization existente (normalmente o próprio tenant).',
       );
     }
@@ -1189,7 +1189,7 @@ async function runSeed(options: CliOptions): Promise<void> {
     const alreadyThere = await existingIds(
       conn,
       t,
-      'tmf_physical_resource',
+      'resource_physical',
       resources.map((row) => String(row.id)),
     );
     const updated = alreadyThere.size;
@@ -1202,19 +1202,19 @@ async function runSeed(options: CliOptions): Promise<void> {
       await bulkMergeRows(
         conn,
         t,
-        'tmf_geographic_location',
+        'geographic_location',
         ['id'],
         LOCATION_COLUMNS,
         locations,
         BATCH_SIZE,
       );
       console.log(`    Locations: ${locations.length}`);
-      await bulkMergeRows(conn, t, 'tmf_geographic_site', ['id'], SITE_COLUMNS, sites, BATCH_SIZE);
+      await bulkMergeRows(conn, t, 'geographic_site', ['id'], SITE_COLUMNS, sites, BATCH_SIZE);
       console.log(`    Sites: ${sites.length}`);
       await bulkMergeRows(
         conn,
         t,
-        'tmf_physical_resource',
+        'resource_physical',
         ['id'],
         RESOURCE_COLUMNS,
         resources,

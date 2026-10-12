@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * Backfill único de `street_search`/`street_nr_search`/`city_search`/`postcode_search` em
- * `tmf_geographic_address`, para linhas gravadas antes de essas colunas existirem (toda escrita
+ * `geographic_address`, para linhas gravadas antes de essas colunas existirem (toda escrita
  * atual já as popula — ver `OracleGeoRepository`).
  *
  * Isto era um `UPDATE ... WHERE col IS NULL OR col IS NULL OR ...` dentro de MIGRATIONS_SQL,
  * rodando a cada boot com DATABASE_AUTO_SCHEMA=true — a condição em OR sobre quatro colunas não
- * pode ser servida por um único índice, então virava full table scan de `tmf_geographic_address`
+ * pode ser servida por um único índice, então virava full table scan de `geographic_address`
  * (783 mil linhas hoje) toda vez, mesmo já não havendo nada para atualizar. Rodar este script uma
  * vez por ambiente (após a migração da coluna, antes ou depois de qualquer carga) substitui esse
  * custo recorrente.
@@ -26,7 +26,7 @@ const APPLY = process.argv.includes('--apply');
 const MISSING_WHERE = `street_search IS NULL OR street_nr_search IS NULL OR city_search IS NULL OR postcode_search IS NULL`;
 
 const UPDATE_SQL = `
-  UPDATE tmf_geographic_address
+  UPDATE geographic_address
      SET street_search = LOWER(TRANSLATE(street_name,
            'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
            'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')),
@@ -41,7 +41,7 @@ async function main() {
   const client = await openLoaderDb();
   try {
     const { rows } = await client.query(
-      `SELECT COUNT(*) AS n FROM tmf_geographic_address WHERE ${MISSING_WHERE}`,
+      `SELECT COUNT(*) AS n FROM geographic_address WHERE ${MISSING_WHERE}`,
     );
     const missing = Number(rows[0]?.n ?? rows[0]?.N ?? 0);
     console.log(`Endereços sem search normalizado: ${missing}`);
@@ -61,7 +61,7 @@ async function main() {
     await client.query('COMMIT');
     console.log(`Gravado em ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
 
-    await client.gatherStats('tmf_geographic_address');
+    await client.gatherStats('geographic_address');
     console.log('Estatísticas atualizadas.');
   } finally {
     await client.close();

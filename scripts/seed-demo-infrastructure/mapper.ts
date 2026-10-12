@@ -289,7 +289,7 @@ export function toGeoJsonPoint(coordinates: unknown): Point | undefined {
 /**
  * Normaliza a geometria de uma linha preservando **todos** os vértices.
  *
- * `tmf_geographic_location.geometry_type` só aceita `Point|LineString|Polygon`, então uma
+ * `geographic_location.geometry_type` só aceita `Point|LineString|Polygon`, então uma
  * `MultiLineString` é devolvida como N partes — uma Location e um recurso por parte, com
  * `_origin.id` sufixado — em vez de ser achatada. Nunca reduzir a rota aos extremos: a geometria
  * original é requisito da entrega.

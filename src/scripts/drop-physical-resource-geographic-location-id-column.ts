@@ -1,4 +1,4 @@
-// Script de DROP físico da coluna `geographic_location_id` de `tmf_physical_resource`
+// Script de DROP físico da coluna `geographic_location_id` de `resource_physical`
 // (issue #254, mesmo padrão da #251 — ver drop-physical-resource-manufacturer-model-columns.ts).
 //
 // Contexto:
@@ -8,7 +8,7 @@
 // legados (load-recursos-netwin.mjs, migrate-netwin-osp.ts, migrate-netwin-infranode.ts)
 // preenchiam essa coluna em paralelo a `place_id`, e pararam de fazê-lo nesta mesma issue.
 //
-// A coluna tem FK real (REFERENCES tmf_geographic_location(id)) — CASCADE CONSTRAINTS no DROP
+// A coluna tem FK real (REFERENCES geographic_location(id)) — CASCADE CONSTRAINTS no DROP
 // COLUMN do Oracle remove a constraint junto, sem passo manual adicional.
 //
 // Uso:
@@ -42,7 +42,7 @@ const config = loadConfig({ ...process.env, DATABASE_AUTO_SCHEMA: 'false' });
 const client = createDatabaseClient(config.database);
 
 const COLUMN_NAME = 'geographic_location_id';
-const TABLE_NAME = 'tmf_physical_resource';
+const TABLE_NAME = 'resource_physical';
 
 const columnExists = async (
   objectPrefix: string,

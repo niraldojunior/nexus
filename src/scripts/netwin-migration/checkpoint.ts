@@ -39,7 +39,7 @@ export async function ensureNativeCheckpointTables(
   ctx: Pick<MigrationContext, 't'>,
 ): Promise<void> {
   const ddls = [
-    `CREATE TABLE ${ctx.t('netwin_mig_native_job')} (
+    `CREATE TABLE ${ctx.t('migration_netwin_native_job')} (
        id VARCHAR2(36 CHAR) PRIMARY KEY,
        tenant_id VARCHAR2(255 CHAR) NOT NULL,
        scope_key VARCHAR2(512 CHAR) NOT NULL,
@@ -50,7 +50,7 @@ export async function ensureNativeCheckpointTables(
        updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,
        completed_at TIMESTAMP(6) WITH TIME ZONE
      )`,
-    `CREATE TABLE ${ctx.t('netwin_mig_native_checkpoint')} (
+    `CREATE TABLE ${ctx.t('migration_netwin_native_checkpoint')} (
        job_id VARCHAR2(36 CHAR) NOT NULL,
        stage VARCHAR2(32 CHAR) NOT NULL,
        last_source_id NUMBER DEFAULT 0 NOT NULL,
@@ -60,7 +60,7 @@ export async function ensureNativeCheckpointTables(
        completed_at TIMESTAMP(6) WITH TIME ZONE,
        PRIMARY KEY(job_id, stage)
      )`,
-    `CREATE TABLE ${ctx.t('netwin_mig_native_relationship')} (
+    `CREATE TABLE ${ctx.t('migration_netwin_native_relationship')} (
        job_id VARCHAR2(36 CHAR) NOT NULL,
        resource_from_id VARCHAR2(36 CHAR) NOT NULL,
        resource_to_id VARCHAR2(36 CHAR) NOT NULL,
@@ -105,7 +105,7 @@ export async function openNativeMigrationJob(ctx: MigrationContext): Promise<str
     if (ctx.options.resume) {
       const result = await target.execute<NativeJobRow>(
         `SELECT id AS "ID", tenant_id AS "TENANT_ID", scope_key AS "SCOPE_KEY", mapping_version AS "MAPPING_VERSION"
-           FROM ${ctx.t('netwin_mig_native_job')}
+           FROM ${ctx.t('migration_netwin_native_job')}
           WHERE id = :jobId`,
         { jobId: ctx.options.jobId },
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -122,7 +122,7 @@ export async function openNativeMigrationJob(ctx: MigrationContext): Promise<str
         );
       }
       await target.execute(
-        `UPDATE ${ctx.t('netwin_mig_native_job')}
+        `UPDATE ${ctx.t('migration_netwin_native_job')}
             SET state = 'running', updated_at = SYSTIMESTAMP
           WHERE id = :jobId`,
         { jobId: job.ID },
@@ -133,7 +133,7 @@ export async function openNativeMigrationJob(ctx: MigrationContext): Promise<str
 
     const id = randomUUID();
     await target.execute(
-      `INSERT INTO ${ctx.t('netwin_mig_native_job')}
+      `INSERT INTO ${ctx.t('migration_netwin_native_job')}
          (id, tenant_id, scope_key, mapping_version, source_scn, state, created_at, updated_at)
        VALUES (:id, :tenantId, :scopeKey, :mappingVersion, :sourceScn, 'running', SYSTIMESTAMP, SYSTIMESTAMP)`,
       {
@@ -162,7 +162,7 @@ export async function loadNativeCheckpoint(
   }
   const result = await target.execute<NativeCheckpointRow>(
     `SELECT last_source_id AS "LAST_SOURCE_ID", processed_count AS "PROCESSED_COUNT"
-       FROM ${ctx.t('netwin_mig_native_checkpoint')}
+       FROM ${ctx.t('migration_netwin_native_checkpoint')}
       WHERE job_id = :jobId AND stage = :stage`,
     { jobId: ctx.options.jobId, stage },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
@@ -182,7 +182,7 @@ export async function saveNativeCheckpoint(
 ): Promise<void> {
   if (!ctx.options.jobId) return;
   await target.execute(
-    `MERGE INTO ${ctx.t('netwin_mig_native_checkpoint')} target
+    `MERGE INTO ${ctx.t('migration_netwin_native_checkpoint')} target
      USING (SELECT :jobId AS job_id, :stage AS stage, :lastSourceId AS last_source_id,
                    :processedCount AS processed_count FROM dual) source
         ON (target.job_id = source.job_id AND target.stage = source.stage)
@@ -209,7 +209,7 @@ async function setNativeMigrationJobState(
   try {
     if (!target) return;
     await target.execute(
-      `UPDATE ${ctx.t('netwin_mig_native_job')}
+      `UPDATE ${ctx.t('migration_netwin_native_job')}
           SET state = :state,
               updated_at = SYSTIMESTAMP,
               completed_at = CASE WHEN :state = 'loaded' THEN SYSTIMESTAMP ELSE NULL END
@@ -256,7 +256,7 @@ export async function enqueueNativeRelationships(
 ): Promise<number> {
   if (!ctx.options.jobId || relationships.length === 0) return 0;
 
-  const sql = `INSERT INTO ${ctx.t('netwin_mig_native_relationship')}
+  const sql = `INSERT INTO ${ctx.t('migration_netwin_native_relationship')}
     (job_id, resource_from_id, resource_to_id, relationship_type, created_at)
     VALUES (:1, :2, :3, :4, :5)`;
   const createdAt = new Date();
@@ -286,13 +286,13 @@ export async function reconcileNativeRelationships(
 ): Promise<number> {
   if (!ctx.options.jobId) return 0;
   const result = await target.execute(
-    `MERGE INTO ${ctx.t('tmf_resource_relationship')} target
+    `MERGE INTO ${ctx.t('resource_relationship')} target
      USING (
        SELECT pending.resource_from_id, pending.resource_to_id, pending.relationship_type
-       FROM ${ctx.t('netwin_mig_native_relationship')} pending
-       JOIN ${ctx.t('tmf_physical_resource')} source_resource
+       FROM ${ctx.t('migration_netwin_native_relationship')} pending
+       JOIN ${ctx.t('resource_physical')} source_resource
          ON source_resource.id = pending.resource_from_id
-       JOIN ${ctx.t('tmf_physical_resource')} target_resource
+       JOIN ${ctx.t('resource_physical')} target_resource
          ON target_resource.id = pending.resource_to_id
        WHERE pending.job_id = :jobId
          AND source_resource.tenant_id = :tenantId
@@ -326,11 +326,11 @@ export async function summarizeNativeRelationships(
                      THEN 1 ELSE 0 END) AS "MISSING_TARGET",
             SUM(CASE WHEN source_resource.id IS NULL AND target_resource.id IS NULL
                      THEN 1 ELSE 0 END) AS "MISSING_BOTH"
-       FROM ${ctx.t('netwin_mig_native_relationship')} pending
-       LEFT JOIN ${ctx.t('tmf_physical_resource')} source_resource
+       FROM ${ctx.t('migration_netwin_native_relationship')} pending
+       LEFT JOIN ${ctx.t('resource_physical')} source_resource
          ON source_resource.id = pending.resource_from_id
         AND source_resource.tenant_id = :tenantId
-       LEFT JOIN ${ctx.t('tmf_physical_resource')} target_resource
+       LEFT JOIN ${ctx.t('resource_physical')} target_resource
          ON target_resource.id = pending.resource_to_id
         AND target_resource.tenant_id = :tenantId
       WHERE pending.job_id = :jobId`,

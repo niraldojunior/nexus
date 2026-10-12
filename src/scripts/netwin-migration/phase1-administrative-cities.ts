@@ -34,7 +34,7 @@ export const cityAreaUfQuery = (): string => `
   SELECT COALESCE(BADDR_MUNICIPIO_ID, MUNICIPIO_ID) AS MUNICIPIO_ID,
          MIN(COALESCE(BADDR_UF_ABRV, UF_ABRV)) AS UF_MIN,
          MAX(COALESCE(BADDR_UF_ABRV, UF_ABRV)) AS UF_MAX
-    FROM NETWIN.DL_INFRANODE
+    FROM NETWINOI.DL_INFRANODE
    WHERE COALESCE(BADDR_MUNICIPIO_ID, MUNICIPIO_ID) IS NOT NULL
      AND COALESCE(BADDR_UF_ABRV, UF_ABRV) IS NOT NULL
    GROUP BY COALESCE(BADDR_MUNICIPIO_ID, MUNICIPIO_ID)
@@ -78,7 +78,7 @@ export function planAdministrativeCities(
 }
 
 /**
- * Fase 1 — diretório mestre `geo_administrative_city` com todos os municípios do Netwin.
+ * Fase 1 — diretório mestre `geographic_administrative_city` com todos os municípios do Netwin.
  * Idempotente (chave natural país+UF+município); DRY-RUN não grava.
  */
 export async function runPhase1AdministrativeCities(ctx: MigrationContext): Promise<PhaseStats> {
@@ -132,7 +132,7 @@ export async function runPhase1AdministrativeCities(ctx: MigrationContext): Prom
     return stats;
   }
   try {
-    const directory = ctx.t('geo_administrative_city');
+    const directory = ctx.t('geographic_administrative_city');
     const count = async () =>
       Number(
         (

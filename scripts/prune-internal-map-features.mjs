@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Remove de `geo_map_feature` as linhas de recurso interno (Splitter, Porta — ver
+ * Remove de `geographic_map_feature` as linhas de recurso interno (Splitter, Porta — ver
  * INTERNAL_RESOURCE_TYPES em src/modules/geo/map-visibility.ts) gravadas antes da correção do
  * filtro do write-through (map-feature-synchronizer.ts): até então ele só excluía 'Splitter',
  * então toda Porta de Splitter criada/editada pela API (ex.: load-cto-ports.mjs) entrou no
@@ -45,10 +45,10 @@ async function main() {
 
     const preview = await client.query(
       `SELECT rt.code AS resource_type, COUNT(*) AS n
-         FROM geo_map_feature f
-         JOIN tmf_physical_resource r ON r.id = f.entity_id
-         JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-         JOIN tmf_resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
+         FROM geographic_map_feature f
+         JOIN resource_physical r ON r.id = f.entity_id
+         JOIN resource_specification rs ON rs.id = r.resource_specification_id
+         JOIN resource_type rt ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
         WHERE f.tenant_id = $1 AND f.feature_kind = 'resource'
           AND rt.code IN (${typePlaceholders})
         GROUP BY rt.code
@@ -57,7 +57,7 @@ async function main() {
     );
 
     if (preview.rows.length === 0) {
-      console.log('Nenhuma linha de recurso interno encontrada em geo_map_feature — nada a fazer.');
+      console.log('Nenhuma linha de recurso interno encontrada em geographic_map_feature — nada a fazer.');
       return;
     }
 
@@ -67,7 +67,7 @@ async function main() {
       total += n;
       console.log(`  ${row.resource_type}: ${n} linha(s)`);
     }
-    console.log(`Total: ${total} linha(s) de recurso interno em geo_map_feature.`);
+    console.log(`Total: ${total} linha(s) de recurso interno em geographic_map_feature.`);
 
     if (!APPLY) {
       console.log('Dry-run — rode com --apply para remover.');
@@ -75,12 +75,12 @@ async function main() {
     }
 
     const result = await client.query(
-      `DELETE FROM geo_map_feature
+      `DELETE FROM geographic_map_feature
         WHERE tenant_id = $1 AND feature_kind = 'resource'
           AND entity_id IN (
-                SELECT r.id FROM tmf_physical_resource r
-                  JOIN tmf_resource_specification rs ON rs.id = r.resource_specification_id
-                  JOIN tmf_resource_type rt
+                SELECT r.id FROM resource_physical r
+                  JOIN resource_specification rs ON rs.id = r.resource_specification_id
+                  JOIN resource_type rt
                     ON rt.id = rs.resource_type_id AND rt.tenant_id = rs.tenant_id
                  WHERE rt.code IN (${typePlaceholders})
               )`,

@@ -447,6 +447,8 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     for (let offset = 0; offset < remainingCdoIds.length; offset += CDO_PAGE_SIZE) {
       const pageIds = remainingCdoIds.slice(offset, offset + CDO_PAGE_SIZE);
 
+      const pageTotalStartedAt = Date.now();
+      const before = { ...timing };
       let pageStartedAt = Date.now();
       const ports = await loadInternalPorts(source, pageIds, { allPortTypes: true });
       timing.portsMs += Date.now() - pageStartedAt;
@@ -718,7 +720,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       stats.rejected += pageRejected;
       plantProgress.advance(pageIds.length);
       console.log(
-        `[Progresso] Fase 2.C — CDOs: cursor ${lastCdoId}; página=${pageIds.length}; portas=${ports.length}; cards=${cards.length}; conexões=${connections.length}; rejeitados(página)=${pageRejected}.`,
+        `[Progresso] Fase 2.C — CDOs: cursor ${lastCdoId}; página=${pageIds.length}; portas=${ports.length}; cards=${cards.length}; conexões=${connections.length}; rejeitados(página)=${pageRejected}; total=${Date.now() - pageTotalStartedAt}ms (portas=${timing.portsMs - before.portsMs}ms cards=${timing.cardsMs - before.cardsMs}ms recursos=${timing.resourceMergeMs - before.resourceMergeMs}ms relações=${timing.relationshipMergeMs - before.relationshipMergeMs}ms commit=${timing.commitMs - before.commitMs}ms).`,
       );
     }
     plantProgress.finish();

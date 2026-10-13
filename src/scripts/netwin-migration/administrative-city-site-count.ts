@@ -33,14 +33,22 @@ export async function reconcileAdministrativeCitySiteCounts(
     { tenantId },
     { autoCommit: false },
   );
+  // MINUS em vez de NOT EXISTS correlacionado: `geographic_site` não tem índice em
+  // `administrative_city_id`, então o NOT EXISTS varria a tabela inteira (milhões de Sites) uma
+  // vez por município — minutos/horas em UF grande, contra ~2s com uma única varredura.
   const zeroed = await target.execute(
-    `UPDATE ${counts} k
-        SET k.active_site_count = 0, k.updated_at = SYSTIMESTAMP
-      WHERE k.tenant_id = :tenantId AND k.active_site_count <> 0
-        AND NOT EXISTS (SELECT 1 FROM ${site} s
-                         WHERE s.tenant_id = :tenantId AND s.parent_site_id IS NULL
-                           AND s.status <> 'Retired'
-                           AND s.administrative_city_id = k.administrative_city_id)`,
+    `MERGE INTO ${counts} k
+     USING (SELECT administrative_city_id AS city_id
+              FROM ${counts}
+             WHERE tenant_id = :tenantId AND active_site_count <> 0
+            MINUS
+            SELECT s.administrative_city_id
+              FROM ${site} s
+             WHERE s.tenant_id = :tenantId AND s.parent_site_id IS NULL
+               AND s.status <> 'Retired'
+               AND s.administrative_city_id IS NOT NULL) z
+        ON (k.tenant_id = :tenantId AND k.administrative_city_id = z.city_id)
+      WHEN MATCHED THEN UPDATE SET k.active_site_count = 0, k.updated_at = SYSTIMESTAMP`,
     { tenantId },
     { autoCommit: false },
   );

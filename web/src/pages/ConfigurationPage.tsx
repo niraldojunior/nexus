@@ -18,7 +18,7 @@ export function ConfigurationPage() {
   return (
     <div className="flex h-full w-full items-stretch overflow-hidden max-md:flex-col">
       <aside className="w-[185px] shrink-0 overflow-y-auto border-r border-app-border bg-app-sidebar px-[11px] pb-[22px] pt-[42px] max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-5">
-        <nav aria-label="Áreas de configuração" className="vt-studio-nav vt-studio-nav-ink">
+        <nav aria-label="Áreas de configuração" className="vt-studio-nav">
           <p className="vt-sb-group-label">Configurações</p>
           <div className="space-y-1">
             {tabs.map(({ id, label, icon: Icon }) => {

@@ -111,7 +111,11 @@ type Props = {
   query?: string;
 };
 
-const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+const normalize = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 
 /** Árvore de Locais: expandir (+/−) só abre o nível; apenas o clique no nome de um Site consulta a tabela. */
 export function LocationTree({
@@ -296,7 +300,7 @@ export function LocationTree({
             <button
               type="button"
               aria-label={`${isOpen ? 'Recolher' : 'Expandir'} ${node.label}`}
-              className="flex h-5 w-5 shrink-0 items-center justify-center text-app-muted"
+              className="relative flex h-5 w-5 shrink-0 items-center justify-center text-app-muted before:absolute before:-inset-0.5 before:content-['']"
               onClick={() => toggle(node)}
             >
               {isSite ? (

@@ -238,7 +238,7 @@ export default function Sidebar({
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="flex items-center text-app-muted hover:text-app-text"
+                className="relative flex items-center text-app-muted before:absolute before:-inset-1.5 before:content-[''] hover:text-app-text"
                 aria-label="Recolher barra lateral"
                 title="Recolher"
               >
@@ -465,7 +465,7 @@ export default function Sidebar({
                   onSelectPage('settings');
                   closeMobileDrawer();
                 }}
-                className="rounded p-1 text-app-muted hover:text-app-text"
+                className="relative rounded p-1 text-app-muted before:absolute before:-inset-0.5 before:content-[''] hover:text-app-text"
                 title="Preferências"
                 aria-label="Preferências"
               >
@@ -478,7 +478,7 @@ export default function Sidebar({
                     onLogout();
                     closeMobileDrawer();
                   }}
-                  className="rounded p-1 text-app-muted hover:text-red-600"
+                  className="relative rounded p-1 text-app-muted before:absolute before:-inset-0.5 before:content-[''] hover:text-red-600"
                   title="Sair"
                   aria-label="Sair"
                 >

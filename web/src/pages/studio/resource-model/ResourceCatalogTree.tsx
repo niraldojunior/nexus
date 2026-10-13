@@ -322,7 +322,9 @@ export function ResourceCatalogTree({
         )}
 
         <div
-          role="button"
+          role="treeitem"
+          aria-level={level + 1}
+          aria-expanded={isGroup && hasChildren ? isExpanded : undefined}
           tabIndex={0}
           draggable={canMutate}
           onDragStart={(e) => handleDragStart(node, e)}
@@ -363,7 +365,8 @@ export function ResourceCatalogTree({
               <button
                 type="button"
                 onClick={(e) => toggleExpand(node.id, e)}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-app-muted hover:text-app-text"
+                aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${node.name}`}
+                className="relative flex h-5 w-5 shrink-0 before:absolute before:-inset-0.5 before:content-[''] items-center justify-center rounded text-app-muted hover:text-app-text"
               >
                 {hasChildren ? (
                   isExpanded ? (
@@ -443,7 +446,7 @@ export function ResourceCatalogTree({
         )}
 
         {isGroup && isExpanded && hasChildren && (
-          <div className="mt-0.5 space-y-0.5">
+          <div role="group" className="mt-0.5 space-y-0.5">
             {node.children.map((child) => renderNode(child, level + 1))}
           </div>
         )}
@@ -476,7 +479,9 @@ export function ResourceCatalogTree({
           </div>
         ) : (
           <>
-            {tree.map((node) => renderNode(node, 0))}
+            <div role="tree" aria-label="Catálogo de recursos" className="space-y-0.5">
+              {tree.map((node) => renderNode(node, 0))}
+            </div>
 
             {/* Zona de soltar para a raiz: visível enquanto arrasta um nó que não está na raiz */}
             {canMutate && draggedNode && draggedNode.parentNodeId !== null && (

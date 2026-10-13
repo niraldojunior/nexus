@@ -63,6 +63,7 @@ export default function Composer({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          aria-label={placeholder}
           rows={1}
           autoFocus={autoFocus}
           className={

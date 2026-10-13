@@ -140,6 +140,7 @@ export const ConversasPage: React.FC<{
           <input
             type="text"
             placeholder="Buscar conversas por título..."
+            aria-label="Buscar conversas por título"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

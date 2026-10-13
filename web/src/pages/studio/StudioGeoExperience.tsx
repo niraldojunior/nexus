@@ -709,7 +709,9 @@ export function StudioGeoExperience({
         )}
 
         <div
-          role="button"
+          role="treeitem"
+          aria-selected={isSelected}
+          aria-level={depth + 1}
           tabIndex={0}
           draggable={canMutate}
           onDragStart={(e) => handleDragStart(node, e)}

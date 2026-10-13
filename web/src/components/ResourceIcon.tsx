@@ -17,6 +17,11 @@ export type ResourceIconProps = {
   variant?: 'badge' | 'glyph';
   size?: number;
   className?: string;
+  /**
+   * Segue o padrão das árvores da Modelagem: glifo nativo (sem identidade própria) em cinza e
+   * identidade customizada em azul, para destacar o que foi alterado.
+   */
+  catalogTone?: boolean;
 };
 
 /**
@@ -29,6 +34,7 @@ export function ResourceIcon({
   variant = 'badge',
   size,
   className,
+  catalogTone = false,
 }: ResourceIconProps) {
   const box = size ?? (variant === 'badge' ? 20 : 16);
   const resourceType = typeof resource === 'string' ? resource : resource?.resourceType;
@@ -38,7 +44,7 @@ export function ResourceIcon({
   const title = presentation?.name ?? 'Recurso';
   const visualIdentityUrl = useVisualIdentityPreviewUrl(resolvedVisualIdentity, box, {
     shape: 'none',
-    color: '#334155',
+    color: catalogTone ? '#0284c7' : '#334155',
   });
 
   if (visualIdentityUrl) {
@@ -56,6 +62,16 @@ export function ResourceIcon({
 
   const FallbackIcon = presentation ? resourceTypeFallbackIcon(presentation.nature) : Box;
   const fallbackColor = presentation ? resourceTypeFallbackColor(presentation.nature) : '#334155';
+
+  if (variant === 'glyph' && catalogTone) {
+    return (
+      <FallbackIcon
+        className={`shrink-0 text-app-muted ${className ?? ''}`}
+        style={{ width: box, height: box }}
+        aria-hidden="true"
+      />
+    );
+  }
 
   if (variant === 'glyph') {
     return (

@@ -123,7 +123,7 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
           {isGroup ? (
             <Folder size={15} className="shrink-0 text-app-muted" />
           ) : (
-            <ResourceIcon resource={node.resourceType?.code} variant="glyph" />
+            <ResourceIcon resource={node.resourceType?.code} variant="glyph" catalogTone />
           )}
           <button
             type="button"

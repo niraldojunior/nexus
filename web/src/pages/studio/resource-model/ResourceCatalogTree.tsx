@@ -366,7 +366,7 @@ export function ResourceCatalogTree({
                 type="button"
                 onClick={(e) => toggleExpand(node.id, e)}
                 aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${node.name}`}
-                className="relative flex h-5 w-5 shrink-0 before:absolute before:-inset-0.5 before:content-[''] items-center justify-center rounded text-app-muted hover:text-app-text"
+                className="relative flex h-6 w-6 shrink-0 before:absolute before:-inset-0.5 before:content-[''] items-center justify-center rounded text-app-muted hover:text-app-text"
               >
                 {hasChildren ? (
                   isExpanded ? (

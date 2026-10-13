@@ -192,30 +192,30 @@ describe('ResourcePanel', () => {
     expect(mocks.useResourceConnections).toHaveBeenCalledWith('cto-1', {
       enabled: false,
     });
-    expect(screen.getByRole('button', { name: 'Geral' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2Componentes' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Conexões' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Geral' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '2Componentes' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Conexões' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Histórico' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Histórico' })).toBeInTheDocument();
     expect(screen.getByText('Detalhe da CTO')).toBeInTheDocument();
   });
 
   it('abre a aba Histórico', () => {
     renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Histórico' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Histórico' }));
     expect(screen.getByText('Histórico de cto-1')).toBeInTheDocument();
   });
 
   it('abre a aba Componentes e Conexões', () => {
     renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: '2Componentes' }));
+    fireEvent.click(screen.getByRole('tab', { name: '2Componentes' }));
     expect(mocks.useResourceComponents).toHaveBeenLastCalledWith('cto-1', {
       enabled: true,
     });
     expect(screen.getByText('Componentes (2) de CDOE-6746 · CDOE 1:8 NC-NC')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Conexões' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Conexões' }));
     expect(mocks.useResourceConnections).toHaveBeenLastCalledWith('cto-1', {
       enabled: true,
     });
@@ -230,10 +230,10 @@ describe('ResourcePanel', () => {
     expect(screen.getByText('Detalhe da porta')).toBeInTheDocument();
     expect(screen.queryByText('Street View')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Serviço' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Componentes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Serviço' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Componentes' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '3Recursos atendidos' }));
+    fireEvent.click(screen.getByRole('tab', { name: '3Recursos atendidos' }));
     expect(screen.getByText('Cabo Drop atual')).toBeInTheDocument();
     expect(screen.getByText('Conexão atual')).toBeInTheDocument();
     expect(screen.getByText('Cabo Drop histórico')).toBeInTheDocument();
@@ -255,7 +255,7 @@ describe('ResourcePanel', () => {
     });
     renderPanel({ node: portNode });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Serviço' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Serviço' }));
     expect(screen.getByText('Serviço da porta')).toBeInTheDocument();
   });
 });

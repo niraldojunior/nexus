@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Button from './Button';
 
@@ -14,6 +14,14 @@ export interface DataTableColumn<T> {
   /** className aplicado à célula <td>, ex.: para alinhamento ou largura. */
   cellClassName?: string;
   headerClassName?: string;
+  /** Cabeçalho vira botão de ordenação (exige `sort` + `onSortChange` na tabela). */
+  sortable?: boolean;
+}
+
+export type SortDirection = 'asc' | 'desc';
+export interface DataTableSort {
+  key: string;
+  direction: SortDirection;
 }
 
 interface DataTableProps<T> {
@@ -25,7 +33,17 @@ interface DataTableProps<T> {
   footer?: ReactNode;
   /** Classe extra na casca da tabela, para ajustes locais de tipografia. */
   className?: string;
+  /** Mostra linhas-esqueleto no lugar do corpo e marca a tabela como ocupada. */
+  loading?: boolean;
+  /** Cabeçalho fixo ao rolar; a casca passa a rolar na vertical até `maxHeight`. */
+  stickyHeader?: boolean;
+  maxHeight?: number | string;
+  /** Ordenação controlada — a tabela só sinaliza e dispara; quem ordena é o chamador. */
+  sort?: DataTableSort | null;
+  onSortChange?: (sort: DataTableSort) => void;
 }
+
+const SKELETON_ROWS = 5;
 
 export default function DataTable<T>({
   columns,
@@ -35,24 +53,92 @@ export default function DataTable<T>({
   emptyMessage = 'Nenhum item encontrado.',
   footer,
   className,
+  loading = false,
+  stickyHeader = false,
+  maxHeight = 480,
+  sort,
+  onSortChange,
 }: DataTableProps<T>) {
   return (
     <div
       className={`vt-card vt-table-card ${className ?? ''}`}
-      style={{ overflow: 'hidden', padding: 0 }}
+      style={{
+        overflow: stickyHeader ? 'auto' : 'hidden',
+        padding: 0,
+        maxHeight: stickyHeader ? maxHeight : undefined,
+      }}
     >
-      <table className="vt-table">
+      <table className="vt-table" aria-busy={loading || undefined}>
         <thead>
           <tr>
             {columns.map((col) => (
-              <th key={col.key} className={col.headerClassName}>
-                {col.header}
+              <th
+                key={col.key}
+                className={col.headerClassName}
+                style={
+                  stickyHeader
+                    ? {
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 'var(--z-sticky)',
+                        background: 'var(--surface-card)',
+                      }
+                    : undefined
+                }
+                aria-sort={
+                  col.sortable
+                    ? sort?.key === col.key
+                      ? sort.direction === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : 'none'
+                    : undefined
+                }
+              >
+                {col.sortable && onSortChange ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 font-[inherit] text-[inherit] hover:text-app-text focus-visible:outline-2"
+                    style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+                    onClick={() =>
+                      onSortChange({
+                        key: col.key,
+                        direction:
+                          sort?.key === col.key && sort.direction === 'asc' ? 'desc' : 'asc',
+                      })
+                    }
+                  >
+                    {col.header}
+                    {sort?.key !== col.key ? (
+                      <ChevronsUpDown size={14} aria-hidden="true" />
+                    ) : sort.direction === 'asc' ? (
+                      <ArrowUp size={14} aria-hidden="true" />
+                    ) : (
+                      <ArrowDown size={14} aria-hidden="true" />
+                    )}
+                  </button>
+                ) : (
+                  col.header
+                )}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? (
+          {loading ? (
+            Array.from({ length: SKELETON_ROWS }, (_, index) => (
+              <tr key={`skeleton-${index}`} aria-hidden="true">
+                {columns.map((col) => (
+                  <td key={col.key} className={col.cellClassName}>
+                    <span
+                      className="block animate-pulse rounded"
+                      style={{ height: 12, width: '70%', background: 'var(--border)' }}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))
+          ) : rows.length === 0 ? (
             <tr>
               <td
                 colSpan={columns.length}
@@ -78,7 +164,11 @@ export default function DataTable<T>({
                     : undefined
                 }
                 tabIndex={onRowClick ? 0 : undefined}
-                className={onRowClick ? 'group/row focus-visible:bg-app-accent-soft focus-visible:outline-none' : undefined}
+                className={
+                  onRowClick
+                    ? 'group/row focus-visible:bg-app-accent-soft focus-visible:outline-none'
+                    : undefined
+                }
                 style={onRowClick ? { cursor: 'pointer' } : undefined}
               >
                 {columns.map((col) => (

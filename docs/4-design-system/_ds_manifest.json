@@ -217,7 +217,7 @@
     },
     {
       "name": "--neutral-600",
-      "value": "#8A8899",
+      "value": "#6B6A7A",
       "kind": "color",
       "definedIn": "tokens/colors.css"
     },
@@ -325,7 +325,7 @@
     },
     {
       "name": "--sidebar-section",
-      "value": "#8A8899",
+      "value": "#6B6A7A",
       "kind": "color",
       "definedIn": "tokens/colors.css"
     },
@@ -350,7 +350,7 @@
     },
     {
       "name": "--text-tertiary",
-      "value": "#8A8899",
+      "value": "#6B6A7A",
       "kind": "font",
       "definedIn": "tokens/colors.css"
     },
@@ -381,7 +381,7 @@
     },
     {
       "name": "--slate-500",
-      "value": "#8A8899",
+      "value": "#6B6A7A",
       "kind": "color",
       "definedIn": "tokens/colors.css"
     },
@@ -459,7 +459,7 @@
     },
     {
       "name": "--chat-meta",
-      "value": "#8A8899",
+      "value": "#6B6A7A",
       "kind": "color",
       "definedIn": "tokens/colors.css"
     },

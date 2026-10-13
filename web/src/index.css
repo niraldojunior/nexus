@@ -276,7 +276,7 @@ button {
      só aqui. O estado ativo mantém o mesmo amarelo + borda acima; funciona igual
      sobre fundo escuro. */
   .vt-studio-nav-ink .vt-sb-group-label {
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(255, 255, 255, 0.6);
   }
   .vt-studio-nav-ink .vt-sb-btn {
     color: rgba(255, 255, 255, 0.7);

@@ -24,7 +24,7 @@
   --neutral-300: #e8e8ee;
   --neutral-400: #dadae3;
   --neutral-500: #bcc1d6; /* brand cinza médio */
-  --neutral-600: #8a8899;
+  --neutral-600: #6b6a7a;
   --neutral-700: #514f66; /* brand cinza escuro */
   --neutral-900: #2e2d39; /* brand cinza escuro 2 */
 
@@ -46,7 +46,7 @@
   --sidebar-fg-active: #2e2d39; /* selected nav label */
   --sidebar-item-hover: #efeff3;
   --sidebar-item-active: #fef7dc; /* yellow wash pill */
-  --sidebar-section: #8a8899; /* group eyebrows */
+  --sidebar-section: #6b6a7a; /* group eyebrows */
 
   /* ---- Borders --------------------------------------------- */
   --border: #e8e8ee; /* default hairline — carries the card, not a shadow */
@@ -55,7 +55,7 @@
   /* ---- Text ------------------------------------------------- */
   --text-primary: #2e2d39;
   --text-secondary: #514f66;
-  --text-tertiary: #8a8899;
+  --text-tertiary: #6b6a7a;
   --text-disabled: #bcc1d6;
   --text-on-dark: #ffffff;
   --text-on-dark-dim: rgba(255, 255, 255, 0.55);
@@ -63,7 +63,7 @@
   /* ---- Secondary accent — corporate slate ------------------- */
   --slate: #514f66;
   --slate-700: #514f66;
-  --slate-500: #8a8899;
+  --slate-500: #6b6a7a;
 
   /* ---- Status / Semantic ------------------------------------ */
   --status-green: #10b981; /* ok / online / viable */
@@ -84,7 +84,7 @@
      assistant writes straight onto the page. One surface, not two bubbles. */
   --chat-user-bubble: #f5f5f8; /* = --surface-muted */
   --chat-assistant-bg: transparent;
-  --chat-meta: #8a8899; /* timestamps */
+  --chat-meta: #6b6a7a; /* timestamps */
   --composer-bg: #ffffff;
 
   /* ---- Map layer palette (Locais module) -------------------- */

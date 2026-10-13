@@ -48,6 +48,9 @@ type StudioNavItem = {
   icon: LucideIcon;
 };
 
+// Áreas ainda sem implementação: aparecem no menu, mas sinalizadas (ver fallback "em construção").
+const PLACEHOLDER_SECTIONS: ReadonlySet<StudioSection> = new Set(['service-model', 'copilot']);
+
 type StudioNavGroup = {
   label: string;
   items: StudioNavItem[];
@@ -248,6 +251,11 @@ export function StudioPage({
                       >
                         <Icon className="h-[1.05rem] w-[1.05rem] shrink-0" strokeWidth={1.8} />
                         <span className="flex-1 truncate text-left">{item.label}</span>
+                        {PLACEHOLDER_SECTIONS.has(item.id) ? (
+                          <span className="rounded-full border border-current px-1.5 text-[0.65rem] opacity-80">
+                            Em breve
+                          </span>
+                        ) : null}
                       </button>
                     );
                   })}

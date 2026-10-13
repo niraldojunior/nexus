@@ -18,6 +18,8 @@ import {
 } from '../utils/nativeMapIcons';
 import { STUDIO_GEO_NEUTRAL_ICON_COLOR } from '../utils/studioGeoDefaults';
 
+const CUSTOM_TAB = 'CUSTOM' as const;
+
 export type VisualIdentityPickerModalProps = {
   isOpen: boolean;
   value?: VisualIdentity | null;
@@ -38,7 +40,9 @@ export function VisualIdentityPickerModal({
   const [assets, setAssets] = useState<StudioAsset[]>([]);
   const [assetPreviews, setAssetPreviews] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  const [industry, setIndustry] = useState<NativeMapIconIndustry>(defaultIndustry);
+  const [industry, setIndustry] = useState<NativeMapIconIndustry | typeof CUSTOM_TAB>(
+    defaultIndustry,
+  );
   const [selection, setSelection] = useState<VisualIdentity | null>(value ?? null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -49,6 +53,8 @@ export function VisualIdentityPickerModal({
     setSelection(value ?? null);
     if (value?.kind === 'system') {
       setIndustry(nativeMapIconForCode(value.iconCode)?.industry ?? defaultIndustry);
+    } else if (value?.kind === 'asset') {
+      setIndustry(CUSTOM_TAB);
     } else {
       setIndustry(defaultIndustry);
     }
@@ -72,7 +78,10 @@ export function VisualIdentityPickerModal({
     };
   }, [assets, assetPreviews]);
 
-  const systemIcons = useMemo(() => filterNativeMapIcons(industry, search), [industry, search]);
+  const systemIcons = useMemo(
+    () => (industry === CUSTOM_TAB ? [] : filterNativeMapIcons(industry, search)),
+    [industry, search],
+  );
   const customAssets = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('pt-BR');
     return assets.filter((asset) => !term || asset.name.toLocaleLowerCase('pt-BR').includes(term));
@@ -154,7 +163,7 @@ export function VisualIdentityPickerModal({
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
-            <h4 className="text-[0.82rem] font-semibold text-app-text">Ícones nativos</h4>
+            <h4 className="text-[0.82rem] font-semibold text-app-text">Ícones</h4>
             <span className="text-[0.74rem] text-app-muted">
               Cor, tamanho, opacidade e escala vêm da Experiência no Mapa
             </span>
@@ -180,8 +189,75 @@ export function VisualIdentityPickerModal({
                 {NATIVE_MAP_ICON_INDUSTRY_LABEL[option]}
               </button>
             ))}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={industry === CUSTOM_TAB}
+              onClick={() => setIndustry(CUSTOM_TAB)}
+              className={`shrink-0 border-b-2 px-2.5 py-1.5 text-[0.76rem] font-semibold transition ${
+                industry === CUSTOM_TAB
+                  ? 'border-app-accent text-app-text'
+                  : 'border-transparent text-app-muted hover:text-app-text'
+              }`}
+            >
+              Personalizado
+            </button>
           </div>
-          {systemIcons.length === 0 ? (
+          {uploadError && <p className="mb-2 text-[0.76rem] text-status-red">{uploadError}</p>}
+          <input
+            ref={fileInputRef}
+            className="hidden"
+            type="file"
+            accept="image/svg+xml,.svg"
+            onChange={(event) => void uploadSvg(event.target.files?.[0])}
+          />
+          {industry === CUSTOM_TAB ? (
+            <div
+              data-testid="custom-icon-grid"
+              className="grid h-[216px] grid-cols-4 content-start gap-1 overflow-y-auto p-1"
+            >
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                title="SVGs seguros gerenciados pelo Studio"
+                className="flex h-16 flex-col items-center justify-center gap-1 rounded-[8px] border border-dashed border-app-border bg-white text-[0.72rem] font-semibold text-app-muted transition hover:bg-black/[0.02] hover:text-app-text disabled:opacity-60"
+              >
+                <FileUp className="h-4 w-4" />
+                {uploading ? 'Enviando…' : 'Importar SVG'}
+              </button>
+              {customAssets.map((asset) => {
+                const selected = selection?.kind === 'asset' && selection.assetId === asset.id;
+                return (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    title={asset.name}
+                    onClick={() => setSelection({ kind: 'asset', assetId: asset.id })}
+                    onDoubleClick={() => confirm({ kind: 'asset', assetId: asset.id })}
+                    className={`flex h-16 flex-col items-center justify-center gap-1 rounded-[8px] border p-1 text-[0.7rem] transition ${
+                      selected
+                        ? 'border-app-accent bg-app-accent-soft ring-2 ring-app-accent/30'
+                        : 'border-app-border bg-white hover:bg-black/[0.02]'
+                    }`}
+                  >
+                    {assetPreviews[asset.id] ? (
+                      <img
+                        src={assetPreviews[asset.id]}
+                        alt=""
+                        className="h-7 w-7 object-contain"
+                      />
+                    ) : (
+                      <ImageIcon className="h-5 w-5 text-app-muted" />
+                    )}
+                    <span className="w-full truncate text-center font-medium text-app-text">
+                      {asset.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : systemIcons.length === 0 ? (
             <p className="flex h-[216px] items-center justify-center rounded-[10px] border border-dashed border-app-border text-[0.76rem] text-app-muted">
               Nenhum ícone encontrado nesta indústria.
             </p>
@@ -217,67 +293,6 @@ export function VisualIdentityPickerModal({
                       alt=""
                       className="h-8 w-8"
                     />
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-app-border pt-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <h4 className="text-[0.82rem] font-semibold text-app-text">Ícones personalizados</h4>
-              <p className="text-[0.74rem] text-app-muted">SVGs seguros gerenciados pelo Studio.</p>
-            </div>
-            <input
-              ref={fileInputRef}
-              className="hidden"
-              type="file"
-              accept="image/svg+xml,.svg"
-              onChange={(event) => void uploadSvg(event.target.files?.[0])}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-              iconLeft={<FileUp className="h-3.5 w-3.5" />}
-            >
-              {uploading ? 'Enviando…' : 'Carregar SVG'}
-            </Button>
-          </div>
-          {uploadError && <p className="mb-2 text-[0.76rem] text-status-red">{uploadError}</p>}
-          {customAssets.length === 0 ? (
-            <p className="rounded-[8px] border border-dashed border-app-border p-3 text-center text-[0.76rem] text-app-muted">
-              Nenhum SVG personalizado encontrado.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {customAssets.map((asset) => {
-                const selected = selection?.kind === 'asset' && selection.assetId === asset.id;
-                return (
-                  <button
-                    key={asset.id}
-                    type="button"
-                    onClick={() => setSelection({ kind: 'asset', assetId: asset.id })}
-                    onDoubleClick={() => confirm({ kind: 'asset', assetId: asset.id })}
-                    className={`flex items-center gap-2 rounded-[9px] border p-2 text-left text-[0.76rem] transition ${
-                      selected
-                        ? 'border-app-accent bg-app-accent-soft ring-2 ring-app-accent/30'
-                        : 'border-app-border bg-white hover:bg-black/[0.02]'
-                    }`}
-                  >
-                    {assetPreviews[asset.id] ? (
-                      <img
-                        src={assetPreviews[asset.id]}
-                        alt=""
-                        className="h-5 w-5 shrink-0 object-contain"
-                      />
-                    ) : (
-                      <ImageIcon className="h-4 w-4 shrink-0 text-app-muted" />
-                    )}
-                    <span className="truncate font-medium text-app-text">{asset.name}</span>
                   </button>
                 );
               })}

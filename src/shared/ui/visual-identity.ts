@@ -6,6 +6,8 @@ export type VisualIdentity =
 
 export const NATIVE_MAP_ICON_CODES = [
   // REAL_ESTATE
+  'real-estate.customer-home',
+  'real-estate.apartment-building',
   'real-estate.property',
   'real-estate.condominium',
   'real-estate.campus',

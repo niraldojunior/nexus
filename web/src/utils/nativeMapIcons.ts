@@ -1,4 +1,5 @@
-import { NATIVE_MAP_ICON_NODES } from './nativeMapIconNodes';
+import { NATIVE_MAP_ICON_NODES as LUCIDE_NODES } from './nativeMapIconNodes';
+import { NATIVE_MAP_ICON_CUSTOM_NODES } from './nativeMapIconCustomNodes';
 import {
   renderIconSvg,
   resourceIconFor,
@@ -6,6 +7,11 @@ import {
   type IconNode,
   type IconShape,
 } from './resourceIcon';
+
+const NATIVE_MAP_ICON_NODES: Record<string, IconNode> = {
+  ...LUCIDE_NODES,
+  ...NATIVE_MAP_ICON_CUSTOM_NODES,
+};
 
 export const NATIVE_MAP_ICON_INDUSTRIES = [
   'REAL_ESTATE',
@@ -68,20 +74,32 @@ const icon = (
 });
 
 const realEstateIcons: NativeMapIcon[] = [
-  icon('REAL_ESTATE', 'real-estate.property', 'Imóvel', 'home', [
-    'imóvel',
+  icon('REAL_ESTATE', 'real-estate.customer-home', 'Casa do cliente', 'home', [
     'casa',
     'residência',
+    'cliente',
+    'moradia',
+    'hc',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.apartment-building', 'Prédio de apartamentos', 'apartments', [
+    'prédio',
+    'apartamentos',
+    'residencial',
+    'edifício residencial',
+  ]),
+  icon('REAL_ESTATE', 'real-estate.property', 'Imóvel', 'house-chimney', [
+    'imóvel',
     'propriedade',
     'lote',
   ]),
-  icon('REAL_ESTATE', 'real-estate.condominium', 'Condomínio', 'building-2', [
+  icon('REAL_ESTATE', 'real-estate.condominium', 'Condomínio', 'condo', [
     'condomínio',
+    'vários prédios',
     'residencial',
     'comercial',
     'complexo',
   ]),
-  icon('REAL_ESTATE', 'real-estate.campus', 'Campus', 'warehouse', [
+  icon('REAL_ESTATE', 'real-estate.campus', 'Campus', 'campus', [
     'campus',
     'complexo',
     'polo',
@@ -94,7 +112,7 @@ const realEstateIcons: NativeMapIcon[] = [
     'torre',
     'bloco',
   ]),
-  icon('REAL_ESTATE', 'real-estate.tower-block', 'Torre / Bloco', 'building-2', [
+  icon('REAL_ESTATE', 'real-estate.tower-block', 'Torre / Bloco', 'tower-block', [
     'torre',
     'bloco',
     'edificação',
@@ -112,7 +130,7 @@ const realEstateIcons: NativeMapIcon[] = [
     'compartimento',
     'espaço',
   ]),
-  icon('REAL_ESTATE', 'real-estate.unit', 'Unidade', 'box', [
+  icon('REAL_ESTATE', 'real-estate.unit', 'Unidade', 'unit-door', [
     'unidade',
     'apartamento',
     'conjunto',
@@ -132,7 +150,7 @@ const realEstateIcons: NativeMapIcon[] = [
     'local',
     'área',
   ]),
-  icon('REAL_ESTATE', 'real-estate.subsite', 'Subsite', 'door-open', [
+  icon('REAL_ESTATE', 'real-estate.subsite', 'Subsite', 'subsite', [
     'subsite',
     'sublocal',
     'área interna',
@@ -157,7 +175,7 @@ const realEstateIcons: NativeMapIcon[] = [
     'segurança',
     'controle',
   ]),
-  icon('REAL_ESTATE', 'real-estate.technical-room', 'Sala técnica', 'server', [
+  icon('REAL_ESTATE', 'real-estate.technical-room', 'Sala técnica', 'tech-room', [
     'sala técnica',
     'pop',
     'ti',
@@ -182,27 +200,27 @@ const realEstateIcons: NativeMapIcon[] = [
     'vagas',
     'pátio',
   ]),
-  icon('REAL_ESTATE', 'real-estate.distribution-box', 'Distribuição predial', 'package', [
+  icon('REAL_ESTATE', 'real-estate.distribution-box', 'Distribuição predial', 'dist-box', [
     'cdoi',
     'dg',
     'distribuição',
     'dg predial',
     'caixa',
   ]),
-  icon('REAL_ESTATE', 'real-estate.utility-area', 'Área de utilidades', 'zap', [
+  icon('REAL_ESTATE', 'real-estate.utility-area', 'Área de utilidades', 'electrical-panel', [
     'utilidades',
     'energia',
     'gerador',
     'subestação',
     'quadro',
   ]),
-  icon('REAL_ESTATE', 'real-estate.common-area', 'Área comum', 'globe', [
+  icon('REAL_ESTATE', 'real-estate.common-area', 'Área comum', 'common-area', [
     'área comum',
     'hall',
     'circulação',
     'lazer',
   ]),
-  icon('REAL_ESTATE', 'real-estate.warehouse', 'Galpão', 'warehouse', [
+  icon('REAL_ESTATE', 'real-estate.warehouse', 'Galpão', 'shed', [
     'galpão',
     'armazém',
     'depósito',
@@ -323,10 +341,30 @@ const resourceTelecomIcons = resourceCodes.map((code) => {
 const TELECOM_ICON_OVERRIDES: Record<string, { glyph: string; tags?: readonly string[] }> = {
   POP: { glyph: 'satellite-dish' },
   Tower: { glyph: 'radio-tower' },
-  CTO: { glyph: 'package' },
-  cdoe: { glyph: 'box' },
-  cdoi: { glyph: 'door-open' },
   ceo: { glyph: 'webhook' },
+  CO: { glyph: 'central-office' },
+  PI: { glyph: 'house-pin' },
+  CTO: { glyph: 'cto' },
+  cdoe: { glyph: 'cdoe' },
+  cdoi: { glyph: 'cdoi' },
+  OLT: { glyph: 'olt' },
+  Card: { glyph: 'line-card' },
+  Port: { glyph: 'port' },
+  ONT: { glyph: 'ont' },
+  CPE: { glyph: 'cpe' },
+  Router: { glyph: 'ip-router' },
+  Switch: { glyph: 'switch-ports' },
+  Rack: { glyph: 'cabinet' },
+  PowerSupply: { glyph: 'power-supply' },
+  DIO: { glyph: 'dio' },
+  Pole: { glyph: 'telecom-pole' },
+  RisingTube: { glyph: 'rising-tube' },
+  SpliceClosure: { glyph: 'splice-closure' },
+  OpticalNode: { glyph: 'optical-node' },
+  BuriedSpan: { glyph: 'buried-span' },
+  BackboneCable: { glyph: 'backbone-cable' },
+  Fiber: { glyph: 'fiber' },
+  RouteTarget: { glyph: 'route-target' },
 };
 
 const telecomIcons: NativeMapIcon[] = [...LEGACY_TELECOM_ICONS, ...resourceTelecomIcons]
@@ -344,13 +382,13 @@ const telecomIcons: NativeMapIcon[] = [...LEGACY_TELECOM_ICONS, ...resourceTelec
   });
 
 const dataCenterIcons: NativeMapIcon[] = [
-  icon('DATA_CENTER', 'data-center.facility', 'Data center', 'building-2', [
+  icon('DATA_CENTER', 'data-center.facility', 'Data center', 'dc-building', [
     'campus',
     'edificação',
     'site',
   ]),
   icon('DATA_CENTER', 'data-center.server', 'Servidor', 'server', ['compute', 'host', 'servidor']),
-  icon('DATA_CENTER', 'data-center.server-rack', 'Rack de servidores', 'layers-3', [
+  icon('DATA_CENTER', 'data-center.server-rack', 'Rack de servidores', 'rack', [
     'rack',
     'gabinete',
   ]),
@@ -399,7 +437,7 @@ const dataCenterIcons: NativeMapIcon[] = [
     'sensor',
     'temperatura',
   ]),
-  icon('DATA_CENTER', 'data-center.access-control', 'Controle de acesso', 'key-round', [
+  icon('DATA_CENTER', 'data-center.access-control', 'Controle de acesso', 'access-card', [
     'acesso',
     'chave',
     'segurança',
@@ -418,9 +456,9 @@ const dataCenterIcons: NativeMapIcon[] = [
 ];
 
 const energyIcons: NativeMapIcon[] = [
-  icon('ENERGY', 'energy.generation-plant', 'Usina geradora', 'factory', ['usina', 'geração']),
-  icon('ENERGY', 'energy.substation', 'Subestação', 'network', ['subestação', 'transformação']),
-  icon('ENERGY', 'energy.transmission-tower', 'Torre de transmissão', 'radio-tower', [
+  icon('ENERGY', 'energy.generation-plant', 'Usina geradora', 'power-plant', ['usina', 'geração']),
+  icon('ENERGY', 'energy.substation', 'Subestação', 'substation', ['subestação', 'transformação']),
+  icon('ENERGY', 'energy.transmission-tower', 'Torre de transmissão', 'pylon', [
     'torre',
     'transmissão',
   ]),
@@ -429,34 +467,34 @@ const energyIcons: NativeMapIcon[] = [
     'distribuição',
   ]),
   icon('ENERGY', 'energy.transformer', 'Transformador', 'repeat-2', ['transformador', 'tensão']),
-  icon('ENERGY', 'energy.switchgear', 'Painel de manobra', 'circuit-board', [
+  icon('ENERGY', 'energy.switchgear', 'Painel de manobra', 'switchgear', [
     'switchgear',
     'painel',
     'manobra',
   ]),
   icon('ENERGY', 'energy.breaker', 'Disjuntor', 'power-circle', ['disjuntor', 'proteção']),
   icon('ENERGY', 'energy.meter', 'Medidor', 'gauge', ['medidor', 'consumo']),
-  icon('ENERGY', 'energy.generator', 'Gerador', 'power', ['gerador', 'alternador']),
+  icon('ENERGY', 'energy.generator', 'Gerador', 'generator', ['gerador', 'alternador']),
   icon('ENERGY', 'energy.battery-bank', 'Banco de baterias', 'battery', [
     'bateria',
     'armazenamento',
   ]),
-  icon('ENERGY', 'energy.charger', 'Carregador', 'battery-charging', ['carregador', 'bateria']),
+  icon('ENERGY', 'energy.charger', 'Carregador', 'ev-charger', ['carregador', 'bateria']),
   icon('ENERGY', 'energy.solar-plant', 'Usina solar', 'sun', ['solar', 'fotovoltaica']),
   icon('ENERGY', 'energy.wind-farm', 'Parque eólico', 'wind', ['eólica', 'turbina']),
   icon('ENERGY', 'energy.hydroelectric', 'Usina hidrelétrica', 'droplets', [
     'hidrelétrica',
     'água',
   ]),
-  icon('ENERGY', 'energy.control-center', 'Centro de operação', 'monitor', [
+  icon('ENERGY', 'energy.control-center', 'Centro de operação', 'control-center', [
     'cos',
     'controle',
     'operação',
   ]),
   icon('ENERGY', 'energy.grid', 'Rede elétrica', 'workflow', ['grid', 'rede', 'malha']),
-  icon('ENERGY', 'energy.feeder', 'Alimentador', 'git-branch', ['alimentador', 'circuito']),
-  icon('ENERGY', 'energy.cable', 'Cabo elétrico', 'cable', ['cabo', 'condutor']),
-  icon('ENERGY', 'energy.service-point', 'Ponto de entrega', 'plug', ['entrega', 'conexão']),
+  icon('ENERGY', 'energy.feeder', 'Alimentador', 'feeder', ['alimentador', 'circuito']),
+  icon('ENERGY', 'energy.cable', 'Cabo elétrico', 'power-cable', ['cabo', 'condutor']),
+  icon('ENERGY', 'energy.service-point', 'Ponto de entrega', 'outlet', ['entrega', 'conexão']),
   icon('ENERGY', 'energy.street-light', 'Iluminação pública', 'lamp', [
     'luminária',
     'poste',
@@ -464,7 +502,7 @@ const energyIcons: NativeMapIcon[] = [
   ]),
   icon('ENERGY', 'energy.load', 'Carga elétrica', 'zap', ['carga', 'energia']),
   icon('ENERGY', 'energy.maintenance', 'Equipe de manutenção', 'wrench', ['manutenção', 'equipe']),
-  icon('ENERGY', 'energy.safety-zone', 'Zona de segurança', 'shield-check', [
+  icon('ENERGY', 'energy.safety-zone', 'Zona de segurança', 'shield-alert', [
     'segurança',
     'proteção',
   ]),
@@ -472,15 +510,15 @@ const energyIcons: NativeMapIcon[] = [
 ];
 
 const oilGasIcons: NativeMapIcon[] = [
-  icon('OIL_GAS', 'oil-gas.field', 'Campo de produção', 'map-pin', ['campo', 'produção']),
+  icon('OIL_GAS', 'oil-gas.field', 'Campo de produção', 'derrick', ['campo', 'produção']),
   icon('OIL_GAS', 'oil-gas.platform', 'Plataforma offshore', 'anchor', ['plataforma', 'offshore']),
-  icon('OIL_GAS', 'oil-gas.refinery', 'Refinaria', 'factory', ['refinaria', 'processamento']),
-  icon('OIL_GAS', 'oil-gas.terminal', 'Terminal', 'warehouse', ['terminal', 'armazenamento']),
-  icon('OIL_GAS', 'oil-gas.tank', 'Tanque', 'container', ['tanque', 'reservatório']),
-  icon('OIL_GAS', 'oil-gas.pipeline', 'Duto', 'workflow', ['pipeline', 'gasoduto', 'oleoduto']),
+  icon('OIL_GAS', 'oil-gas.refinery', 'Refinaria', 'refinery', ['refinaria', 'processamento']),
+  icon('OIL_GAS', 'oil-gas.terminal', 'Terminal', 'terminal', ['terminal', 'armazenamento']),
+  icon('OIL_GAS', 'oil-gas.tank', 'Tanque', 'storage-tank', ['tanque', 'reservatório']),
+  icon('OIL_GAS', 'oil-gas.pipeline', 'Duto', 'pipeline', ['pipeline', 'gasoduto', 'oleoduto']),
   icon('OIL_GAS', 'oil-gas.valve', 'Válvula', 'settings', ['válvula', 'bloqueio']),
-  icon('OIL_GAS', 'oil-gas.pump', 'Bomba', 'repeat-2', ['bomba', 'transferência']),
-  icon('OIL_GAS', 'oil-gas.compressor', 'Compressor', 'fan', ['compressor', 'gás']),
+  icon('OIL_GAS', 'oil-gas.pump', 'Bomba', 'pump', ['bomba', 'transferência']),
+  icon('OIL_GAS', 'oil-gas.compressor', 'Compressor', 'compressor', ['compressor', 'gás']),
   icon('OIL_GAS', 'oil-gas.well', 'Poço', 'droplet', ['poço', 'extração']),
   icon('OIL_GAS', 'oil-gas.flare', 'Tocha', 'flame', ['flare', 'tocha', 'queima']),
   icon('OIL_GAS', 'oil-gas.fuel-station', 'Base de abastecimento', 'fuel', [
@@ -488,35 +526,43 @@ const oilGasIcons: NativeMapIcon[] = [
     'abastecimento',
   ]),
   icon('OIL_GAS', 'oil-gas.separator', 'Separador', 'diff', ['separador', 'processo']),
-  icon('OIL_GAS', 'oil-gas.metering', 'Estação de medição', 'gauge', ['medição', 'vazão']),
-  icon('OIL_GAS', 'oil-gas.control-room', 'Sala de controle', 'monitor', ['controle', 'operação']),
+  icon('OIL_GAS', 'oil-gas.metering', 'Estação de medição', 'flow-meter', ['medição', 'vazão']),
+  icon('OIL_GAS', 'oil-gas.control-room', 'Sala de controle', 'control-room', [
+    'controle',
+    'operação',
+  ]),
   icon('OIL_GAS', 'oil-gas.sensor', 'Sensor de processo', 'activity', ['sensor', 'telemetria']),
-  icon('OIL_GAS', 'oil-gas.temperature', 'Temperatura de processo', 'thermometer', [
+  icon('OIL_GAS', 'oil-gas.temperature', 'Temperatura de processo', 'process-temp', [
     'temperatura',
     'sensor',
   ]),
   icon('OIL_GAS', 'oil-gas.ship', 'Navio petroleiro', 'ship', ['navio', 'petroleiro']),
-  icon('OIL_GAS', 'oil-gas.loading', 'Ponto de carregamento', 'truck', [
+  icon('OIL_GAS', 'oil-gas.loading', 'Ponto de carregamento', 'loading-arm', [
     'carregamento',
     'caminhão',
   ]),
   icon('OIL_GAS', 'oil-gas.marine-route', 'Rota marítima', 'waves', ['mar', 'rota', 'offshore']),
-  icon('OIL_GAS', 'oil-gas.maintenance', 'Manutenção', 'wrench', ['manutenção', 'ferramenta']),
+  icon('OIL_GAS', 'oil-gas.maintenance', 'Manutenção', 'construction', [
+    'manutenção',
+    'ferramenta',
+  ]),
   icon('OIL_GAS', 'oil-gas.worksite', 'Frente de obra', 'hard-hat', ['obra', 'equipe']),
-  icon('OIL_GAS', 'oil-gas.safety', 'Segurança operacional', 'shield-check', [
+  icon('OIL_GAS', 'oil-gas.safety', 'Segurança operacional', 'lifebuoy', [
     'segurança',
     'integridade',
   ]),
-  icon('OIL_GAS', 'oil-gas.emergency', 'Emergência', 'siren', ['emergência', 'alarme']),
+  icon('OIL_GAS', 'oil-gas.emergency', 'Emergência', 'emergency', ['emergência', 'alarme']),
 ];
 
 const logisticsIcons: NativeMapIcon[] = [
-  icon('LOGISTICS', 'logistics.distribution-center', 'Centro de distribuição', 'warehouse', [
-    'cd',
-    'armazém',
-    'distribuição',
-  ]),
-  icon('LOGISTICS', 'logistics.warehouse', 'Armazém', 'building-2', ['galpão', 'estoque']),
+  icon(
+    'LOGISTICS',
+    'logistics.distribution-center',
+    'Centro de distribuição',
+    'distribution-center',
+    ['cd', 'armazém', 'distribuição'],
+  ),
+  icon('LOGISTICS', 'logistics.warehouse', 'Armazém', 'warehouse', ['galpão', 'estoque']),
   icon('LOGISTICS', 'logistics.container-yard', 'Pátio de contêineres', 'container', [
     'pátio',
     'container',
@@ -547,10 +593,10 @@ const logisticsIcons: NativeMapIcon[] = [
     'trem',
     'ferrovia',
   ]),
-  icon('LOGISTICS', 'logistics.port', 'Porto', 'ship', ['navio', 'porto']),
+  icon('LOGISTICS', 'logistics.port', 'Porto', 'port-crane', ['navio', 'porto']),
   icon('LOGISTICS', 'logistics.airport', 'Terminal aéreo', 'plane', ['avião', 'aeroporto']),
   icon('LOGISTICS', 'logistics.route', 'Rota logística', 'route', ['rota', 'percurso']),
-  icon('LOGISTICS', 'logistics.delivery-point', 'Ponto de entrega', 'map-pin', [
+  icon('LOGISTICS', 'logistics.delivery-point', 'Ponto de entrega', 'pin-check', [
     'entrega',
     'destino',
   ]),
@@ -558,7 +604,7 @@ const logisticsIcons: NativeMapIcon[] = [
     'gps',
     'navegação',
   ]),
-  icon('LOGISTICS', 'logistics.parking', 'Estacionamento de frota', 'parking-circle', [
+  icon('LOGISTICS', 'logistics.parking', 'Estacionamento de frota', 'parking-square', [
     'pátio',
     'estacionamento',
   ]),
@@ -571,7 +617,7 @@ const logisticsIcons: NativeMapIcon[] = [
     'tráfego',
     'bloqueio',
   ]),
-  icon('LOGISTICS', 'logistics.cross-docking', 'Cross-docking', 'workflow', [
+  icon('LOGISTICS', 'logistics.cross-docking', 'Cross-docking', 'cross-dock', [
     'cross docking',
     'transferência',
   ]),

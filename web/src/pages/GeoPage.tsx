@@ -474,6 +474,13 @@ const USER_LOCATION_Z = 2500;
 const SELECTION_PIN_Z = 2000;
 const SELECTION_PIN_HEIGHT = 44;
 
+// Destaque do item selecionado: halo azul translúcido atrás do ícone (ponto) ou faixa em volta
+// do traçado (linha). Objetos do Google Maps não leem variáveis CSS, então espelha
+// `--status-blue` (docs/4-design-system/tokens/colors.css). Larguras em pixels, para o destaque
+// manter a mesma presença em qualquer zoom.
+const SELECTION_HIGHLIGHT_COLOR = '#3b82f6';
+const SELECTION_HIGHLIGHT_LINE_WEIGHT = 18;
+
 // A simulação de drop (aba Viabilidade do painel de Endereço) desenha acima dos cabos
 // reais — é sobreposição de estudo, tem de se destacar da planta —, mas abaixo do
 // alfinete, que continua sendo o que diz "é aqui".
@@ -2505,6 +2512,8 @@ export function GoogleMapPanel({
   const projectSiteOverlayRef = useRef<ProjectSiteOverlayHandle | null>(null);
   const draftMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const selectionMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  const selectionHaloRef = useRef<GoogleMarkerInstance | null>(null);
+  const selectionBandRef = useRef<GooglePolylineInstance | null>(null);
   const addressSourceMarkersRef = useRef<Map<'google' | 'geonet', GoogleMarkerInstance>>(new Map());
   // Ponto azul "minha localização", cravado quando o usuário pede a geolocalização do
   // dispositivo (ver MapLocateButton). Vive fora do fluxo de nós/seleção — não é
@@ -3492,6 +3501,76 @@ export function GoogleMapPanel({
     }
   }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint, addressResolution]);
 
+  // Destaque do item selecionado. Ponto: círculo azul translúcido atrás do ícone (um Marker com
+  // símbolo CIRCLE, de tamanho fixo em pixels). Linha: faixa larga e translúcida sob o traçado,
+  // que mostra a extensão inteira dela e a distingue de linhas vizinhas. Ambos ficam abaixo do
+  // ícone/Polyline reais e não capturam clique.
+  useEffect(() => {
+    const maps = window.google?.maps;
+    if (!mapsReady || !mapRef.current || !maps) return;
+    const node =
+      (selectedNodeId ? nodeByIdRef.current.get(selectedNodeId) : undefined) ?? selectedNode;
+    const route = node ? treeNodeRoute(node) : null;
+    const point =
+      node && !route && node.geometry?.type === 'Point' ? node.geometry.coordinates : null;
+
+    if (route) {
+      const path = route.map(([lng, lat]) => ({ lng, lat }));
+      if (selectionBandRef.current) {
+        selectionBandRef.current.setPath(path);
+      } else {
+        selectionBandRef.current = new maps.Polyline({
+          map: mapRef.current,
+          path,
+          clickable: false,
+          zIndex: 0,
+          strokeColor: SELECTION_HIGHLIGHT_COLOR,
+          strokeOpacity: 0.3,
+          strokeWeight: SELECTION_HIGHLIGHT_LINE_WEIGHT,
+          geodesic: false,
+        });
+      }
+    } else {
+      selectionBandRef.current?.setMap(null);
+      selectionBandRef.current = null;
+    }
+
+    if (point) {
+      const [lng, lat] = point;
+      // Ícone de recurso ancora no canto inferior-esquerdo; o de local é centrado (mesma regra
+      // do alfinete acima). O símbolo desloca o centro do halo para o centro visual do ícone.
+      const isPointResource = node?.kind === 'resource';
+      const iconSize = MARKER_ICON_SIZE + 6;
+      const scale = iconSize / 2 + 8;
+      const shift = isPointResource ? iconSize / 2 : 0;
+      const icon = {
+        path: maps.SymbolPath.CIRCLE,
+        scale,
+        fillColor: SELECTION_HIGHLIGHT_COLOR,
+        fillOpacity: 0.3,
+        strokeColor: SELECTION_HIGHLIGHT_COLOR,
+        strokeOpacity: 0.6,
+        strokeWeight: 1.5,
+        anchor: new maps.Point(-shift / scale, shift / scale),
+      };
+      if (selectionHaloRef.current) {
+        selectionHaloRef.current.setPosition({ lng, lat });
+        selectionHaloRef.current.setIcon(icon);
+      } else {
+        selectionHaloRef.current = new maps.Marker({
+          map: mapRef.current,
+          position: { lng, lat },
+          icon,
+          clickable: false,
+          zIndex: 0,
+        });
+      }
+    } else {
+      selectionHaloRef.current?.setMap(null);
+      selectionHaloRef.current = null;
+    }
+  }, [mapsReady, selectedNodeId, selectedNode, nodes]);
+
   useEffect(() => {
     const maps = window.google?.maps;
     if (!mapsReady || !mapRef.current || !maps) return;
@@ -3544,7 +3623,13 @@ export function GoogleMapPanel({
     // multiplicaria timers por centenas de linhas na mesma viewport.
     const animated: Array<{ line: GooglePolylineInstance; style: ResolvedStudioGeoLineStyle }> = [];
 
-    for (const node of nodes) {
+    // O selecionado fora de `nodes` (cabo/trecho longo vindo só do canvas) também precisa da
+    // Polyline real: InfraOverlay nunca desenha o `excludeNodeId`, então sem isto a linha some.
+    const routeNodes =
+      pinnedNode && !nodes.some((candidate) => candidate.id === pinnedNode.id)
+        ? [...nodes, pinnedNode]
+        : nodes;
+    for (const node of routeNodes) {
       const route = treeNodeRoute(node);
       if (!route) continue;
       const style = lineStyleForNode(node, mapLayerCatalog, mapVisualScaleMeters);
@@ -3612,7 +3697,7 @@ export function GoogleMapPanel({
       }
     }, DROP_DASH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [mapsReady, nodes, mapLayerCatalog, mapVisualScaleMeters, setMapHoverTarget]);
+  }, [mapsReady, nodes, pinnedNode, mapLayerCatalog, mapVisualScaleMeters, setMapHoverTarget]);
 
   // Simulação do drop: o traçado entre o endereço e a CDO escolhida na aba de
   // Viabilidade. Não é planta — é um estudo do que *seria* o cabo —, então tem desenho

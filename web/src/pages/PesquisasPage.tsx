@@ -157,7 +157,7 @@ export const ConversasPage: React.FC<{
             style={{
               background: 'var(--status-red-soft)',
               color: 'var(--status-red)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
+              border: '1px solid var(--status-red-border)',
               borderRadius: 'var(--radius-lg)',
             }}
           >

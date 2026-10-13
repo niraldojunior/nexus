@@ -416,7 +416,7 @@ export const ResearchPage: React.FC<{
           className="flex-shrink-0 px-6 py-3"
           style={{
             background: 'var(--status-red-soft)',
-            borderBottom: '1px solid rgba(239, 68, 68, 0.25)',
+            borderBottom: '1px solid var(--status-red-border)',
           }}
         >
           <p className="text-sm" style={{ color: 'var(--status-red)' }}>

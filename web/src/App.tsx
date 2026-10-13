@@ -259,7 +259,7 @@ function ConversationPage({
               className="mt-2 rounded-xl px-4 py-2 text-sm"
               style={{
                 background: 'var(--status-red-soft)',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
+                border: '1px solid var(--status-red-border)',
                 color: 'var(--status-red)',
               }}
             >

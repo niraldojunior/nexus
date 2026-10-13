@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 import { forwardRef, useState, type ButtonHTMLAttributes, type CSSProperties } from 'react';
 
 /**
@@ -15,6 +16,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   iconLeft?: React.ReactNode;
   iconRight?: React.ReactNode;
   fullWidth?: boolean;
+  /** Mostra spinner, bloqueia o clique e expõe aria-busy. */
+  loading?: boolean;
 }
 
 const SIZES: Record<ButtonSize, CSSProperties & { gap: number }> = {
@@ -40,7 +43,11 @@ const VARIANTS: Record<ButtonVariant, CSSProperties> = {
     color: 'var(--text-on-dark)',
     borderColor: 'var(--surface-ink)',
   },
-  danger: { background: 'var(--status-red)', color: '#fff', borderColor: 'var(--status-red)' },
+  danger: {
+    background: 'var(--status-red)',
+    color: 'var(--on-status-solid)',
+    borderColor: 'var(--status-red)',
+  },
 };
 
 const HOVERS: Partial<Record<ButtonVariant, CSSProperties>> = {
@@ -48,7 +55,7 @@ const HOVERS: Partial<Record<ButtonVariant, CSSProperties>> = {
   secondary: { background: 'var(--surface-muted)' },
   ghost: { background: 'var(--surface-muted)', color: 'var(--text-primary)' },
   dark: { background: 'var(--neutral-700)', borderColor: 'var(--neutral-700)' },
-  danger: { background: '#DC3F3F', borderColor: '#DC3F3F' },
+  danger: { background: 'var(--status-red-hover)', borderColor: 'var(--status-red-hover)' },
 };
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -58,7 +65,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     size = 'md',
     iconLeft,
     iconRight,
-    disabled = false,
+    disabled: disabledProp = false,
+    loading = false,
     fullWidth = false,
     type = 'button',
     style,
@@ -70,6 +78,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
 ) {
   const [hover, setHover] = useState(false);
   const s = SIZES[size];
+  const disabled = disabledProp || loading;
 
   const base: CSSProperties = {
     display: 'inline-flex',
@@ -84,8 +93,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     lineHeight: 1,
     borderRadius: 'var(--radius-md)',
     border: '1px solid transparent',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.5 : 1,
+    cursor: loading ? 'progress' : disabled ? 'not-allowed' : 'pointer',
+    opacity: disabledProp ? 0.5 : 1,
     width: fullWidth ? '100%' : 'auto',
     transition:
       'background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)',
@@ -99,6 +108,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       ref={ref}
       type={type}
       disabled={disabled}
+      aria-busy={loading || undefined}
       onMouseEnter={(e) => {
         setHover(true);
         onMouseEnter?.(e);
@@ -110,7 +120,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       style={{ ...base, ...VARIANTS[variant], ...hoverStyle, ...style }}
       {...rest}
     >
-      {iconLeft}
+      {loading ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : iconLeft}
       {children}
       {iconRight}
     </button>

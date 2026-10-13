@@ -120,6 +120,16 @@
   --bg-card: var(--surface-card);
   --focus-ring: rgba(255, 217, 25, 0.55);
   --ring: var(--vt-yellow);
+  /* ---- Onda 3: status sólido, borda de erro, scrim, camadas -- */
+  --status-red-hover: #dc3f3f; /* hover do botão destrutivo */
+  --status-red-border: rgba(239, 68, 68, 0.25); /* borda de erro sobre wash */
+  --on-status-solid: #ffffff; /* texto sobre preenchimento sólido de status */
+  --scrim: rgba(15, 15, 25, 0.5); /* fundo de modal/drawer */
+  --z-sticky: 20;
+  --z-dropdown: 40;
+  --z-overlay: 50;
+  --z-modal: 60;
+  --z-toast: 70;
 }
 
 [data-theme='dark'] {

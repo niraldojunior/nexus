@@ -69,8 +69,9 @@ test('busca confirmada lista as colunas esperadas', async () => {
     expect(screen.getByRole('columnheader', { name: header })).toBeInTheDocument();
   }
   expect(screen.getByText('Niterói')).toBeInTheDocument();
-  expect(screen.getByRole('img', { name: 'Ativo' })).toHaveAttribute('title', 'Ativo');
-  expect(screen.getAllByRole('navigation', { name: 'Paginação' })).toHaveLength(2);
+  expect(screen.getByText('Ativo')).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: 'Paginação superior' })).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: 'Paginação inferior' })).toBeInTheDocument();
 });
 
 test('erro mostra retry', async () => {

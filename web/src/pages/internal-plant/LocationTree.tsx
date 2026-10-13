@@ -374,11 +374,11 @@ export function LocationTree({
             {branch.nodes.map((child) => renderNode(child, depth + 1, isSite))}
             {branch.loading ? (
               <li className="py-1.5 text-app-muted" style={childIndent}>
-                <Loader2 size={14} className="animate-spin" aria-label="Carregando" />
+                <Loader2 size={14} className="animate-spin" role="status" aria-label="Carregando" />
               </li>
             ) : null}
             {branch.error ? (
-              <li className="py-1.5 text-[0.85rem] text-app-muted" style={childIndent}>
+              <li role="alert" className="py-1.5 text-[0.85rem] text-app-muted" style={childIndent}>
                 {branch.error}{' '}
                 <button
                   type="button"

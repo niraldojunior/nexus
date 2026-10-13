@@ -320,9 +320,9 @@ export function SiteEditorModal({
               type="button"
               aria-label="Fechar"
               onClick={requestClose}
-              className="text-app-muted hover:text-app-text"
+              className="grid size-8 shrink-0 place-items-center rounded-lg text-app-muted hover:bg-app-hover hover:text-app-text"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </header>
           <div className="flex gap-1 overflow-x-auto border-b border-app-border px-3 py-1.5 sm:hidden">
@@ -330,6 +330,7 @@ export function SiteEditorModal({
               <button
                 key={t.id}
                 type="button"
+                aria-current={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={`shrink-0 rounded-lg px-2.5 py-1 text-[0.8rem] ${tab === t.id ? 'bg-app-accent-soft font-semibold' : 'text-app-muted'}`}
               >

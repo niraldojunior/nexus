@@ -283,7 +283,8 @@ function AddressSearch({ onChange }: { onChange: (draft: GeoPlaceDraft) => void 
               rows.map((a) => ({
                 key: a.id,
                 label: formatAddress(a),
-                pick: async () => onChange({ kind: 'existing', id: a.id, type: 'GeographicAddress' }),
+                pick: async () =>
+                  onChange({ kind: 'existing', id: a.id, type: 'GeographicAddress' }),
               })),
               'Endereço não encontrado na base. Tente o Google Maps ou o Geonet.',
             ),
@@ -329,7 +330,9 @@ function AddressSearch({ onChange }: { onChange: (draft: GeoPlaceDraft) => void 
             done(
               result.status === 'ready'
                 ? result.candidates
-                    .filter((c): c is GeonetAddressCandidate & { addressId: string } => Boolean(c.addressId))
+                    .filter((c): c is GeonetAddressCandidate & { addressId: string } =>
+                      Boolean(c.addressId),
+                    )
                     .map((c) => ({
                       key: c.addressId,
                       label: c.formattedAddress,
@@ -371,7 +374,11 @@ function AddressSearch({ onChange }: { onChange: (draft: GeoPlaceDraft) => void 
 
   return (
     <div className="grid gap-2">
-      <div role="radiogroup" aria-label="Fonte do endereço" className="inline-flex w-fit gap-1 rounded-[10px] bg-app-sidebar p-1">
+      <div
+        role="radiogroup"
+        aria-label="Fonte do endereço"
+        className="inline-flex w-fit gap-1 rounded-[10px] bg-app-sidebar p-1"
+      >
         {(Object.keys(SOURCE_LABEL) as Source[]).map((s) => (
           <button
             key={s}
@@ -389,7 +396,11 @@ function AddressSearch({ onChange }: { onChange: (draft: GeoPlaceDraft) => void 
         ))}
       </div>
       <div className="relative">
-        <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-app-muted" />
+        <Search
+          size={14}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-app-muted"
+        />
         <input
           className={`${inputClass} pl-8`}
           value={term}
@@ -398,7 +409,11 @@ function AddressSearch({ onChange }: { onChange: (draft: GeoPlaceDraft) => void 
           aria-label="Buscar endereço"
         />
         {searching || resolving ? (
-          <Loader2 size={14} aria-hidden="true" className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-app-muted" />
+          <Loader2
+            size={14}
+            aria-hidden="true"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-app-muted"
+          />
         ) : null}
       </div>
       {hits.length > 0 ? (
@@ -416,7 +431,11 @@ function AddressSearch({ onChange }: { onChange: (draft: GeoPlaceDraft) => void 
                       setTerm('');
                       setHits([]);
                     })
-                    .catch((cause) => setMessage(cause instanceof Error ? cause.message : 'Falha ao carregar o endereço.'))
+                    .catch((cause) =>
+                      setMessage(
+                        cause instanceof Error ? cause.message : 'Falha ao carregar o endereço.',
+                      ),
+                    )
                     .finally(() => setResolving(false));
                 }}
               >
@@ -445,15 +464,30 @@ function CoordinatePicker({ onChange }: { onChange: (draft: GeoPlaceDraft) => vo
     setLng(nextLng);
     const la = Number(nextLat.replace(',', '.'));
     const lo = Number(nextLng.replace(',', '.'));
-    if (nextLat.trim() && nextLng.trim() && Math.abs(la) <= 90 && Math.abs(lo) <= 180) setCoords([lo, la]);
+    if (nextLat.trim() && nextLng.trim() && Math.abs(la) <= 90 && Math.abs(lo) <= 180)
+      setCoords([lo, la]);
   };
   return (
     <div className="grid gap-2">
-      <p className="text-[0.78rem] text-app-muted">Clique no mapa ou informe a latitude e a longitude.</p>
+      <p className="text-[0.78rem] text-app-muted">
+        Clique no mapa ou informe a latitude e a longitude.
+      </p>
       <MapPicker value={coords} onPick={set} />
       <div className="grid gap-2 sm:grid-cols-2">
-        <input className={inputClass} value={lat} onChange={(e) => typed(e.target.value, lng)} placeholder="Latitude" aria-label="Latitude" />
-        <input className={inputClass} value={lng} onChange={(e) => typed(lat, e.target.value)} placeholder="Longitude" aria-label="Longitude" />
+        <input
+          className={inputClass}
+          value={lat}
+          onChange={(e) => typed(e.target.value, lng)}
+          placeholder="Latitude"
+          aria-label="Latitude"
+        />
+        <input
+          className={inputClass}
+          value={lng}
+          onChange={(e) => typed(lat, e.target.value)}
+          placeholder="Longitude"
+          aria-label="Longitude"
+        />
       </div>
       <div>
         <button
@@ -512,7 +546,11 @@ export function GeoPlaceSection({
       <h3 className="text-[0.78rem] font-semibold text-app-muted">Endereço</h3>
       {value.kind === 'none' ? (
         <div className="grid gap-3 rounded-[10px] border border-app-border p-3">
-          <div role="radiogroup" aria-label="Tipo de preenchimento" className="inline-flex w-fit gap-1 rounded-[10px] bg-app-sidebar p-1">
+          <div
+            role="radiogroup"
+            aria-label="Tipo de preenchimento"
+            className="inline-flex w-fit gap-1 rounded-[10px] bg-app-sidebar p-1"
+          >
             {(['address', 'map'] as const).map((m) => (
               <button
                 key={m}
@@ -526,7 +564,11 @@ export function GeoPlaceSection({
               </button>
             ))}
           </div>
-          {mode === 'address' ? <AddressSearch onChange={onChange} /> : <CoordinatePicker onChange={onChange} />}
+          {mode === 'address' ? (
+            <AddressSearch onChange={onChange} />
+          ) : (
+            <CoordinatePicker onChange={onChange} />
+          )}
         </div>
       ) : (
         <div className="grid gap-3 rounded-[10px] border border-app-border px-3 py-2 text-[0.85rem]">
@@ -538,17 +580,30 @@ export function GeoPlaceSection({
                   ? 'Carregando…'
                   : resolved?.missing
                     ? 'Referência não encontrada'
-                    : (resolved?.name ?? resolved?.address ?? (resolved?.point ? 'Coordenada' : '—'))}
+                    : (resolved?.name ??
+                      resolved?.address ??
+                      (resolved?.point ? 'Coordenada' : '—'))}
               </span>
-              {resolved ? <span className="pl-[23px] text-[0.75rem] text-app-muted">{resolved.typeLabel}</span> : null}
+              {resolved ? (
+                <span className="pl-[23px] text-[0.75rem] text-app-muted">
+                  {resolved.typeLabel}
+                </span>
+              ) : null}
             </span>
             {readOnly ? null : (
-              <button type="button" aria-label="Remover endereço" className="text-app-muted hover:text-status-red" onClick={() => onChange({ kind: 'none' })}>
+              <button
+                type="button"
+                aria-label="Remover endereço"
+                className="text-app-muted hover:text-status-red"
+                onClick={() => onChange({ kind: 'none' })}
+              >
                 <Trash2 size={15} />
               </button>
             )}
           </div>
-          {resolved?.name && resolved.address ? <p className="text-app-muted">{resolved.address}</p> : null}
+          {resolved?.name && resolved.address ? (
+            <p className="text-app-muted">{resolved.address}</p>
+          ) : null}
           {resolved?.point ? (
             <>
               <p className="text-app-muted">
@@ -558,7 +613,9 @@ export function GeoPlaceSection({
             </>
           ) : null}
           {readOnly ? (
-            <p className="text-[0.75rem] text-app-muted">Vínculo com um Local; altere-o na aba Locais.</p>
+            <p className="text-[0.75rem] text-app-muted">
+              Vínculo com um Local; altere-o na aba Locais.
+            </p>
           ) : null}
         </div>
       )}

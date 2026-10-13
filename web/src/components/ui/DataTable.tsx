@@ -221,6 +221,7 @@ export function DataTablePagination({
   offset,
   pageSize,
   onOffsetChange,
+  navLabel = 'Paginação',
 }: {
   count: number;
   total: number;
@@ -228,6 +229,8 @@ export function DataTablePagination({
   offset: number;
   pageSize: number;
   onOffsetChange: (offset: number) => void;
+  /** Nome do landmark; distinga-o quando houver mais de uma barra na mesma página. */
+  navLabel?: string;
 }) {
   const last = Math.max(1, Math.ceil(total / pageSize));
   const current = Math.min(Math.floor(offset / pageSize) + 1, last);
@@ -245,7 +248,7 @@ export function DataTablePagination({
       <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-tertiary)' }}>
         {count.toLocaleString('pt-BR')} de {total.toLocaleString('pt-BR')} {label}
       </span>
-      <nav aria-label="Paginação" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <nav aria-label={navLabel} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
         <Button
           variant="ghost"
           size="sm"

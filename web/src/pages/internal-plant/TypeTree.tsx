@@ -21,7 +21,11 @@ type Props = {
   query?: string;
 };
 
-const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+const normalize = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 
 /** Mantém nós cujo nome casa (com a subárvore inteira) ou que têm descendente casando. */
 const filterTree = (
@@ -71,11 +75,16 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
     [tree, filtering, tokens],
   );
 
-  if (error) return <p className="p-4 text-[0.9rem] text-app-muted">{error}</p>;
+  if (error)
+    return (
+      <p role="alert" className="p-4 text-[0.9rem] text-app-muted">
+        {error}
+      </p>
+    );
   if (!tree) {
     return (
       <div className="p-4 text-app-muted">
-        <Loader2 size={16} className="animate-spin" aria-label="Carregando" />
+        <Loader2 size={16} className="animate-spin" role="status" aria-label="Carregando" />
       </div>
     );
   }

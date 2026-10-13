@@ -40,5 +40,11 @@ export function SitePinMap({
       </p>
     );
   }
-  return <div ref={ref} aria-label={label} className="h-44 w-full overflow-hidden rounded-[10px] border border-app-border" />;
+  return (
+    <div
+      ref={ref}
+      aria-label={label}
+      className="h-44 w-full overflow-hidden rounded-[10px] border border-app-border"
+    />
+  );
 }

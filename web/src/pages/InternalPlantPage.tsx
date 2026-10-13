@@ -73,13 +73,12 @@ const TONE_BG: Record<string, string> = {
 function StatusLight({ status }: { status: string }) {
   const { label, tone } = describeStatus(status);
   return (
-    <span className="flex justify-center">
+    <span className="flex items-center gap-1.5">
       <span
-        role="img"
-        aria-label={label}
-        title={label}
-        className={`inline-block h-2.5 w-2.5 rounded-full ${TONE_BG[tone]}`}
+        aria-hidden="true"
+        className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${TONE_BG[tone]}`}
       />
+      <span className="truncate text-[0.82rem] text-app-text">{label}</span>
     </span>
   );
 }
@@ -181,7 +180,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 type="button"
                 aria-label={`Excluir ${row.name}`}
                 title="Excluir"
-                className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+                className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 [@media(hover:none)]:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
                 onClick={(event) => {
                   event.stopPropagation();
                   setDeleteError(null);
@@ -349,7 +348,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       <aside
         aria-label={isMobile ? 'Locais e tipos' : undefined}
         style={isMobile ? undefined : { width: dockWidth }}
-        className={`flex h-full max-w-[80vw] shrink-0 flex-col border-r border-[var(--border-input-strong)] bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} ${DOCK_ELEVATION_CLASS} ${
+        className={`flex h-full max-w-[80vw] shrink-0 flex-col border-r border-[var(--border-input-strong)] bg-app-panel ${DOCK_SEARCH_CLEARANCE_PT_CLASS} ${DOCK_ELEVATION_CLASS} ${
           isMobile
             ? dockOpen
               ? 'fixed inset-y-0 left-0 z-[var(--z-overlay)] w-[85vw]'
@@ -361,10 +360,28 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           role="tablist"
           aria-label="Navegação de Planta Interna"
           className="flex shrink-0 border-b border-[var(--border-input-strong)]"
+          onKeyDown={(event) => {
+            if (
+              event.key !== 'ArrowLeft' &&
+              event.key !== 'ArrowRight' &&
+              event.key !== 'Home' &&
+              event.key !== 'End'
+            )
+              return;
+            event.preventDefault();
+            const next: DockTab = tab === 'locations' ? 'types' : 'locations';
+            const target: DockTab =
+              event.key === 'Home' ? 'locations' : event.key === 'End' ? 'types' : next;
+            setTab(target);
+            document.getElementById(`internal-plant-tab-${target}`)?.focus();
+          }}
         >
           <button
             type="button"
             role="tab"
+            id="internal-plant-tab-locations"
+            aria-controls="internal-plant-tabpanel"
+            tabIndex={tab === 'locations' ? 0 : -1}
             aria-selected={tab === 'locations'}
             className={tabClass(tab === 'locations')}
             onClick={() => setTab('locations')}
@@ -377,6 +394,9 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           <button
             type="button"
             role="tab"
+            id="internal-plant-tab-types"
+            aria-controls="internal-plant-tabpanel"
+            tabIndex={tab === 'types' ? 0 : -1}
             aria-selected={tab === 'types'}
             className={tabClass(tab === 'types')}
             onClick={() => setTab('types')}
@@ -401,7 +421,12 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none transition hover:bg-app-accent-soft focus-visible:bg-app-accent-soft focus-visible:outline-none"
           />
         )}
-        <div className="relative min-h-0 flex-1">
+        <div
+          role="tabpanel"
+          id="internal-plant-tabpanel"
+          aria-labelledby={`internal-plant-tab-${tab}`}
+          className="relative min-h-0 flex-1"
+        >
           {
             <>
               <button
@@ -447,14 +472,14 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                     tab === 'locations' ? 'Município ou UF (ex.: Niterói, RJ)' : 'Tipo de recurso'
                   }
                   aria-label={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
-                  className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!shadow-none focus:!outline-none focus:border-[var(--vt-yellow-light)]"
+                  className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!outline-none focus:border-[var(--vt-yellow-light)] focus-visible:!shadow-[var(--focus-shadow)]"
                 />
                 {treeQuery ? (
                   <button
                     type="button"
                     aria-label="Limpar pesquisa"
                     tabIndex={treeSearchOpen ? 0 : -1}
-                    className="absolute right-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
+                    className="absolute right-0 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
                     onClick={() => setTreeQuery('')}
                   >
                     <X size={12} aria-hidden="true" />
@@ -572,6 +597,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             ) : (
               <>
                 <DataTablePagination
+                  navLabel="Paginação superior"
                   count={state.page.items.length}
                   total={state.page.total}
                   label="recursos"
@@ -593,6 +619,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   emptyMessage="Nenhum recurso encontrado."
                 />
                 <DataTablePagination
+                  navLabel="Paginação inferior"
                   count={state.page.items.length}
                   total={state.page.total}
                   label="recursos"

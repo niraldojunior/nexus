@@ -16,6 +16,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CatalogTreeCombobox, type CatalogResourceTypeRef } from '../../components/CatalogTreePicker';
 import Button from '../../components/ui/Button';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import {
   fetchResourceEditor,
   fetchResourceHistory,
@@ -209,6 +210,7 @@ export function ResourceEditorModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
 
   const [types, setTypes] = useState<ResourceType[]>([]);
   const [specs, setSpecs] = useState<ResourceSpecification[]>([]);
@@ -415,13 +417,20 @@ export function ResourceEditorModal({
   };
 
   const requestClose = () => {
-    if (dirty && !window.confirm('Descartar as alterações não salvas?')) return;
-    onClose();
+    if (!dirty) return onClose();
+    void confirm({
+      title: 'Descartar as alterações?',
+      message: 'As alterações não salvas serão perdidas.',
+      confirmLabel: 'Descartar',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) onClose();
+    });
   };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') requestClose();
+      if (event.key === 'Escape' && !confirmOpen) requestClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -570,6 +579,7 @@ export function ResourceEditorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+      {confirmDialog}
       <div
         role="dialog"
         aria-modal="true"

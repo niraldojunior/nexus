@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import Button from '../../components/ui/Button';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import {
   listGeoSiteSpecifications,
   type GeoSite,
@@ -91,6 +92,7 @@ export function SiteEditorModal({
   const [error, setError] = useState<string | null>(null);
 
   const [dirty, setDirty] = useState(false);
+  const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
 
   const patch = (change: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...change } : current));
@@ -102,13 +104,20 @@ export function SiteEditorModal({
     setDraft((current) => (current ? { ...current, ...change } : current));
 
   const requestClose = () => {
-    if (dirty && !window.confirm('Descartar as alterações não salvas?')) return;
-    onClose();
+    if (!dirty) return onClose();
+    void confirm({
+      title: 'Descartar as alterações?',
+      message: 'As alterações não salvas serão perdidas.',
+      confirmLabel: 'Descartar',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) onClose();
+    });
   };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') requestClose();
+      if (event.key === 'Escape' && !confirmOpen) requestClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -250,6 +259,7 @@ export function SiteEditorModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-4">
+      {confirmDialog}
       <div
         role="dialog"
         aria-modal="true"

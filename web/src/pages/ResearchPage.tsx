@@ -5,6 +5,7 @@ import CopilotPendingResponse from '../components/CopilotPendingResponse';
 import NexusLoadingMark from '../components/NexusLoadingMark';
 import Diamond from '../components/Diamond';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
 import { scrollChatAnchorIntoView, scrollChatToBottom } from '../utils/chatScroll';
 import {
   confirmResearchSessionAction,
@@ -85,6 +86,7 @@ export const ResearchPage: React.FC<{
   onSessionUpdated?: (session: ResearchSession) => void;
 }> = ({ sessionId, onBack, onSessionUpdated }) => {
   const [session, setSession] = useState<ResearchSession | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +141,12 @@ export const ResearchPage: React.FC<{
   };
 
   const handleDelete = async () => {
-    if (!confirm('Arquivar esta conversa?')) return;
+    const ok = await confirm({
+      title: 'Arquivar esta conversa?',
+      confirmLabel: 'Arquivar',
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       const response = await fetch(`/v1/research/sessions/${sessionId}`, {
@@ -383,6 +390,7 @@ export const ResearchPage: React.FC<{
 
   return (
     <div className="flex flex-col h-full bg-app-bg">
+      {confirmDialog}
       {/* Fixed Header - Top */}
       <div className="flex-shrink-0 border-b border-app-border bg-app-bg px-6 py-4">
         <div className="flex w-full items-center justify-between gap-4">

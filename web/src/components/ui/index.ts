@@ -13,3 +13,4 @@ export { default as Drawer } from './Drawer';
 export { Tooltip } from './Tooltip';
 export { ScrollFadeTabBar } from './ScrollFadeTabBar';
 export type { ScrollFadeTabBarProps } from './ScrollFadeTabBar';
+export { default as ConfirmDialog } from './ConfirmDialog';

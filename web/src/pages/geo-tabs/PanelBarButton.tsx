@@ -14,14 +14,18 @@ export const PanelBarButton = forwardRef<
     active?: boolean;
     onClick: () => void;
     ariaLabel?: string;
+    /** Semântica de aba (role=tab + aria-selected) — só dentro de um role="tablist". */
+    asTab?: boolean;
   }
->(function PanelBarButton({ icon: Icon, label, badge, active, onClick, ariaLabel }, ref) {
+>(function PanelBarButton({ icon: Icon, label, badge, active, onClick, ariaLabel, asTab }, ref) {
   return (
     <button
       ref={ref}
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
+      role={asTab ? 'tab' : undefined}
+      aria-selected={asTab ? Boolean(active) : undefined}
       // `data-tab-active` é o alvo que PanelTabBar localiza para o auto-scroll (scrollIntoView)
       // quando a aba muda — sem isso, a faixa não tem como saber qual botão trazer à vista.
       data-tab-active={active ? 'true' : undefined}

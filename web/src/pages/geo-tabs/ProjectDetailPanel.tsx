@@ -599,6 +599,7 @@ export function ProjectDetailPanel({
             else setTab(value);
           }}
           ariaLabel={label}
+          asTab
         />
       ))}
     </PanelTabBar>

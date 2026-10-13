@@ -115,7 +115,7 @@ test('hides Serviços and Ordens from users without an order role', () => {
   cleanup();
   renderSidebar({ canViewOrder: true });
   expect(screen.getByRole('button', { name: 'Serviços' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Ordens' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^Ordens/ })).toBeInTheDocument();
 });
 
 test('mobile floating toggle appears by default when collapsed and shows the Nexus mark', () => {

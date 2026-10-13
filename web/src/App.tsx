@@ -64,7 +64,7 @@ const domainMeta: Record<
     subtitle: 'Para quê / quem? CFS, RFS e SubscriberID',
     icon: Briefcase,
   },
-  order: { title: 'Order', subtitle: 'Viabilidade, qualificação e fulfillment', icon: FolderTree },
+  order: { title: 'Ordens', subtitle: 'Viabilidade, qualificação e fulfillment', icon: FolderTree },
 };
 
 function AssistantHome({

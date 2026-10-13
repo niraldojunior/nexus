@@ -62,14 +62,23 @@ interface SidebarProps {
   onLogout?: () => void;
 }
 
-const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
+type PrimaryItem = {
+  id: PrimaryItemId;
+  label: string;
+  icon: LucideIcon;
+  section?: string;
+  soon?: boolean;
+};
+
+// Agrupamento só visual: rotas, permissões e ids permanecem os mesmos.
+const primaryItems: PrimaryItem[] = [
   { id: 'research', label: 'Nova Conversa', icon: Plus },
-  { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
-  { id: 'geo', label: 'Planta Externa', icon: MapPinned },
+  { id: 'conversations', label: 'Conversas', icon: MessagesSquare, section: 'Copilot' },
+  { id: 'geo', label: 'Planta Externa', icon: MapPinned, section: 'Inventário' },
   { id: 'internal-plant', label: 'Planta Interna', icon: Server },
   { id: 'service', label: 'Serviços', icon: Briefcase },
-  { id: 'order', label: 'Ordens', icon: FolderTree },
-  { id: 'studio', label: 'Studio', icon: Presentation },
+  { id: 'order', label: 'Ordens', icon: FolderTree, section: 'Operação', soon: true },
+  { id: 'studio', label: 'Studio', icon: Presentation, section: 'Plataforma' },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
@@ -283,7 +292,8 @@ export default function Sidebar({
                     (id !== 'studio' || canViewStudio) &&
                     ((id !== 'service' && id !== 'order') || canViewOrder),
                 )
-                .map(({ id, label, icon: Icon }) => {
+                .map(({ id, label, icon: Icon, section, soon }, index, visible) => {
+                  const showSection = Boolean(section) && section !== visible[index - 1]?.section;
                   const isActive =
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
@@ -298,10 +308,21 @@ export default function Sidebar({
 
                   return (
                     <div key={id}>
+                      {showSection ? (
+                        contentCollapsed ? (
+                          <div
+                            className="mx-2 my-1 border-t border-app-border"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <div className="vt-sb-group-label mt-1">{section}</div>
+                        )
+                      ) : null}
                       <NavItem
                         active={isActive}
                         icon={Icon}
                         label={label}
+                        badge={soon ? 'Em breve' : undefined}
                         onClick={() => {
                           if (id === 'conversations') {
                             onSelectPage('conversas');
@@ -514,10 +535,12 @@ function NavItem({
   label,
   onClick,
   collapsed = false,
+  badge,
 }: {
   active: boolean;
   icon: LucideIcon;
   label: string;
+  badge?: string;
   onClick: () => void;
   collapsed?: boolean;
 }) {
@@ -541,6 +564,11 @@ function NavItem({
           {label}
         </span>
       )}
+      {!collapsed && badge ? (
+        <span className="rounded-full border border-app-border px-1.5 text-[0.65rem] text-app-muted">
+          {badge}
+        </span>
+      ) : null}
       {collapsed && <span className="vt-sb-tip">{label}</span>}
     </button>
   );

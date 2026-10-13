@@ -1,5 +1,7 @@
-import { Layers, MapPin, Plus, Search, Trash2 } from 'lucide-react';
+import { Layers, MapPin, Plus, Search, Trash2, X } from 'lucide-react';
 import {
+  useEffect,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -141,6 +143,17 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     initialAdministrativeCityId?: string;
   } | null>(null);
   const [treeToken, setTreeToken] = useState(0);
+  const [treeSearchOpen, setTreeSearchOpen] = useState(false);
+  const [treeQuery, setTreeQuery] = useState('');
+  const treeInputRef = useRef<HTMLInputElement>(null);
+  // Foco só na abertura; focar a cada render roubava o cursor da barra de pesquisa principal.
+  useEffect(() => {
+    if (treeSearchOpen) treeInputRef.current?.focus({ preventScroll: true });
+  }, [treeSearchOpen]);
+  useEffect(() => {
+    setTreeQuery('');
+    setTreeSearchOpen(false);
+  }, [tab]);
   const [selectedCityId, setSelectedCityId] = useState<string | undefined>();
   const [pendingSiteRemoval, setPendingSiteRemoval] = useState<{
     id: string;
@@ -374,6 +387,67 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           />
         )}
         <div className="relative min-h-0 flex-1">
+          {
+            <>
+              <button
+                type="button"
+                aria-label={
+                  treeSearchOpen
+                    ? 'Fechar pesquisa'
+                    : tab === 'locations'
+                      ? 'Pesquisar município ou UF'
+                      : 'Pesquisar tipo'
+                }
+                aria-expanded={treeSearchOpen}
+                title={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
+                className={`absolute top-2 z-10 flex h-6 w-6 items-center justify-center rounded-lg border border-[var(--vt-yellow-light)] bg-[var(--vt-yellow-light)] text-[var(--text-primary)] transition hover:brightness-95 ${
+                  canEdit && tab === 'locations' ? 'right-11' : 'right-3'
+                }`}
+                onClick={() => {
+                  if (treeSearchOpen) setTreeQuery('');
+                  setTreeSearchOpen(!treeSearchOpen);
+                }}
+              >
+                <Search size={14} aria-hidden="true" />
+              </button>
+              <div
+                aria-hidden={!treeSearchOpen}
+                className={`absolute left-3 top-2 z-10 transition-all duration-300 ease-out ${
+                  canEdit && tab === 'locations' ? 'right-[4.5rem]' : 'right-11'
+                } ${treeSearchOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-4 opacity-0'}`}
+              >
+                <input
+                  type="search"
+                  value={treeQuery}
+                  tabIndex={treeSearchOpen ? 0 : -1}
+                  ref={treeInputRef}
+                  onChange={(event) => setTreeQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setTreeQuery('');
+                      setTreeSearchOpen(false);
+                    }
+                  }}
+                  placeholder={
+                    tab === 'locations' ? 'Município ou UF (ex.: Niterói, RJ)' : 'Tipo de recurso'
+                  }
+                  aria-label={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
+                  className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!shadow-none focus:!outline-none focus:border-[var(--vt-yellow-light)]"
+                />
+                {treeQuery ? (
+                  <button
+                    type="button"
+                    aria-label="Limpar pesquisa"
+                    tabIndex={treeSearchOpen ? 0 : -1}
+                    className="absolute right-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
+                    onClick={() => setTreeQuery('')}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+            </>
+          }
           {canEdit && tab === 'locations' ? (
             <button
               type="button"
@@ -391,22 +465,29 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
               <Plus size={14} aria-hidden="true" />
             </button>
           ) : null}
-          <OverlayScrollArea hostClassName="h-full min-h-0">
-            {tab === 'locations' ? (
-              <LocationTree
-                onSelectSite={selectSite}
-                selectedSiteId={context?.filter.siteId}
-                canEdit={canEdit}
-                refreshToken={treeToken}
-                selectedCityId={selectedCityId}
-                onSelectCity={selectCity}
-                onEditSite={(node) => node.refId && setSiteEditor({ siteId: node.refId })}
-                onRemoveSite={(node) => void askRemoveSite(node)}
-              />
-            ) : (
-              <TypeTree onSelect={selectType} selectedKey={context?.key} />
-            )}
-          </OverlayScrollArea>
+          <div
+            className={`h-full min-h-0 transition-[padding] duration-300 ease-out ${
+              treeSearchOpen ? 'pt-9' : 'pt-0'
+            }`}
+          >
+            <OverlayScrollArea hostClassName="h-full min-h-0">
+              {tab === 'locations' ? (
+                <LocationTree
+                  query={treeQuery}
+                  onSelectSite={selectSite}
+                  selectedSiteId={context?.filter.siteId}
+                  canEdit={canEdit}
+                  refreshToken={treeToken}
+                  selectedCityId={selectedCityId}
+                  onSelectCity={selectCity}
+                  onEditSite={(node) => node.refId && setSiteEditor({ siteId: node.refId })}
+                  onRemoveSite={(node) => void askRemoveSite(node)}
+                />
+              ) : (
+                <TypeTree query={treeQuery} onSelect={selectType} selectedKey={context?.key} />
+              )}
+            </OverlayScrollArea>
+          </div>
         </div>
       </aside>
 

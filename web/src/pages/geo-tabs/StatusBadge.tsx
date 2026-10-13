@@ -1,4 +1,5 @@
-import { statusBadgeMeta, TONE_CLASS } from '../../utils/geoLabels';
+import { statusBadgeMeta } from '../../utils/geoLabels';
+import { TonePill } from './TonePill';
 
 // Selo de status do campo "Status" nas abas Visão geral de Site e Recurso —
 // mesmo padrão visual do PrecisionBadge no painel de Endereço (borda + fundo
@@ -8,11 +9,5 @@ import { statusBadgeMeta, TONE_CLASS } from '../../utils/geoLabels';
 // — statusBadgeMeta cobre os dois sem o chamador precisar saber qual é qual.
 export function StatusBadge({ status }: { status: string }) {
   const { label, tone } = statusBadgeMeta(status);
-  return (
-    <span
-      className={`inline-flex items-center rounded-[999px] border px-2 py-0.5 text-[0.68rem] font-semibold tracking-[0.02em] ${TONE_CLASS[tone]}`}
-    >
-      {label}
-    </span>
-  );
+  return <TonePill label={label} tone={tone} />;
 }

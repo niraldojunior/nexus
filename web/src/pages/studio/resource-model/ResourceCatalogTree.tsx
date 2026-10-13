@@ -20,11 +20,9 @@ import { useVisualIdentityPreviewUrl } from '../../../hooks/useVisualIdentityPre
 
 function ResourceTypeTreeIcon({
   node,
-  isLogical,
   fallback: FallbackIcon,
 }: {
   node: ResourceCatalogTreeNode;
-  isLogical: boolean;
   fallback: ReturnType<typeof resolveNodeIcon>;
 }) {
   // A identidade canônica é um glifo do tipo, não um marcador do mapa: sem fundo e no azul
@@ -37,9 +35,7 @@ function ResourceTypeTreeIcon({
   return previewUrl ? (
     <img src={previewUrl} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />
   ) : (
-    <FallbackIcon
-      className={`h-4 w-4 shrink-0 ${isLogical ? 'text-purple-600' : 'text-sky-600'}`}
-    />
+    <FallbackIcon className="h-4 w-4 shrink-0 text-app-muted" />
   );
 }
 
@@ -394,11 +390,7 @@ export function ResourceCatalogTree({
                 <Folder className="h-4 w-4 shrink-0 text-amber-500" />
               )
             ) : (
-              <ResourceTypeTreeIcon
-                node={node}
-                isLogical={isLogical}
-                fallback={CustomResourceIcon}
-              />
+              <ResourceTypeTreeIcon node={node} fallback={CustomResourceIcon} />
             )}
 
             <span className="truncate" title={node.name}>

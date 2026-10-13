@@ -278,7 +278,7 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
       expect(image).not.toBeNull();
       return image!;
     });
-    expect(decodeURIComponent(preview.getAttribute('src') ?? '')).toContain('M12 2v20');
+    expect(decodeURIComponent(preview.getAttribute('src') ?? '')).toContain('M12 3v19');
     await waitFor(() => expect(captureSnapshot).not.toBeNull());
     const captured = await captureSnapshot!();
     expect(JSON.stringify(captured)).not.toContain('visualIdentity');

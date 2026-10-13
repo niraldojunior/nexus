@@ -729,10 +729,10 @@ export function ResourceNodeDetail({
               // acontece na aba Geral, junto de Natureza/Geometria — nunca clicando aqui.
               <div
                 title="A identidade visual é editada na aba Geral"
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border ${
-                  isLogical
-                    ? 'border-purple-200 bg-purple-50 text-purple-600'
-                    : 'border-sky-200 bg-sky-50 text-sky-600'
+                className={`flex h-10 w-10 shrink-0 items-center justify-center ${
+                  visualIdentityPreviewUrl
+                    ? ''
+                    : 'rounded-[10px] border border-app-border bg-[var(--surface-muted)] text-app-muted'
                 }`}
               >
                 {visualIdentityPreviewUrl ? (

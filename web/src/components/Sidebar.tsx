@@ -194,7 +194,7 @@ export default function Sidebar({
 
       {isMobile && !collapsed ? (
         <div
-          className="fixed inset-0 z-40 bg-black/40"
+          className="fixed inset-0 z-40 bg-[var(--scrim)]"
           onClick={onToggleCollapse}
           aria-hidden="true"
         />

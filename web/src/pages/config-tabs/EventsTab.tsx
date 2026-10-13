@@ -7,7 +7,7 @@ import {
 } from '../../services/studioApi';
 import PageHead from '../../components/ui/PageHead';
 import Button from '../../components/ui/Button';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { type DataTableColumn, type DataTableSort } from '../../components/ui/DataTable';
 
 const domains: Array<{ value: StudioDomain; label: string }> = [
   { value: 'resource-model', label: 'Recursos' },
@@ -40,6 +40,7 @@ export function EventsTab() {
   const [entries, setEntries] = useState<StudioAuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sort, setSort] = useState<DataTableSort>({ key: 'eventTime', direction: 'desc' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +63,7 @@ export function EventsTab() {
       {
         key: 'eventTime',
         header: 'Data e hora',
+        sortable: true,
         render: (entry) => (
           <span style={{ color: 'var(--text-secondary)' }}>{formatDateTime(entry.eventTime)}</span>
         ),
@@ -69,6 +71,7 @@ export function EventsTab() {
       {
         key: 'action',
         header: 'Evento',
+        sortable: true,
         render: (entry) => (
           <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
             {actionLabel[entry.action]}
@@ -78,6 +81,7 @@ export function EventsTab() {
       {
         key: 'versionNumber',
         header: 'Versão',
+        sortable: true,
         render: (entry) => (
           <span style={{ color: 'var(--text-secondary)' }}>v{entry.versionNumber}</span>
         ),
@@ -85,6 +89,7 @@ export function EventsTab() {
       {
         key: 'actorSub',
         header: 'Ator',
+        sortable: true,
         render: (entry) => (
           <span className="font-mono text-[0.8rem]" style={{ color: 'var(--text-secondary)' }}>
             {entry.actorSub}
@@ -94,6 +99,18 @@ export function EventsTab() {
     ],
     [],
   );
+
+  const sortedEntries = useMemo(() => {
+    const factor = sort.direction === 'asc' ? 1 : -1;
+    const value = (entry: StudioAuditEntry) =>
+      sort.key === 'action' ? actionLabel[entry.action] : entry[sort.key as keyof StudioAuditEntry];
+    return [...entries].sort((a, b) => {
+      const va = value(a);
+      const vb = value(b);
+      if (va === vb) return 0;
+      return (va ?? '') > (vb ?? '') ? factor : -factor;
+    });
+  }, [entries, sort]);
 
   return (
     <div>
@@ -139,7 +156,11 @@ export function EventsTab() {
 
       <DataTable
         columns={columns}
-        rows={entries}
+        rows={sortedEntries}
+        loading={loading && entries.length === 0}
+        stickyHeader
+        sort={sort}
+        onSortChange={setSort}
         rowKey={(entry) => entry.id}
         emptyMessage={
           loading ? (

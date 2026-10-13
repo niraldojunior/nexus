@@ -14,11 +14,26 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 const TONES: Record<BadgeTone, { bg: string; fg: string }> = {
   neutral: { bg: 'var(--surface-muted)', fg: 'var(--text-secondary)' },
-  green: { bg: 'var(--status-green-soft)', fg: 'color-mix(in srgb, var(--status-green) 45%, var(--text-primary))' },
-  blue: { bg: 'var(--status-blue-soft)', fg: 'color-mix(in srgb, var(--status-blue) 45%, var(--text-primary))' },
-  amber: { bg: 'var(--status-amber-soft)', fg: 'color-mix(in srgb, var(--status-amber) 45%, var(--text-primary))' },
-  red: { bg: 'var(--status-red-soft)', fg: 'color-mix(in srgb, var(--status-red) 45%, var(--text-primary))' },
-  purple: { bg: 'var(--status-purple-soft)', fg: 'color-mix(in srgb, var(--status-purple) 45%, var(--text-primary))' },
+  green: {
+    bg: 'var(--status-green-soft)',
+    fg: 'color-mix(in srgb, var(--status-green) 45%, var(--text-primary))',
+  },
+  blue: {
+    bg: 'var(--status-blue-soft)',
+    fg: 'color-mix(in srgb, var(--status-blue) 45%, var(--text-primary))',
+  },
+  amber: {
+    bg: 'var(--status-amber-soft)',
+    fg: 'color-mix(in srgb, var(--status-amber) 45%, var(--text-primary))',
+  },
+  red: {
+    bg: 'var(--status-red-soft)',
+    fg: 'color-mix(in srgb, var(--status-red) 45%, var(--text-primary))',
+  },
+  purple: {
+    bg: 'var(--status-purple-soft)',
+    fg: 'color-mix(in srgb, var(--status-purple) 45%, var(--text-primary))',
+  },
   brand: { bg: 'var(--vt-yellow-dim)', fg: 'var(--vt-yellow-ink-soft)' },
   ink: { bg: 'var(--surface-ink)', fg: 'var(--vt-yellow)' },
 };

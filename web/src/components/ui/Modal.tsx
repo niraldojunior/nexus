@@ -51,7 +51,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-[var(--scrim)]"
       onClick={closeOnClickOutside ? onClose : undefined}
       role="dialog"
       aria-modal="true"

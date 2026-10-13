@@ -63,11 +63,14 @@ export function SortableHeader<K extends string>({
         : ChevronDown
       : ChevronsUpDown;
   return (
-    <th style={{ textAlign: align === 'center' ? 'center' : 'left' }}>
+    <th
+      style={{ textAlign: align === 'center' ? 'center' : 'left' }}
+      aria-sort={active ? (sort?.direction === 'asc' ? 'ascending' : 'descending') : undefined}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 transition ${align === 'center' ? 'mx-auto justify-center' : ''}`}
+        className={`relative inline-flex items-center gap-1 transition before:absolute before:-inset-x-1 before:-inset-y-2 before:content-[''] ${align === 'center' ? 'mx-auto justify-center' : ''}`}
         style={{ color: active ? 'var(--text-primary)' : 'inherit' }}
       >
         {label}

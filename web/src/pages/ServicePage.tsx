@@ -494,13 +494,15 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
       key: 'select',
       headerClassName: 'w-[44px]',
       header: (
-        <input
-          ref={selectAllRef}
-          type="checkbox"
-          aria-label="Selecionar página atual"
-          checked={pageItems.length > 0 && pageSelectionCount === pageItems.length}
-          onChange={toggleSelectPage}
-        />
+        <label className="-m-2 inline-flex p-2">
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            aria-label="Selecionar página atual"
+            checked={pageItems.length > 0 && pageSelectionCount === pageItems.length}
+            onChange={toggleSelectPage}
+          />
+        </label>
       ),
       render: (service) => (
         <input

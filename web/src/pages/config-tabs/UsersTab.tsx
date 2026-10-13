@@ -166,7 +166,9 @@ export function UsersTab() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5}>Carregando…</td>
+                <td colSpan={5} role="status">
+                  Carregando…
+                </td>
               </tr>
             ) : sortedUsers.length === 0 ? (
               <tr>

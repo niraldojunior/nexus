@@ -243,7 +243,11 @@ export const ResearchHistoryPage: React.FC<{
         />
       ) : null}
       <div className="flex flex-col">
-        {loading && <div className="px-2.5 py-1.5 text-xs text-app-muted">Carregando...</div>}
+        {loading && (
+          <div role="status" className="px-2.5 py-1.5 text-xs text-app-muted">
+            Carregando...
+          </div>
+        )}
 
         {!loading && sessions.length === 0 && (
           <div className="px-2.5 py-1.5 text-xs text-app-muted">Nenhuma conversa ainda</div>

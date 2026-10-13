@@ -143,8 +143,8 @@ export function EventsTab() {
         rowKey={(entry) => entry.id}
         emptyMessage={
           loading ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Carregando eventos…
+            <span role="status" className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Carregando eventos…
             </span>
           ) : (
             'Nenhum evento registrado para este domínio.'

@@ -139,6 +139,7 @@ export default function SettingsModal({
                 onClick={onClose}
                 className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft hover:text-app-text"
                 title="Fechar"
+                aria-label="Fechar"
               >
                 <X className="h-5 w-5" strokeWidth={1.8} />
               </button>

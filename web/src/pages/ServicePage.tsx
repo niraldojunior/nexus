@@ -800,8 +800,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
             boxShadow: 'var(--shadow-md)',
           }}
         >
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Carregando dados...
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />
+          <span role="status">Carregando dados...</span>
         </div>
       ) : null}
     </div>

@@ -363,7 +363,9 @@ export const ResearchPage: React.FC<{
       <div className="flex items-center justify-center h-full bg-app-bg">
         <div className="text-center">
           <NexusLoadingMark size={40} className="mx-auto mb-4 h-10 w-10" />
-          <p className="text-app-muted">Carregando conversa...</p>
+          <p role="status" className="text-app-muted">
+            Carregando conversa...
+          </p>
         </div>
       </div>
     );

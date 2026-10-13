@@ -160,7 +160,13 @@ export interface IResourceRepository {
   ): Awaitable<ResourceConnection[]>;
   listResourceComponents(
     resourceId: string,
-    options?: { scope?: ResourceTenantScope; maxDepth?: number; includeConnections?: boolean },
+    options?: {
+      scope?: ResourceTenantScope;
+      maxDepth?: number;
+      includeConnections?: boolean;
+      /** Read model enxuto do editor: sem enriquecimento de Portas (drop/ONT) nem characteristics. */
+      lean?: boolean;
+    },
   ): Awaitable<{
     components: ResourceComponentNode[];
     connections: ResourceComponentConnection[];

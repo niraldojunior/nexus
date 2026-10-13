@@ -845,9 +845,7 @@ export class OracleGeoRepository implements IGeoRepository {
       params.push(scope.tenantId);
     }
     const row = await this.db.get<GeographicSiteRow>(
-      `SELECT id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id,
-              geographic_address_id, parent_site_id, related_party, site_addresses, note, characteristics
-       FROM geographic_site WHERE ${conditions.join(' AND ')}`,
+      `SELECT id, tenant_id, name, status, status_date, status_reason, site_specification_id, geographic_location_id, geographic_address_id, parent_site_id, related_party, site_addresses, note, characteristics FROM geographic_site WHERE ${conditions.join(' AND ')}`,
       params,
     );
 

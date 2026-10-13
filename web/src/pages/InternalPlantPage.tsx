@@ -131,6 +131,8 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const [offset, setOffset] = useState(0);
   const [retryToken, setRetryToken] = useState(0);
   const [dockWidth, setDockWidth] = useState(readStoredDockWidth);
+  // No mobile a doca vira gaveta sobre a tabela, aberta por um botão na página.
+  const [dockOpen, setDockOpen] = useState(false);
   const state = useInternalPlantResources(context?.filter ?? null, offset, retryToken);
   const { canEdit } = useSession();
   const [editor, setEditor] = useState<{
@@ -260,6 +262,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const confirm = (next: Context) => {
     setContext(next);
     setOffset(0);
+    setDockOpen(false);
   };
 
   // Seleção exclusiva: escolher um município desfaz o Site selecionado e limpa a área de detalhes.
@@ -336,10 +339,22 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
 
   return (
     <div className="relative flex h-full min-h-0 w-full bg-app-bg">
+      {isMobile && dockOpen ? (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-[var(--z-overlay)] bg-[var(--scrim)]"
+          onClick={() => setDockOpen(false)}
+        />
+      ) : null}
       <aside
-        style={{ width: dockWidth }}
+        aria-label={isMobile ? 'Locais e tipos' : undefined}
+        style={isMobile ? undefined : { width: dockWidth }}
         className={`flex h-full max-w-[80vw] shrink-0 flex-col border-r border-[var(--border-input-strong)] bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} ${DOCK_ELEVATION_CLASS} ${
-          isMobile ? 'hidden' : ''
+          isMobile
+            ? dockOpen
+              ? 'fixed inset-y-0 left-0 z-[var(--z-overlay)] w-[85vw]'
+              : 'hidden'
+            : ''
         }`}
       >
         <div
@@ -492,6 +507,16 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       </aside>
 
       <main className="min-w-0 flex-1 overflow-auto px-6 pb-6 pt-3">
+        {isMobile ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={dockOpen}
+            onClick={() => setDockOpen(true)}
+          >
+            <Layers size={16} aria-hidden="true" /> Locais e tipos
+          </Button>
+        ) : null}
         {context === null ? (
           <section aria-label="Planta Interna">
             <PageHead

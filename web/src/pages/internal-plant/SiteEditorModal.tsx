@@ -9,9 +9,10 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '../../components/ui/Button';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   listGeoSiteSpecifications,
   type GeoSite,
@@ -93,6 +94,8 @@ export function SiteEditorModal({
 
   const [dirty, setDirty] = useState(false);
   const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalDialog(panelRef, !confirmOpen);
 
   const patch = (change: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...change } : current));
@@ -261,10 +264,12 @@ export function SiteEditorModal({
     <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)] p-4">
       {confirmDialog}
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[960px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal"
+        className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[960px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal outline-none"
       >
         <nav
           aria-label="Local"

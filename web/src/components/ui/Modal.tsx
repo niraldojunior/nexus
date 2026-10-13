@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 /**
  * V.tal Nexus — Modal. Generaliza o `ArchiveConfirmModal` de
@@ -30,6 +31,7 @@ export default function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  useFocusTrap(panelRef);
 
   useEffect(() => {
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;

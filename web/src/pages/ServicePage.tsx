@@ -555,6 +555,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
               onClick={() => goToGeo(service.place![0].id)}
               className="inline-flex items-center text-app-accent transition hover:text-app-accent-border"
               title="Ver no mapa de locais"
+              aria-label="Ver no mapa de locais"
             >
               <MapPin className="h-3.5 w-3.5" aria-hidden />
             </button>

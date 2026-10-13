@@ -191,7 +191,7 @@ export default function Sidebar({
         />
       ) : null}
 
-      <aside className={asideClassName}>
+      <aside className={asideClassName} aria-label="Navegação principal">
         {/* SidebarHeader — compacto: a lista de itens começa logo abaixo da marca. */}
         <div className="flex flex-shrink-0 items-center px-2 pt-1.5 pb-0.5">
           <div
@@ -260,7 +260,7 @@ export default function Sidebar({
           }`}
         >
           <div className="h-full">
-            <nav className="flex flex-col gap-[2px] px-2">
+            <nav aria-label="Módulos" className="flex flex-col gap-[2px] px-2">
               {primaryItems
                 .filter(({ id }) => id === 'research')
                 .map(({ id, label, icon: Icon }) => (
@@ -340,6 +340,7 @@ export default function Sidebar({
                                     categoryMenu.onSelect(item.code);
                                     closeMobileDrawer();
                                   }}
+                                  aria-current={subItemActive ? 'page' : undefined}
                                   className={`vt-sb-btn w-full text-left text-xs ${
                                     subItemActive ? 'is-active' : ''
                                   }`}
@@ -466,6 +467,7 @@ export default function Sidebar({
                 }}
                 className="rounded p-1 text-app-muted hover:text-app-text"
                 title="Preferências"
+                aria-label="Preferências"
               >
                 <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
               </button>
@@ -478,6 +480,7 @@ export default function Sidebar({
                   }}
                   className="rounded p-1 text-app-muted hover:text-red-600"
                   title="Sair"
+                  aria-label="Sair"
                 >
                   <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
                 </button>
@@ -523,6 +526,8 @@ function NavItem({
       type="button"
       onClick={onClick}
       title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+      aria-current={active ? 'page' : undefined}
       className={`vt-sb-btn relative flex w-full items-center text-left ${
         collapsed ? 'vt-sb-btn-rail' : ''
       } ${active ? 'is-active' : ''}`}

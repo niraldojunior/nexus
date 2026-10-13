@@ -87,6 +87,7 @@ export const ResearchHistoryPage: React.FC<{
   const [sessions, setSessions] = useState<ResearchSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [archiveTarget, setArchiveTarget] = useState<ResearchSession | null>(null);
@@ -149,11 +150,12 @@ export const ResearchHistoryPage: React.FC<{
         headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
       });
 
-      if (response.ok) {
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-      }
+      if (!response.ok) throw new Error(`Falha ao arquivar conversa: ${response.status}`);
+      setActionError(null);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
       console.error('Error deleting session:', err);
+      setActionError('Não foi possível arquivar a conversa. Tente novamente.');
     } finally {
       setArchiveTarget(null);
     }
@@ -205,18 +207,32 @@ export const ResearchHistoryPage: React.FC<{
             : session,
         ),
       );
+      setActionError(null);
       cancelEdit();
     } catch (err) {
       console.error('Error updating session title:', err);
+      setActionError('Não foi possível renomear a conversa. Tente novamente.');
     }
   };
 
   if (error) {
-    return <div className="px-3 py-2 text-xs text-red-600">Erro ao carregar</div>;
+    return (
+      <div role="alert" className="px-3 py-2 text-xs text-red-600">
+        Não foi possível carregar as conversas.{' '}
+        <button type="button" className="underline" onClick={loadRecentSessions}>
+          Tentar novamente
+        </button>
+      </div>
+    );
   }
 
   return (
     <>
+      {actionError ? (
+        <div role="alert" className="px-3 py-2 text-xs text-red-600">
+          {actionError}
+        </div>
+      ) : null}
       {archiveTarget ? (
         <ArchiveConfirmModal
           sessionTitle={archiveTarget.title}

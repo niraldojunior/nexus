@@ -86,7 +86,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
 
       const session = await sessionResponse.json();
 
-      await fetch(`/v1/research/sessions/${session.id}/messages`, {
+      const messageResponse = await fetch(`/v1/research/sessions/${session.id}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,6 +94,10 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         },
         body: JSON.stringify({ message: input }),
       });
+
+      if (!messageResponse.ok) {
+        throw new Error(`Falha ao enviar a mensagem: ${messageResponse.status}`);
+      }
 
       setInput('');
       onSessionCreated?.(session.id);
@@ -118,6 +122,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
         {/* Error */}
         {error && (
           <div
+            role="alert"
             className="mb-4 w-full animate-vt-rise px-4 py-3 text-sm [animation-delay:80ms]"
             style={{
               background: 'var(--status-red-soft)',

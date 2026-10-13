@@ -392,6 +392,7 @@ export const ResearchPage: React.FC<{
             onClick={handleDelete}
             className="p-2 text-app-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0"
             title="Arquivar conversa"
+            aria-label="Arquivar conversa"
           >
             <Trash2 className="h-5 w-5" />
           </button>
@@ -401,6 +402,7 @@ export const ResearchPage: React.FC<{
       {/* Error message */}
       {error && (
         <div
+          role="alert"
           className="flex-shrink-0 px-6 py-3"
           style={{
             background: 'var(--status-red-soft)',

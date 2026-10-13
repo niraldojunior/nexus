@@ -151,6 +151,7 @@ export const ConversasPage: React.FC<{
         {/* Error */}
         {error && (
           <div
+            role="alert"
             className="mb-6 px-4 py-3 text-sm"
             style={{
               background: 'var(--status-red-soft)',
@@ -196,7 +197,16 @@ export const ConversasPage: React.FC<{
               {paginatedSessions.map((session) => (
                 <div
                   key={session.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelectSession(session.id)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectSession(session.id);
+                    }
+                  }}
                   className="vt-card-interactive group flex items-center p-4 text-left"
                 >
                   <div className="flex-1 min-w-0">
@@ -222,8 +232,9 @@ export const ConversasPage: React.FC<{
                   </div>
                   <button
                     onClick={(e) => handleDelete(session.id, e)}
-                    className="vt-hover-danger ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition group-hover:opacity-100"
+                    className="vt-hover-danger ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
                     title="Arquivar conversa"
+                    aria-label={`Arquivar conversa: ${session.title}`}
                   >
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                   </button>

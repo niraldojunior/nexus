@@ -155,7 +155,7 @@ const itemBySection = new Map(
 );
 
 export function StudioPage({
-  section,
+  section: requestedSection,
   canEdit,
   canAdmin,
   onSectionChange,
@@ -165,6 +165,9 @@ export function StudioPage({
   canAdmin: boolean;
   onSectionChange: (section: StudioSection) => void;
 }) {
+  // 'spatial' é rota legada: o Studio GEO (studio-geo) absorveu as camadas espaciais e o
+  // SpatialStudio não é mais montado. Links antigos resolvem para a área que o substituiu.
+  const section: StudioSection = requestedSection === 'spatial' ? 'studio-geo' : requestedSection;
   const activeItem = itemBySection.get(section) ?? itemBySection.get('resource-model');
   const studioDomain = activeItem ? studioDomainBySection[section] : undefined;
 

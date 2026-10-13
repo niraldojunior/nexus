@@ -38,6 +38,7 @@ import {
   SpecCoverage,
 } from './concrete-specs.js';
 import { MigrationProgress } from './progress.js';
+import { disableResourceLoadIndexes, rebuildResourceLoadIndexes } from './resource-load-indexes.js';
 import type { PhaseStats } from './types.js';
 
 /**
@@ -335,6 +336,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       return stats;
     }
 
+    await disableResourceLoadIndexes(target, ctx);
     await requireSpecIds(ctx, target);
     const portSpecId = await requirePortSpecification(ctx, target);
     const splitterSpecsByRatio = await requireSplitterSpecifications(ctx, target);
@@ -724,6 +726,7 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       );
     }
     plantProgress.finish();
+    await rebuildResourceLoadIndexes(target, ctx);
     stats.loaded = importedCardIds.size + importedPortIds.size;
 
     console.log(

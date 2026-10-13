@@ -81,7 +81,7 @@ async function byChunks<T>(
   const rows: T[] = [];
   for (const chunk of chunksOf([...new Set(ids)])) {
     const { clause, binds } = namedInBinds(chunk, 'id');
-    rows.push(...(await run<T>(source, query(clause), binds, chunk.length)));
+    for (const row of await run<T>(source, query(clause), binds, chunk.length)) rows.push(row);
   }
   return rows;
 }

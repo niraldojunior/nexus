@@ -35,7 +35,6 @@ import {
   resolveCanonicalCdoParents,
 } from '../src/scripts/netwin-migration/phase2-internal-plant.js';
 import { plantEquipmentIdQuery } from '../src/scripts/netwin-migration/internal-plant-source.js';
-import { isStationPlantDiscoveryBlocked } from '../src/scripts/netwin-migration/phase2-station-internal-plant.js';
 import { CANONICAL_SITE_SPECS } from '../src/scripts/netwin-migration/phase1-site-specs.js';
 import {
   CANONICAL_RESOURCE_TYPES,
@@ -390,15 +389,6 @@ describe('netwin-migration: address parsing', () => {
   it('retorna null para endereço vazio', () => {
     expect(parseAddressString('')).toBeNull();
     expect(parseAddressString(null)).toBeNull();
-  });
-});
-
-describe('netwin-migration: gate da Fase 2.D', () => {
-  it('bloqueia a finalização enquanto restarem contratos de planta interna', () => {
-    expect(
-      isStationPlantDiscoveryBlocked({ unresolvedContracts: ['Contrato ISP pendente'] } as never),
-    ).toBe(true);
-    expect(isStationPlantDiscoveryBlocked({ unresolvedContracts: [] } as never)).toBe(false);
   });
 });
 

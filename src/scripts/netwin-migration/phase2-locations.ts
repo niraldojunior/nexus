@@ -193,7 +193,7 @@ async function hydrateAssociations(
         prefetchRows: 2001,
       },
     );
-    associations.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) associations.push(row);
   }
   return associations;
 }
@@ -217,7 +217,7 @@ async function hydrateFloors(
       binds,
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }

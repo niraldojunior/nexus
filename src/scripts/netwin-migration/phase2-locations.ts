@@ -330,6 +330,9 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
     if (ctx.options.resume) {
       console.log(`[Resume] Fase 2.A: cursor ${lastId}; processados=${totalProcessed}.`);
     }
+    const trace = (message: string) => {
+      if (process.env.NETWIN_TRACE) console.log(`[Trace ${new Date().toISOString()}] ${message}`);
+    };
     const maxRecords = ctx.options.maxRecords ?? Infinity;
     const progress = new MigrationProgress({
       label: 'Fase 2.A — Locais',
@@ -407,9 +410,12 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
         ]);
       }
 
+      trace(`hidratou locais/endereços/associações ids=${ids.length}`);
       const floorRows = await hydrateFloors(source, ids);
+      trace('hidratou pisos');
       const municipalityByLocation = await hydrateMunicipalities(source, ids);
 
+      trace('hidratou municípios');
       startedAt = Date.now();
       const locations: Array<Record<string, unknown>> = [];
       const addresses: Array<Record<string, unknown>> = [];
@@ -540,6 +546,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       }
       timing.transformMs = elapsed(startedAt);
 
+      trace('transformou');
       const nextTotalProcessed = totalProcessed + ids.length;
       if (target) {
         try {
@@ -562,8 +569,10 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             ctx.options.batchSize,
           );
           timing.locationMergeMs = elapsed(startedAt);
+          trace('merge location ok');
           startedAt = Date.now();
           // Diretório geográfico (issue #329): resolve os municípios do lote antes do merge.
+          trace('resolvendo cidades');
           const cityIds = await resolveAdministrativeCityIds(target, ctx.t, [
             ...addressCityTuples.values(),
             ...[...municipalityByLocation.values()].map((municipality) => municipality.tuple),
@@ -590,6 +599,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             ctx.options.batchSize,
           );
           timing.addressMergeMs = elapsed(startedAt);
+          trace('merge address ok');
           startedAt = Date.now();
           await bulkMergeRows(
             target,
@@ -638,6 +648,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               `[Município] ${unresolvedMunicipalities} Site(s) com município não resolvido no diretório; ficam sem município.`,
             );
           }
+          trace('merge site ok');
           if (siteCities.size > 0) {
             for (const cityId of new Set(siteCities.values())) {
               await target.execute(
@@ -662,6 +673,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               },
             );
           }
+          trace('city_tenant/update city ok');
           timing.siteMergeMs = elapsed(startedAt);
           startedAt = Date.now();
           // Binds nomeados, não posicionais: node-oracledb liga binds por ordem de aparição e
@@ -695,6 +707,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
                 },
               },
             );
+          trace('hierarquia ok');
           timing.hierarchyUpdateMs = elapsed(startedAt);
           await saveNativeCheckpoint(target, ctx, '2A', {
             lastSourceId: lastId,

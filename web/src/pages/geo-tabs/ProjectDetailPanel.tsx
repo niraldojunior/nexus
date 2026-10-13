@@ -382,10 +382,10 @@ export function ProjectDetailPanel({
           </button>
           {menuOpen ? (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setMenuOpen(false)} />
               <div
                 role="menu"
-                className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+                className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
               >
                 <button
                   type="button"

@@ -44,7 +44,7 @@ import {
   type ServiceSpecFormState,
 } from '../utils/serviceSpecificationForm';
 import { PageHead, Button, Badge, StatusPill, DataTable, Modal } from '../components/ui';
-import type { DataTableColumn } from '../components/ui';
+import type { DataTableColumn, DataTableSort } from '../components/ui';
 
 const PAGE_SIZE = 20;
 
@@ -132,6 +132,8 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const effectiveTab: ServiceTabId = 'CustomerFacingService';
 
   const [page, setPage] = useState(1);
+  // Ordenação no cliente: a paginação também é local (PAGE_SIZE sobre `filteredItems`).
+  const [sort, setSort] = useState<DataTableSort>({ key: 'name', direction: 'asc' });
   // Visão da tabela: CFS (o que o cliente contrata) e RFS (o que a rede entrega) são camadas
   // distintas (C3); 'all' preserva a leitura da cadeia completa.
   const [layerView, setLayerView] = useState<'all' | 'CFS' | 'RFS'>('all');
@@ -261,7 +263,13 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const activePage = Math.min(Math.max(1, page), totalPages);
-  const pageItems = filteredItems.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
+  const sortedItems = useMemo(() => {
+    const factor = sort.direction === 'asc' ? 1 : -1;
+    return [...filteredItems].sort(
+      (left, right) => factor * left.name.localeCompare(right.name, 'pt-BR', { numeric: true }),
+    );
+  }, [filteredItems, sort]);
+  const pageItems = sortedItems.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
   const hasMore = activePage < totalPages;
 
   const selectedOnPage = pageItems.filter((item) => selectedIds.has(item.id));
@@ -524,6 +532,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
     {
       key: 'name',
       header: 'Serviço',
+      sortable: true,
       render: (service) => (
         <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
           {service.name}
@@ -649,6 +658,11 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
         <DataTable
           columns={columns}
           rows={pageItems}
+          sort={sort}
+          onSortChange={(next) => {
+            setSort(next);
+            setPage(1);
+          }}
           loading={isLoading && pageItems.length === 0}
           rowKey={(service) => service.id}
           onRowClick={openEditModal}

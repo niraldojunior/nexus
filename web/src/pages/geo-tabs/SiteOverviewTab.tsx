@@ -163,8 +163,8 @@ export function SiteOverviewTab({
               aria-label="Buscar local pai"
               className="geo-input"
             />
-            <div className="fixed inset-0 z-40" onClick={() => setEditingParent(false)} />
-            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
+            <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setEditingParent(false)} />
+            <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 max-h-56 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
               {site.parentSite ? (
                 <button
                   type="button"

@@ -565,7 +565,7 @@ export function GeoSearchBar({
                   role="listbox"
                   aria-label="Modo de busca"
                   onMouseDown={(event) => event.preventDefault()}
-                  className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-app-panel py-1.5 shadow-map-control-lg"
+                  className="absolute left-0 top-full z-[var(--z-overlay)] mt-1.5 w-64 overflow-hidden rounded-2xl border border-app-border bg-app-panel py-1.5 shadow-map-control-lg"
                 >
                   {GEO_SEARCH_SCOPES.map((candidate) => {
                     const Icon = SCOPE_ICONS[candidate.id];

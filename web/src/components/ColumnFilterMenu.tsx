@@ -50,10 +50,10 @@ export default function ColumnFilterMenu({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={onClose} />
       <div
         style={{ top, left, width }}
-        className="fixed z-50 flex max-h-[380px] flex-col overflow-hidden rounded-[16px] border border-app-border bg-white shadow-soft"
+        className="fixed z-[var(--z-overlay)] flex max-h-[380px] flex-col overflow-hidden rounded-[16px] border border-app-border bg-white shadow-soft"
       >
         <div className="flex items-center justify-between gap-2 border-b border-app-border px-3 py-2">
           <span className="truncate text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-app-muted">

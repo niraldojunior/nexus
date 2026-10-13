@@ -592,11 +592,11 @@ function AvatarFloatingMenu({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={onClose} />
       <div
         role="menu"
         style={{ left, bottom, width }}
-        className="fixed z-50 flex flex-col overflow-hidden rounded-[16px] border border-app-border bg-app-panel p-1.5 shadow-modal"
+        className="fixed z-[var(--z-overlay)] flex flex-col overflow-hidden rounded-[16px] border border-app-border bg-app-panel p-1.5 shadow-modal"
       >
         <button
           type="button"

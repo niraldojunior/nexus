@@ -61,11 +61,19 @@ export function ResourceIcon({
   }
 
   const FallbackIcon = presentation ? resourceTypeFallbackIcon(presentation.nature) : Box;
+  // Tipos modelados sempre seguem o glifo canônico (sem fundo), como documenta `variant`.
+  const effectiveVariant = presentation ? 'glyph' : variant;
+  const fallbackKind = presentation
+    ? presentation.nature === 'LogicalResource'
+      ? 'logical'
+      : 'physical'
+    : undefined;
   const fallbackColor = presentation ? resourceTypeFallbackColor(presentation.nature) : '#334155';
 
-  if (variant === 'glyph' && catalogTone) {
+  if (effectiveVariant === 'glyph' && catalogTone) {
     return (
       <FallbackIcon
+        data-resource-type-fallback={fallbackKind}
         className={`shrink-0 text-app-muted ${className ?? ''}`}
         style={{ width: box, height: box }}
         aria-hidden="true"
@@ -73,9 +81,10 @@ export function ResourceIcon({
     );
   }
 
-  if (variant === 'glyph') {
+  if (effectiveVariant === 'glyph') {
     return (
       <FallbackIcon
+        data-resource-type-fallback={fallbackKind}
         className={`shrink-0 ${className ?? ''}`}
         style={{ width: box, height: box, color: fallbackColor, strokeWidth: 2 }}
         aria-hidden="true"

@@ -874,11 +874,11 @@ export function StudioGeoExperience({
                 </Button>
                 {createMenuOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setCreateMenuOpen(false)} />
+                    <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setCreateMenuOpen(false)} />
                     <div
                       role="menu"
                       aria-label="Tipo de nó a incluir"
-                      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
+                      className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
                     >
                       <button
                         type="button"

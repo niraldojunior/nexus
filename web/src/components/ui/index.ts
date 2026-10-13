@@ -7,7 +7,7 @@ export { default as Badge } from './Badge';
 export type { BadgeTone } from './Badge';
 export { default as StatusPill } from './StatusPill';
 export { default as DataTable, DataTablePagination } from './DataTable';
-export type { DataTableColumn } from './DataTable';
+export type { DataTableColumn, DataTableSort } from './DataTable';
 export { default as Modal } from './Modal';
 export { default as Drawer } from './Drawer';
 export { Tooltip } from './Tooltip';

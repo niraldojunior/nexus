@@ -36,7 +36,7 @@ describe('ResourceIcon', () => {
     await waitFor(() => expect(container.querySelector('img')).not.toBeNull());
     const image = container.querySelector('img')!;
     expect(image).toHaveStyle({ width: '26px', height: '26px' });
-    expect(decodeURIComponent(image.getAttribute('src') ?? '')).toContain('M12 2v20');
+    expect(decodeURIComponent(image.getAttribute('src') ?? '')).toContain('M12 3v19');
     expect(container.querySelector('span')).toBeNull();
   });
 

@@ -73,7 +73,7 @@ export function PlacePicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 rounded-[16px] border border-app-border bg-white shadow-modal overflow-hidden">
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[var(--z-dropdown)] rounded-[16px] border border-app-border bg-white shadow-modal overflow-hidden">
           {/* Search input */}
           <input
             ref={inputRef}

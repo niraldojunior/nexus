@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Folder, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ResourceIcon } from '../../components/ResourceIcon';
 import { loadDefaultCatalogTree } from '../../services/internalPlantCatalogCache';
 import type { ResourceCatalogTreeNode } from '../../services/resourceCatalogApi';
@@ -17,7 +17,23 @@ export type TypeSelection = {
 type Props = {
   onSelect: (selection: TypeSelection) => void;
   selectedKey?: string | undefined;
+  /** Filtro rápido por nome de grupo/tipo. */
+  query?: string;
 };
+
+const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+
+/** Mantém nós cujo nome casa (com a subárvore inteira) ou que têm descendente casando. */
+const filterTree = (
+  nodes: ResourceCatalogTreeNode[],
+  tokens: string[],
+): ResourceCatalogTreeNode[] =>
+  nodes.flatMap((node) => {
+    const name = normalize(node.name);
+    if (tokens.every((token) => name.includes(token))) return [node];
+    const children = filterTree(node.children, tokens);
+    return children.length > 0 ? [{ ...node, children }] : [];
+  });
 
 /** Todos os ResourceTypes descendentes de um nó (a própria folha, se for tipo). */
 const collectTypeIds = (node: ResourceCatalogTreeNode): string[] => {
@@ -26,7 +42,7 @@ const collectTypeIds = (node: ResourceCatalogTreeNode): string[] => {
 };
 
 /** Aba Tipo: catálogo de recursos ativo/default; grupo seleciona todos os tipos descendentes. */
-export function TypeTree({ onSelect, selectedKey }: Props) {
+export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
   const [tree, setTree] = useState<ResourceCatalogTreeNode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -48,6 +64,13 @@ export function TypeTree({ onSelect, selectedKey }: Props) {
     };
   }, []);
 
+  const tokens = useMemo(() => normalize(query).split(/\s+/).filter(Boolean), [query]);
+  const filtering = tokens.length > 0;
+  const visibleTree = useMemo(
+    () => (tree && filtering ? filterTree(tree, tokens) : tree),
+    [tree, filtering, tokens],
+  );
+
   if (error) return <p className="p-4 text-[0.9rem] text-app-muted">{error}</p>;
   if (!tree) {
     return (
@@ -60,6 +83,10 @@ export function TypeTree({ onSelect, selectedKey }: Props) {
     return <p className="p-4 text-[0.9rem] text-app-muted">Nenhum tipo no catálogo ativo.</p>;
   }
 
+  if (filtering && visibleTree?.length === 0) {
+    return <p className="p-4 text-[0.9rem] text-app-muted">Nenhum tipo encontrado.</p>;
+  }
+
   const toggle = (id: string) => {
     const next = new Set(expanded);
     if (!next.delete(id)) next.add(id);
@@ -68,7 +95,7 @@ export function TypeTree({ onSelect, selectedKey }: Props) {
 
   const renderNode = (node: ResourceCatalogTreeNode, depth: number) => {
     const isGroup = node.kind === 'GROUP';
-    const isOpen = expanded.has(node.id);
+    const isOpen = expanded.has(node.id) || (filtering && isGroup);
     const selected = selectedKey === node.id;
     return (
       <li key={node.id} role="none">
@@ -131,7 +158,7 @@ export function TypeTree({ onSelect, selectedKey }: Props) {
 
   return (
     <ul role="tree" aria-label="Tipos" className="px-3 py-2">
-      {tree.map((node) => renderNode(node, 0))}
+      {(visibleTree ?? tree).map((node) => renderNode(node, 0))}
     </ul>
   );
 }

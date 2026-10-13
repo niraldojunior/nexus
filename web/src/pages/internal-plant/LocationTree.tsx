@@ -107,7 +107,11 @@ type Props = {
   onRemoveSite?: (node: InternalPlantLocationNode) => void;
   /** Incrementar após mutações (depois de `invalidateInternalPlantRoots`) para recarregar a árvore. */
   refreshToken?: number;
+  /** Filtro rápido por município/UF (só diretório; não consulta Sites). */
+  query?: string;
 };
+
+const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 
 /** Árvore de Locais: expandir (+/−) só abre o nível; apenas o clique no nome de um Site consulta a tabela. */
 export function LocationTree({
@@ -119,6 +123,7 @@ export function LocationTree({
   onEditSite,
   onRemoveSite,
   refreshToken = 0,
+  query = '',
 }: Props) {
   const [directory, setDirectory] = useState<InternalPlantLocationRootNode[]>([]);
   const [rootsError, setRootsError] = useState<string | null>(null);
@@ -212,15 +217,42 @@ export function LocationTree({
     }
   }, [refreshToken, loadBranch]);
 
+  const tokens = useMemo(
+    () =>
+      normalize(query)
+        .split(/[\s,/-]+/)
+        .filter(Boolean),
+    [query],
+  );
+  const filtering = tokens.length > 0;
+
+  const visibleDirectory = useMemo(() => {
+    if (!filtering) return directory;
+    const keepCities = directory.filter((node) => {
+      if (node.kind !== 'city' || node.id === 'city:none') return false;
+      const haystack = normalize(`${node.label} ${node.sublabel ?? ''}`);
+      return tokens.every((token) => haystack.includes(token));
+    });
+    const keep = new Set<string>();
+    for (const city of keepCities) {
+      keep.add(city.id);
+      if (city.parentId) keep.add(city.parentId);
+    }
+    for (const node of directory) {
+      if (node.kind === 'uf' && keep.has(node.id) && node.parentId) keep.add(node.parentId);
+    }
+    return directory.filter((node) => keep.has(node.id));
+  }, [directory, filtering, tokens]);
+
   const { roots, byParent } = useMemo(() => {
     const grouped = new Map<string, InternalPlantLocationNode[]>();
     const top: InternalPlantLocationNode[] = [];
-    for (const node of directory) {
+    for (const node of visibleDirectory) {
       if (node.parentId === null) top.push(node);
       else grouped.set(node.parentId, [...(grouped.get(node.parentId) ?? []), node]);
     }
     return { roots: top, byParent: grouped };
-  }, [directory]);
+  }, [visibleDirectory]);
 
   const toggle = (node: InternalPlantLocationNode) => {
     const next = new Set(expanded);
@@ -234,7 +266,8 @@ export function LocationTree({
   };
 
   const renderNode = (node: InternalPlantLocationNode, depth: number, parentIsSite = false) => {
-    const isOpen = expanded.has(node.id);
+    const isOpen =
+      expanded.has(node.id) || (filtering && (node.kind === 'country' || node.kind === 'uf'));
     const local = isDirectoryParent(node);
     const branch: Branch | undefined = local
       ? {
@@ -378,6 +411,10 @@ export function LocationTree({
         </button>
       </p>
     );
+  }
+
+  if (filtering && roots.length === 0) {
+    return <p className="px-3 py-2 text-[0.85rem] text-app-muted">Nenhum município encontrado.</p>;
   }
 
   return (

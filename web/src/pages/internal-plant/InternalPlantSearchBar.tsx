@@ -68,7 +68,7 @@ export function InternalPlantSearchBar({
           placeholder="Pesquise um recurso"
           aria-label="Pesquisar recursos"
           autoComplete="off"
-          className="h-full min-w-0 flex-1 rounded-l-full bg-transparent pl-5 pr-2 text-[16px] text-app-text placeholder:text-app-muted focus:outline-none focus-visible:shadow-none"
+          className="h-full min-w-0 flex-1 rounded-l-full bg-transparent pl-5 pr-2 text-[16px] text-app-text placeholder:text-app-muted [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none focus:outline-none focus-visible:shadow-none"
         />
         {value ? (
           <button

@@ -77,7 +77,7 @@ export function ImageCharacteristicInput({
     lightboxOpen && value && !imgLoadError
       ? createPortal(
           <div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-6"
+            className="fixed inset-0 z-[calc(var(--z-modal)+1)] flex items-center justify-center bg-black/70 p-6"
             role="dialog"
             aria-modal="true"
             aria-label={name ? `Imagem: ${name}` : 'Imagem em tamanho real'}

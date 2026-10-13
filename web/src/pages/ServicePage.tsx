@@ -821,7 +821,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
       {isLoading ? (
         <div
-          className="pointer-events-none fixed bottom-6 right-6 z-50 px-4 py-3 text-[0.88rem] font-medium backdrop-blur"
+          className="pointer-events-none fixed bottom-6 right-6 z-[var(--z-toast)] px-4 py-3 text-[0.88rem] font-medium backdrop-blur"
           style={{
             borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--border)',

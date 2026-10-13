@@ -54,7 +54,7 @@ export default function Drawer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex justify-end bg-[var(--scrim)]"
+      className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-[var(--scrim)]"
       onClick={closeOnClickOutside ? onClose : undefined}
       role="dialog"
       aria-modal="true"

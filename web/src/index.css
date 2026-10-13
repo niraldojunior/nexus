@@ -196,6 +196,13 @@ button {
   :root:not([data-theme='dark']) .vt-searchbar-flat:focus-within {
     box-shadow: none;
   }
+  /* Busca: borda amarela sozinha tem baixo contraste sobre fundo claro; o teclado ganha um
+     contorno escuro (WCAG 2.4.7 / 1.4.11). */
+  .vt-searchbar:has(input:focus-visible),
+  .vt-searchbar-flat:has(input:focus-visible) {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+  }
   .vt-card-interactive {
     border-color: var(--border-strong);
   }

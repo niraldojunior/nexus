@@ -133,7 +133,7 @@ export default function ServiceSpecificationBulkImportModal({
   const saving = state.phase === 'importing';
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-5">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)] p-5">
       <div
         role="dialog"
         aria-modal="true"

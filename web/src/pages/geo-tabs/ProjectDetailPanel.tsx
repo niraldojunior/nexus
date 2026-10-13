@@ -1018,7 +1018,7 @@ function ProjectResourceModal({
     }
   };
   const wrapperClassName = isMobile
-    ? 'fixed inset-y-0 right-0 z-[70] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock'
+    ? 'fixed inset-y-0 right-0 z-[var(--z-overlay)] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock'
     : `${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`;
   return (
     <aside

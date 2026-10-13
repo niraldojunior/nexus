@@ -29,7 +29,7 @@ export const ArchiveConfirmModal: React.FC<{
   onCancel: () => void;
 }> = ({ sessionTitle, onConfirm, onCancel }) => (
   <div
-    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30"
+    className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)]"
     onClick={onCancel}
     role="dialog"
     aria-modal="true"

@@ -2179,6 +2179,41 @@ const MIGRATIONS_SQL_V31_RESOURCE_STATE_CHANGED_AT = `
   ALTER TABLE resource_logical ADD COLUMN IF NOT EXISTS usage_state_changed_at TIMESTAMPTZ;
 `;
 
+// V37: dado mestre de controle da sincronização incremental Netwin por onda de UF (issue #348).
+// Uma linha por (tenant, UF) concentra configuração da onda, watermark concluído e estado
+// operacional da execução (lease/heartbeat). `metadata` guarda o checkpoint e `results` as métricas.
+const MIGRATIONS_SQL_V37_NETWIN_UF_SYNC_CONTROL = `
+  CREATE TABLE IF NOT EXISTS environment_netwin_uf_sync_control (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    uf_code TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    overlap_seconds INTEGER NOT NULL DEFAULT 900,
+    rollout_completed_at TIMESTAMPTZ,
+    last_success_source_at TIMESTAMPTZ,
+    last_success_scn TEXT,
+    last_success_at TIMESTAMPTZ,
+    state TEXT NOT NULL DEFAULT 'disabled',
+    run_id TEXT,
+    window_from TIMESTAMPTZ,
+    window_to TIMESTAMPTZ,
+    stage TEXT,
+    metadata TEXT,
+    lease_owner TEXT,
+    lease_expires_at TIMESTAMPTZ,
+    heartbeat_at TIMESTAMPTZ,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    last_error TEXT,
+    results TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, uf_code)
+  );
+  CREATE INDEX IF NOT EXISTS environment_idx_netwin_uf_sync_control_enabled
+    ON environment_netwin_uf_sync_control(tenant_id, enabled, uf_code);
+`;
+
 export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
   { version: 1, name: 'baseline', sql: MIGRATIONS_SQL },
   { version: 2, name: 'resource-catalog-tree', sql: MIGRATIONS_SQL_V2_RESOURCE_CATALOG },
@@ -2335,6 +2370,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 36,
     name: 'site-administrative-city-contract',
     sql: MIGRATIONS_SQL_V36_SITE_ADMINISTRATIVE_CITY_CONTRACT,
+  },
+  {
+    version: 37,
+    name: 'netwin-uf-sync-control',
+    sql: MIGRATIONS_SQL_V37_NETWIN_UF_SYNC_CONTROL,
   },
 ];
 

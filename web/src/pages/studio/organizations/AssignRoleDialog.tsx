@@ -195,7 +195,8 @@ export function AssignRoleDialog({
               variant="primary"
               type="submit"
               form="assign-role-form"
-              disabled={saving || !selectedRoleName}
+              loading={saving}
+              disabled={!selectedRoleName}
             >
               {saving ? 'Salvando...' : isEditing ? 'Salvar alterações' : 'Confirmar atribuição'}
             </Button>

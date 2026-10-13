@@ -721,7 +721,12 @@ export function ResourceEditorModal({
               <Button variant="ghost" onClick={requestClose} disabled={saving}>
                 Cancelar
               </Button>
-              <Button variant="primary" onClick={() => void save()} disabled={saving || loading || !draft}>
+              <Button
+                variant="primary"
+                onClick={() => void save()}
+                loading={saving}
+                disabled={loading || !draft}
+              >
                 {saving ? 'Salvando...' : 'Salvar'}
               </Button>
             </div>

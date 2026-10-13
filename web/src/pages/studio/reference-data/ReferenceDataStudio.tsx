@@ -282,7 +282,8 @@ export function ReferenceDataStudio({
               <Button
                 type="submit"
                 form="reference-data-set-form"
-                disabled={saving || !draftIsValid}
+                loading={saving}
+                disabled={!draftIsValid}
               >
                 {saving ? 'Criando…' : 'Criar'}
               </Button>

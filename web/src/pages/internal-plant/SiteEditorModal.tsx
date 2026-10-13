@@ -529,7 +529,8 @@ export function SiteEditorModal({
               <Button
                 variant="primary"
                 onClick={() => void save()}
-                disabled={saving || loading || !draft}
+                loading={saving}
+                disabled={loading || !draft}
               >
                 {saving ? 'Salvando...' : 'Salvar'}
               </Button>

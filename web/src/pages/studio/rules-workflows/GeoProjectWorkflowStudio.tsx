@@ -591,7 +591,12 @@ function StateModal({
           <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" form="workflow-state-form" disabled={saving || !draft.name.trim()}>
+          <Button
+            type="submit"
+            form="workflow-state-form"
+            loading={saving}
+            disabled={!draft.name.trim()}
+          >
             {saving ? 'Salvando...' : 'Criar'}
           </Button>
         </>

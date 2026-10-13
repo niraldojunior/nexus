@@ -1049,7 +1049,11 @@ function ServiceModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={saving || !submitValid || cfsBlockedByMissingRfs}>
+          <Button
+            type="submit"
+            loading={saving}
+            disabled={!submitValid || cfsBlockedByMissingRfs}
+          >
             {saving ? 'Salvando...' : 'Salvar'}
           </Button>
         </div>

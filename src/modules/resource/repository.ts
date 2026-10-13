@@ -677,7 +677,12 @@ export class ResourceRepository implements IResourceRepository {
 
   public listResourceComponents(
     resourceId: string,
-    options?: { scope?: ResourceTenantScope; maxDepth?: number; includeConnections?: boolean },
+    options?: {
+      scope?: ResourceTenantScope;
+      maxDepth?: number;
+      includeConnections?: boolean;
+      lean?: boolean;
+    },
   ): {
     components: ResourceComponentNode[];
     connections: ResourceComponentConnection[];

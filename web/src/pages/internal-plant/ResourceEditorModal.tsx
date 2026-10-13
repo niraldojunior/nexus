@@ -256,19 +256,44 @@ export function ResourceEditorModal({
     let cancelled = false;
     void (async () => {
       try {
-        const [typeList, specList, relTypeList, siteSpecs, snap] = await Promise.all([
+        // Caminho crítico: snapshot + catálogos pequenos + specifications só dos tipos usados.
+        // O catálogo global de specifications (milhares de linhas) carrega em segundo plano.
+        const [typeList, relTypeList, snap] = await Promise.all([
           loadResourceTypesCached(),
-          loadSpecificationsCached(),
           loadRelationshipTypesCached(),
-          loadSiteSpecificationsCached(),
           resourceId ? fetchResourceEditor(resourceId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
+        const typeIdByCode = new Map(typeList.map((t) => [t.code, t.id]));
+        const neededTypeIds = new Set<string>();
+        if (snap) {
+          neededTypeIds.add(snap.resourceType.id);
+          for (const c of snap.components) {
+            const id = c.resourceType ? typeIdByCode.get(c.resourceType) : undefined;
+            if (id) neededTypeIds.add(id);
+          }
+        } else if (initialTypeId) {
+          neededTypeIds.add(initialTypeId);
+        }
+        const specLists = await Promise.all(
+          [...neededTypeIds].map((id) => loadSpecificationsCached(id)),
+        );
+        if (cancelled) return;
+        const specList = specLists.flat();
         const typeOfSpec = new Map(specList.map((s) => [s.id, s.resourceTypeId ?? '']));
         setTypes(typeList);
         setSpecs(specList);
         setRelTypes(relTypeList);
-        setSiteSpecNames(Object.fromEntries(siteSpecs.map((s) => [s.id, s.name])));
+        void loadSiteSpecificationsCached()
+          .then((siteSpecs) => {
+            if (!cancelled) setSiteSpecNames(Object.fromEntries(siteSpecs.map((x) => [x.id, x.name])));
+          })
+          .catch(() => undefined);
+        void loadSpecificationsCached()
+          .then((all) => {
+            if (!cancelled) setSpecs(all);
+          })
+          .catch(() => undefined);
         if (snap) {
           const typeId = snap.resourceType.id;
           const instanceValues: Record<string, string> = {};

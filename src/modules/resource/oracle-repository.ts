@@ -1718,46 +1718,59 @@ export class OracleResourceRepository implements IResourceRepository {
       valid_for_start: string | null;
       valid_for_end: string | null;
     }>(
-      `SELECT CASE WHEN e.resource_from_id = ? THEN 'outgoing' ELSE 'incoming' END AS direction,
+      `SELECT 'outgoing' AS direction,
               e.relationship_type,
               r.id, r.name, rt.code AS resource_type, r.status,
               'PhysicalResource' AS entity_type,
               e.valid_for_start, e.valid_for_end
          FROM resource_relationship e
-         JOIN resource_physical r
-           ON r.id = CASE WHEN e.resource_from_id = ? THEN e.resource_to_id ELSE e.resource_from_id END
+         JOIN resource_physical r ON r.id = e.resource_to_id
          LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
          LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id
-        WHERE (e.resource_from_id = ? OR e.resource_to_id = ?)
+        WHERE e.resource_from_id = ?
           AND e.relationship_type NOT IN ('containsAsChild', 'containedBy')
           AND r.tenant_id = ?
        UNION ALL
-       SELECT CASE WHEN e.resource_from_id = ? THEN 'outgoing' ELSE 'incoming' END AS direction,
+       SELECT 'incoming' AS direction,
+              e.relationship_type,
+              r.id, r.name, rt.code AS resource_type, r.status,
+              'PhysicalResource' AS entity_type,
+              e.valid_for_start, e.valid_for_end
+         FROM resource_relationship e
+         JOIN resource_physical r ON r.id = e.resource_from_id
+         LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id
+        WHERE e.resource_to_id = ?
+          AND e.relationship_type NOT IN ('containsAsChild', 'containedBy')
+          AND r.tenant_id = ?
+       UNION ALL
+       SELECT 'outgoing' AS direction,
               e.relationship_type,
               r.id, r.name, rt.code AS resource_type, r.status,
               'LogicalResource' AS entity_type,
               e.valid_for_start, e.valid_for_end
          FROM resource_relationship e
-         JOIN resource_logical r
-           ON r.id = CASE WHEN e.resource_from_id = ? THEN e.resource_to_id ELSE e.resource_from_id END
+         JOIN resource_logical r ON r.id = e.resource_to_id
          LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
          LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id
-        WHERE (e.resource_from_id = ? OR e.resource_to_id = ?)
+        WHERE e.resource_from_id = ?
+          AND e.relationship_type NOT IN ('containsAsChild', 'containedBy')
+          AND r.tenant_id = ?
+       UNION ALL
+       SELECT 'incoming' AS direction,
+              e.relationship_type,
+              r.id, r.name, rt.code AS resource_type, r.status,
+              'LogicalResource' AS entity_type,
+              e.valid_for_start, e.valid_for_end
+         FROM resource_relationship e
+         JOIN resource_logical r ON r.id = e.resource_from_id
+         LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+         LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id
+        WHERE e.resource_to_id = ?
           AND e.relationship_type NOT IN ('containsAsChild', 'containedBy')
           AND r.tenant_id = ?
         ORDER BY relationship_type, name`,
-      [
-        resourceId,
-        resourceId,
-        resourceId,
-        resourceId,
-        tenantId,
-        resourceId,
-        resourceId,
-        resourceId,
-        resourceId,
-        tenantId,
-      ],
+      [resourceId, tenantId, resourceId, tenantId, resourceId, tenantId, resourceId, tenantId],
     );
 
     return rows.map((row) => ({
@@ -1784,7 +1797,12 @@ export class OracleResourceRepository implements IResourceRepository {
 
   public async listResourceComponents(
     resourceId: string,
-    options?: { scope?: ResourceTenantScope; maxDepth?: number; includeConnections?: boolean },
+    options?: {
+      scope?: ResourceTenantScope;
+      maxDepth?: number;
+      includeConnections?: boolean;
+      lean?: boolean;
+    },
   ): Promise<{
     components: ResourceComponentNode[];
     connections: ResourceComponentConnection[];
@@ -1857,9 +1875,17 @@ export class OracleResourceRepository implements IResourceRepository {
          JOIN resource_logical r ON r.id = t.id
          LEFT JOIN resource_specification rs ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
          LEFT JOIN resource_type rt ON rt.id = rs.resource_type_id
-        WHERE r.tenant_id = ?
-        ORDER BY depth, name, id`,
+        WHERE r.tenant_id = ?`,
       [resourceId, maxDepth, tenantId, tenantId],
+    );
+    // Ordenação em memória: `ORDER BY` sobre o UNION ALL com a CTE materializada levava ~6,5 s
+    // contra ~0,5 s sem ele (raiz com 1.638 filhos, base Netwin parcial) — o custo é do plano, não
+    // do volume. Mesma chave (depth, name, id) em ordem binária, como o Oracle ordenava.
+    rows.sort(
+      (a, b) =>
+        a.depth - b.depth ||
+        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );
 
     const visited = new Set<string>([resourceId]);
@@ -1878,12 +1904,16 @@ export class OracleResourceRepository implements IResourceRepository {
     // A visão resumida só precisa de dropCount e da ONT do drop ativo. Buscar o detalhe completo
     // por Porta aqui transformava uma CDOE em N+1 consultas (Porta → Drop → ONT → auditoria).
     // O mapa abaixo preserva o contrato do painel com um número constante de consultas por lote.
-    const portInfoById = await this.loadComponentPortInfo(
-      componentRows.filter(
-        (row) => row.entity_type === 'PhysicalResource' && row.resource_type === 'Port',
-      ),
-      tenantId,
-    );
+    // O editor (`lean`) só usa identidade/tipo/specification/pai: pular o enriquecimento de Portas
+    // evita consultas de Drop/ONT/auditoria sobre raízes com milhares de Portas.
+    const portInfoById = options?.lean
+      ? new Map<string, NonNullable<ResourceComponentNode['portInfo']>>()
+      : await this.loadComponentPortInfo(
+          componentRows.filter(
+            (row) => row.entity_type === 'PhysicalResource' && row.resource_type === 'Port',
+          ),
+          tenantId,
+        );
     const specificationInfoById = await this.loadComponentSpecificationInfo(
       [
         ...new Set(

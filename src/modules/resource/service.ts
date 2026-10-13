@@ -2411,6 +2411,7 @@ export class ResourceService {
         scope: scopeOf(context),
         maxDepth: 32,
         includeConnections: false,
+        lean: true,
       }),
       this.repository.listResourceConnections(id, scopeOf(context)),
       this.repository.listResourceSiteRelationships(id, scopeOf(context)),

@@ -132,6 +132,9 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
   const effectiveTab: ServiceTabId = 'CustomerFacingService';
 
   const [page, setPage] = useState(1);
+  // Visão da tabela: CFS (o que o cliente contrata) e RFS (o que a rede entrega) são camadas
+  // distintas (C3); 'all' preserva a leitura da cadeia completa.
+  const [layerView, setLayerView] = useState<'all' | 'CFS' | 'RFS'>('all');
   const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({});
   const [openFilter, setOpenFilter] = useState<OpenFilterState | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -215,12 +218,16 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   const filteredItems = useMemo(() => {
     const entries = Object.entries(columnFilters).filter(([, values]) => values.size > 0);
-    if (!entries.length) return categoryItems;
-    return categoryItems.filter((item) =>
+    const base =
+      layerView === 'all'
+        ? categoryItems
+        : categoryItems.filter((item) => serviceKindLabel(item) === layerView);
+    if (!entries.length) return base;
+    return base.filter((item) =>
       entries.every(([key, values]) => values.has(columnValueFor(item, key))),
     );
     // columnValueFor deriva de specificationsById, coberto abaixo.
-  }, [categoryItems, columnFilters, specificationsById]);
+  }, [categoryItems, columnFilters, layerView, specificationsById]);
 
   const setColumnFilter = (key: string, values: Set<string>) => {
     setColumnFilters((current) => {
@@ -309,7 +316,7 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
 
   useEffect(() => {
     setPage(1);
-  }, [columnFilters]);
+  }, [columnFilters, layerView]);
 
   useEffect(() => {
     if (!modalState) {
@@ -619,9 +626,30 @@ export default function ServicePage({ category: categoryProp }: ServicePageProps
           </div>
         ) : null}
 
+        <div role="group" aria-label="Camada de serviço" className="flex items-center gap-1">
+          {(
+            [
+              ['all', 'Todos'],
+              ['CFS', 'Serviços de cliente (CFS)'],
+              ['RFS', 'Serviços de rede (RFS)'],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              variant={layerView === value ? 'secondary' : 'ghost'}
+              aria-pressed={layerView === value}
+              onClick={() => setLayerView(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+
         <DataTable
           columns={columns}
           rows={pageItems}
+          loading={isLoading && pageItems.length === 0}
           rowKey={(service) => service.id}
           onRowClick={openEditModal}
           emptyMessage="Nenhum registro encontrado."

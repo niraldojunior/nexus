@@ -1034,7 +1034,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
           chunk,
           { outFormat: oracledb.OUT_FORMAT_OBJECT },
         );
-        if (linkResult.rows) routeLinks.push(...linkResult.rows);
+        for (const row of linkResult.rows ?? []) routeLinks.push(row);
       }
 
       for (const link of routeLinks) {

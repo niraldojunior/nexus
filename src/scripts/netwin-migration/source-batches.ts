@@ -168,7 +168,7 @@ export async function selectResourceIdsByInfranodes(
       { ...binds, lastId, batchSize },
       { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: batchSize, prefetchRows: batchSize },
     );
-    ids.push(...(result.rows ?? []).map((row) => row.ID));
+    for (const row of result.rows ?? []) ids.push(row.ID);
   }
   return [...new Set(ids)].sort((left, right) => left - right).slice(0, batchSize);
 }

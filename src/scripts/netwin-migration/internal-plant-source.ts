@@ -164,7 +164,7 @@ export async function loadInternalEquipment(
       { ...binds, maxRecords: maxRecords - rows.length },
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
 
   return rows;
@@ -218,7 +218,7 @@ export async function loadInternalPlantEquipmentIds(
       { ...binds, maxRecords: maxRecords - rows.length },
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
 
   return rows;
@@ -318,7 +318,7 @@ export async function loadInternalPorts(
       binds,
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }
@@ -380,7 +380,7 @@ export async function loadInternalCards(
       binds,
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }
@@ -442,7 +442,7 @@ export async function loadInternalRacksByPlaceIds(
       binds,
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }
@@ -465,7 +465,7 @@ export async function loadInternalSubracksByRackIds(
       binds,
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }
@@ -505,7 +505,7 @@ export async function loadInternalPortConnections(
       binds,
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }
@@ -554,7 +554,7 @@ export async function loadInternalEquipmentDetails(
       binds,
       FETCH_OPTIONS,
     );
-    rows.push(...(result.rows ?? []));
+    for (const row of result.rows ?? []) rows.push(row);
   }
   return rows;
 }

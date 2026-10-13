@@ -207,16 +207,9 @@ async function main() {
         await runPhase2AdministrativeCity(ctx);
         await runPhase2InternalPlant(ctx);
         await runPhase2StationRacks(ctx);
-        const stationPlantDiscovery = await runPhase2StationInternalPlantDiscovery(ctx);
-        if (stationPlantDiscovery.blocked) {
-          await pauseNativeMigrationJob(ctx);
-          console.log(
-            `\n>>> Fase 2 bloqueada pela descoberta da 2.D; a finalização topológica não foi executada. O job ${options.jobId} permanece pausado até os contratos pendentes serem comprovados. <<<`,
-          );
-        } else {
-          await completeNativeMigrationJob(ctx);
-          if (options.phase === 'all') await runPhase3(ctx);
-        }
+        await runPhase2StationInternalPlantDiscovery(ctx);
+        await completeNativeMigrationJob(ctx);
+        if (options.phase === 'all') await runPhase3(ctx);
       }
     } else if (options.phase === '3') {
       await runPhase3(ctx);

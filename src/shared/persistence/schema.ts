@@ -1107,7 +1107,7 @@ export const SCHEMA_SQL = `
         FOREIGN KEY (resource_from_id) REFERENCES resource_physical(id),
         FOREIGN KEY (resource_to_id) REFERENCES resource_physical(id)
       );
-      CREATE INDEX IF NOT EXISTS resource_idx_relationship ON resource_relationship(resource_from_id, resource_to_id);
+      -- resource_idx_relationship (from, to) removido na V38: a PK (from, to, type) já o cobre por prefixo.
 
       CREATE TABLE IF NOT EXISTS resource_relationship_generic (
         resource_from_id TEXT NOT NULL,
@@ -2182,6 +2182,11 @@ const MIGRATIONS_SQL_V31_RESOURCE_STATE_CHANGED_AT = `
 // V37: dado mestre de controle da sincronização incremental Netwin por onda de UF (issue #348).
 // Uma linha por (tenant, UF) concentra configuração da onda, watermark concluído e estado
 // operacional da execução (lease/heartbeat). `metadata` guarda o checkpoint e `results` as métricas.
+// V38: remove índices redundantes por prefixo de resource_physical/resource_relationship — cada um
+// custava uma entrada B-tree extra por linha na carga Netwin sem atender consulta nenhuma. O DROP vive
+// em hook (oracle-database.ts), pois o rewriter de DDL não prefixa DROP INDEX.
+const MIGRATIONS_SQL_V38_RESOURCE_REDUNDANT_INDEXES = ``;
+
 const MIGRATIONS_SQL_V37_NETWIN_UF_SYNC_CONTROL = `
   CREATE TABLE IF NOT EXISTS environment_netwin_uf_sync_control (
     id TEXT PRIMARY KEY,
@@ -2375,6 +2380,11 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 37,
     name: 'netwin-uf-sync-control',
     sql: MIGRATIONS_SQL_V37_NETWIN_UF_SYNC_CONTROL,
+  },
+  {
+    version: 38,
+    name: 'resource-redundant-indexes',
+    sql: MIGRATIONS_SQL_V38_RESOURCE_REDUNDANT_INDEXES,
   },
 ];
 

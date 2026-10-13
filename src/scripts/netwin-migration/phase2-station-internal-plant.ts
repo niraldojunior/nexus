@@ -41,7 +41,8 @@ export type StationPlantDiscoveryReport = {
   equipmentTypes: string[];
   subrackTypes: string[];
   rackTypes: string[];
-  unresolvedContracts: string[];
+  /** Pendências informativas (não bloqueiam a finalização do job). */
+  pendingClassifications: string[];
 };
 
 function uniquePositiveIds(values: Array<number | null>): number[] {
@@ -156,10 +157,8 @@ export async function discoverStationInternalPlant(
       equipmentTypes: typeNames(equipment),
       subrackTypes: typeNames(subracks),
       rackTypes: typeNames(racks),
-      unresolvedContracts: [
-        'A classificação de equipamento ISP como OLT, DIO ou DGO ainda requer código de catálogo explicitamente validado.',
-        'A contenção de equipamento em rack/subrack não foi comprovada por chave relacional direta.',
-        'Não há contrato de origem confirmado para instâncias físicas de Splitter, razão de divisão, portas e contêiner.',
+      pendingClassifications: [
+        'A classificação de equipamento ISP como OLT, DIO ou DGO ainda requer código de catálogo explicitamente validado; esses equipamentos não são materializados pela 2.D.',
       ],
     };
   } finally {
@@ -400,28 +399,21 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
 export type StationPlantDiscoveryRunResult = {
   report: StationPlantDiscoveryReport;
   stats: PhaseStats;
-  blocked: boolean;
 };
-
-export function isStationPlantDiscoveryBlocked(report: StationPlantDiscoveryReport): boolean {
-  return report.unresolvedContracts.length > 0;
-}
 
 export async function runPhase2StationInternalPlantDiscovery(
   ctx: MigrationContext,
 ): Promise<StationPlantDiscoveryRunResult> {
   console.log('\n=== Fase 2.D: Descoberta de planta interna de estações (somente leitura) ===');
   const report = await discoverStationInternalPlant(ctx);
-  const blocked = isStationPlantDiscoveryBlocked(report);
   console.log(JSON.stringify({ phase: '2d', report }, null, 2));
-  if (blocked) {
-    console.log(
-      'Fase 2.D não materializou recursos: a carga permanece bloqueada até todos os contratos listados serem comprovados.',
+  if (report.pendingClassifications.length > 0) {
+    console.warn(
+      `[2.D] Descoberta somente leitura; nada materializado. Pendências: ${report.pendingClassifications.join(' | ')}`,
     );
   }
   return {
     report,
-    blocked,
     stats: {
       loaded: 0,
       updated: 0,

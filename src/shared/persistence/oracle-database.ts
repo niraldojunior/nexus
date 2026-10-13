@@ -319,6 +319,9 @@ export class OracleDatabase implements DatabaseClient {
       if (batch.name === 'site-administrative-city-contract') {
         await this.contractLegacyAdministrativeCity(connection);
       }
+      if (batch.name === 'resource-redundant-indexes') {
+        await this.dropRedundantResourceIndexes(connection);
+      }
       await connection.execute(
         `MERGE INTO ${migrations} target
          USING (SELECT :1 version, :2 name, :3 checksum FROM DUAL) source
@@ -379,6 +382,23 @@ export class OracleDatabase implements DatabaseClient {
   // V36 (issue #339): contração. Só remove as estruturas legadas se nenhum Site ainda depender
   // delas para o município (backfill incompleto aborta o boot com instrução). Em ambiente novo
   // os objetos não existem e tudo é ignorado.
+  // V38: índices cobertos por prefixo de outro índice (tenant_id ⊂ (tenant_id, id); serving_site_id ⊂
+  // (serving_site_id, name); (from, to) ⊂ PK (from, to, type)). ORA-01418 = já removido (idempotente).
+  private async dropRedundantResourceIndexes(connection: Connection): Promise<void> {
+    const prefix = this.config.objectPrefix;
+    for (const name of [
+      'resource_idx_physical_tenant',
+      'resource_idx_physical_serving_site',
+      'resource_idx_relationship',
+    ]) {
+      try {
+        await connection.execute(`DROP INDEX ${prefixed(name, prefix)}`);
+      } catch (error) {
+        if (!(error instanceof Error) || !/ORA-01418/.test(error.message)) throw error;
+      }
+    }
+  }
+
   private async contractLegacyAdministrativeCity(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
     const site = prefixed('geographic_site', prefix);
@@ -406,7 +426,9 @@ export class OracleDatabase implements DatabaseClient {
     if (hasAddressColumn || hasProjection) {
       const sources: string[] = [];
       if (hasAddressColumn) {
-        sources.push(`(SELECT a.administrative_city_id FROM ${address} a WHERE a.id = s.geographic_address_id)`);
+        sources.push(
+          `(SELECT a.administrative_city_id FROM ${address} a WHERE a.id = s.geographic_address_id)`,
+        );
       }
       if (hasProjection) {
         sources.push(
@@ -432,7 +454,10 @@ export class OracleDatabase implements DatabaseClient {
     }
     if (hasAddressColumn) {
       // DROP COLUMN remove também a FK e os índices que a referenciam.
-      await executeOracleDdl(connection, `ALTER TABLE ${address} DROP COLUMN administrative_city_id CASCADE CONSTRAINTS`);
+      await executeOracleDdl(
+        connection,
+        `ALTER TABLE ${address} DROP COLUMN administrative_city_id CASCADE CONSTRAINTS`,
+      );
     }
   }
 

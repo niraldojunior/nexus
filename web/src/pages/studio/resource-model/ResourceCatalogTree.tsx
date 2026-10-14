@@ -322,7 +322,9 @@ export function ResourceCatalogTree({
         )}
 
         <div
-          role="button"
+          role="treeitem"
+          aria-level={level + 1}
+          aria-expanded={isGroup && hasChildren ? isExpanded : undefined}
           tabIndex={0}
           draggable={canMutate}
           onDragStart={(e) => handleDragStart(node, e)}
@@ -338,7 +340,7 @@ export function ResourceCatalogTree({
               onSelectNode(isSelected ? null : node);
             }
           }}
-          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-[0.85rem] transition ${
+          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-[4px] text-[0.883rem] transition ${
             canMutate ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
           } ${isBeingDragged ? 'opacity-30 scale-[0.98]' : ''} ${
             showDropInside
@@ -363,7 +365,8 @@ export function ResourceCatalogTree({
               <button
                 type="button"
                 onClick={(e) => toggleExpand(node.id, e)}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-app-muted hover:text-app-text"
+                aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${node.name}`}
+                className="relative flex h-5 w-5 shrink-0 before:absolute before:-inset-0.5 before:content-[''] items-center justify-center rounded text-app-muted hover:text-app-text"
               >
                 {hasChildren ? (
                   isExpanded ? (
@@ -396,6 +399,14 @@ export function ResourceCatalogTree({
             <span className="truncate" title={node.name}>
               {node.name}
             </span>
+            {isGroup && node.children.length > 0 && (
+              <span
+                className="shrink-0 rounded-full bg-app-accent-soft px-1.5 text-[0.68rem] font-semibold text-app-text"
+                title={`${node.children.length} itens neste grupo`}
+              >
+                {node.children.length}
+              </span>
+            )}
             {node.status === 'inactive' && (
               <span className="shrink-0 rounded bg-red-100 px-1 py-0.2 text-[0.68rem] font-medium text-red-700">
                 Inativo
@@ -414,7 +425,7 @@ export function ResourceCatalogTree({
                     const rect = e.currentTarget.getBoundingClientRect();
                     onAddChild(node, rect);
                   }}
-                  className="rounded p-1 text-app-muted vt-hover-muted hover:text-app-text"
+                  className="flex h-5 w-5 items-center justify-center rounded text-app-muted vt-hover-muted hover:text-app-text"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -426,7 +437,7 @@ export function ResourceCatalogTree({
                   e.stopPropagation();
                   onImpactNode(node);
                 }}
-                className="rounded p-1 text-app-muted vt-hover-muted hover:text-red-600"
+                className="flex h-5 w-5 items-center justify-center rounded text-app-muted vt-hover-muted hover:text-red-600"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -443,9 +454,7 @@ export function ResourceCatalogTree({
         )}
 
         {isGroup && isExpanded && hasChildren && (
-          <div className="mt-0.5 space-y-0.5">
-            {node.children.map((child) => renderNode(child, level + 1))}
-          </div>
+          <div role="group">{node.children.map((child) => renderNode(child, level + 1))}</div>
         )}
       </div>
     );
@@ -455,19 +464,22 @@ export function ResourceCatalogTree({
     <div className="flex flex-col h-full">
       {showSearch && (
         <div className="relative mb-3">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
+          <Search
+            className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
+            aria-hidden="true"
+          />
           <input
-            type="text"
-            autoFocus
+            type="search"
+            aria-label="Buscar na hierarquia"
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
-            placeholder="Buscar nós por nome ou código..."
+            placeholder="Buscar na hierarquia..."
             className="w-full rounded-[14px] border border-app-border bg-app-panel pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
           />
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto space-y-0.5 pr-1 max-h-[680px]">
+      <div className="flex-1 overflow-y-auto pr-1 max-h-[680px]">
         {tree.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-center text-app-muted">
             <AlertCircle className="h-8 w-8 mb-2 stroke-1" />
@@ -476,7 +488,9 @@ export function ResourceCatalogTree({
           </div>
         ) : (
           <>
-            {tree.map((node) => renderNode(node, 0))}
+            <div role="tree" aria-label="Catálogo de recursos">
+              {tree.map((node) => renderNode(node, 0))}
+            </div>
 
             {/* Zona de soltar para a raiz: visível enquanto arrasta um nó que não está na raiz */}
             {canMutate && draggedNode && draggedNode.parentNodeId !== null && (

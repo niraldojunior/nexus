@@ -709,7 +709,9 @@ export function StudioGeoExperience({
         )}
 
         <div
-          role="button"
+          role="treeitem"
+          aria-selected={isSelected}
+          aria-level={depth + 1}
           tabIndex={0}
           draggable={canMutate}
           onDragStart={(e) => handleDragStart(node, e)}
@@ -724,7 +726,7 @@ export function StudioGeoExperience({
               setSelectedId((current) => (current === node.id ? null : node.id));
             }
           }}
-          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-[0.85rem] transition ${
+          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-[4px] text-[0.883rem] transition ${
             canMutate ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
           } ${isBeingDragged ? 'opacity-30 scale-[0.98]' : ''} ${
             showDropInside
@@ -789,7 +791,7 @@ export function StudioGeoExperience({
               <Scan className="h-4 w-4 shrink-0 text-app-muted" />
             )}
 
-            <span className="truncate text-[0.82rem] font-medium" title={node.label}>
+            <span className="truncate text-[0.883rem] font-medium" title={node.label}>
               {node.label}
             </span>
           </div>
@@ -828,9 +830,7 @@ export function StudioGeoExperience({
         )}
 
         {isGroup && isExpanded && hasChildren && (
-          <div className="mt-0.5 space-y-0.5">
-            {node.children.map((child) => renderNode(child, depth + 1))}
-          </div>
+          <div>{node.children.map((child) => renderNode(child, depth + 1))}</div>
         )}
       </div>
     );
@@ -872,11 +872,14 @@ export function StudioGeoExperience({
                 </Button>
                 {createMenuOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setCreateMenuOpen(false)} />
+                    <div
+                      className="fixed inset-0 z-[var(--z-dropdown)]"
+                      onClick={() => setCreateMenuOpen(false)}
+                    />
                     <div
                       role="menu"
                       aria-label="Tipo de nó a incluir"
-                      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
+                      className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
                     >
                       <button
                         type="button"
@@ -903,7 +906,7 @@ export function StudioGeoExperience({
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-0.5 pr-1 max-h-[680px]">
+          <div className="flex-1 overflow-y-auto pr-1 max-h-[680px]">
             {tree.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center text-app-muted">
                 <AlertCircle className="h-8 w-8 mb-2 stroke-1" />

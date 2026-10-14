@@ -267,11 +267,13 @@ export function SpatialStudio({
           text={success}
         />
       ) : null}
-      <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
         <aside className="vt-card min-h-[520px] p-4">
           <label className="flex items-center gap-2 rounded-[10px] border border-app-border px-3 py-2 text-app-muted">
-            <Search className="h-4 w-4" />
+            <Search aria-hidden="true" className="h-4 w-4" />
             <input
+              type="search"
+              aria-label="Buscar cobertura"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="w-full bg-transparent text-[0.86rem] outline-none"
@@ -307,7 +309,12 @@ export function SpatialStudio({
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-center text-app-muted">
-              <Map className="h-10 w-10 opacity-30" />
+              <img
+                src="/assets/studio/studio-empty-state.svg"
+                alt=""
+                aria-hidden="true"
+                className="mb-1 w-full max-w-[240px]"
+              />
               <p className="mt-3 text-[0.9rem]">Nenhuma cobertura manual selecionada.</p>
             </div>
           )}

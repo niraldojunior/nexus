@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Box, Plus, AlertCircle, Folder, Layers } from 'lucide-react';
+import { Plus, AlertCircle, Folder, Layers } from 'lucide-react';
 import type {
   ResourceCatalog,
   ResourceCatalogTreeNode,
@@ -85,9 +85,12 @@ export function ResourceModelStudio({
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('');
   const [tree, setTree] = useState<ResourceCatalogTreeNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<ResourceCatalogNode | null>(null);
+  const groupCount = useMemo(() => {
+    const count = (nodes: ResourceCatalogTreeNode[]): number =>
+      nodes.reduce((sum, n) => sum + (n.kind === 'GROUP' ? 1 : 0) + count(n.children), 0);
+    return count(tree);
+  }, [tree]);
   const [error, setError] = useState<string | null>(null);
-  // Textbox de busca da hierarquia começa oculta; a lupa no cabeçalho alterna a exibição.
-  const [showSearch, setShowSearch] = useState(false);
 
   // Menu flutuante de criação (Grupo / Tipo de Recurso) — substitui o modal manual (issue #230).
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
@@ -409,14 +412,23 @@ export function ResourceModelStudio({
       )}
 
       {/* Main Master/Detail Layout */}
-      <div className="grid gap-5 lg:grid-cols-[342px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(300px,32fr)_minmax(0,68fr)]">
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
           <StudioCollectionHeader
             title="Hierarquia"
-            showSearch={showSearch}
-            onToggleSearch={() => setShowSearch((prev) => !prev)}
-            searchLabel="Buscar nós"
+            showSearch
+            searchLabel="Buscar na hierarquia"
+            badge={
+              groupCount > 0 ? (
+                <span
+                  className="rounded-full bg-app-accent-soft px-2 text-[0.72rem] font-semibold text-app-text"
+                  title={`${groupCount} grupos`}
+                >
+                  {groupCount}
+                </span>
+              ) : undefined
+            }
           >
             {canMutate && (
               <div className="relative">
@@ -436,11 +448,14 @@ export function ResourceModelStudio({
                 </Button>
                 {createMenuOpen && !createMenuAnchorRect && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setCreateMenuOpen(false)} />
+                    <div
+                      className="fixed inset-0 z-[var(--z-dropdown)]"
+                      onClick={() => setCreateMenuOpen(false)}
+                    />
                     <div
                       role="menu"
                       aria-label="Tipo de nó a incluir"
-                      className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
+                      className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
                     >
                       <button
                         type="button"
@@ -470,7 +485,7 @@ export function ResourceModelStudio({
           <div className="flex-1">
             <ResourceCatalogTree
               tree={tree}
-              showSearch={showSearch}
+              showSearch
               selectedNodeId={selectedNode?.id ?? null}
               onSelectNode={setSelectedNode}
               onAddChild={(parent, anchorRect) => handleAddNodeClick(parent, anchorRect)}
@@ -507,7 +522,12 @@ export function ResourceModelStudio({
             />
           ) : (
             <div className="vt-card flex min-h-[560px] flex-col items-center justify-center p-12 text-center text-app-muted">
-              <Box className="h-10 w-10 mb-3 opacity-30" />
+              <img
+                src="/assets/studio/studio-empty-state.svg"
+                alt=""
+                aria-hidden="true"
+                className="mb-4 w-full max-w-[240px]"
+              />
               <h3 className="text-[1.1rem]">Nenhum nó selecionado</h3>
               <p className="text-[0.85rem] mt-1 max-w-sm">
                 Selecione um grupo ou tipo de recurso na árvore à esquerda para visualizar seus
@@ -538,7 +558,7 @@ export function ResourceModelStudio({
         createPortal(
           <>
             <div
-              className="fixed inset-0 z-40"
+              className="fixed inset-0 z-[var(--z-dropdown)]"
               onClick={() => {
                 setCreateMenuOpen(false);
                 setCreateMenuAnchorRect(null);
@@ -547,7 +567,7 @@ export function ResourceModelStudio({
             <div
               role="menu"
               aria-label="Tipo de nó a incluir"
-              className="fixed z-50 w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
+              className="fixed z-[var(--z-overlay)] w-52 overflow-hidden rounded-[12px] border border-app-border bg-app-panel py-1 shadow-soft"
               style={{
                 top: `${Math.min(createMenuAnchorRect.bottom + 4, window.innerHeight - 90)}px`,
                 left: `${Math.max(12, Math.min(createMenuAnchorRect.left, window.innerWidth - 220))}px`,

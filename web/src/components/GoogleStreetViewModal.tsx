@@ -173,7 +173,7 @@ export function GoogleStreetViewModal({
   }, [marker.iconUrl, marker.title, markerLat, markerLng]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-3 sm:p-6">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)] p-3 sm:p-6">
       <div
         ref={dialogRef}
         role="dialog"

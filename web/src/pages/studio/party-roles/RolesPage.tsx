@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Plus } from 'lucide-react';
+import { AlertCircle, Search, Plus } from 'lucide-react';
 import { listPartyRoleTypes } from '../../../services/partyRoleTypeApi';
 import {
   listPartyRoleTypeCharacteristics,
@@ -38,7 +38,6 @@ export function RolesPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineActiveIds, setBaselineActiveIds] = useState<Set<string> | null>(null);
@@ -95,10 +94,6 @@ export function RolesPage({
   useEffect(() => {
     void loadData();
   }, [loadData]);
-  useEffect(() => {
-    if (!showSearch) setFilterText('');
-  }, [showSearch]);
-
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
       setBaselineActiveIds(null);
@@ -216,14 +211,23 @@ export function RolesPage({
           <span>{error}</span>
         </div>
       )}
-      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
         {/* Coluna Master */}
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <StudioCollectionHeader
             title="Todos os Papéis"
-            showSearch={showSearch}
+            showSearch
             searchLabel="Buscar papel..."
-            onToggleSearch={() => setShowSearch((prev) => !prev)}
+            badge={
+              items.length > 0 ? (
+                <span
+                  className="rounded-full bg-app-accent-soft px-2 text-[0.72rem] font-semibold text-app-text"
+                  title={`${items.length} papéis`}
+                >
+                  {items.length}
+                </span>
+              ) : undefined
+            }
           >
             {canMutate && (
               <Button
@@ -240,18 +244,20 @@ export function RolesPage({
 
           <RoleTypeFilterChips value={typeFilter} onChange={setTypeFilter} />
 
-          {showSearch && (
-            <div className="mb-3 mt-2">
-              <input
-                type="text"
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                placeholder="Buscar papel..."
-                className="w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-1.5 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
-                autoFocus
-              />
-            </div>
-          )}
+          <div className="relative mb-3 mt-2">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              aria-label="Buscar na lista"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Buscar papel..."
+              className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            />
+          </div>
 
           <div className="-mx-1 mt-2 flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-1 py-1">
             {loading ? (
@@ -311,7 +317,13 @@ export function RolesPage({
             />
           ) : (
             <div className="vt-card flex min-h-[580px] flex-col items-center justify-center border-dashed border-app-border p-8 text-center text-app-muted">
-              <h4 className="mt-3 font-semibold text-app-text">Nenhum papel selecionado</h4>
+              <img
+                src="/assets/studio/studio-empty-state.svg"
+                alt=""
+                aria-hidden="true"
+                className="mb-4 w-full max-w-[240px]"
+              />
+              <h4 className="font-semibold text-app-text">Nenhum papel selecionado</h4>
               <p className="mt-1 text-[0.82rem]">
                 Selecione um papel na lista para visualizar e editar seus dados.
               </p>

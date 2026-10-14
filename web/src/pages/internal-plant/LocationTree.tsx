@@ -111,7 +111,11 @@ type Props = {
   query?: string;
 };
 
-const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+const normalize = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 
 /** Árvore de Locais: expandir (+/−) só abre o nível; apenas o clique no nome de um Site consulta a tabela. */
 export function LocationTree({
@@ -251,6 +255,10 @@ export function LocationTree({
       if (node.parentId === null) top.push(node);
       else grouped.set(node.parentId, [...(grouped.get(node.parentId) ?? []), node]);
     }
+    // Ramos sintéticos ("Sem UF", "Sem município") vão para o fim: dado incompleto não encabeça a hierarquia.
+    const unregisteredLast = (a: InternalPlantLocationNode, b: InternalPlantLocationNode) =>
+      Number(a.id.endsWith(':none')) - Number(b.id.endsWith(':none'));
+    for (const siblings of grouped.values()) siblings.sort(unregisteredLast);
     return { roots: top, byParent: grouped };
   }, [visibleDirectory]);
 
@@ -287,16 +295,16 @@ export function LocationTree({
           role="treeitem"
           aria-expanded={node.hasChildren ? isOpen : undefined}
           aria-selected={selected}
-          className={`group/row flex items-center gap-1 rounded-lg py-[3px] pr-2 text-[0.8rem] text-app-text ${
+          className={`group/row flex items-center gap-1 rounded-[10px] border py-[4px] pr-2 text-[0.883rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
             isSite ? '' : 'font-semibold'
-          } ${selected ? 'bg-app-accent-soft' : 'hover:bg-app-hover'}`}
+          } ${selected ? 'border-app-accent bg-app-accent-soft font-semibold' : 'border-transparent vt-hover-muted'}`}
           style={{ paddingLeft: depth * 14 }}
         >
           {node.hasChildren ? (
             <button
               type="button"
               aria-label={`${isOpen ? 'Recolher' : 'Expandir'} ${node.label}`}
-              className="flex h-5 w-5 shrink-0 items-center justify-center text-app-muted"
+              className="relative flex h-5 w-5 shrink-0 items-center justify-center text-app-muted before:absolute before:-inset-0.5 before:content-['']"
               onClick={() => toggle(node)}
             >
               {isSite ? (
@@ -324,6 +332,7 @@ export function LocationTree({
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left"
+            title={node.sublabel ? `${node.label} — ${node.sublabel}` : node.label}
             onClick={() => {
               if (isSite) onSelectSite(node);
               else if (isCity) {
@@ -345,11 +354,11 @@ export function LocationTree({
             {node.sublabel ? <span className="ml-2 text-app-muted">{node.sublabel}</span> : null}
           </button>
           {canEdit && isSite ? (
-            <span className="flex shrink-0 items-center gap-0.5 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100">
+            <span className="flex shrink-0 items-center gap-0.5 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100">
               <button
                 type="button"
                 aria-label={`Editar ${node.label}`}
-                className="flex h-5 w-5 items-center justify-center rounded text-app-muted hover:text-app-text"
+                className="relative flex h-5 w-5 items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-app-text"
                 onClick={() => onEditSite?.(node)}
               >
                 <Pencil size={13} />
@@ -357,7 +366,7 @@ export function LocationTree({
               <button
                 type="button"
                 aria-label={`Remover ${node.label}`}
-                className="flex h-5 w-5 items-center justify-center rounded text-app-muted hover:text-status-red"
+                className="relative flex h-5 w-5 items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-status-red"
                 onClick={() => onRemoveSite?.(node)}
               >
                 <Trash2 size={13} />
@@ -370,11 +379,11 @@ export function LocationTree({
             {branch.nodes.map((child) => renderNode(child, depth + 1, isSite))}
             {branch.loading ? (
               <li className="py-1.5 text-app-muted" style={childIndent}>
-                <Loader2 size={14} className="animate-spin" aria-label="Carregando" />
+                <Loader2 size={14} className="animate-spin" role="status" aria-label="Carregando" />
               </li>
             ) : null}
             {branch.error ? (
-              <li className="py-1.5 text-[0.85rem] text-app-muted" style={childIndent}>
+              <li role="alert" className="py-1.5 text-[0.85rem] text-app-muted" style={childIndent}>
                 {branch.error}{' '}
                 <button
                   type="button"

@@ -107,7 +107,7 @@ describe('AddressDetailPanel', () => {
     // GEONET (Endereço Completo, rank 3) supera o Google (RANGE_INTERPOLATED, rank 2): já nasce
     // marcado na chave. Clicar nele é idempotente.
     await userEvent.click(screen.getByRole('radio', { name: /GEONET/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     expect(viability).toHaveBeenCalledWith([-43.2, -22.8], true);
   });
 
@@ -233,11 +233,11 @@ describe('AddressDetailPanel', () => {
     // Nasce na Geral.
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     expect(screen.getByText(/Nenhuma CDO num raio de 300 m/)).toBeInTheDocument();
     expect(screen.queryByText('Google Maps')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Geral' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Geral' }));
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
   });
 
@@ -256,10 +256,10 @@ describe('AddressDetailPanel', () => {
     expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
 
     // Na Viabilidade a foto some para o mapa ganhar a tela.
-    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     expect(screen.queryByText('Sem imagem de Street View')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Geral' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Geral' }));
     expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
   });
 
@@ -301,7 +301,7 @@ describe('AddressDetailPanel', () => {
     const sheet = screen.getByTestId('bottom-sheet');
     const content = screen.getByTestId('bottom-sheet-content');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     // A aba nasce em mid (folha a 48vh); a auto-seleção já projeta o drop.
     await waitFor(() => expect(sheet.style.height).toContain('48vh'));
 
@@ -359,7 +359,7 @@ describe('AddressDetailPanel', () => {
     render(<AddressDetailPanel isMobile={false} address={conflictAddress} onClose={vi.fn()} />);
 
     await userEvent.click(screen.getByRole('radio', { name: /Google Maps/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Viabilidade' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     expect(viability).toHaveBeenCalledWith([-43.1, -22.9], true);
   });
 

@@ -40,7 +40,7 @@ export function Tooltip({
     <div
       ref={setElement}
       style={{ top, left, width: TOOLTIP_WIDTH }}
-      className="pointer-events-none fixed z-50 rounded-[14px] border border-app-border bg-white px-3 py-2.5 text-[0.8rem] shadow-soft-lg"
+      className="pointer-events-none fixed z-[var(--z-toast)] rounded-[14px] border border-app-border bg-white px-3 py-2.5 text-[0.8rem] shadow-soft-lg"
       role="tooltip"
     >
       {children}

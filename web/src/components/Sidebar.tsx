@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  FolderKanban,
   FolderTree,
   LogOut,
   type LucideIcon,
@@ -16,12 +17,17 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
-import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
-import { listServiceCategories } from '../data/serviceCategoryViews';
 import NexusMark from './NexusMark';
 
 type PrimaryItemId =
-  'conversations' | 'research' | 'geo' | 'internal-plant' | 'service' | 'order' | 'studio';
+  | 'conversations'
+  | 'research'
+  | 'project'
+  | 'geo'
+  | 'internal-plant'
+  | 'service'
+  | 'order'
+  | 'studio';
 
 /**
  * Item de submenu de categoria (usado por Service).
@@ -38,8 +44,6 @@ interface SidebarProps {
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
-  activeServiceCategory: string;
-  serviceMenuOpen: boolean;
   settingsOpen?: boolean;
   recentItems: RecentItem[];
   recentGroup: RecentGroup;
@@ -48,8 +52,6 @@ interface SidebarProps {
   onNewConversation: () => void;
   onNewResearch: () => void;
   onSelectPage: (page: PageId | 'settings') => void;
-  onToggleServiceMenu: () => void;
-  onSelectServiceCategory: (categoryCode: string) => void;
   onOpenRecentItem: (conversationId: string) => void;
   onSelectResearchSession?: (sessionId: string) => void;
   researchSessionRefreshTrigger?: number;
@@ -62,21 +64,27 @@ interface SidebarProps {
   onLogout?: () => void;
 }
 
-const primaryItems: Array<{ id: PrimaryItemId; label: string; icon: LucideIcon }> = [
-  { id: 'research', label: 'Nova Conversa', icon: Plus },
+type PrimaryItem = {
+  id: PrimaryItemId;
+  label: string;
+  icon: LucideIcon;
+  section?: string;
+  soon?: boolean;
+};
+
+// Agrupamento só visual: rotas, permissões e ids permanecem os mesmos.
+const primaryItems: PrimaryItem[] = [
+  { id: 'research', label: 'Nova Conversa', icon: Plus, section: 'Copilot' },
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
+  { id: 'project', label: 'Projetos', icon: FolderKanban, section: 'Inventário', soon: true },
   { id: 'geo', label: 'Planta Externa', icon: MapPinned },
   { id: 'internal-plant', label: 'Planta Interna', icon: Server },
-  { id: 'service', label: 'Serviços', icon: Briefcase },
-  { id: 'order', label: 'Ordens', icon: FolderTree },
-  { id: 'studio', label: 'Studio', icon: Presentation },
+  { id: 'service', label: 'Serviços', icon: Briefcase, soon: true },
+  { id: 'order', label: 'Ordens', icon: FolderTree, section: 'Operação', soon: true },
+  { id: 'studio', label: 'Studio', icon: Presentation, section: 'Plataforma' },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
-
-const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(
-  SERVICE_CATEGORY_DEFAULTS,
-).map((category) => ({ code: category.code, label: category.name }));
 
 export default function Sidebar({
   collapsed,
@@ -84,13 +92,9 @@ export default function Sidebar({
   showMobileToggle = true,
   currentPage,
   activeResearchSessionId,
-  activeServiceCategory,
-  serviceMenuOpen,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
-  onToggleServiceMenu,
-  onSelectServiceCategory,
   onSelectResearchSession,
   researchSessionRefreshTrigger,
   sessionUser,
@@ -111,15 +115,7 @@ export default function Sidebar({
         onSelect: (code: string) => void;
       }
     >
-  > = {
-    service: {
-      items: serviceCategoryItems,
-      open: serviceMenuOpen,
-      activeCode: activeServiceCategory,
-      onToggle: onToggleServiceMenu,
-      onSelect: onSelectServiceCategory,
-    },
-  };
+  > = {};
 
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [avatarTriggerRect, setAvatarTriggerRect] = useState<DOMRect | null>(null);
@@ -163,7 +159,7 @@ export default function Sidebar({
   // Classes do <aside>. No rail recolhido não usamos overflow-hidden: o tooltip
   // (.vt-sb-tip) dos itens precisa escapar da sidebar para aparecer ao lado do ícone.
   const asideClassName = isMobile
-    ? `vt-main-nav vt-main-nav-mobile fixed inset-y-0 left-0 z-50 flex w-[248px] max-w-[85vw] flex-col overflow-hidden bg-app-sidebar shadow-soft transition-transform duration-300 ease-in-out ${
+    ? `vt-main-nav vt-main-nav-mobile fixed inset-y-0 left-0 z-[var(--z-overlay)] flex w-[248px] max-w-[85vw] flex-col overflow-hidden bg-app-sidebar shadow-soft transition-transform duration-300 ease-in-out ${
         collapsed ? '-translate-x-full' : 'translate-x-0'
       }`
     : `vt-main-nav flex flex-col ${collapsed ? '' : 'overflow-hidden'} bg-app-sidebar transition-[width,min-width] duration-200 ease-in-out ${
@@ -176,7 +172,7 @@ export default function Sidebar({
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="fixed left-3 top-3 z-[60] flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
+          className="fixed left-3 top-3 z-[var(--z-overlay)] flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-white text-app-text shadow-soft"
           aria-label="Abrir barra lateral"
         >
           <NexusMark className="h-7 w-7" />
@@ -185,13 +181,13 @@ export default function Sidebar({
 
       {isMobile && !collapsed ? (
         <div
-          className="fixed inset-0 z-40 bg-black/40"
+          className="fixed inset-0 z-40 bg-[var(--scrim)]"
           onClick={onToggleCollapse}
           aria-hidden="true"
         />
       ) : null}
 
-      <aside className={asideClassName}>
+      <aside className={asideClassName} aria-label="Navegação principal">
         {/* SidebarHeader — compacto: a lista de itens começa logo abaixo da marca. */}
         <div className="flex flex-shrink-0 items-center px-2 pt-1.5 pb-0.5">
           <div
@@ -238,7 +234,7 @@ export default function Sidebar({
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="flex items-center text-app-muted hover:text-app-text"
+                className="relative flex items-center text-app-muted before:absolute before:-inset-1.5 before:content-[''] hover:text-app-text"
                 aria-label="Recolher barra lateral"
                 title="Recolher"
               >
@@ -260,34 +256,23 @@ export default function Sidebar({
           }`}
         >
           <div className="h-full">
-            <nav className="flex flex-col gap-[2px] px-2">
-              {primaryItems
-                .filter(({ id }) => id === 'research')
-                .map(({ id, label, icon: Icon }) => (
-                  <NavItem
-                    key={id}
-                    active={currentPage === 'research' && activeResearchSessionId === null}
-                    icon={Icon}
-                    label={label}
-                    onClick={() => {
-                      onNewResearch();
-                      closeMobileDrawer();
-                    }}
-                    collapsed={contentCollapsed}
-                  />
-                ))}
+            <nav aria-label="Módulos" className="flex flex-col gap-[2px] px-2">
               {primaryItems
                 .filter(
                   ({ id }) =>
-                    id !== 'research' &&
                     (id !== 'studio' || canViewStudio) &&
                     ((id !== 'service' && id !== 'order') || canViewOrder),
                 )
-                .map(({ id, label, icon: Icon }) => {
+                .map(({ id, label, icon: Icon, section, soon }, index, visible) => {
+                  const showSection = Boolean(section) && section !== visible[index - 1]?.section;
                   const isActive =
+                    (id === 'research' &&
+                      currentPage === 'research' &&
+                      activeResearchSessionId === null) ||
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
-                    ((id === 'geo' ||
+                    ((id === 'project' ||
+                      id === 'geo' ||
                       id === 'internal-plant' ||
                       id === 'service' ||
                       id === 'order' ||
@@ -298,11 +283,27 @@ export default function Sidebar({
 
                   return (
                     <div key={id}>
+                      {showSection ? (
+                        contentCollapsed ? (
+                          <div
+                            className="mx-2 my-1 border-t border-app-border"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <div className="vt-sb-group-label mt-1">{section}</div>
+                        )
+                      ) : null}
                       <NavItem
                         active={isActive}
                         icon={Icon}
                         label={label}
+                        badge={soon ? 'Em breve' : undefined}
                         onClick={() => {
+                          if (id === 'research') {
+                            onNewResearch();
+                            closeMobileDrawer();
+                            return;
+                          }
                           if (id === 'conversations') {
                             onSelectPage('conversas');
                             closeMobileDrawer();
@@ -340,6 +341,7 @@ export default function Sidebar({
                                     categoryMenu.onSelect(item.code);
                                     closeMobileDrawer();
                                   }}
+                                  aria-current={subItemActive ? 'page' : undefined}
                                   className={`vt-sb-btn w-full text-left text-xs ${
                                     subItemActive ? 'is-active' : ''
                                   }`}
@@ -464,8 +466,9 @@ export default function Sidebar({
                   onSelectPage('settings');
                   closeMobileDrawer();
                 }}
-                className="rounded p-1 text-app-muted hover:text-app-text"
+                className="relative rounded p-1 text-app-muted before:absolute before:-inset-0.5 before:content-[''] hover:text-app-text"
                 title="Preferências"
+                aria-label="Preferências"
               >
                 <Settings className="h-3.5 w-3.5" strokeWidth={1.8} />
               </button>
@@ -476,8 +479,9 @@ export default function Sidebar({
                     onLogout();
                     closeMobileDrawer();
                   }}
-                  className="rounded p-1 text-app-muted hover:text-red-600"
+                  className="relative rounded p-1 text-app-muted before:absolute before:-inset-0.5 before:content-[''] hover:text-red-600"
                   title="Sair"
+                  aria-label="Sair"
                 >
                   <LogOut className="h-3.5 w-3.5" strokeWidth={1.8} />
                 </button>
@@ -511,10 +515,12 @@ function NavItem({
   label,
   onClick,
   collapsed = false,
+  badge,
 }: {
   active: boolean;
   icon: LucideIcon;
   label: string;
+  badge?: string;
   onClick: () => void;
   collapsed?: boolean;
 }) {
@@ -523,6 +529,8 @@ function NavItem({
       type="button"
       onClick={onClick}
       title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+      aria-current={active ? 'page' : undefined}
       className={`vt-sb-btn relative flex w-full items-center text-left ${
         collapsed ? 'vt-sb-btn-rail' : ''
       } ${active ? 'is-active' : ''}`}
@@ -536,6 +544,11 @@ function NavItem({
           {label}
         </span>
       )}
+      {!collapsed && badge ? (
+        <span className="rounded-full border border-app-border px-1.5 text-[0.65rem] text-app-muted">
+          {badge}
+        </span>
+      ) : null}
       {collapsed && <span className="vt-sb-tip">{label}</span>}
     </button>
   );
@@ -559,11 +572,11 @@ function AvatarFloatingMenu({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={onClose} />
       <div
         role="menu"
         style={{ left, bottom, width }}
-        className="fixed z-50 flex flex-col overflow-hidden rounded-[16px] border border-app-border bg-app-panel p-1.5 shadow-modal"
+        className="fixed z-[var(--z-overlay)] flex flex-col overflow-hidden rounded-[16px] border border-app-border bg-app-panel p-1.5 shadow-modal"
       >
         <button
           type="button"

@@ -196,6 +196,13 @@ button {
   :root:not([data-theme='dark']) .vt-searchbar-flat:focus-within {
     box-shadow: none;
   }
+  /* Busca: borda amarela sozinha tem baixo contraste sobre fundo claro; o teclado ganha um
+     contorno escuro (WCAG 2.4.7 / 1.4.11). */
+  .vt-searchbar:has(input:focus-visible),
+  .vt-searchbar-flat:has(input:focus-visible) {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 2px;
+  }
   .vt-card-interactive {
     border-color: var(--border-strong);
   }
@@ -276,7 +283,7 @@ button {
      só aqui. O estado ativo mantém o mesmo amarelo + borda acima; funciona igual
      sobre fundo escuro. */
   .vt-studio-nav-ink .vt-sb-group-label {
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(255, 255, 255, 0.6);
   }
   .vt-studio-nav-ink .vt-sb-btn {
     color: rgba(255, 255, 255, 0.7);
@@ -304,7 +311,7 @@ button {
      bastante com o canvas branco e continua como estava. */
   [data-theme='dark'] .vt-studio-control {
     background: var(--surface-sidebar);
-    border: 1px solid var(--sidebar-border);
+    border-right: 1px solid var(--sidebar-border);
   }
 
   /* Conversa recente ativa (ResearchHistoryPage, dentro da sidebar principal):
@@ -819,4 +826,17 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 1rem 0;
+}
+
+/* Movimento reduzido — cobertura global (WCAG 2.3.3). Regra de rede de segurança:
+   mantém o estado final das transições/animações, sem deslocamento nem repetição. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -245,7 +245,8 @@ export function ResourceDefinitionModal({
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={submitting || !selectedSpecificationId || loading || specsLoading}
+            loading={submitting}
+            disabled={!selectedSpecificationId || loading || specsLoading}
           >
             {submitting ? 'Salvando…' : 'Salvar alteração'}
           </Button>

@@ -54,7 +54,7 @@ test('estado inicial não mostra tabela nem consulta recursos', () => {
 test('busca com menos de 3 caracteres não consulta', async () => {
   const user = userEvent.setup();
   render(<InternalPlantPage />);
-  await user.type(screen.getByRole('searchbox'), 'ol{Enter}');
+  await user.type(screen.getByRole('searchbox', { name: 'Pesquisar recursos' }), 'ol{Enter}');
   expect(fetchResources).not.toHaveBeenCalled();
   expect(screen.getByRole('alert')).toBeInTheDocument();
 });
@@ -62,22 +62,23 @@ test('busca com menos de 3 caracteres não consulta', async () => {
 test('busca confirmada lista as colunas esperadas', async () => {
   const user = userEvent.setup();
   render(<InternalPlantPage />);
-  await user.type(screen.getByRole('searchbox'), 'olt{Enter}');
+  await user.type(screen.getByRole('searchbox', { name: 'Pesquisar recursos' }), 'olt{Enter}');
   await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
   expect(fetchResources.mock.calls[0]?.[0]).toEqual({ q: 'olt' });
   for (const header of ['Nome', 'Tipo', 'Especificação', 'Status', 'UF', 'Município']) {
     expect(screen.getByRole('columnheader', { name: header })).toBeInTheDocument();
   }
   expect(screen.getByText('Niterói')).toBeInTheDocument();
-  expect(screen.getByRole('img', { name: 'Ativo' })).toHaveAttribute('title', 'Ativo');
-  expect(screen.getAllByRole('navigation', { name: 'Paginação' })).toHaveLength(2);
+  expect(screen.getByText('Ativo')).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: 'Paginação superior' })).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: 'Paginação inferior' })).toBeInTheDocument();
 });
 
 test('erro mostra retry', async () => {
   fetchResources.mockRejectedValueOnce(new Error('falhou'));
   const user = userEvent.setup();
   render(<InternalPlantPage />);
-  await user.type(screen.getByRole('searchbox'), 'olt{Enter}');
+  await user.type(screen.getByRole('searchbox', { name: 'Pesquisar recursos' }), 'olt{Enter}');
   await user.click(await screen.findByRole('button', { name: 'Tentar novamente' }));
   await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
 });

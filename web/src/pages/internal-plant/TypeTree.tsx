@@ -21,7 +21,11 @@ type Props = {
   query?: string;
 };
 
-const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+const normalize = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 
 /** Mantém nós cujo nome casa (com a subárvore inteira) ou que têm descendente casando. */
 const filterTree = (
@@ -71,11 +75,16 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
     [tree, filtering, tokens],
   );
 
-  if (error) return <p className="p-4 text-[0.9rem] text-app-muted">{error}</p>;
+  if (error)
+    return (
+      <p role="alert" className="p-4 text-[0.9rem] text-app-muted">
+        {error}
+      </p>
+    );
   if (!tree) {
     return (
       <div className="p-4 text-app-muted">
-        <Loader2 size={16} className="animate-spin" aria-label="Carregando" />
+        <Loader2 size={16} className="animate-spin" role="status" aria-label="Carregando" />
       </div>
     );
   }
@@ -103,9 +112,9 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
           role="treeitem"
           aria-expanded={isGroup ? isOpen : undefined}
           aria-selected={selected}
-          className={`flex items-center gap-1 rounded-lg py-[3px] pr-2 text-[0.8rem] text-app-text ${
+          className={`flex items-center gap-1 rounded-[10px] border py-[4px] pr-2 text-[0.883rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
             isGroup ? 'font-semibold' : ''
-          } ${selected ? 'bg-app-accent-soft' : 'hover:bg-app-hover'}`}
+          } ${selected ? 'border-app-accent bg-app-accent-soft font-semibold' : 'border-transparent vt-hover-muted'}`}
           style={{ paddingLeft: depth * 14 }}
         >
           {isGroup ? (
@@ -128,6 +137,7 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left"
+            title={node.name}
             onClick={() => {
               // Grupo só abre/fecha; a consulta nasce do clique num tipo de recurso.
               if (isGroup) {

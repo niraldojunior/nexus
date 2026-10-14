@@ -9,8 +9,10 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '../../components/ui/Button';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   listGeoSiteSpecifications,
   type GeoSite,
@@ -39,7 +41,7 @@ const TABS: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
 ];
 
 const inputClass =
-  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent disabled:opacity-60';
+  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent aria-[invalid=true]:border-status-red disabled:opacity-60';
 const labelClass = 'grid gap-1 text-[0.78rem] font-semibold text-app-muted';
 
 type Characteristic = { group?: string; name: string; value: unknown; valueType?: string };
@@ -89,8 +91,13 @@ export function SiteEditorModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Depois de uma tentativa de salvar, os obrigatórios vazios passam a ser sinalizados nos campos.
+  const [attempted, setAttempted] = useState(false);
 
   const [dirty, setDirty] = useState(false);
+  const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalDialog(panelRef, !confirmOpen);
 
   const patch = (change: Partial<Draft>) => {
     setDraft((current) => (current ? { ...current, ...change } : current));
@@ -102,13 +109,20 @@ export function SiteEditorModal({
     setDraft((current) => (current ? { ...current, ...change } : current));
 
   const requestClose = () => {
-    if (dirty && !window.confirm('Descartar as alterações não salvas?')) return;
-    onClose();
+    if (!dirty) return onClose();
+    void confirm({
+      title: 'Descartar as alterações?',
+      message: 'As alterações não salvas serão perdidas.',
+      confirmLabel: 'Descartar',
+      destructive: true,
+    }).then((ok) => {
+      if (ok) onClose();
+    });
   };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') requestClose();
+      if (event.key === 'Escape' && !confirmOpen) requestClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -207,8 +221,18 @@ export function SiteEditorModal({
   const save = async () => {
     if (!draft) return;
     if (!draft.name.trim() || !draft.specId || !draft.cityId || !draft.street.trim()) {
+      setAttempted(true);
       setError('Informe nome, tipo, município e logradouro.');
       setTab('general');
+      const firstInvalid = !draft.name.trim()
+        ? 'site-field-name'
+        : !draft.specId
+          ? 'site-field-spec'
+          : !draft.cityId
+            ? 'site-field-city'
+            : 'site-field-street';
+      // O painel Geral só monta depois do setTab; espera o commit antes de focar.
+      setTimeout(() => document.getElementById(firstInvalid)?.focus(), 0);
       return;
     }
     setSaving(true);
@@ -249,12 +273,15 @@ export function SiteEditorModal({
   const title = siteId ? 'Editar local' : 'Novo local';
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-4">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)] p-4">
+      {confirmDialog}
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[960px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal"
+        className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[960px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal outline-none"
       >
         <nav
           aria-label="Local"
@@ -305,9 +332,9 @@ export function SiteEditorModal({
               type="button"
               aria-label="Fechar"
               onClick={requestClose}
-              className="text-app-muted hover:text-app-text"
+              className="grid size-8 shrink-0 place-items-center rounded-lg text-app-muted hover:bg-app-hover hover:text-app-text"
             >
-              <X size={18} />
+              <X size={18} aria-hidden="true" />
             </button>
           </header>
           <div className="flex gap-1 overflow-x-auto border-b border-app-border px-3 py-1.5 sm:hidden">
@@ -315,6 +342,7 @@ export function SiteEditorModal({
               <button
                 key={t.id}
                 type="button"
+                aria-current={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={`shrink-0 rounded-lg px-2.5 py-1 text-[0.8rem] ${tab === t.id ? 'bg-app-accent-soft font-semibold' : 'text-app-muted'}`}
               >
@@ -337,6 +365,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Nome
                     <input
+                      id="site-field-name"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.name.trim()}
+                      aria-describedby={
+                        attempted && !draft.name.trim() ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.name}
                       onChange={(e) => patch({ name: e.target.value })}
@@ -345,6 +379,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Tipo de local
                     <select
+                      id="site-field-spec"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.specId}
+                      aria-describedby={
+                        attempted && !draft.specId ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.specId}
                       disabled={Boolean(siteId)}
@@ -396,6 +436,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Município
                     <select
+                      id="site-field-city"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.cityId}
+                      aria-describedby={
+                        attempted && !draft.cityId ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.cityId}
                       disabled={!draft.stateCode}
@@ -414,6 +460,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Logradouro
                     <input
+                      id="site-field-street"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.street.trim()}
+                      aria-describedby={
+                        attempted && !draft.street.trim() ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.street}
                       onChange={(e) => patch({ street: e.target.value })}
@@ -506,6 +558,7 @@ export function SiteEditorModal({
           </div>
           <footer className="flex items-center justify-between gap-3 border-t border-app-border bg-app-sidebar px-6 py-3">
             <p
+              id="site-editor-error"
               role="alert"
               className="min-w-0 flex-1 truncate text-[0.82rem] text-status-red"
               title={error ?? ''}
@@ -519,7 +572,8 @@ export function SiteEditorModal({
               <Button
                 variant="primary"
                 onClick={() => void save()}
-                disabled={saving || loading || !draft}
+                loading={saving}
+                disabled={loading || !draft}
               >
                 {saving ? 'Salvando...' : 'Salvar'}
               </Button>
@@ -625,7 +679,7 @@ function OrganizationTab({
           />
           <input
             className={inputClass}
-            placeholder="Papel (ex.: owner)"
+            placeholder="Papel (ex.: proprietário)"
             aria-label="Papel da organização"
             value={role}
             onChange={(e) => setRole(e.target.value)}

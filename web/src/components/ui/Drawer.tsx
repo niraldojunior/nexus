@@ -1,12 +1,13 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { X } from 'lucide-react';
 
 /**
  * V.tal Nexus — Drawer lateral (issue #275).
  * Reutiliza os mesmos primitivos de acessibilidade e estilo de `Modal.tsx`:
  * - Renderizado no `document.body` via `createPortal`
- * - Scrim escuro `bg-black/30`
+ * - Scrim escuro `--scrim`
  * - Painel estilizado com `.vt-popover`
  * - Gerenciamento de foco: foco inicial no painel, restauração para o elemento anterior ao fechar
  * - Tecla Escape fecha
@@ -33,6 +34,7 @@ export default function Drawer({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  useFocusTrap(panelRef);
 
   useEffect(() => {
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
@@ -52,7 +54,7 @@ export default function Drawer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex justify-end bg-black/30"
+      className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-[var(--scrim)]"
       onClick={closeOnClickOutside ? onClose : undefined}
       role="dialog"
       aria-modal="true"

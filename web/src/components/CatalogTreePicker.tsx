@@ -232,7 +232,7 @@ export function CatalogTreeCombobox({
         />
       </button>
       {open ? (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 overflow-hidden rounded-[16px] border border-app-border bg-app-panel shadow-modal">
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[var(--z-dropdown)] overflow-hidden rounded-[16px] border border-app-border bg-app-panel shadow-modal">
           {loading && nodes.length === 0 ? (
             <p className="p-3 text-[0.82rem] text-app-muted">Carregando…</p>
           ) : (

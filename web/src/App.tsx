@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Briefcase, Download, FileText, FolderTree, MapPin, MapPinned } from 'lucide-react';
+import {
+  Briefcase,
+  Download,
+  FileText,
+  FolderKanban,
+  FolderTree,
+  MapPin,
+  MapPinned,
+} from 'lucide-react';
 import ClaudeBurst from './components/ClaudeBurst';
 import CopilotPendingResponse from './components/CopilotPendingResponse';
 import Diamond from './components/Diamond';
@@ -15,7 +23,6 @@ import GeoPage from './pages/GeoPage';
 import InternalPlantPage from './pages/InternalPlantPage';
 import LoginPage from './pages/LoginPage';
 import NewResearchPage from './pages/NewResearchPage';
-import ServicePage from './pages/ServicePage';
 import { ConfigurationPage } from './pages/ConfigurationPage';
 import { StudioPage } from './pages/StudioPage';
 import { ResearchPage } from './pages/ResearchPage';
@@ -28,7 +35,6 @@ import { initialConversations, initialRecentItems } from './data/mockData';
 import { sendMessage } from './services/api';
 import { useIsMobile } from './hooks/useIsMobile';
 import { clearGeoViewParams } from './utils/geoViewState';
-import { DEFAULT_SERVICE_CATEGORY_CODE } from './data/serviceCategoryViews';
 import {
   appRoutePath,
   DEFAULT_STUDIO_SECTION,
@@ -60,11 +66,16 @@ const domainMeta: Record<
 > = {
   geo: { title: 'Geo', subtitle: 'Onde? Geographic Site, Address & Location', icon: MapPinned },
   service: {
-    title: 'Service',
+    title: 'Serviços',
     subtitle: 'Para quê / quem? CFS, RFS e SubscriberID',
     icon: Briefcase,
   },
-  order: { title: 'Order', subtitle: 'Viabilidade, qualificação e fulfillment', icon: FolderTree },
+  project: {
+    title: 'Projetos',
+    subtitle: 'Planejamento e acompanhamento de projetos de rede',
+    icon: FolderKanban,
+  },
+  order: { title: 'Ordens', subtitle: 'Viabilidade, qualificação e fulfillment', icon: FolderTree },
 };
 
 function AssistantHome({
@@ -158,7 +169,7 @@ function DomainPage({
         <PageHead title={meta.title} subtitle={meta.subtitle} />
         <EmptyState
           title="Módulo em construção"
-          description="O módulo de Order ainda não foi implementado no Nexus."
+          description={`O módulo de ${meta.title} ainda não foi implementado no Nexus.`}
         />
       </div>
     </div>
@@ -259,7 +270,7 @@ function ConversationPage({
               className="mt-2 rounded-xl px-4 py-2 text-sm"
               style={{
                 background: 'var(--status-red-soft)',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
+                border: '1px solid var(--status-red-border)',
                 color: 'var(--status-red)',
               }}
             >
@@ -355,10 +366,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   const [activeResearchSessionId, setActiveResearchSessionId] = useState<string | null>(
     initialRoute.sessionId ?? null,
   );
-  const [activeServiceCategory, setActiveServiceCategory] = useState<string>(
-    initialRoute.serviceCategory ?? DEFAULT_SERVICE_CATEGORY_CODE,
-  );
-  const [serviceMenuOpen, setServiceMenuOpen] = useState(initialRoute.page === 'service');
   const [researchSessionRefreshTrigger, setResearchSessionRefreshTrigger] = useState(0);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -404,15 +411,12 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       });
       setActiveConversationId(conversationId);
       setActiveResearchSessionId(null);
-      setServiceMenuOpen(false);
       setCurrentPage('conversation');
       return;
     }
 
     setActiveResearchSessionId(route.sessionId ?? null);
-    if (route.serviceCategory) setActiveServiceCategory(route.serviceCategory);
     if (route.studioSection) setActiveStudioSection(route.studioSection);
-    setServiceMenuOpen(route.page === 'service');
     setCurrentPage(route.page);
   });
 
@@ -432,20 +436,13 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
       sessionId: activeResearchSessionId ?? undefined,
       conversationId:
         currentPage === 'conversation' ? (activeConversationId ?? undefined) : undefined,
-      serviceCategory: activeServiceCategory,
       studioSection: activeStudioSection,
     });
 
     if (window.location.pathname !== expectedPath) {
       window.history.replaceState({}, '', `${expectedPath}${window.location.search}`);
     }
-  }, [
-    currentPage,
-    activeConversationId,
-    activeResearchSessionId,
-    activeServiceCategory,
-    activeStudioSection,
-  ]);
+  }, [currentPage, activeConversationId, activeResearchSessionId, activeStudioSection]);
 
   // Limpa os parâmetros de viewport do Geo (`ll`, `z`, `site`, `res`, `addr`, `q`, `place`) da URL
   // ao navegar para fora de `/geo` — sem isto, sobrevivem indefinidamente em qualquer outra página
@@ -509,28 +506,12 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
     setPendingConversationEntryId(null);
   };
 
-  const handleSelectServiceCategory = (categoryCode: string) => {
-    setSettingsOpen(false);
-    setActiveResearchSessionId(null);
-    setActiveServiceCategory(categoryCode);
-    setServiceMenuOpen(true);
-    setCurrentPage('service');
-  };
-
-  const handleToggleServiceMenu = () => {
-    setSettingsOpen(false);
-    setActiveResearchSessionId(null);
-    setCurrentPage('service');
-    setServiceMenuOpen((current) => !current);
-  };
-
   const handleSelectPage = (page: PageId | 'settings') => {
     if (page === 'settings') {
       setSettingsOpen(true);
       return;
     }
     setSettingsOpen(false);
-    setServiceMenuOpen(page === 'service' ? serviceMenuOpen : false);
     setCurrentPage(page);
     if (
       !isMobile &&
@@ -550,7 +531,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
   };
 
   const handleAssistantNavigate = (page: PageId) => {
-    setServiceMenuOpen(false);
     setCurrentPage(page);
   };
 
@@ -644,8 +624,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         currentPage={currentPage}
         activeRecentConversationId={activeConversationId}
         activeResearchSessionId={activeResearchSessionId}
-        activeServiceCategory={activeServiceCategory}
-        serviceMenuOpen={serviceMenuOpen}
         settingsOpen={settingsOpen}
         recentItems={recentItems}
         recentGroup={recentGroup}
@@ -654,8 +632,6 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
         onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
         onNewConversation={handleNewConversation}
         onNewResearch={handleNewResearch}
-        onToggleServiceMenu={handleToggleServiceMenu}
-        onSelectServiceCategory={handleSelectServiceCategory}
         onSelectPage={handleSelectPage}
         onOpenRecentItem={(conversationId) => {
           setSettingsOpen(false);
@@ -740,13 +716,10 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
                   onNavigate={handleAssistantNavigate}
                 />
               ) : null}
+              {currentPage === 'project' ? <DomainPage page={currentPage} /> : null}
               {currentPage === 'service' || currentPage === 'order' ? (
                 session.canViewOrder ? (
-                  currentPage === 'service' ? (
-                    <ServicePage category={activeServiceCategory} />
-                  ) : (
-                    <DomainPage page="order" />
-                  )
+                  <DomainPage page={currentPage} />
                 ) : (
                   <div className="p-8 text-app-muted">
                     Você não tem permissão para acessar{' '}

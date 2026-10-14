@@ -166,7 +166,9 @@ export function UsersTab() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5}>Carregando…</td>
+                <td colSpan={5} role="status">
+                  Carregando…
+                </td>
               </tr>
             ) : sortedUsers.length === 0 ? (
               <tr>
@@ -348,7 +350,12 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
           <Button variant="secondary" type="button" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit" form="create-user-form" disabled={submitting || !submitValid}>
+          <Button
+            type="submit"
+            form="create-user-form"
+            loading={submitting}
+            disabled={!submitValid}
+          >
             {submitting ? 'Criando...' : 'Criar'}
           </Button>
         </>

@@ -246,26 +246,35 @@ export function SitePanel({
     <div className="px-2 py-6 text-center text-[0.86rem] text-app-muted">Carregando local…</div>
   ) : detail.site ? (
     <div className="grid gap-4">
-      <PanelTabBar activeTab={tab} className="border-b border-app-border">
+      <PanelTabBar
+        activeTab={tab}
+        role="tablist"
+        ariaLabel="Seções do local"
+        className="border-b border-app-border"
+      >
         <PanelBarButton
+          asTab
           icon={InfoIcon}
           label="Geral"
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
         <PanelBarButton
+          asTab
           icon={Building2}
           label="Sub-locais"
           active={tab === 'subsites'}
           onClick={() => setTab('subsites')}
         />
         <PanelBarButton
+          asTab
           icon={Boxes}
           label="Recursos"
           active={tab === 'resources'}
           onClick={() => setTab('resources')}
         />
         <PanelBarButton
+          asTab
           icon={HistoryIcon}
           label="Histórico"
           active={tab === 'history'}
@@ -704,8 +713,8 @@ function CreateBody({
           </div>
           {predictionsOpen && predictions.length > 0 ? (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setPredictionsOpen(false)} />
-              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
+              <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setPredictionsOpen(false)} />
+              <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
                 {predictions.map((candidate) => (
                   <button
                     key={candidate.addressId ?? candidate.formattedAddress}

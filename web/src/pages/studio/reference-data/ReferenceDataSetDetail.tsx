@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, Check, Database, Save, Trash2 } from 'lucide-react';
 import { Button } from '../../../components/ui';
+import { useConfirmDialog } from '../../../hooks/useConfirmDialog';
 import {
   deactivateReferenceDataSet,
   updateReferenceDataSet,
@@ -30,6 +31,7 @@ export function ReferenceDataSetDetail({
 }: ReferenceDataSetDetailProps) {
   const [draft, setDraft] = useState<ReferenceDataSetInput>(() => toDraft(set));
   const [saving, setSaving] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -60,7 +62,13 @@ export function ReferenceDataSetDetail({
   };
 
   const handleDeactivate = async () => {
-    if (!window.confirm(`Inativar ${set.name}? Os valores existentes serão preservados.`)) return;
+    const ok = await confirm({
+      title: `Inativar ${set.name}?`,
+      message: 'Os valores existentes serão preservados.',
+      confirmLabel: 'Inativar',
+      destructive: true,
+    });
+    if (!ok) return;
     setSaving(true);
     setError(null);
     try {
@@ -75,6 +83,7 @@ export function ReferenceDataSetDetail({
 
   return (
     <div className="vt-card flex h-full flex-col overflow-hidden p-0">
+      {confirmDialog}
       <div className="px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">

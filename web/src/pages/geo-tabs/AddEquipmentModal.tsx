@@ -99,7 +99,7 @@ export function AddEquipmentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-6">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)] p-6">
       <div className="w-full max-w-[720px] max-h-[90vh] overflow-auto rounded-[26px] border border-app-border bg-white p-5 shadow-modal">
         {/* Header */}
         <div className="mb-4 flex items-start justify-between gap-4 border-b border-app-border pb-4">

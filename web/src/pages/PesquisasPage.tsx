@@ -140,6 +140,7 @@ export const ConversasPage: React.FC<{
           <input
             type="text"
             placeholder="Buscar conversas por título..."
+            aria-label="Buscar conversas por título"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -151,11 +152,12 @@ export const ConversasPage: React.FC<{
         {/* Error */}
         {error && (
           <div
+            role="alert"
             className="mb-6 px-4 py-3 text-sm"
             style={{
               background: 'var(--status-red-soft)',
               color: 'var(--status-red)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
+              border: '1px solid var(--status-red-border)',
               borderRadius: 'var(--radius-lg)',
             }}
           >
@@ -196,10 +198,15 @@ export const ConversasPage: React.FC<{
               {paginatedSessions.map((session) => (
                 <div
                   key={session.id}
-                  onClick={() => onSelectSession(session.id)}
-                  className="vt-card-interactive group flex items-center p-4 text-left"
+                  className="vt-card-interactive group relative flex items-center p-4 text-left"
                 >
-                  <div className="flex-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => onSelectSession(session.id)}
+                    aria-label={`Abrir conversa: ${session.title}`}
+                    className="absolute inset-0 rounded-[inherit]"
+                  />
+                  <div className="pointer-events-none flex-1 min-w-0">
                     <h3 className="truncate mb-1 text-app-text" style={{ font: 'var(--text-h3)' }}>
                       {session.title}
                     </h3>
@@ -222,8 +229,9 @@ export const ConversasPage: React.FC<{
                   </div>
                   <button
                     onClick={(e) => handleDelete(session.id, e)}
-                    className="vt-hover-danger ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition group-hover:opacity-100"
+                    className="vt-hover-danger relative ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-app-muted opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100"
                     title="Arquivar conversa"
+                    aria-label={`Arquivar conversa: ${session.title}`}
                   >
                     <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                   </button>

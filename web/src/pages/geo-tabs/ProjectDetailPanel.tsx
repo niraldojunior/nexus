@@ -382,10 +382,10 @@ export function ProjectDetailPanel({
           </button>
           {menuOpen ? (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setMenuOpen(false)} />
               <div
                 role="menu"
-                className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
+                className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
               >
                 <button
                   type="button"
@@ -599,6 +599,7 @@ export function ProjectDetailPanel({
             else setTab(value);
           }}
           ariaLabel={label}
+          asTab
         />
       ))}
     </PanelTabBar>
@@ -1017,7 +1018,7 @@ function ProjectResourceModal({
     }
   };
   const wrapperClassName = isMobile
-    ? 'fixed inset-y-0 right-0 z-[70] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock'
+    ? 'fixed inset-y-0 right-0 z-[var(--z-overlay)] flex w-[396px] max-w-full flex-col border-l border-app-border bg-app-panel shadow-dock'
     : `${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`;
   return (
     <aside

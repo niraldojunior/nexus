@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, MapPin, Plus, Search, Shield } from 'lucide-react';
+import { AlertCircle, Plus, Search, Shield } from 'lucide-react';
 import { listGeoSiteSpecifications, type GeoSpecCategory } from '../../../services/geoApi';
 import { LOCATION_CATEGORY_LABELS, locationCategoryIcon } from './locationCategoryPresentation';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
@@ -48,7 +48,6 @@ export function LocationModelStudio({
   const [specs, setSpecs] = useState<LocationModelDraftSpec[]>([]);
   const [selectedSpecId, setSelectedSpecId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<GeoSpecCategory | 'ALL'>('ALL');
   const [error, setError] = useState<string | null>(null);
   const [baselineActiveSpecIds, setBaselineActiveSpecIds] = useState<Set<string> | null>(null);
@@ -93,10 +92,6 @@ export function LocationModelStudio({
   useEffect(() => {
     void loadSpecs();
   }, [loadSpecs]);
-
-  useEffect(() => {
-    if (!showSearch) setFilterText('');
-  }, [showSearch]);
 
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
@@ -210,13 +205,22 @@ export function LocationModelStudio({
           <span>{error}</span>
         </div>
       )}
-      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <StudioCollectionHeader
             title="Tipos de Locais"
-            showSearch={showSearch}
-            onToggleSearch={() => setShowSearch((current) => !current)}
+            showSearch
             searchLabel="Buscar locais"
+            badge={
+              specs.length > 0 ? (
+                <span
+                  className="rounded-full bg-app-accent-soft px-2 text-[0.72rem] font-semibold text-app-text"
+                  title={`${specs.length} tipos de locais`}
+                >
+                  {specs.length}
+                </span>
+              ) : undefined
+            }
           >
             {canMutate && (
               <Button
@@ -247,19 +251,20 @@ export function LocationModelStudio({
               </button>
             ))}
           </div>
-          {showSearch && (
-            <div className="relative mb-3">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
-              <input
-                autoFocus
-                value={filterText}
-                onChange={(event) => setFilterText(event.target.value)}
-                placeholder="Buscar tipos de locais por nome..."
-                aria-label="Buscar tipos de locais"
-                className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
-              />
-            </div>
-          )}
+          <div className="relative mb-3">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={filterText}
+              onChange={(event) => setFilterText(event.target.value)}
+              placeholder="Buscar tipos de locais por nome..."
+              aria-label="Buscar tipos de locais"
+              className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            />
+          </div>
           <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto p-1 pr-2">
             {visibleSpecs.length === 0 ? (
               <div className="p-8 text-center text-[0.84rem] text-app-muted">
@@ -308,7 +313,12 @@ export function LocationModelStudio({
             />
           ) : (
             <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
-              <MapPin className="mb-3 h-10 w-10 opacity-30" />
+              <img
+                src="/assets/studio/studio-empty-state.svg"
+                alt=""
+                aria-hidden="true"
+                className="mb-4 w-full max-w-[240px]"
+              />
               <h3 className="text-[1.1rem]">Nenhum tipo de local selecionado</h3>
               <p className="mt-1 max-w-sm text-[0.85rem]">
                 Selecione um tipo de local à esquerda para visualizar ou editar seus dados.

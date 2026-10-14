@@ -76,7 +76,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof ProjectDetailPanel>[0]
 };
 
 describe('ProjectDetailPanel', () => {
-  const openSites = () => fireEvent.click(screen.getByRole('button', { name: 'Locais' }));
+  const openSites = () => fireEvent.click(screen.getByRole('tab', { name: 'Locais' }));
   it('perder o foco do título grava via onUpdate, sem botão de salvar', () => {
     const props = renderPanel();
     const titleInput = screen.getByLabelText('Nome do projeto');
@@ -274,7 +274,7 @@ describe('ProjectDetailPanel', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Recursos' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Recursos' }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
     await screen.findByRole('option', { name: 'OLT' });
@@ -335,7 +335,7 @@ describe('ProjectDetailPanel', () => {
     );
     renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Infraestrutura' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Infraestrutura' }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar infraestrutura' }));
 
     await screen.findByRole('option', { name: 'CTO' });
@@ -360,7 +360,7 @@ describe('ProjectDetailPanel', () => {
     );
     renderPanel();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Recursos' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Recursos' }));
     fireEvent.click(screen.getByRole('button', { name: 'Criar recurso' }));
 
     expect(await screen.findByText('Não há catálogo de recursos ativo.')).toBeInTheDocument();

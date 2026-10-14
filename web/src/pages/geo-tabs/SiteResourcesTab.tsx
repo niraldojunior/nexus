@@ -128,8 +128,8 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
             </div>
             {predictionsOpen && predictions.length > 0 ? (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setPredictionsOpen(false)} />
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
+                <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setPredictionsOpen(false)} />
+                <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
                   {predictions.map((node) => {
                     const resourceLike = {
                       resourceType: node.resourceType ?? '',

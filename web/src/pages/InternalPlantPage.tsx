@@ -1,7 +1,6 @@
 import { Layers, MapPin, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   useEffect,
-  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -73,13 +72,12 @@ const TONE_BG: Record<string, string> = {
 function StatusLight({ status }: { status: string }) {
   const { label, tone } = describeStatus(status);
   return (
-    <span className="flex justify-center">
+    <span className="flex items-center gap-1.5">
       <span
-        role="img"
-        aria-label={label}
-        title={label}
-        className={`inline-block h-2.5 w-2.5 rounded-full ${TONE_BG[tone]}`}
+        aria-hidden="true"
+        className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${TONE_BG[tone]}`}
       />
+      <span className="truncate text-[0.82rem] text-app-text">{label}</span>
     </span>
   );
 }
@@ -131,6 +129,8 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const [offset, setOffset] = useState(0);
   const [retryToken, setRetryToken] = useState(0);
   const [dockWidth, setDockWidth] = useState(readStoredDockWidth);
+  // No mobile a doca vira gaveta sobre a tabela, aberta por um botão na página.
+  const [dockOpen, setDockOpen] = useState(false);
   const state = useInternalPlantResources(context?.filter ?? null, offset, retryToken);
   const { canEdit } = useSession();
   const [editor, setEditor] = useState<{
@@ -143,16 +143,9 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     initialAdministrativeCityId?: string;
   } | null>(null);
   const [treeToken, setTreeToken] = useState(0);
-  const [treeSearchOpen, setTreeSearchOpen] = useState(false);
   const [treeQuery, setTreeQuery] = useState('');
-  const treeInputRef = useRef<HTMLInputElement>(null);
-  // Foco só na abertura; focar a cada render roubava o cursor da barra de pesquisa principal.
-  useEffect(() => {
-    if (treeSearchOpen) treeInputRef.current?.focus({ preventScroll: true });
-  }, [treeSearchOpen]);
   useEffect(() => {
     setTreeQuery('');
-    setTreeSearchOpen(false);
   }, [tab]);
   const [selectedCityId, setSelectedCityId] = useState<string | undefined>();
   const [pendingSiteRemoval, setPendingSiteRemoval] = useState<{
@@ -177,9 +170,9 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             render: (row: InternalPlantResourceRow) => (
               <button
                 type="button"
-                aria-label={`Excluir ${row.name}`}
-                title="Excluir"
-                className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+                aria-label={`Encerrar ${row.name}`}
+                title="Encerrar"
+                className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 [@media(hover:none)]:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
                 onClick={(event) => {
                   event.stopPropagation();
                   setDeleteError(null);
@@ -260,6 +253,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const confirm = (next: Context) => {
     setContext(next);
     setOffset(0);
+    setDockOpen(false);
   };
 
   // Seleção exclusiva: escolher um município desfaz o Site selecionado e limpa a área de detalhes.
@@ -326,7 +320,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
 
   // Aba ativa no estilo Google Maps: sem fundo, com barra sob o texto do nome.
   const tabClass = (active: boolean) =>
-    `flex flex-1 items-center justify-center px-3 pt-3.5 text-[0.9rem] font-semibold transition ${
+    `flex flex-1 items-center justify-center px-3 pt-1.5 text-[0.9rem] font-semibold transition ${
       active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
     }`;
   const tabLabelClass = (active: boolean) =>
@@ -336,20 +330,50 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
 
   return (
     <div className="relative flex h-full min-h-0 w-full bg-app-bg">
+      {isMobile && dockOpen ? (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-[var(--z-overlay)] bg-[var(--scrim)]"
+          onClick={() => setDockOpen(false)}
+        />
+      ) : null}
       <aside
-        style={{ width: dockWidth }}
-        className={`flex h-full max-w-[80vw] shrink-0 flex-col border-r border-[var(--border-input-strong)] bg-white ${DOCK_SEARCH_CLEARANCE_PT_CLASS} ${DOCK_ELEVATION_CLASS} ${
-          isMobile ? 'hidden' : ''
+        aria-label={isMobile ? 'Locais e tipos' : undefined}
+        style={isMobile ? undefined : { width: dockWidth }}
+        className={`flex h-full max-w-[80vw] shrink-0 flex-col border-r border-[var(--border-input-strong)] bg-app-panel ${DOCK_SEARCH_CLEARANCE_PT_CLASS} ${DOCK_ELEVATION_CLASS} ${
+          isMobile
+            ? dockOpen
+              ? 'fixed inset-y-0 left-0 z-[var(--z-overlay)] w-[85vw]'
+              : 'hidden'
+            : ''
         }`}
       >
         <div
           role="tablist"
           aria-label="Navegação de Planta Interna"
           className="flex shrink-0 border-b border-[var(--border-input-strong)]"
+          onKeyDown={(event) => {
+            if (
+              event.key !== 'ArrowLeft' &&
+              event.key !== 'ArrowRight' &&
+              event.key !== 'Home' &&
+              event.key !== 'End'
+            )
+              return;
+            event.preventDefault();
+            const next: DockTab = tab === 'locations' ? 'types' : 'locations';
+            const target: DockTab =
+              event.key === 'Home' ? 'locations' : event.key === 'End' ? 'types' : next;
+            setTab(target);
+            document.getElementById(`internal-plant-tab-${target}`)?.focus();
+          }}
         >
           <button
             type="button"
             role="tab"
+            id="internal-plant-tab-locations"
+            aria-controls="internal-plant-tabpanel"
+            tabIndex={tab === 'locations' ? 0 : -1}
             aria-selected={tab === 'locations'}
             className={tabClass(tab === 'locations')}
             onClick={() => setTab('locations')}
@@ -362,6 +386,9 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           <button
             type="button"
             role="tab"
+            id="internal-plant-tab-types"
+            aria-controls="internal-plant-tabpanel"
+            tabIndex={tab === 'types' ? 0 : -1}
             aria-selected={tab === 'types'}
             className={tabClass(tab === 'types')}
             onClick={() => setTab('types')}
@@ -383,93 +410,62 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             tabIndex={0}
             onPointerDown={startResize}
             onKeyDown={resizeByKey}
-            className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none transition hover:bg-app-accent-soft focus-visible:bg-app-accent-soft focus-visible:outline-none"
+            className="absolute inset-y-0 -right-1 z-[var(--z-sticky)] w-2 cursor-col-resize touch-none transition hover:bg-app-accent-soft focus-visible:bg-app-accent-soft focus-visible:outline-none"
           />
         )}
-        <div className="relative min-h-0 flex-1">
-          {
-            <>
+        <div
+          role="tabpanel"
+          id="internal-plant-tabpanel"
+          aria-labelledby={`internal-plant-tab-${tab}`}
+          className="relative min-h-0 flex-1"
+        >
+          <div className="absolute inset-x-3 top-2 z-10 flex items-center gap-1.5">
+            <div className="relative min-w-0 flex-1">
+              <input
+                type="search"
+                value={treeQuery}
+                onChange={(event) => setTreeQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setTreeQuery('');
+                }}
+                placeholder={
+                  tab === 'locations' ? 'Município ou UF (ex.: Niterói, RJ)' : 'Tipo de recurso'
+                }
+                aria-label={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
+                className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!outline-none focus:border-[var(--vt-yellow)] focus-visible:!shadow-[0_0_0_1px_var(--vt-yellow)]"
+              />
+              {treeQuery ? (
+                <button
+                  type="button"
+                  aria-label="Limpar pesquisa"
+                  className="absolute right-0 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
+                  onClick={() => setTreeQuery('')}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            {canEdit && tab === 'locations' ? (
               <button
                 type="button"
-                aria-label={
-                  treeSearchOpen
-                    ? 'Fechar pesquisa'
-                    : tab === 'locations'
-                      ? 'Pesquisar município ou UF'
-                      : 'Pesquisar tipo'
+                aria-label="Novo local"
+                title={
+                  selectedCityId
+                    ? 'Novo local no município selecionado'
+                    : 'Novo local (selecione um município para pré-preencher)'
                 }
-                aria-expanded={treeSearchOpen}
-                title={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
-                className={`absolute top-2 z-10 flex h-6 w-6 items-center justify-center rounded-lg border border-[var(--vt-yellow-light)] bg-[var(--vt-yellow-light)] text-[var(--text-primary)] transition hover:brightness-95 ${
-                  canEdit && tab === 'locations' ? 'right-11' : 'right-3'
-                }`}
-                onClick={() => {
-                  if (treeSearchOpen) setTreeQuery('');
-                  setTreeSearchOpen(!treeSearchOpen);
-                }}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[var(--vt-yellow-light)] bg-[var(--vt-yellow-light)] text-[var(--text-primary)] transition hover:brightness-95"
+                onClick={() =>
+                  setSiteEditor(
+                    selectedCityId ? { initialAdministrativeCityId: selectedCityId } : {},
+                  )
+                }
               >
-                <Search size={14} aria-hidden="true" />
+                <Plus size={14} aria-hidden="true" />
               </button>
-              <div
-                aria-hidden={!treeSearchOpen}
-                className={`absolute left-3 top-2 z-10 transition-all duration-300 ease-out ${
-                  canEdit && tab === 'locations' ? 'right-[4.5rem]' : 'right-11'
-                } ${treeSearchOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-4 opacity-0'}`}
-              >
-                <input
-                  type="search"
-                  value={treeQuery}
-                  tabIndex={treeSearchOpen ? 0 : -1}
-                  ref={treeInputRef}
-                  onChange={(event) => setTreeQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') {
-                      setTreeQuery('');
-                      setTreeSearchOpen(false);
-                    }
-                  }}
-                  placeholder={
-                    tab === 'locations' ? 'Município ou UF (ex.: Niterói, RJ)' : 'Tipo de recurso'
-                  }
-                  aria-label={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
-                  className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!shadow-none focus:!outline-none focus:border-[var(--vt-yellow-light)]"
-                />
-                {treeQuery ? (
-                  <button
-                    type="button"
-                    aria-label="Limpar pesquisa"
-                    tabIndex={treeSearchOpen ? 0 : -1}
-                    className="absolute right-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
-                    onClick={() => setTreeQuery('')}
-                  >
-                    <X size={12} aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
-            </>
-          }
-          {canEdit && tab === 'locations' ? (
-            <button
-              type="button"
-              aria-label="Novo local"
-              title={
-                selectedCityId
-                  ? 'Novo local no município selecionado'
-                  : 'Novo local (selecione um município para pré-preencher)'
-              }
-              className="absolute right-3 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-lg border border-[var(--vt-yellow-light)] bg-[var(--vt-yellow-light)] text-[var(--text-primary)] transition hover:brightness-95"
-              onClick={() =>
-                setSiteEditor(selectedCityId ? { initialAdministrativeCityId: selectedCityId } : {})
-              }
-            >
-              <Plus size={14} aria-hidden="true" />
-            </button>
-          ) : null}
-          <div
-            className={`h-full min-h-0 transition-[padding] duration-300 ease-out ${
-              treeSearchOpen ? 'pt-9' : 'pt-0'
-            }`}
-          >
+            ) : null}
+          </div>
+          <div className="h-full min-h-0 pt-9">
             <OverlayScrollArea hostClassName="h-full min-h-0">
               {tab === 'locations' ? (
                 <LocationTree
@@ -491,7 +487,17 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-auto px-6 pb-6 pt-3">
+      <main className={`min-w-0 flex-1 overflow-auto px-6 pb-6 ${isMobile ? 'pt-[72px]' : 'pt-3'}`}>
+        {isMobile ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={dockOpen}
+            onClick={() => setDockOpen(true)}
+          >
+            <Layers size={16} aria-hidden="true" /> Locais e tipos
+          </Button>
+        ) : null}
         {context === null ? (
           <section aria-label="Planta Interna">
             <PageHead
@@ -547,6 +553,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             ) : (
               <>
                 <DataTablePagination
+                  navLabel="Paginação superior"
                   count={state.page.items.length}
                   total={state.page.total}
                   label="recursos"
@@ -568,6 +575,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   emptyMessage="Nenhum recurso encontrado."
                 />
                 <DataTablePagination
+                  navLabel="Paginação inferior"
                   count={state.page.items.length}
                   total={state.page.total}
                   label="recursos"
@@ -612,7 +620,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 onClick={() => setPendingSiteRemoval(null)}
                 disabled={removingSite}
               >
-                Cancelar
+                {pendingSiteRemoval.blocking.length > 0 ? 'Fechar' : 'Cancelar'}
               </Button>
               {pendingSiteRemoval.blocking.length === 0 ? (
                 <Button
@@ -652,7 +660,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       ) : null}
       {pendingDelete ? (
         <Modal
-          title="Excluir recurso"
+          title="Encerrar recurso"
           onClose={() => (deleting ? undefined : setPendingDelete(null))}
           footer={
             <>
@@ -660,14 +668,14 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 Cancelar
               </Button>
               <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
-                {deleting ? 'Excluindo...' : 'Excluir'}
+                {deleting ? 'Encerrando...' : 'Encerrar'}
               </Button>
             </>
           }
         >
           <p className="text-[0.92rem] text-app-text">
-            Excluir &ldquo;{pendingDelete.name}&rdquo;? O recurso será encerrado (não é removido
-            fisicamente).
+            Encerrar &ldquo;{pendingDelete.name}&rdquo;? O recurso fica bloqueado e deixa de
+            aparecer nas listas, mas o histórico é mantido (não é removido fisicamente).
           </p>
           {deleteError ? (
             <p role="alert" className="mt-2 text-[0.85rem] text-status-red">

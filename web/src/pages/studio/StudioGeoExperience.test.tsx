@@ -451,8 +451,8 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     const tree = await screen.findByRole('tree', { name: 'Hierarquia de Camadas' });
     const building = within(tree).getByText('Prédio');
     const station = within(tree).getByText('Estação');
-    const buildingRow = building.closest('[role="button"]');
-    const stationRow = station.closest('[role="button"]');
+    const buildingRow = building.closest('[role="treeitem"]');
+    const stationRow = station.closest('[role="treeitem"]');
     expect(buildingRow).not.toBeNull();
     expect(stationRow).not.toBeNull();
     vi.spyOn(stationRow!, 'getBoundingClientRect').mockReturnValue({
@@ -472,7 +472,7 @@ describe('StudioGeoExperience — criação de nó pelo menu flutuante', () => {
     fireEvent.drop(stationRow!, { dataTransfer, clientY: 80 });
 
     await waitFor(() => {
-      const labels = Array.from(tree.querySelectorAll('[role="button"] span[title]'))
+      const labels = Array.from(tree.querySelectorAll('[role="treeitem"] span[title]'))
         .map((element) => element.textContent)
         .filter(Boolean);
       expect(labels).toEqual(['Estação', 'Prédio', 'Cabo']);

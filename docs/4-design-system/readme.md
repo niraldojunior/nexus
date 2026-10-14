@@ -54,7 +54,7 @@ V.tal Nexus sits inside this holding as the network-inventory backbone.
 - _Brand accent_ — V.tal Yellow `#FFD919` (hover `#FFE047`), paired with brand ink `#181919` for text on yellow. Opaque wash `--vt-yellow-tint` `#FEF7DC` for active nav and selected rows.
 - _Surfaces_ — canvas `#FFFFFF`, chrome/sidebar `#FAFAFB`, muted `#F5F5F8`, ink `#2E2D39`.
 - _Borders_ — hairline `#E8E8EE`, strong `#DADAE3`. **The border is what makes a card a card.**
-- _Text_ — primary `#2E2D39`, secondary `#514F66`, tertiary `#8A8899`, disabled `#BCC1D6`. Pure black is reserved for the logotype.
+- _Text_ — primary `#2E2D39`, secondary `#514F66`, tertiary `#6B6A7A`, disabled `#BCC1D6`. Pure black is reserved for the logotype.
 - _Status_ — green `#10B981`, blue `#3B82F6`, amber `#F59E0B`, red `#EF4444`, purple `#8B5CF6`, each with a soft tinted fill for badges.
 - _Map layers_ (`--map-*`, Locais module) — disponível `#12805C`, suspenso `#E8615C`, parcial `#F0A32E`, estação `#7C5CE0`, selecionado `#FFD919`, cobertura `#C08A2A` @ 35%. Markers are the one place saturated color is allowed to shout, because they sit on the Google basemap. Legend ramp `--map-ramp` runs suspenso → disponível.
 - _Network taxonomy_ — element classes are color-coded (OLT blue, splitter purple, CTO green, pole amber, cable slate, site yellow).

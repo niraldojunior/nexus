@@ -37,7 +37,7 @@ export function InternalPlantSearchBar({
 
   return (
     <div
-      className={`absolute top-3 z-30 max-w-[calc(100%-1.5rem)] ${
+      className={`absolute top-3 z-[var(--z-sticky)] max-w-[calc(100%-1.5rem)] ${
         isMobile ? 'left-3 right-3' : 'left-3'
       }`}
       style={!isMobile && width ? { width } : undefined}

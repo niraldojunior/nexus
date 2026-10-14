@@ -238,8 +238,14 @@ export function ResourcePanel({
 
   const body = (
     <div className="grid gap-4">
-      <PanelTabBar activeTab={tab} className="border-b border-app-border">
+      <PanelTabBar
+        activeTab={tab}
+        role="tablist"
+        ariaLabel="Seções do recurso"
+        className="border-b border-app-border"
+      >
         <PanelBarButton
+          asTab
           icon={InfoIcon}
           label="Geral"
           active={tab === 'overview'}
@@ -250,6 +256,7 @@ export function ResourcePanel({
             detalhe (ResourcePortDetail). Mesmo gate de !isPort do StreetViewHero abaixo. */}
         {!isPort ? (
           <PanelBarButton
+            asTab
             icon={FileText}
             label="Sobre"
             active={tab === 'about'}
@@ -258,6 +265,7 @@ export function ResourcePanel({
         ) : null}
         {isPort ? (
           <PanelBarButton
+            asTab
             icon={Boxes}
             label="Recursos atendidos"
             badge={(portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0)}
@@ -266,6 +274,7 @@ export function ResourcePanel({
           />
         ) : (
           <PanelBarButton
+            asTab
             icon={Boxes}
             label="Componentes"
             badge={components.length}
@@ -274,6 +283,7 @@ export function ResourcePanel({
           />
         )}
         <PanelBarButton
+          asTab
           icon={Network}
           label="Conexões"
           badge={connectionsCount}
@@ -282,6 +292,7 @@ export function ResourcePanel({
         />
         {isPort && hasActiveService ? (
           <PanelBarButton
+            asTab
             icon={Layers3}
             label="Serviço"
             active={tab === 'service'}
@@ -289,6 +300,7 @@ export function ResourcePanel({
           />
         ) : null}
         <PanelBarButton
+          asTab
           icon={HistoryIcon}
           label="Histórico"
           active={tab === 'history'}

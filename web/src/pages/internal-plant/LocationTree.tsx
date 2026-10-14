@@ -295,7 +295,7 @@ export function LocationTree({
           role="treeitem"
           aria-expanded={node.hasChildren ? isOpen : undefined}
           aria-selected={selected}
-          className={`group/row flex items-center gap-1 rounded-lg py-[3px] pr-2 text-[0.8rem] text-app-text ${
+          className={`group/row flex items-center gap-1 rounded-lg py-[3px] pr-2 text-[0.8rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.875rem] text-app-text ${
             isSite ? '' : 'font-semibold'
           } ${selected ? 'bg-app-accent-soft' : 'hover:bg-app-hover'}`}
           style={{ paddingLeft: depth * 14 }}

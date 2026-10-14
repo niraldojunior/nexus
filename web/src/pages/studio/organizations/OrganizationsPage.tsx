@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Building2, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Search, Building2, Plus, Trash2 } from 'lucide-react';
 import {
   createPartyRole,
   deletePartyRole,
@@ -42,7 +42,6 @@ export function OrganizationsPage({
   const [availableRoleTypes, setAvailableRoleTypes] = useState<PartyRoleType[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineActiveIds, setBaselineActiveIds] = useState<Set<string> | null>(null);
@@ -130,10 +129,6 @@ export function OrganizationsPage({
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    if (!showSearch) setFilterText('');
-  }, [showSearch]);
 
   useEffect(() => {
     if (wasEditingRef.current && !isEditing) {
@@ -304,14 +299,23 @@ export function OrganizationsPage({
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
         {/* Coluna Master */}
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <StudioCollectionHeader
             title="Todas as Organizações"
-            showSearch={showSearch}
+            showSearch
             searchLabel="Buscar organização..."
-            onToggleSearch={() => setShowSearch((prev) => !prev)}
+            badge={
+              items.length > 0 ? (
+                <span
+                  className="rounded-full bg-app-accent-soft px-2 text-[0.72rem] font-semibold text-app-text"
+                  title={`${items.length} organizações`}
+                >
+                  {items.length}
+                </span>
+              ) : undefined
+            }
           >
             {canMutate && (
               <Button
@@ -326,18 +330,20 @@ export function OrganizationsPage({
             )}
           </StudioCollectionHeader>
 
-          {showSearch && (
-            <div className="mb-3">
-              <input
-                type="text"
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                placeholder="Buscar por razão social ou nome..."
-                className="w-full rounded-[10px] border border-app-border bg-app-panel px-3 py-1.5 text-[0.82rem] text-app-text outline-none focus:border-app-accent"
-                autoFocus
-              />
-            </div>
-          )}
+          <div className="relative mb-3">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              aria-label="Buscar na lista"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Buscar por razão social ou nome..."
+              className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            />
+          </div>
 
           <div className="-mx-1 mt-2 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-1 py-1">
             {loading ? (
@@ -419,7 +425,12 @@ export function OrganizationsPage({
             />
           ) : (
             <div className="vt-card flex min-h-[580px] flex-col items-center justify-center border-dashed border-app-border p-8 text-center text-app-muted">
-              <Building2 className="h-12 w-12 opacity-30" />
+              <img
+                src="/assets/studio/studio-empty-state.svg"
+                alt=""
+                aria-hidden="true"
+                className="mb-4 w-full max-w-[240px]"
+              />
               <h4 className="mt-3 font-semibold text-app-text">Nenhuma organização selecionada</h4>
               <p className="mt-1 text-[0.82rem]">
                 Selecione uma organização na lista para visualizar dados cadastrais, identificações,

@@ -472,7 +472,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                     tab === 'locations' ? 'Município ou UF (ex.: Niterói, RJ)' : 'Tipo de recurso'
                   }
                   aria-label={tab === 'locations' ? 'Pesquisar município ou UF' : 'Pesquisar tipo'}
-                  className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!outline-none focus:border-[var(--vt-yellow-light)] focus-visible:!shadow-[var(--focus-shadow)]"
+                  className="h-6 w-full rounded-lg border border-app-border bg-app-panel pl-2 pr-6 text-[0.8rem] [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none text-app-text outline-none focus:!outline-none focus:border-[var(--vt-yellow)] focus-visible:!shadow-[0_0_0_1px_var(--vt-yellow)]"
                 />
                 {treeQuery ? (
                   <button

@@ -112,9 +112,9 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
           role="treeitem"
           aria-expanded={isGroup ? isOpen : undefined}
           aria-selected={selected}
-          className={`flex items-center gap-1 rounded-lg py-[5px] pr-2 text-[0.883rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
+          className={`flex items-center gap-1 rounded-[10px] border py-[4px] pr-2 text-[0.883rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
             isGroup ? 'font-semibold' : ''
-          } ${selected ? 'bg-app-accent-soft' : 'hover:bg-app-hover'}`}
+          } ${selected ? 'border-app-accent bg-app-accent-soft font-semibold' : 'border-transparent vt-hover-muted'}`}
           style={{ paddingLeft: depth * 14 }}
         >
           {isGroup ? (

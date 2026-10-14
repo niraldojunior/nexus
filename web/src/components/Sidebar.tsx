@@ -16,8 +16,6 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PageId, RecentGroup, RecentItem } from '../types';
 import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
-import { SERVICE_CATEGORY_DEFAULTS } from '../data/serviceCatalogDefaults';
-import { listServiceCategories } from '../data/serviceCategoryViews';
 import NexusMark from './NexusMark';
 
 type PrimaryItemId =
@@ -38,8 +36,6 @@ interface SidebarProps {
   currentPage: PageId;
   activeRecentConversationId: string | null;
   activeResearchSessionId: string | null;
-  activeServiceCategory: string;
-  serviceMenuOpen: boolean;
   settingsOpen?: boolean;
   recentItems: RecentItem[];
   recentGroup: RecentGroup;
@@ -48,8 +44,6 @@ interface SidebarProps {
   onNewConversation: () => void;
   onNewResearch: () => void;
   onSelectPage: (page: PageId | 'settings') => void;
-  onToggleServiceMenu: () => void;
-  onSelectServiceCategory: (categoryCode: string) => void;
   onOpenRecentItem: (conversationId: string) => void;
   onSelectResearchSession?: (sessionId: string) => void;
   researchSessionRefreshTrigger?: number;
@@ -76,16 +70,12 @@ const primaryItems: PrimaryItem[] = [
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
   { id: 'geo', label: 'Planta Externa', icon: MapPinned, section: 'Inventário' },
   { id: 'internal-plant', label: 'Planta Interna', icon: Server },
-  { id: 'service', label: 'Serviços', icon: Briefcase },
+  { id: 'service', label: 'Serviços', icon: Briefcase, soon: true },
   { id: 'order', label: 'Ordens', icon: FolderTree, section: 'Operação', soon: true },
   { id: 'studio', label: 'Studio', icon: Presentation, section: 'Plataforma' },
 ];
 
 const initialOf = (name?: string): string => name?.trim()?.[0]?.toUpperCase() ?? 'U';
-
-const serviceCategoryItems: CategoryMenuItem[] = listServiceCategories(
-  SERVICE_CATEGORY_DEFAULTS,
-).map((category) => ({ code: category.code, label: category.name }));
 
 export default function Sidebar({
   collapsed,
@@ -93,13 +83,9 @@ export default function Sidebar({
   showMobileToggle = true,
   currentPage,
   activeResearchSessionId,
-  activeServiceCategory,
-  serviceMenuOpen,
   onToggleCollapse,
   onNewResearch,
   onSelectPage,
-  onToggleServiceMenu,
-  onSelectServiceCategory,
   onSelectResearchSession,
   researchSessionRefreshTrigger,
   sessionUser,
@@ -120,15 +106,7 @@ export default function Sidebar({
         onSelect: (code: string) => void;
       }
     >
-  > = {
-    service: {
-      items: serviceCategoryItems,
-      open: serviceMenuOpen,
-      activeCode: activeServiceCategory,
-      onToggle: onToggleServiceMenu,
-      onSelect: onSelectServiceCategory,
-    },
-  };
+  > = {};
 
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [avatarTriggerRect, setAvatarTriggerRect] = useState<DOMRect | null>(null);

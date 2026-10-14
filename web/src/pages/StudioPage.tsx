@@ -5,16 +5,13 @@ import {
   Briefcase,
   Building2,
   Database,
-  FileStack,
   Layers3,
   MapPinned,
   Network,
-  ShieldCheck,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { StudioGovernanceSummary } from '../components/StudioGovernanceSummary';
-import { StudioGovernanceOverview } from '../components/StudioGovernanceOverview';
 import { ResourceModelStudio } from './studio/resource-model/ResourceModelStudio';
 import { LocationModelStudio } from './studio/location-model/LocationModelStudio';
 import { OrganizationsPage } from './studio/organizations/OrganizationsPage';
@@ -22,7 +19,6 @@ import { RolesPage } from './studio/party-roles/RolesPage';
 import { ReferenceDataStudio } from './studio/reference-data/ReferenceDataStudio';
 import { StudioGeoExperience } from './studio/StudioGeoExperience';
 import { GeoProjectWorkflowStudio } from './studio/rules-workflows/GeoProjectWorkflowStudio';
-import { TemplatesStudio } from './studio/templates/TemplatesStudio';
 import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
@@ -117,33 +113,11 @@ const studioNavigation: StudioNavGroup[] = [
         description: 'Conjuntos reutilizáveis de valores controlados.',
         icon: Database,
       },
-    ],
-  },
-  {
-    label: 'Automação',
-    items: [
       {
         id: 'rules-workflows',
         label: 'Regras e workflows',
         description: 'Estados, transições, permissões e ações.',
         icon: Workflow,
-      },
-      {
-        id: 'templates',
-        label: 'Templates',
-        description: 'Pacotes clonáveis para iniciar uma modelagem.',
-        icon: FileStack,
-      },
-    ],
-  },
-  {
-    label: 'Governança',
-    items: [
-      {
-        id: 'governance',
-        label: 'Publicações e auditoria',
-        description: 'Versões, validações e trilha de alterações.',
-        icon: ShieldCheck,
       },
     ],
   },
@@ -166,7 +140,12 @@ export function StudioPage({
 }) {
   // 'spatial' é rota legada: o Studio GEO (studio-geo) absorveu as camadas espaciais e o
   // SpatialStudio não é mais montado. Links antigos resolvem para a área que o substituiu.
-  const section: StudioSection = requestedSection === 'spatial' ? 'studio-geo' : requestedSection;
+  const resolvedSection: StudioSection =
+    requestedSection === 'spatial' ? 'studio-geo' : requestedSection;
+  // Áreas retiradas da navegação (templates, governance) caem na primeira área.
+  const section: StudioSection = itemBySection.has(resolvedSection)
+    ? resolvedSection
+    : 'resource-model';
   const activeItem = itemBySection.get(section) ?? itemBySection.get('resource-model');
   const studioDomain = activeItem ? studioDomainBySection[section] : undefined;
 
@@ -355,19 +334,6 @@ export function StudioPage({
                 onRegisterCaptureDraft={handleRegisterCaptureDraft}
                 onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
               />
-            </div>
-          ) : section === 'templates' ? (
-            <div>
-              <TemplatesStudio
-                canEdit={canEdit}
-                isEditing={isEditing}
-                onRegisterCaptureDraft={handleRegisterCaptureDraft}
-                onRegisterCaptureInitialSnapshot={handleRegisterCaptureInitialSnapshot}
-              />
-            </div>
-          ) : section === 'governance' ? (
-            <div>
-              <StudioGovernanceOverview />
             </div>
           ) : (
             <div>

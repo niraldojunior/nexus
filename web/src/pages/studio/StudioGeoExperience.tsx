@@ -830,9 +830,7 @@ export function StudioGeoExperience({
         )}
 
         {isGroup && isExpanded && hasChildren && (
-          <div className="mt-0.5 space-y-0.5">
-            {node.children.map((child) => renderNode(child, depth + 1))}
-          </div>
+          <div>{node.children.map((child) => renderNode(child, depth + 1))}</div>
         )}
       </div>
     );
@@ -908,7 +906,7 @@ export function StudioGeoExperience({
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-0.5 pr-1 max-h-[680px]">
+          <div className="flex-1 overflow-y-auto pr-1 max-h-[680px]">
             {tree.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center text-app-muted">
                 <AlertCircle className="h-8 w-8 mb-2 stroke-1" />

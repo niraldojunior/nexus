@@ -328,7 +328,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
 
   // Aba ativa no estilo Google Maps: sem fundo, com barra sob o texto do nome.
   const tabClass = (active: boolean) =>
-    `flex flex-1 items-center justify-center px-3 pt-3.5 text-[0.9rem] font-semibold transition ${
+    `flex flex-1 items-center justify-center px-3 pt-1.5 text-[0.9rem] font-semibold transition ${
       active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
     }`;
   const tabLabelClass = (active: boolean) =>

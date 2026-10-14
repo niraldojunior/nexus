@@ -203,11 +203,11 @@ export function StudioPage({
             src="/assets/studio/studio-logo-icon.svg"
             alt=""
             aria-hidden="true"
-            className="h-8 w-8 shrink-0"
+            className="h-12 w-12 shrink-0"
           />
           <div className="leading-tight">
-            <span className="block text-[1rem] font-bold">Studio</span>
-            <p className="text-[0.75rem] text-app-on-ink-muted">Control</p>
+            <span className="block text-[1.375rem] font-bold">Studio</span>
+            <p className="text-[0.85rem] text-app-on-ink-muted">Control</p>
           </div>
         </div>
 

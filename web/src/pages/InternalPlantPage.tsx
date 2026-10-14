@@ -85,10 +85,10 @@ function StatusLight({ status }: { status: string }) {
 /** Ícone do título: o mesmo da origem do filtro (Local, tipo de recurso ou busca). */
 function ContextTitleIcon({ icon }: { icon: ContextIcon }) {
   if (icon.kind === 'type' && icon.resourceTypeCode) {
-    return <ResourceIcon resource={icon.resourceTypeCode} variant="glyph" size={28} />;
+    return <ResourceIcon resource={icon.resourceTypeCode} variant="glyph" size={24} />;
   }
   const Icon = icon.kind === 'search' ? Search : icon.kind === 'type' ? Layers : MapPin;
-  return <Icon size={26} aria-hidden="true" className="shrink-0 text-app-muted" />;
+  return <Icon size={22} aria-hidden="true" className="shrink-0 text-app-muted" />;
 }
 
 function describeSiteReferences(refs: SiteReferences): string[] {
@@ -320,11 +320,11 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
 
   // Aba ativa no estilo Google Maps: sem fundo, com barra sob o texto do nome.
   const tabClass = (active: boolean) =>
-    `flex flex-1 items-center justify-center px-3 pt-1.5 text-[0.9rem] font-semibold transition ${
+    `flex flex-1 items-center justify-center px-3 pt-1 text-[0.8125rem] font-medium transition ${
       active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
     }`;
   const tabLabelClass = (active: boolean) =>
-    `flex items-center gap-1.5 border-b-[3px] pb-2.5 ${
+    `flex items-center gap-1.5 border-b-[2px] pb-1.5 ${
       active ? 'border-app-accent' : 'border-transparent'
     }`;
 
@@ -419,7 +419,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           aria-labelledby={`internal-plant-tab-${tab}`}
           className="relative min-h-0 flex-1"
         >
-          <div className="absolute inset-x-3 top-2 z-10 flex items-center gap-1.5">
+          <div className="absolute inset-x-3 top-1.5 z-10 flex items-center gap-1.5">
             <div className="relative min-w-0 flex-1">
               <input
                 type="search"
@@ -465,7 +465,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
               </button>
             ) : null}
           </div>
-          <div className="h-full min-h-0 pt-9">
+          <div className="h-full min-h-0 pt-7">
             <OverlayScrollArea hostClassName="h-full min-h-0">
               {tab === 'locations' ? (
                 <LocationTree
@@ -518,7 +518,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   <span className="truncate">{context.label}</span>
                 </span>
               }
-              marginBottom="12px"
+              marginBottom="8px"
               actions={
                 canEdit && (context.leafTypeId || (context.icon.kind === 'site' && context.key)) ? (
                   <Button

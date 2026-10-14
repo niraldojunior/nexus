@@ -55,6 +55,7 @@ import {
 } from '../runtime/nexus-runtime.js';
 import type { PartyService } from '../../modules/party/service.js';
 import type { ResourceService } from '../../modules/resource/service.js';
+import { parseProposalEnvelope } from '../../modules/resource/resource-catalog-ai-planner.js';
 import type { InternalPlantService } from '../../modules/resource/internal-plant-service.js';
 import type { ServiceService } from '../../modules/service/service.js';
 import type { StudioService } from '../../modules/studio/service.js';
@@ -851,6 +852,7 @@ const routeRequest = async ({
       resourceService,
       internalPlantService,
       serviceService,
+      llmRateLimiter,
       url,
     });
     return;
@@ -3898,6 +3900,7 @@ const routeResourceRequest = async ({
   resourceService,
   internalPlantService,
   serviceService,
+  llmRateLimiter,
   url,
 }: {
   request: IncomingMessage;
@@ -3906,9 +3909,38 @@ const routeResourceRequest = async ({
   resourceService: ResourceService;
   internalPlantService: InternalPlantService;
   serviceService: ServiceService;
+  llmRateLimiter: RateLimiter;
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
+
+  // Otimização estrutural por IA (issue #365): prévia (consome LLM) e apply (sem LLM).
+  const aiOptimizationMatch = url.pathname.match(
+    /^\/v1\/resource-catalogs\/([^/]+)\/ai-optimization\/(preview|apply)$/,
+  );
+  if (request.method === 'POST' && aiOptimizationMatch?.[1]) {
+    requireRoles(context, CATALOG_ADMIN_ROLES);
+    const catalogId = decodeURIComponent(aiOptimizationMatch[1]);
+    if (aiOptimizationMatch[2] === 'preview') {
+      const rateKey = `${context.actorSub}|${context.sourceIp ?? 'unknown'}`;
+      llmRateLimiter.check(rateKey);
+      llmRateLimiter.record(rateKey);
+      return sendJson(
+        response,
+        200,
+        await resourceService.previewResourceCatalogAiOptimization(catalogId, context),
+      );
+    }
+    return sendJson(
+      response,
+      200,
+      await resourceService.applyResourceCatalogAiProposal(
+        catalogId,
+        parseProposalEnvelope(await readBody(request)),
+        context,
+      ),
+    );
+  }
 
   // Planta Interna: read model paginado no servidor (árvore de locais + lista de recursos).
   const internalPlantEditorMatch = url.pathname.match(
@@ -5893,10 +5925,13 @@ const parseSaveResourceAggregateInput = (
     body.placeType !== 'GeographicAddress' &&
     body.placeType !== 'GeographicLocation'
   ) {
-    throw new AppError('placeType must be GeographicSite, GeographicAddress or GeographicLocation', {
-      code: 'RESOURCE_AGGREGATE_PLACE_TYPE_INVALID',
-      statusCode: 400,
-    });
+    throw new AppError(
+      'placeType must be GeographicSite, GeographicAddress or GeographicLocation',
+      {
+        code: 'RESOURCE_AGGREGATE_PLACE_TYPE_INVALID',
+        statusCode: 400,
+      },
+    );
   }
   const assertArray = (field: string): void => {
     if (body[field] !== undefined && !Array.isArray(body[field])) {

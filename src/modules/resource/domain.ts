@@ -435,6 +435,71 @@ export type ResourceModelSnapshotSource = {
   relationshipRules: ResourceTypeRelationshipRule[];
 };
 
+/**
+ * Otimização assistida por IA da hierarquia (issue #365). Somente estrutura: criar, renomear,
+ * mover, reordenar e inativar nós. `nodeRef`/`parentRef` apontam para um nó existente (ID real)
+ * ou para um nó criado antes na mesma proposta (`new:<slug>`); `parentRef: null` é a raiz.
+ */
+export type ResourceCatalogAiOperation =
+  | {
+      type: 'create';
+      ref: string;
+      kind: ResourceCatalogNodeKind;
+      name: string;
+      code?: string;
+      description?: string;
+      parentRef: string | null;
+    }
+  | { type: 'rename'; nodeRef: string; name?: string; description?: string }
+  | { type: 'move'; nodeRef: string; parentRef: string | null }
+  | { type: 'reorder'; parentRef: string | null; orderedRefs: string[] }
+  | { type: 'inactivate'; nodeRef: string };
+
+export type ResourceCatalogAiProposal = {
+  proposalId: string;
+  catalogId: string;
+  /** SHA-256 da estrutura lida; o apply recalcula e recusa a proposta se divergir. */
+  baselineChecksum: string;
+  summary: string;
+  rationale: string;
+  operations: ResourceCatalogAiOperation[];
+};
+
+export type ResourceCatalogAiChangeKind = 'new' | 'renamed' | 'moved' | 'reordered' | 'inactivated';
+
+export type ResourceCatalogAiCounters = {
+  created: number;
+  renamed: number;
+  moved: number;
+  reordered: number;
+  inactivated: number;
+};
+
+export type ResourceCatalogAiProjectedNode = {
+  id: string;
+  kind: ResourceCatalogNodeKind;
+  code: string;
+  name: string;
+  status: ResourceCatalogStatus;
+  changes: ResourceCatalogAiChangeKind[];
+  children: ResourceCatalogAiProjectedNode[];
+};
+
+export type ResourceCatalogAiPreview = {
+  proposal: ResourceCatalogAiProposal;
+  counters: ResourceCatalogAiCounters;
+  /** Derivada pelo servidor; nunca aceita do cliente no apply. */
+  projectedTree: ResourceCatalogAiProjectedNode[];
+};
+
+export type ApplyResourceCatalogAiProposalResult = {
+  proposalId: string;
+  catalogId: string;
+  counters: ResourceCatalogAiCounters;
+  /** Mapa `new:<slug>` → UUID v7 efetivamente criado. */
+  createdNodeIds: Record<string, string>;
+};
+
 export type ResourceRelationship = {
   id: string;
   relationshipType: string;

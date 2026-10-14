@@ -8,6 +8,7 @@ import { GeoMapSiteService } from '../../modules/geo/map-site-service.js';
 import { GeoMapDensityService } from '../../modules/geo/map-density-service.js';
 import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
 import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
+import { createStructuredCompletionPort } from '../../modules/search/structured-completion.js';
 import { OrderService } from '../../modules/order/service.js';
 import { OracleOrderRepository } from '../../modules/order/oracle-repository.js';
 import { PartyService } from '../../modules/party/service.js';
@@ -140,9 +141,11 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const referenceDataRepository = new OracleReferenceDataRepository(db);
   const resourceRepository = new OracleResourceRepository(db);
   await resourceRepository.initialize();
+  const aiCompletion = createStructuredCompletionPort();
   const resourceService = new ResourceService(resourceRepository, eventService, {
     mapFeatureSynchronizer,
     db,
+    ...(aiCompletion ? { aiCompletion } : {}),
     lookupActiveVisualAsset: async (tenantId, assetId) =>
       (await studioAssetRepository.get(tenantId, assetId))?.active === true,
     lookupPlace: async (id, tenantId) => {

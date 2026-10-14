@@ -840,3 +840,47 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
     scroll-behavior: auto !important;
   }
 }
+
+/* Botão "Otimizar com IA" do Studio: borda em arco que gira pelo contorno enquanto a análise roda. */
+@property --ai-ring-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes ai-ring-spin {
+  to {
+    --ai-ring-angle: 360deg;
+  }
+}
+
+.ai-processing-ring {
+  position: relative;
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  isolation: isolate;
+}
+
+.ai-processing-ring[data-processing='true']::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: calc(var(--radius-md) + 3px);
+  background: conic-gradient(
+    from var(--ai-ring-angle),
+    transparent 0deg,
+    transparent 120deg,
+    var(--vt-yellow) 220deg,
+    var(--status-blue) 330deg,
+    transparent 360deg
+  );
+  animation: ai-ring-spin 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-processing-ring[data-processing='true']::before {
+    animation: none;
+    background: var(--vt-yellow);
+  }
+}

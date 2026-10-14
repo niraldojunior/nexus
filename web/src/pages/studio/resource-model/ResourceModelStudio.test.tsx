@@ -115,7 +115,7 @@ describe('ResourceModelStudio', () => {
     render(<ResourceModelStudio canEdit={false} canAdmin={false} isEditing={false} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Hierarquia')).toBeInTheDocument();
+      expect(screen.getByText('Tipos')).toBeInTheDocument();
       expect(screen.getByText('Acesso')).toBeInTheDocument();
     });
   });

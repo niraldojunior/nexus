@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, AlertCircle, Folder, Layers } from 'lucide-react';
+import { Plus, AlertCircle, Folder, Layers, Sparkles } from 'lucide-react';
 import type {
   ResourceCatalog,
   ResourceCatalogTreeNode,
   ResourceCatalogNode,
   CreateResourceCatalogNodeInput,
   UpdateResourceCatalogNodeInput,
+  ResourceCatalogAiPreview,
 } from '../../../services/resourceCatalogApi';
 import {
   listResourceCatalogs,
@@ -18,6 +19,8 @@ import {
   moveResourceCatalogNode,
   reorderResourceCatalogNodes,
   getResourceModelSnapshotSource,
+  previewResourceCatalogAiOptimization,
+  applyResourceCatalogAiOptimization,
 } from '../../../services/resourceCatalogApi';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
@@ -25,6 +28,7 @@ import { ResourceCatalogTree } from './ResourceCatalogTree';
 import { StudioCollectionHeader } from '../../../components/studio/StudioCollectionHeader';
 import { ResourceNodeDetail, type AutosaveState } from './ResourceNodeDetail';
 import { ResourceNodeImpactModal } from './ResourceNodeImpactModal';
+import { ResourceAiOptimizationModal } from './ResourceAiOptimizationModal';
 
 const AUTOSAVE_BLOCK_REASON: Partial<Record<AutosaveState, string>> = {
   dirty: 'Há uma alteração ainda não salva no painel de detalhe.',
@@ -85,9 +89,9 @@ export function ResourceModelStudio({
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>('');
   const [tree, setTree] = useState<ResourceCatalogTreeNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<ResourceCatalogNode | null>(null);
-  const groupCount = useMemo(() => {
+  const resourceTypeCount = useMemo(() => {
     const count = (nodes: ResourceCatalogTreeNode[]): number =>
-      nodes.reduce((sum, n) => sum + (n.kind === 'GROUP' ? 1 : 0) + count(n.children), 0);
+      nodes.reduce((sum, n) => sum + (n.kind === 'RESOURCE_TYPE' ? 1 : 0) + count(n.children), 0);
     return count(tree);
   }, [tree]);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +100,12 @@ export function ResourceModelStudio({
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [createMenuParent, setCreateMenuParent] = useState<ResourceCatalogNode | null>(null);
   const [createMenuAnchorRect, setCreateMenuAnchorRect] = useState<DOMRect | null>(null);
+
+  // Otimização com IA: a prévia não escreve nada; só a confirmação muta o catálogo.
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiApplying, setAiApplying] = useState(false);
+  const [aiPreview, setAiPreview] = useState<ResourceCatalogAiPreview | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const [impactModalOpen, setImpactModalOpen] = useState(false);
   const [impactingNode, setImpactingNode] = useState<ResourceCatalogNode | null>(null);
@@ -399,6 +409,43 @@ export function ResourceModelStudio({
 
   const canMutate = canEdit && isEditing;
 
+  // Descarta a proposta quando a sessão de edição termina ou o catálogo muda.
+  useEffect(() => {
+    setAiPreview(null);
+    setAiError(null);
+  }, [canMutate, selectedCatalogId]);
+
+  const handleAiOptimize = async () => {
+    if (!selectedCatalogId || aiAnalyzing || aiApplying) return;
+    setAiAnalyzing(true);
+    setError(null);
+    try {
+      await flushDetailRef.current?.();
+      setAiError(null);
+      setAiPreview(await previewResourceCatalogAiOptimization(selectedCatalogId));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Falha ao analisar a hierarquia com IA.');
+    } finally {
+      setAiAnalyzing(false);
+    }
+  };
+
+  const handleAiApply = async () => {
+    if (!aiPreview || aiApplying) return;
+    setAiApplying(true);
+    setAiError(null);
+    try {
+      await applyResourceCatalogAiOptimization(aiPreview.proposal.catalogId, aiPreview.proposal);
+      const catalogId = aiPreview.proposal.catalogId;
+      setAiPreview(null);
+      await reloadTree(catalogId);
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : 'Falha ao aplicar as alterações.');
+    } finally {
+      setAiApplying(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {error && (
@@ -416,20 +463,35 @@ export function ResourceModelStudio({
         {/* Left: Árvore Hierárquica */}
         <div className="vt-card flex min-h-[560px] flex-col p-4">
           <StudioCollectionHeader
-            title="Hierarquia"
+            title="Tipos"
             showSearch
             searchLabel="Buscar na hierarquia"
             badge={
-              groupCount > 0 ? (
+              resourceTypeCount > 0 ? (
                 <span
                   className="rounded-full bg-app-accent-soft px-2 text-[0.72rem] font-semibold text-app-text"
-                  title={`${groupCount} grupos`}
+                  title={`${resourceTypeCount} tipos de recurso`}
                 >
-                  {groupCount}
+                  {resourceTypeCount}
                 </span>
               ) : undefined
             }
           >
+            {canMutate && (
+              <span className="ai-processing-ring" data-processing={aiAnalyzing}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleAiOptimize}
+                  disabled={aiAnalyzing || aiApplying || !selectedCatalogId}
+                  title="Otimizar com IA"
+                  aria-label="Otimizar com IA"
+                  aria-busy={aiAnalyzing}
+                >
+                  <Sparkles className="h-4 w-4" />
+                </Button>
+              </span>
+            )}
             {canMutate && (
               <div className="relative">
                 <Button
@@ -539,6 +601,20 @@ export function ResourceModelStudio({
       </div>
 
       {/* Modais */}
+      {aiPreview && (
+        <ResourceAiOptimizationModal
+          preview={aiPreview}
+          applying={aiApplying}
+          error={aiError}
+          onApply={handleAiApply}
+          onClose={() => {
+            if (aiApplying) return;
+            setAiPreview(null);
+            setAiError(null);
+          }}
+        />
+      )}
+
       {impactingNode && selectedCatalogId && (
         <ResourceNodeImpactModal
           isOpen={impactModalOpen}

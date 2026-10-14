@@ -132,6 +132,63 @@ export type ReorderResourceCatalogNodesInput = {
   orderedNodeIds: string[];
 };
 
+export type ResourceCatalogAiOperation =
+  | {
+      type: 'create';
+      ref: string;
+      kind: ResourceCatalogNodeKind;
+      name: string;
+      code?: string;
+      description?: string;
+      parentRef: string | null;
+    }
+  | { type: 'rename'; nodeRef: string; name?: string; description?: string }
+  | { type: 'move'; nodeRef: string; parentRef: string | null }
+  | { type: 'reorder'; parentRef: string | null; orderedRefs: string[] }
+  | { type: 'inactivate'; nodeRef: string };
+
+export type ResourceCatalogAiProposal = {
+  proposalId: string;
+  catalogId: string;
+  baselineChecksum: string;
+  summary: string;
+  rationale: string;
+  operations: ResourceCatalogAiOperation[];
+};
+
+export type ResourceCatalogAiChangeKind = 'new' | 'renamed' | 'moved' | 'reordered' | 'inactivated';
+
+export type ResourceCatalogAiCounters = {
+  created: number;
+  renamed: number;
+  moved: number;
+  reordered: number;
+  inactivated: number;
+};
+
+export type ResourceCatalogAiProjectedNode = {
+  id: string;
+  kind: ResourceCatalogNodeKind;
+  code: string;
+  name: string;
+  status: ResourceCatalogStatus;
+  changes: ResourceCatalogAiChangeKind[];
+  children: ResourceCatalogAiProjectedNode[];
+};
+
+export type ResourceCatalogAiPreview = {
+  proposal: ResourceCatalogAiProposal;
+  counters: ResourceCatalogAiCounters;
+  projectedTree: ResourceCatalogAiProjectedNode[];
+};
+
+export type ApplyResourceCatalogAiProposalResult = {
+  proposalId: string;
+  catalogId: string;
+  counters: ResourceCatalogAiCounters;
+  createdNodeIds: Record<string, string>;
+};
+
 const authHeaders = (): HeadersInit => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${bearerToken()}`,
@@ -154,7 +211,8 @@ async function requestJson<T>(
       (typeof record?.message === 'string' ? record.message : undefined) ??
       (typeof record?.error === 'string' ? record.error : undefined) ??
       `Falha na requisição (${response.status})`;
-    throw new Error(message);
+    const code = typeof record?.error === 'string' ? record.error : undefined;
+    throw Object.assign(new Error(message), code ? { code } : {});
   }
   return payload;
 }
@@ -293,6 +351,25 @@ export async function reorderResourceCatalogNodes(
       method: 'POST',
       body: input,
     },
+  );
+}
+
+export async function previewResourceCatalogAiOptimization(
+  catalogId: string,
+): Promise<ResourceCatalogAiPreview> {
+  return await requestJson<ResourceCatalogAiPreview>(
+    `/v1/resource-catalogs/${encodeURIComponent(catalogId)}/ai-optimization/preview`,
+    { method: 'POST', body: {} },
+  );
+}
+
+export async function applyResourceCatalogAiOptimization(
+  catalogId: string,
+  proposal: ResourceCatalogAiProposal,
+): Promise<ApplyResourceCatalogAiProposalResult> {
+  return await requestJson<ApplyResourceCatalogAiProposalResult>(
+    `/v1/resource-catalogs/${encodeURIComponent(catalogId)}/ai-optimization/apply`,
+    { method: 'POST', body: { proposal } },
   );
 }
 

@@ -399,6 +399,14 @@ export function ResourceCatalogTree({
             <span className="truncate" title={node.name}>
               {node.name}
             </span>
+            {isGroup && node.children.length > 0 && (
+              <span
+                className="shrink-0 rounded-full bg-app-accent-soft px-1.5 text-[0.68rem] font-semibold text-app-text"
+                title={`${node.children.length} itens neste grupo`}
+              >
+                {node.children.length}
+              </span>
+            )}
             {node.status === 'inactive' && (
               <span className="shrink-0 rounded bg-red-100 px-1 py-0.2 text-[0.68rem] font-medium text-red-700">
                 Inativo
@@ -456,13 +464,16 @@ export function ResourceCatalogTree({
     <div className="flex flex-col h-full">
       {showSearch && (
         <div className="relative mb-3">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
+          <Search
+            className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
+            aria-hidden="true"
+          />
           <input
-            type="text"
-            autoFocus
+            type="search"
+            aria-label="Buscar na hierarquia"
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
-            placeholder="Buscar nós por nome ou código..."
+            placeholder="Buscar na hierarquia..."
             className="w-full rounded-[14px] border border-app-border bg-app-panel pl-8 pr-3 py-1.5 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
           />
         </div>

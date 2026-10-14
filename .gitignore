@@ -18,3 +18,10 @@ backups
 
 # Dados legados de migração (entrada/saída das cargas Netwin) — não versionar
 /legacy-data/
+
+# Ferramentas locais de agentes e rascunhos — não versionar
+/.agents/
+/.claude/skills/
+/.tmp/
+/.tmp-chk.mjs
+/skills-lock.json

@@ -48,7 +48,8 @@ describe('ResourceContainer', () => {
 
     const container = screen.getByLabelText('SPLITTER-01, Disponível');
     expect(container).toHaveClass('bg-[var(--surface-muted-hover)]', 'border-[var(--border-strong)]');
-    expect(container.querySelector('[class*="bg-[var(--surface-subtle)]"]')).not.toBeNull();
+    const header = screen.getByTestId('resource-graph-header');
+    expect(header.className).not.toContain('bg-');
     expect(container.querySelector('.bg-white')).not.toBeNull();
     expect(container.className).not.toContain('bg-app-muted');
     expect(screen.getByText('Splitter 1:8 SC/APC')).toBeInTheDocument();
@@ -66,7 +67,27 @@ describe('ResourceContainer', () => {
     expect(screen.getByText('Splitter')).toBeInTheDocument();
   });
 
-  it('collapses the header to one line and shrinks children in simplified mode', () => {
+  it('quebra especificação longa no cabeçalho em vez de truncá-la', () => {
+    render(
+      <ResourceContainer
+        node={{
+          ...splitter,
+          specification: {
+            ...splitter.specification!,
+            name: 'CDOI CDOI até 12 C/SPL SC/APC #270000000000000000000000000000000000000000000000',
+          },
+        }}
+        interaction={{ selectedId: null, onSelect: vi.fn() }}
+      />,
+    );
+
+    const header = screen.getByTestId('resource-graph-header');
+    expect(header).toHaveAttribute('data-view-mode', 'detailed');
+    expect(header.querySelector('.break-words')).not.toBeNull();
+    expect(header.querySelector('.truncate')).toBeNull();
+  });
+
+  it('mantém a informação completa e permite quebra também no modo simplificado', () => {
     render(
       <ResourceContainer
         node={splitter}
@@ -78,6 +99,7 @@ describe('ResourceContainer', () => {
     const header = screen.getByTestId('resource-graph-header');
     expect(header).toHaveAttribute('data-view-mode', 'simplified');
     expect(header.textContent?.replace(/\s+/g, ' ').trim()).toBe('SPLITTER-01 (Splitter 1:8 SC/APC)');
+    expect(header.querySelector('.break-words')).not.toBeNull();
     const port = screen.getByRole('button', { name: 'FO.O.1, Disponível' });
     expect(port).toHaveClass('border-app-ink', 'h-[18px]', 'w-[18px]');
     expect(screen.queryByText('FO.O.1')).not.toBeInTheDocument();

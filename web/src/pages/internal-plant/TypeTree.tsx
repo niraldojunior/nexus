@@ -112,25 +112,25 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
           role="treeitem"
           aria-expanded={isGroup ? isOpen : undefined}
           aria-selected={selected}
-          className={`flex items-center gap-1 rounded-[10px] border py-[4px] pr-2 text-[0.883rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
+          className={`flex items-center gap-1 rounded-[8px] border py-[2px] pr-1.5 text-[0.8125rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
             isGroup ? 'font-semibold' : ''
           } ${selected ? 'border-app-accent bg-app-accent-soft font-semibold' : 'border-transparent vt-hover-muted'}`}
-          style={{ paddingLeft: depth * 14 }}
+          style={{ paddingLeft: depth * 12 }}
         >
           {isGroup ? (
             <button
               type="button"
               aria-label={`${isOpen ? 'Recolher' : 'Expandir'} ${node.name}`}
-              className="flex h-5 w-5 shrink-0 items-center justify-center text-app-muted"
+              className="relative flex h-[18px] w-[18px] shrink-0 items-center justify-center text-app-muted before:absolute before:-inset-1 before:content-['']"
               onClick={() => toggle(node.id)}
             >
-              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
           ) : (
-            <span className="h-5 w-5 shrink-0" />
+            <span className="h-[18px] w-[18px] shrink-0" />
           )}
           {isGroup ? (
-            <Folder size={15} className="shrink-0 text-app-muted" />
+            <Folder size={14} className="shrink-0 text-app-muted" />
           ) : (
             <ResourceIcon resource={node.resourceType?.code} variant="glyph" catalogTone />
           )}
@@ -167,7 +167,7 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
   };
 
   return (
-    <ul role="tree" aria-label="Tipos" className="px-3 py-2">
+    <ul role="tree" aria-label="Tipos" className="px-3 pb-2 pt-1">
       {(visibleTree ?? tree).map((node) => renderNode(node, 0))}
     </ul>
   );

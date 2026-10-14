@@ -75,14 +75,14 @@ function SiteSpecIcon({ node }: { node: InternalPlantLocationNode }) {
   }, []);
   const specId = node.kind === 'site-type' ? node.refId : node.siteSpecificationId;
   const presentation = specId ? identities?.get(specId) : undefined;
-  const url = useVisualIdentityPreviewUrl(presentation?.identity ?? node.visualIdentity, 16, {
+  const url = useVisualIdentityPreviewUrl(presentation?.identity ?? node.visualIdentity, 14, {
     shape: 'none',
     color: '#0284c7',
   });
-  if (url) return <img src={url} alt="" className="h-4 w-4 shrink-0" aria-hidden="true" />;
+  if (url) return <img src={url} alt="" className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />;
   // Mesmo fallback do Studio: glifo da categoria da especificação (Região/Externo/Interno).
   const CategoryIcon = locationCategoryIcon(presentation?.category ?? '');
-  return <CategoryIcon className="h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />;
+  return <CategoryIcon className="h-3.5 w-3.5 shrink-0 text-app-muted" aria-hidden="true" />;
 }
 
 /** Países e UFs expandem localmente; do município em diante a árvore é lazy no servidor. */
@@ -288,46 +288,46 @@ export function LocationTree({
     const isCity = node.kind === 'city' && node.id !== 'city:none';
     const selected =
       (isSite && node.refId === selectedSiteId) || (isCity && node.id === `city:${selectedCityId}`);
-    const childIndent = { paddingLeft: 22 + depth * 14 };
+    const childIndent = { paddingLeft: 18 + depth * 12 };
     return (
       <li key={node.id} role="none">
         <div
           role="treeitem"
           aria-expanded={node.hasChildren ? isOpen : undefined}
           aria-selected={selected}
-          className={`group/row flex items-center gap-1 rounded-[10px] border py-[4px] pr-2 text-[0.883rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
+          className={`group/row flex items-center gap-1 rounded-[8px] border py-[2px] pr-1.5 text-[0.8125rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
             isSite ? '' : 'font-semibold'
           } ${selected ? 'border-app-accent bg-app-accent-soft font-semibold' : 'border-transparent vt-hover-muted'}`}
-          style={{ paddingLeft: depth * 14 }}
+          style={{ paddingLeft: depth * 12 }}
         >
           {node.hasChildren ? (
             <button
               type="button"
               aria-label={`${isOpen ? 'Recolher' : 'Expandir'} ${node.label}`}
-              className="relative flex h-5 w-5 shrink-0 items-center justify-center text-app-muted before:absolute before:-inset-0.5 before:content-['']"
+              className="relative flex h-[18px] w-[18px] shrink-0 items-center justify-center text-app-muted before:absolute before:-inset-1 before:content-['']"
               onClick={() => toggle(node)}
             >
               {isSite ? (
                 isOpen ? (
-                  <Minus size={14} />
+                  <Minus size={13} />
                 ) : (
-                  <Plus size={14} />
+                  <Plus size={13} />
                 )
               ) : isOpen ? (
-                <ChevronDown size={14} />
+                <ChevronDown size={13} />
               ) : (
-                <ChevronRight size={14} />
+                <ChevronRight size={13} />
               )}
             </button>
           ) : (
-            <span className="h-5 w-5 shrink-0" />
+            <span className="h-[18px] w-[18px] shrink-0" />
           )}
           {node.kind === 'site-type' || node.kind === 'site' ? (
             <SiteSpecIcon node={node} />
           ) : node.kind === 'country' ? (
-            <Globe size={15} className="shrink-0 text-app-muted" />
+            <Globe size={14} className="shrink-0 text-app-muted" />
           ) : (
-            <MapPin size={15} className="shrink-0 text-app-muted" />
+            <MapPin size={14} className="shrink-0 text-app-muted" />
           )}
           <button
             type="button"
@@ -358,18 +358,18 @@ export function LocationTree({
               <button
                 type="button"
                 aria-label={`Editar ${node.label}`}
-                className="relative flex h-5 w-5 items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-app-text"
+                className="relative flex h-[18px] w-[18px] items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-app-text"
                 onClick={() => onEditSite?.(node)}
               >
-                <Pencil size={13} />
+                <Pencil size={12} />
               </button>
               <button
                 type="button"
                 aria-label={`Remover ${node.label}`}
-                className="relative flex h-5 w-5 items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-status-red"
+                className="relative flex h-[18px] w-[18px] items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-status-red"
                 onClick={() => onRemoveSite?.(node)}
               >
-                <Trash2 size={13} />
+                <Trash2 size={12} />
               </button>
             </span>
           ) : null}

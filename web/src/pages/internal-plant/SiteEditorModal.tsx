@@ -41,7 +41,7 @@ const TABS: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
 ];
 
 const inputClass =
-  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent disabled:opacity-60';
+  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent aria-[invalid=true]:border-status-red disabled:opacity-60';
 const labelClass = 'grid gap-1 text-[0.78rem] font-semibold text-app-muted';
 
 type Characteristic = { group?: string; name: string; value: unknown; valueType?: string };
@@ -91,6 +91,8 @@ export function SiteEditorModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Depois de uma tentativa de salvar, os obrigatórios vazios passam a ser sinalizados nos campos.
+  const [attempted, setAttempted] = useState(false);
 
   const [dirty, setDirty] = useState(false);
   const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
@@ -219,8 +221,18 @@ export function SiteEditorModal({
   const save = async () => {
     if (!draft) return;
     if (!draft.name.trim() || !draft.specId || !draft.cityId || !draft.street.trim()) {
+      setAttempted(true);
       setError('Informe nome, tipo, município e logradouro.');
       setTab('general');
+      const firstInvalid = !draft.name.trim()
+        ? 'site-field-name'
+        : !draft.specId
+          ? 'site-field-spec'
+          : !draft.cityId
+            ? 'site-field-city'
+            : 'site-field-street';
+      // O painel Geral só monta depois do setTab; espera o commit antes de focar.
+      setTimeout(() => document.getElementById(firstInvalid)?.focus(), 0);
       return;
     }
     setSaving(true);
@@ -353,6 +365,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Nome
                     <input
+                      id="site-field-name"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.name.trim()}
+                      aria-describedby={
+                        attempted && !draft.name.trim() ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.name}
                       onChange={(e) => patch({ name: e.target.value })}
@@ -361,6 +379,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Tipo de local
                     <select
+                      id="site-field-spec"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.specId}
+                      aria-describedby={
+                        attempted && !draft.specId ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.specId}
                       disabled={Boolean(siteId)}
@@ -412,6 +436,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Município
                     <select
+                      id="site-field-city"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.cityId}
+                      aria-describedby={
+                        attempted && !draft.cityId ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.cityId}
                       disabled={!draft.stateCode}
@@ -430,6 +460,12 @@ export function SiteEditorModal({
                   <label className={labelClass}>
                     Logradouro
                     <input
+                      id="site-field-street"
+                      aria-required="true"
+                      aria-invalid={attempted && !draft.street.trim()}
+                      aria-describedby={
+                        attempted && !draft.street.trim() ? 'site-editor-error' : undefined
+                      }
                       className={inputClass}
                       value={draft.street}
                       onChange={(e) => patch({ street: e.target.value })}
@@ -522,6 +558,7 @@ export function SiteEditorModal({
           </div>
           <footer className="flex items-center justify-between gap-3 border-t border-app-border bg-app-sidebar px-6 py-3">
             <p
+              id="site-editor-error"
               role="alert"
               className="min-w-0 flex-1 truncate text-[0.82rem] text-status-red"
               title={error ?? ''}

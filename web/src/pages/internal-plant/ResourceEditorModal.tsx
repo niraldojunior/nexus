@@ -128,7 +128,7 @@ let seq = 0;
 const nextKey = () => `n${(seq += 1)}`;
 
 const inputClass =
-  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent';
+  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent aria-[invalid=true]:border-status-red';
 const labelClass = 'grid gap-1 text-[0.78rem] font-semibold text-app-muted';
 
 const activeRule = (r: ResourceTypeRelationshipRule) => r.lifecycleStatus === 'Active';
@@ -226,6 +226,8 @@ export function ResourceEditorModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Depois de tentar salvar, os obrigatórios vazios passam a ser sinalizados nos campos.
+  const [attempted, setAttempted] = useState(false);
   const [dirty, setDirty] = useState(false);
   const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -528,7 +530,20 @@ export function ResourceEditorModal({
   const save = async () => {
     const problem = validate();
     if (problem || !draft) {
+      setAttempted(true);
       setError(problem);
+      if (draft) {
+        setTab('general');
+        const firstInvalid = !draft.name.trim()
+          ? 'resource-field-name'
+          : !draft.typeId
+            ? null
+            : !draft.specId
+              ? 'resource-field-spec'
+              : null;
+        // O painel Geral só monta depois do setTab; espera o commit antes de focar.
+        if (firstInvalid) setTimeout(() => document.getElementById(firstInvalid)?.focus(), 0);
+      }
       return;
     }
     // Preserva toda característica existente (inclusive _origin); só sobrescreve as de instância editadas.
@@ -716,6 +731,7 @@ export function ResourceEditorModal({
                 specs={specsOfDraftType}
                 onType={selectType}
                 patch={patch}
+                attempted={attempted}
               />
             ) : tab === 'characteristics' ? (
               <CharacteristicsTab
@@ -776,6 +792,7 @@ export function ResourceEditorModal({
           </div>
           <footer className="flex items-center justify-between gap-3 border-t border-app-border bg-app-sidebar px-6 py-3">
             <p
+              id="resource-editor-error"
               role="alert"
               className="min-w-0 flex-1 truncate text-[0.82rem] text-status-red"
               title={error ?? ''}
@@ -812,6 +829,7 @@ function GeneralTab({
   specs,
   onType,
   patch,
+  attempted,
 }: {
   draft: Draft;
   tree: ResourceCatalogTreeNode[];
@@ -822,7 +840,13 @@ function GeneralTab({
   specs: ResourceSpecification[];
   onType: (ref: CatalogResourceTypeRef) => void;
   patch: (c: Partial<Draft>) => void;
+  attempted: boolean;
 }) {
+  const invalid = (bad: boolean) => ({
+    'aria-required': true as const,
+    'aria-invalid': attempted && bad,
+    'aria-describedby': attempted && bad ? 'resource-editor-error' : undefined,
+  });
   return (
     <div className="grid gap-6">
       <h3 className="-mb-3 border-b border-app-border pb-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
@@ -832,6 +856,8 @@ function GeneralTab({
         <label className={labelClass}>
           Nome
           <input
+            id="resource-field-name"
+            {...invalid(!draft.name.trim())}
             className={inputClass}
             value={draft.name}
             onChange={(e) => patch({ name: e.target.value })}
@@ -861,6 +887,8 @@ function GeneralTab({
         <label className={labelClass}>
           Especificação
           <select
+            id="resource-field-spec"
+            {...invalid(Boolean(draft.typeId) && !draft.specId)}
             className={inputClass}
             value={draft.specId}
             onChange={(e) => patch({ specId: e.target.value })}
@@ -1096,7 +1124,7 @@ function StateSelect({
       {open ? (
         <ul
           role="listbox"
-          className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-app-border bg-app-panel py-1 shadow-lg"
+          className="absolute z-[var(--z-dropdown)] mt-1 w-full overflow-hidden rounded-lg border border-app-border bg-app-panel py-1 shadow-lg"
         >
           {options.map(([v, label]) => (
             <li key={v} role="option" aria-selected={v === value}>

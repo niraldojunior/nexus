@@ -178,8 +178,8 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             render: (row: InternalPlantResourceRow) => (
               <button
                 type="button"
-                aria-label={`Excluir ${row.name}`}
-                title="Excluir"
+                aria-label={`Encerrar ${row.name}`}
+                title="Encerrar"
                 className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 [@media(hover:none)]:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -418,7 +418,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             tabIndex={0}
             onPointerDown={startResize}
             onKeyDown={resizeByKey}
-            className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none transition hover:bg-app-accent-soft focus-visible:bg-app-accent-soft focus-visible:outline-none"
+            className="absolute inset-y-0 -right-1 z-[var(--z-sticky)] w-2 cursor-col-resize touch-none transition hover:bg-app-accent-soft focus-visible:bg-app-accent-soft focus-visible:outline-none"
           />
         )}
         <div
@@ -664,7 +664,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 onClick={() => setPendingSiteRemoval(null)}
                 disabled={removingSite}
               >
-                Cancelar
+                {pendingSiteRemoval.blocking.length > 0 ? 'Fechar' : 'Cancelar'}
               </Button>
               {pendingSiteRemoval.blocking.length === 0 ? (
                 <Button
@@ -704,7 +704,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       ) : null}
       {pendingDelete ? (
         <Modal
-          title="Excluir recurso"
+          title="Encerrar recurso"
           onClose={() => (deleting ? undefined : setPendingDelete(null))}
           footer={
             <>
@@ -712,14 +712,14 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 Cancelar
               </Button>
               <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
-                {deleting ? 'Excluindo...' : 'Excluir'}
+                {deleting ? 'Encerrando...' : 'Encerrar'}
               </Button>
             </>
           }
         >
           <p className="text-[0.92rem] text-app-text">
-            Excluir &ldquo;{pendingDelete.name}&rdquo;? O recurso será encerrado (não é removido
-            fisicamente).
+            Encerrar &ldquo;{pendingDelete.name}&rdquo;? O recurso fica bloqueado e deixa de
+            aparecer nas listas, mas o histórico é mantido (não é removido fisicamente).
           </p>
           {deleteError ? (
             <p role="alert" className="mt-2 text-[0.85rem] text-status-red">

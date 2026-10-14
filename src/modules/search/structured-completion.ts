@@ -58,7 +58,6 @@ export const createStructuredCompletionPort = (
       ],
       undefined,
       request.signal,
-      request.toolName,
     );
     const call = response.toolCalls?.[0];
     return call ? { toolName: call.name, arguments: call.arguments } : undefined;

@@ -126,8 +126,9 @@ export async function createMigrationContext(options: CliOptions): Promise<Migra
     );
   }
 
-  const requiresSource = options.phase !== '3';
-  const requiresTargetRead = options.phase === '3' || options.phase === 'all';
+  const requiresSource = options.phase !== '3' && options.phase !== '3b';
+  const requiresTargetRead =
+    options.phase === '3' || options.phase === '3b' || options.phase === 'all';
   const netwinTnsAdmin = process.env.NETWIN_DR_TNS_ADMIN ?? process.env.TNS_ADMIN;
   const sourceConnectString = process.env.NETWIN_DR_ORACLE_CONNECT_STRING;
   const sourceUser = process.env.NETWIN_DR_ORACLE_USER;

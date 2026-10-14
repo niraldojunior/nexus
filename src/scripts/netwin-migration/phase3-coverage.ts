@@ -195,14 +195,6 @@ export function phase3CdoSourceSql(t: (table: string) => string): string {
              AND UPPER(r.name) LIKE 'CDO%'`;
 }
 
-export function phase3CdoPageSql(t: (table: string) => string): string {
-  return `SELECT *
-            FROM (${phase3CdoSourceSql(t)}) cdo
-           WHERE (:lastId IS NULL OR "ID" > :lastId)
-           ORDER BY "ID"
-           FETCH FIRST :batchSize ROWS ONLY`;
-}
-
 async function resolveSpecId(conn: Connection, ctx: MigrationContext): Promise<string> {
   const existing = await conn.execute<{ ID: string; CATEGORY: string; SITE_ROLE: string | null }>(
     `SELECT id AS "ID", category AS "CATEGORY", site_role AS "SITE_ROLE"
@@ -404,26 +396,32 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
     console.log('\n=== Fase 3.B: Cobertura ===');
     const specId = await resolveSpecId(conn, ctx);
 
-    const pageSql = phase3CdoPageSql(ctx.t);
+    // Uma única varredura em stream: a paginação por keyset reexecutava o join inteiro
+    // (com ORDER BY) a cada página, o que para ~900 mil CDOs custava horas.
     const cdos: CdoPoint[] = [];
-    let lastId: string | null = null;
-    while (true) {
-      const queryResult: oracledb.Result<CdoRow> = await conn.execute<CdoRow>(
-        pageSql,
-        {
-          tenantId: ctx.options.tenantId,
-          lastId: lastId ?? null,
-          batchSize: ctx.options.batchSize,
-        },
-        { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: ctx.options.batchSize },
-      );
-      const cdoPage: CdoRow[] = queryResult.rows ?? [];
-      if (cdoPage.length === 0) break;
-      for (const row of cdoPage) {
-        const cdo = parseCdo(row);
-        if (cdo) cdos.push(cdo);
+    const cursor = await conn.execute<CdoRow>(
+      phase3CdoSourceSql(ctx.t),
+      { tenantId: ctx.options.tenantId },
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        resultSet: true,
+        fetchArraySize: ctx.options.batchSize,
+      },
+    );
+    const resultSet = cursor.resultSet!;
+    try {
+      let rows: CdoRow[];
+      while ((rows = await resultSet.getRows(ctx.options.batchSize)).length > 0) {
+        for (const row of rows) {
+          const cdo = parseCdo(row);
+          if (cdo) cdos.push(cdo);
+        }
+        if (cdos.length % 100000 < ctx.options.batchSize) {
+          console.log(`[Cobertura] lidas ${cdos.length} CDOs...`);
+        }
       }
-      lastId = cdoPage[cdoPage.length - 1]!.ID;
+    } finally {
+      await resultSet.close();
     }
 
     if (cdos.length === 0) {
@@ -451,9 +449,12 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
             AND status<>'Retired'`,
         { tenantId: ctx.options.tenantId, specId },
       );
-      await conn.execute(`DELETE FROM ${ctx.t('geographic_coverage_cell')} WHERE tenant_id=:tenantId`, {
-        tenantId: ctx.options.tenantId,
-      });
+      await conn.execute(
+        `DELETE FROM ${ctx.t('geographic_coverage_cell')} WHERE tenant_id=:tenantId`,
+        {
+          tenantId: ctx.options.tenantId,
+        },
+      );
       await conn.execute(
         `DELETE FROM ${ctx.t('geographic_coverage_area')} WHERE tenant_id=:tenantId AND source_type=:sourceType AND source_id=:sourceId`,
         {

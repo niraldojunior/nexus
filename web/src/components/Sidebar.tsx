@@ -72,8 +72,8 @@ type PrimaryItem = {
 
 // Agrupamento só visual: rotas, permissões e ids permanecem os mesmos.
 const primaryItems: PrimaryItem[] = [
-  { id: 'research', label: 'Nova Conversa', icon: Plus },
-  { id: 'conversations', label: 'Conversas', icon: MessagesSquare, section: 'Copilot' },
+  { id: 'research', label: 'Nova Conversa', icon: Plus, section: 'Copilot' },
+  { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
   { id: 'geo', label: 'Planta Externa', icon: MapPinned, section: 'Inventário' },
   { id: 'internal-plant', label: 'Planta Interna', icon: Server },
   { id: 'service', label: 'Serviços', icon: Briefcase },
@@ -271,30 +271,17 @@ export default function Sidebar({
           <div className="h-full">
             <nav aria-label="Módulos" className="flex flex-col gap-[2px] px-2">
               {primaryItems
-                .filter(({ id }) => id === 'research')
-                .map(({ id, label, icon: Icon }) => (
-                  <NavItem
-                    key={id}
-                    active={currentPage === 'research' && activeResearchSessionId === null}
-                    icon={Icon}
-                    label={label}
-                    onClick={() => {
-                      onNewResearch();
-                      closeMobileDrawer();
-                    }}
-                    collapsed={contentCollapsed}
-                  />
-                ))}
-              {primaryItems
                 .filter(
                   ({ id }) =>
-                    id !== 'research' &&
                     (id !== 'studio' || canViewStudio) &&
                     ((id !== 'service' && id !== 'order') || canViewOrder),
                 )
                 .map(({ id, label, icon: Icon, section, soon }, index, visible) => {
                   const showSection = Boolean(section) && section !== visible[index - 1]?.section;
                   const isActive =
+                    (id === 'research' &&
+                      currentPage === 'research' &&
+                      activeResearchSessionId === null) ||
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
                     ((id === 'geo' ||
@@ -324,6 +311,11 @@ export default function Sidebar({
                         label={label}
                         badge={soon ? 'Em breve' : undefined}
                         onClick={() => {
+                          if (id === 'research') {
+                            onNewResearch();
+                            closeMobileDrawer();
+                            return;
+                          }
                           if (id === 'conversations') {
                             onSelectPage('conversas');
                             closeMobileDrawer();

@@ -340,7 +340,7 @@ export function ResourceCatalogTree({
               onSelectNode(isSelected ? null : node);
             }
           }}
-          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-1.5 text-[0.85rem] transition ${
+          className={`group flex items-center justify-between gap-1 rounded-[10px] border px-2 py-[4px] text-[0.883rem] transition ${
             canMutate ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
           } ${isBeingDragged ? 'opacity-30 scale-[0.98]' : ''} ${
             showDropInside
@@ -366,7 +366,7 @@ export function ResourceCatalogTree({
                 type="button"
                 onClick={(e) => toggleExpand(node.id, e)}
                 aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${node.name}`}
-                className="relative flex h-6 w-6 shrink-0 before:absolute before:-inset-0.5 before:content-[''] items-center justify-center rounded text-app-muted hover:text-app-text"
+                className="relative flex h-5 w-5 shrink-0 before:absolute before:-inset-0.5 before:content-[''] items-center justify-center rounded text-app-muted hover:text-app-text"
               >
                 {hasChildren ? (
                   isExpanded ? (
@@ -417,7 +417,7 @@ export function ResourceCatalogTree({
                     const rect = e.currentTarget.getBoundingClientRect();
                     onAddChild(node, rect);
                   }}
-                  className="rounded p-1 text-app-muted vt-hover-muted hover:text-app-text"
+                  className="flex h-5 w-5 items-center justify-center rounded text-app-muted vt-hover-muted hover:text-app-text"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -429,7 +429,7 @@ export function ResourceCatalogTree({
                   e.stopPropagation();
                   onImpactNode(node);
                 }}
-                className="rounded p-1 text-app-muted vt-hover-muted hover:text-red-600"
+                className="flex h-5 w-5 items-center justify-center rounded text-app-muted vt-hover-muted hover:text-red-600"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

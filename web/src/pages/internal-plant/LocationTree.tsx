@@ -349,11 +349,11 @@ export function LocationTree({
             {node.sublabel ? <span className="ml-2 text-app-muted">{node.sublabel}</span> : null}
           </button>
           {canEdit && isSite ? (
-            <span className="flex shrink-0 items-center gap-0.5 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100">
+            <span className="flex shrink-0 items-center gap-0.5 opacity-0 focus-within:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100">
               <button
                 type="button"
                 aria-label={`Editar ${node.label}`}
-                className="flex h-5 w-5 items-center justify-center rounded text-app-muted hover:text-app-text"
+                className="relative flex h-5 w-5 items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-app-text"
                 onClick={() => onEditSite?.(node)}
               >
                 <Pencil size={13} />
@@ -361,7 +361,7 @@ export function LocationTree({
               <button
                 type="button"
                 aria-label={`Remover ${node.label}`}
-                className="flex h-5 w-5 items-center justify-center rounded text-app-muted hover:text-status-red"
+                className="relative flex h-5 w-5 items-center justify-center rounded text-app-muted before:absolute before:-inset-1 before:content-[''] hover:text-status-red"
                 onClick={() => onRemoveSite?.(node)}
               >
                 <Trash2 size={13} />

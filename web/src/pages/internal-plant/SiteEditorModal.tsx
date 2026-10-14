@@ -642,7 +642,7 @@ function OrganizationTab({
           />
           <input
             className={inputClass}
-            placeholder="Papel (ex.: owner)"
+            placeholder="Papel (ex.: proprietário)"
             aria-label="Papel da organização"
             value={role}
             onChange={(e) => setRole(e.target.value)}

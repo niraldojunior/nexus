@@ -531,7 +531,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-auto px-6 pb-6 pt-3">
+      <main className={`min-w-0 flex-1 overflow-auto px-6 pb-6 ${isMobile ? 'pt-[72px]' : 'pt-3'}`}>
         {isMobile ? (
           <Button
             variant="ghost"

@@ -66,8 +66,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const has = (flag: string) => argv.includes(flag);
 
   const phaseRaw = get('--phase') ?? 'all';
-  if (!['1', '2', '2c', '2d', '3', 'all'].includes(phaseRaw)) {
-    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3 ou all.`);
+  if (!['1', '2', '2c', '2d', '3', '3b', 'all'].includes(phaseRaw)) {
+    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3, 3b ou all.`);
   }
   const phase = phaseRaw as MigrationPhase;
 
@@ -84,12 +84,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
       '--bairro exige --municipio <NOME> ou --uf <UF> para evitar escopo nacional ambíguo.',
     );
   }
-  if (phase === '3' && (uf || municipio || bairro)) {
+  if ((phase === '3' || phase === '3b') && (uf || municipio || bairro)) {
     throw new Error(
       'A Fase 3 reconstrói o tenant inteiro; não combine com --uf, --municipio ou --bairro.',
     );
   }
-  if (!full && !uf && !municipio && phase !== '1' && phase !== '3') {
+  if (!full && !uf && !municipio && phase !== '1' && phase !== '3' && phase !== '3b') {
     throw new Error(
       'Para as Fases 2, 2c, 2d ou All, informe um escopo: --uf <UF>, --municipio <NOME> ou --full.',
     );
@@ -118,9 +118,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
   if (jobId && !resume) {
     throw new Error('--job-id só pode ser usado com --resume.');
   }
-  if (phase === '3' && (resume || jobId || maxRecords)) {
+  if ((phase === '3' || phase === '3b') && (resume || jobId || maxRecords)) {
     throw new Error(
-      'A Fase 3 não aceita --resume, --job-id ou --max-records; ela reconstrói o tenant integralmente.',
+      'As Fases 3 e 3b não aceitam --resume, --job-id ou --max-records; elas reconstruem o tenant integralmente.',
     );
   }
 
@@ -163,7 +163,10 @@ async function main() {
         options.scope.bairro ? `Bairro: ${options.scope.bairro}` : undefined,
       ]
         .filter(Boolean)
-        .join(' | ') || (options.phase === '3' ? 'TENANT INTEGRAL (Fase 3)' : 'NÃO INFORMADO');
+        .join(' | ') ||
+      (options.phase === '3' || options.phase === '3b'
+        ? 'TENANT INTEGRAL (Fase 3)'
+        : 'NÃO INFORMADO');
   console.log(`Escopo           : ${scopeLabel}`);
   console.log(`Lote (batchSize) : ${options.batchSize}`);
   console.log(`Tenant Destino  : ${options.tenantId}`);
@@ -211,6 +214,8 @@ async function main() {
         await completeNativeMigrationJob(ctx);
         if (options.phase === 'all') await runPhase3(ctx);
       }
+    } else if (options.phase === '3b') {
+      await runPhase3Coverage(ctx);
     } else if (options.phase === '3') {
       await runPhase3(ctx);
     } else if (options.phase === '2c') {

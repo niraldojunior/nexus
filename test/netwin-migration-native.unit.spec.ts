@@ -70,10 +70,7 @@ import {
   phase3VisibleMapSpecificationsSql,
   stalePhase3Statistics,
 } from '../src/scripts/netwin-migration/phase3-map-features.js';
-import {
-  phase3CdoPageSql,
-  phase3CdoSourceSql,
-} from '../src/scripts/netwin-migration/phase3-coverage.js';
+import { phase3CdoSourceSql } from '../src/scripts/netwin-migration/phase3-coverage.js';
 import {
   assertReconciliationInvocation,
   parseReconciliationOptions,
@@ -393,7 +390,7 @@ describe('netwin-migration: address parsing', () => {
 });
 
 describe('netwin-migration: CLI', () => {
-  it('aceita a execução independente das Fases 2.C, 2.D e 3', () => {
+  it('aceita a execução independente das Fases 2.C, 2.D, 3 e 3.B', () => {
     expect(parseCliArgs(['--phase', '2c', '--municipio', 'Niterói']).phase).toBe('2c');
     expect(parseCliArgs(['--phase', '2d', '--municipio', 'Niterói']).phase).toBe('2d');
     expect(parseCliArgs(['--phase', '3', '--tenant-id', 'vtal'])).toMatchObject({
@@ -401,19 +398,24 @@ describe('netwin-migration: CLI', () => {
       tenantId: 'vtal',
       scope: { full: false },
     });
+    expect(parseCliArgs(['--phase', '3b', '--tenant-id', 'vtal'])).toMatchObject({
+      phase: '3b',
+      tenantId: 'vtal',
+      scope: { full: false },
+    });
   });
 
-  it('rejeita filtros e execução parcial na Fase 3 tenant-integral', () => {
-    expect(() => parseCliArgs(['--phase', '3', '--uf', 'RJ'])).toThrow(/tenant inteiro/i);
-    expect(() => parseCliArgs(['--phase', '3', '--municipio', 'Niterói'])).toThrow(
+  it.each(['3', '3b'])('rejeita filtros e execução parcial na Fase %s tenant-integral', (phase) => {
+    expect(() => parseCliArgs(['--phase', phase, '--uf', 'RJ'])).toThrow(/tenant inteiro/i);
+    expect(() => parseCliArgs(['--phase', phase, '--municipio', 'Niterói'])).toThrow(
       /tenant inteiro/i,
     );
     expect(() =>
-      parseCliArgs(['--phase', '3', '--bairro', 'Icaraí', '--municipio', 'Niterói']),
+      parseCliArgs(['--phase', phase, '--bairro', 'Icaraí', '--municipio', 'Niterói']),
     ).toThrow(/tenant inteiro/i);
-    expect(() => parseCliArgs(['--phase', '3', '--max-records', '1'])).toThrow(/não aceita/i);
+    expect(() => parseCliArgs(['--phase', phase, '--max-records', '1'])).toThrow(/não aceita/i);
     expect(() =>
-      parseCliArgs(['--phase', '3', '--apply', '--resume', '--job-id', 'job-1']),
+      parseCliArgs(['--phase', phase, '--apply', '--resume', '--job-id', 'job-1']),
     ).toThrow(/não aceita/i);
   });
 
@@ -573,9 +575,7 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(oracleDictionaryObjectName(prefixer('resource_physical'))).toBe(
       'NX_TEST_RESOURCE_PHYSICAL',
     );
-    expect(oracleDictionaryObjectName('nx_test_resource_type')).toBe(
-      'NX_TEST_RESOURCE_TYPE',
-    );
+    expect(oracleDictionaryObjectName('nx_test_resource_type')).toBe('NX_TEST_RESOURCE_TYPE');
   });
 
   it('declara a migration do índice de cursor com o prefixo de colunas que a Fase 3 exige', () => {
@@ -583,9 +583,7 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
       (candidate) => candidate.name === 'phase3-map-scan-indexes',
     );
     expect(batch?.version).toBe(25);
-    expect(batch?.sql).toContain(
-      'ON resource_physical(tenant_id, resource_specification_id, id)',
-    );
+    expect(batch?.sql).toContain('ON resource_physical(tenant_id, resource_specification_id, id)');
   });
 
   it('mantém segmentos de linha e ranks determinísticos no índice de mapa', () => {
@@ -615,15 +613,12 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(features?.map((feature) => feature.rank)).toEqual(expect.arrayContaining([0]));
   });
 
-  it('seleciona CDO canônica, endereço determinístico e pagina por ID', () => {
+  it('seleciona CDO canônica e endereço determinístico para varredura em stream', () => {
     const source = phase3CdoSourceSql(t);
-    const page = phase3CdoPageSql(t);
     expect(source).toContain("rt.code IN ('category:CDOI','category:CDOE','CTO')");
     expect(source).toContain("UPPER(r.name) LIKE 'CDO%'");
     expect(source).toContain('ORDER BY address.id');
     expect(source).toContain('FETCH FIRST 1 ROWS ONLY');
-    expect(page).toContain('(:lastId IS NULL OR "ID" > :lastId)');
-    expect(page).toContain('FETCH FIRST :batchSize ROWS ONLY');
   });
 });
 

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Briefcase, Download, FileText, FolderTree, MapPin, MapPinned } from 'lucide-react';
+import {
+  Briefcase,
+  Download,
+  FileText,
+  FolderKanban,
+  FolderTree,
+  MapPin,
+  MapPinned,
+} from 'lucide-react';
 import ClaudeBurst from './components/ClaudeBurst';
 import CopilotPendingResponse from './components/CopilotPendingResponse';
 import Diamond from './components/Diamond';
@@ -61,6 +69,11 @@ const domainMeta: Record<
     title: 'Serviços',
     subtitle: 'Para quê / quem? CFS, RFS e SubscriberID',
     icon: Briefcase,
+  },
+  project: {
+    title: 'Projetos',
+    subtitle: 'Planejamento e acompanhamento de projetos de rede',
+    icon: FolderKanban,
   },
   order: { title: 'Ordens', subtitle: 'Viabilidade, qualificação e fulfillment', icon: FolderTree },
 };
@@ -703,6 +716,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
                   onNavigate={handleAssistantNavigate}
                 />
               ) : null}
+              {currentPage === 'project' ? <DomainPage page={currentPage} /> : null}
               {currentPage === 'service' || currentPage === 'order' ? (
                 session.canViewOrder ? (
                   <DomainPage page={currentPage} />

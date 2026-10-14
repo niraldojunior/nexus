@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  FolderKanban,
   FolderTree,
   LogOut,
   type LucideIcon,
@@ -19,7 +20,14 @@ import { ResearchHistoryPage } from '../pages/ResearchHistoryPage';
 import NexusMark from './NexusMark';
 
 type PrimaryItemId =
-  'conversations' | 'research' | 'geo' | 'internal-plant' | 'service' | 'order' | 'studio';
+  | 'conversations'
+  | 'research'
+  | 'project'
+  | 'geo'
+  | 'internal-plant'
+  | 'service'
+  | 'order'
+  | 'studio';
 
 /**
  * Item de submenu de categoria (usado por Service).
@@ -68,7 +76,8 @@ type PrimaryItem = {
 const primaryItems: PrimaryItem[] = [
   { id: 'research', label: 'Nova Conversa', icon: Plus, section: 'Copilot' },
   { id: 'conversations', label: 'Conversas', icon: MessagesSquare },
-  { id: 'geo', label: 'Planta Externa', icon: MapPinned, section: 'Inventário' },
+  { id: 'project', label: 'Projetos', icon: FolderKanban, section: 'Inventário', soon: true },
+  { id: 'geo', label: 'Planta Externa', icon: MapPinned },
   { id: 'internal-plant', label: 'Planta Interna', icon: Server },
   { id: 'service', label: 'Serviços', icon: Briefcase, soon: true },
   { id: 'order', label: 'Ordens', icon: FolderTree, section: 'Operação', soon: true },
@@ -262,7 +271,8 @@ export default function Sidebar({
                       activeResearchSessionId === null) ||
                     (id === 'conversations' &&
                       (currentPage === 'conversas' || currentPage === 'conversation')) ||
-                    ((id === 'geo' ||
+                    ((id === 'project' ||
+                      id === 'geo' ||
                       id === 'internal-plant' ||
                       id === 'service' ||
                       id === 'order' ||

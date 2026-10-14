@@ -83,6 +83,7 @@ export type InternalSubrackRow = {
   POSICAO: string | null;
   ESTADO_CICLO_VIDA: number | null;
   ESTADO_OPERACIONAL: number | null;
+  ID_BD_TIPO_SUBBASTIDOR: number | null;
   TIPO_NOME: string | null;
   TIPO_SIGLA: string | null;
 };
@@ -96,6 +97,7 @@ export type InternalRackRow = {
   POSICAO: string | null;
   ESTADO_CICLO_VIDA: number | null;
   ESTADO_OPERACIONAL: number | null;
+  ID_BD_TIPO_BASTIDOR: number | null;
   TIPO_NOME: string | null;
   TIPO_SIGLA: string | null;
 };
@@ -412,7 +414,7 @@ export async function loadInternalSubracks(
   const result = await source.execute<InternalSubrackRow>(
     `SELECT s.ID_BD_SUBBASTIDOR, s.ID_BD_BASTIDOR, s.NOME, s.NOME_ALTERNATIVO,
             s.CODIGO, s.CODIGOSB, s.POSICAO, s.ESTADO_CICLO_VIDA, s.ESTADO_OPERACIONAL,
-            cs.NOME_SUBBASTIDOR AS TIPO_NOME, cs.SIGLA_SUBBASTIDOR AS TIPO_SIGLA
+            s.ID_BD_TIPO_SUBBASTIDOR, cs.NOME_SUBBASTIDOR AS TIPO_NOME, cs.SIGLA_SUBBASTIDOR AS TIPO_SIGLA
        FROM NETWIN.ISP_INS_SUBBASTIDOR s
        LEFT JOIN NETWIN.ISP_CAT_SUBBASTIDOR cs ON cs.ID_BD_TIPO_SUBBASTIDOR = s.ID_BD_TIPO_SUBBASTIDOR
       WHERE s.ID_BD_SUBBASTIDOR IN (${clause})`,
@@ -435,7 +437,7 @@ export async function loadInternalRacksByPlaceIds(
     const result = await source.execute<InternalRackByPlaceRow>(
       `SELECT b.ID_BD_BASTIDOR, b.ID_BD_PI, b.NOME, b.NOME_ALTERNATIVO, b.CODIGO, b.FIADA,
               b.POSICAO, b.ESTADO_CICLO_VIDA, b.ESTADO_OPERACIONAL,
-              cb.NOME_BASTIDOR AS TIPO_NOME, cb.SIGLA_BASTIDOR AS TIPO_SIGLA
+              b.ID_BD_TIPO_BASTIDOR, cb.NOME_BASTIDOR AS TIPO_NOME, cb.SIGLA_BASTIDOR AS TIPO_SIGLA
          FROM NETWIN.ISP_INS_BASTIDOR b
          LEFT JOIN NETWIN.ISP_CAT_BASTIDOR cb ON cb.ID_BD_TIPO_BASTIDOR = b.ID_BD_TIPO_BASTIDOR
         WHERE b.ID_BD_PI IN (${clause})`,
@@ -458,7 +460,7 @@ export async function loadInternalSubracksByRackIds(
     const result = await source.execute<InternalSubrackRow>(
       `SELECT s.ID_BD_SUBBASTIDOR, s.ID_BD_BASTIDOR, s.NOME, s.NOME_ALTERNATIVO,
               s.CODIGO, s.CODIGOSB, s.POSICAO, s.ESTADO_CICLO_VIDA, s.ESTADO_OPERACIONAL,
-              cs.NOME_SUBBASTIDOR AS TIPO_NOME, cs.SIGLA_SUBBASTIDOR AS TIPO_SIGLA
+              s.ID_BD_TIPO_SUBBASTIDOR, cs.NOME_SUBBASTIDOR AS TIPO_NOME, cs.SIGLA_SUBBASTIDOR AS TIPO_SIGLA
          FROM NETWIN.ISP_INS_SUBBASTIDOR s
          LEFT JOIN NETWIN.ISP_CAT_SUBBASTIDOR cs ON cs.ID_BD_TIPO_SUBBASTIDOR = s.ID_BD_TIPO_SUBBASTIDOR
         WHERE s.ID_BD_BASTIDOR IN (${clause})`,
@@ -519,7 +521,7 @@ export async function loadInternalRacks(
   const result = await source.execute<InternalRackRow>(
     `SELECT b.ID_BD_BASTIDOR, b.NOME, b.NOME_ALTERNATIVO, b.CODIGO, b.FIADA, b.POSICAO,
             b.ESTADO_CICLO_VIDA, b.ESTADO_OPERACIONAL,
-            cb.NOME_BASTIDOR AS TIPO_NOME, cb.SIGLA_BASTIDOR AS TIPO_SIGLA
+            b.ID_BD_TIPO_BASTIDOR, cb.NOME_BASTIDOR AS TIPO_NOME, cb.SIGLA_BASTIDOR AS TIPO_SIGLA
        FROM NETWIN.ISP_INS_BASTIDOR b
        LEFT JOIN NETWIN.ISP_CAT_BASTIDOR cb ON cb.ID_BD_TIPO_BASTIDOR = b.ID_BD_TIPO_BASTIDOR
       WHERE b.ID_BD_BASTIDOR IN (${clause})`,

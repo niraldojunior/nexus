@@ -43,6 +43,14 @@ export const isRadioCellTypeName = (name: string | null | undefined): boolean =>
 export const cardTypeSpecId = (tipoCarta: number): string =>
   deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:CARD_TYPE:${tipoCarta}`);
 
+/** Modelo de bastidor (ISP_CAT_BASTIDOR); ResourceType canônico `Rack`. */
+export const rackTypeSpecId = (tipoBastidor: number): string =>
+  deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:RACK_TYPE:${tipoBastidor}`);
+
+/** Modelo de subbastidor (ISP_CAT_SUBBASTIDOR); ResourceType canônico `Shelf`. */
+export const subrackTypeSpecId = (tipoSubbastidor: number): string =>
+  deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:SUBRACK_TYPE:${tipoSubbastidor}`);
+
 /**
  * O catálogo de porta física tem dezenas de milhares de linhas que só diferem por chave; o que
  * distingue o modelo é tipo + direcionalidade. A spec é identificada por essa combinação.

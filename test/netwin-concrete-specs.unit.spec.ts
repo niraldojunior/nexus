@@ -3,6 +3,8 @@ import {
   netwinEquipmentFolder,
   resolveEquipmentTypeCode,
   cardTypeSpecId,
+  rackTypeSpecId,
+  subrackTypeSpecId,
   equipmentModelSpecId,
   genericSpecId,
   parseSplitterRatioStrict,
@@ -73,6 +75,33 @@ describe('concrete-specs', () => {
     });
     expect(resolveEquipmentTypeCode(7, 'Bateria', null, idx).code).toBe('netwin-bateria');
     expect(resolveEquipmentTypeCode(999, null, null, idx).code).toBe('netwin-equipment-999');
+  });
+});
+
+describe('specs de bastidor e subbastidor', () => {
+  it('são determinísticas e isoladas entre si e de outros catálogos', () => {
+    expect(rackTypeSpecId(2312)).toBe(rackTypeSpecId(2312));
+    const ids = new Set([
+      rackTypeSpecId(1),
+      subrackTypeSpecId(1),
+      cardTypeSpecId(1),
+      genericSpecId('Netwin Rack'),
+      genericSpecId('Netwin Shelf'),
+    ]);
+    expect(ids.size).toBe(5);
+  });
+
+  it('cai na spec genérica quando o modelo não existe ou o tipo é nulo', () => {
+    const coverage = new SpecCoverage();
+    const generic = genericSpecId('Netwin Rack');
+    const available = new Set([rackTypeSpecId(2312)]);
+    expect(pickSpecification(rackTypeSpecId(2312), available, generic, coverage)).toBe(
+      rackTypeSpecId(2312),
+    );
+    expect(pickSpecification(rackTypeSpecId(9), available, generic, coverage)).toBe(generic);
+    expect(pickSpecification(null, available, generic, coverage)).toBe(generic);
+    expect(coverage.get('concrete')).toBe(1);
+    expect(coverage.get('genericFallback')).toBe(2);
   });
 });
 

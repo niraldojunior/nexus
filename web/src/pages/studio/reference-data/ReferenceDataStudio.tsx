@@ -4,7 +4,7 @@
 // ReferenceDataStudioAdapter.
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AlertCircle, Database, Plus, Search } from 'lucide-react';
+import { AlertCircle, Plus, Search } from 'lucide-react';
 import { Button, Modal } from '../../../components/ui';
 import Field from '../../../components/Field';
 import {
@@ -180,11 +180,14 @@ export function ReferenceDataStudio({
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <div className="mb-3 flex items-center gap-2 border-b border-app-border pb-3">
             <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-app-muted" />
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
+              />
               <input
                 type="text"
                 value={filterText}
@@ -262,7 +265,12 @@ export function ReferenceDataStudio({
             />
           ) : (
             <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
-              <Database className="mb-3 h-10 w-10 opacity-30" />
+              <img
+                src="/assets/studio/studio-empty-state.svg"
+                alt=""
+                aria-hidden="true"
+                className="mb-4 w-full max-w-[240px]"
+              />
               <h3 className="text-[1.1rem]">Nenhum conjunto selecionado</h3>
             </div>
           )}

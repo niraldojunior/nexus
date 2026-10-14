@@ -255,6 +255,10 @@ export function LocationTree({
       if (node.parentId === null) top.push(node);
       else grouped.set(node.parentId, [...(grouped.get(node.parentId) ?? []), node]);
     }
+    // Ramos sintéticos ("Sem UF", "Sem município") vão para o fim: dado incompleto não encabeça a hierarquia.
+    const unregisteredLast = (a: InternalPlantLocationNode, b: InternalPlantLocationNode) =>
+      Number(a.id.endsWith(':none')) - Number(b.id.endsWith(':none'));
+    for (const siblings of grouped.values()) siblings.sort(unregisteredLast);
     return { roots: top, byParent: grouped };
   }, [visibleDirectory]);
 
@@ -328,6 +332,7 @@ export function LocationTree({
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left"
+            title={node.sublabel ? `${node.label} — ${node.sublabel}` : node.label}
             onClick={() => {
               if (isSite) onSelectSite(node);
               else if (isCity) {

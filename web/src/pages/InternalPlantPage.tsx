@@ -505,11 +505,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
               <Plus size={14} aria-hidden="true" />
             </button>
           ) : null}
-          <div
-            className={`h-full min-h-0 transition-[padding] duration-300 ease-out ${
-              treeSearchOpen ? 'pt-9' : 'pt-0'
-            }`}
-          >
+          <div className="h-full min-h-0 pt-9">
             <OverlayScrollArea hostClassName="h-full min-h-0">
               {tab === 'locations' ? (
                 <LocationTree

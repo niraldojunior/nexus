@@ -137,6 +137,7 @@ export function TypeTree({ onSelect, selectedKey, query = '' }: Props) {
           <button
             type="button"
             className="min-w-0 flex-1 truncate text-left"
+            title={node.name}
             onClick={() => {
               // Grupo só abre/fecha; a consulta nasce do clique num tipo de recurso.
               if (isGroup) {

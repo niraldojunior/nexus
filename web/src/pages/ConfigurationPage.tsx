@@ -44,7 +44,7 @@ export function ConfigurationPage() {
         </nav>
       </aside>
 
-      <section className="min-w-0 flex-1 overflow-y-auto bg-app-bg px-8 py-8 max-md:px-5 max-md:py-6">
+      <section className="min-w-0 flex-1 overflow-y-auto bg-app-bg px-6 pb-8 pt-3 max-md:px-5 max-md:pb-6">
         {tab === 'users' ? (
           <UsersTab />
         ) : tab === 'environment' ? (

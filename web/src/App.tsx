@@ -164,7 +164,7 @@ function DomainPage({
   const meta = domainMeta[page];
 
   return (
-    <div className="min-h-full bg-app-bg px-5 pb-5 pt-2">
+    <div className="min-h-full bg-app-bg px-6 pb-5 pt-3">
       <div className="mx-auto" style={{ maxWidth: 'var(--content-max)' }}>
         <PageHead title={meta.title} subtitle={meta.subtitle} />
         <EmptyState

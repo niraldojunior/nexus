@@ -22,9 +22,14 @@ import {
   resolveEquipmentTypeCode,
   parseSplitterRatioStrict,
   portTypeSpecId,
+  rackTypeSpecId,
+  subrackTypeSpecId,
   uniqueSpecNames,
 } from './concrete-specs.js';
-import { enrichmentInstanceDefinitions, radioCellInstanceDefinitions } from './equipment-enrichment.js';
+import {
+  enrichmentInstanceDefinitions,
+  radioCellInstanceDefinitions,
+} from './equipment-enrichment.js';
 import { deterministicUuid, netwinPartyId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import type { PhaseStats } from './types.js';
 
@@ -1022,6 +1027,70 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     }
     await flushConcreteSpecs();
     console.log(`Tipos de porta física em uso (concretos): ${portRows.length}`);
+
+    console.log('Consultando modelos de bastidor/subbastidor (ISP_CAT_BASTIDOR/SUBBASTIDOR)...');
+    const rackCatalogs = [
+      {
+        typeCode: 'Rack',
+        label: 'bastidor',
+        catalogTable: 'ISP_CAT_BASTIDOR',
+        instanceTable: 'ISP_INS_BASTIDOR',
+        idColumn: 'ID_BD_TIPO_BASTIDOR',
+        nameColumn: 'NOME_BASTIDOR',
+        siglaColumn: 'SIGLA_BASTIDOR',
+        specId: rackTypeSpecId,
+      },
+      {
+        typeCode: 'Shelf',
+        label: 'subbastidor',
+        catalogTable: 'ISP_CAT_SUBBASTIDOR',
+        instanceTable: 'ISP_INS_SUBBASTIDOR',
+        idColumn: 'ID_BD_TIPO_SUBBASTIDOR',
+        nameColumn: 'NOME_SUBBASTIDOR',
+        siglaColumn: 'SIGLA_SUBBASTIDOR',
+        specId: subrackTypeSpecId,
+      },
+    ];
+    for (const catalog of rackCatalogs) {
+      const modelRows = await source.execute<{
+        TIPO_ID: number;
+        NOME: string | null;
+        SIGLA: string | null;
+      }>(
+        `SELECT c.${catalog.idColumn} AS TIPO_ID, c.${catalog.nameColumn} AS NOME,
+                c.${catalog.siglaColumn} AS SIGLA
+           FROM NETWIN.${catalog.catalogTable} c
+          WHERE EXISTS (SELECT 1 FROM NETWIN.${catalog.instanceTable} i
+                         WHERE i.${catalog.idColumn} = c.${catalog.idColumn})
+          ORDER BY c.${catalog.idColumn}`,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const rows = modelRows.rows ?? [];
+      const names = uniqueSpecNames(
+        rows,
+        (row) => text(row.NOME) ?? text(row.SIGLA) ?? `${catalog.typeCode} ${row.TIPO_ID}`,
+        (row) => row.TIPO_ID,
+      );
+      for (const row of rows) {
+        const name = names.get(row.TIPO_ID)!;
+        await upsertConcreteSpec(
+          catalog.specId(row.TIPO_ID),
+          name,
+          catalog.typeCode,
+          `Modelo de ${catalog.label} Netwin ${name}`,
+          [
+            ...netwinOriginCharacteristics(catalog.catalogTable, row.TIPO_ID),
+            ...(text(row.NOME) ? [modelCharacteristic(text(row.NOME)!)] : []),
+            ...(text(row.SIGLA)
+              ? [{ name: 'modelCode', value: text(row.SIGLA)!, valueType: 'string' as const }]
+              : []),
+          ],
+        );
+      }
+      await flushConcreteSpecs();
+      console.log(`Modelos de ${catalog.label} em uso (concretos): ${rows.length}`);
+    }
 
     // 5. Carga de Catálogo e Árvore de Nós no Studio (resource_catalog & resource_catalog_node)
     if (target) {

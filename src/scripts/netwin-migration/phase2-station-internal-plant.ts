@@ -20,6 +20,12 @@ import {
   netwinOriginCharacteristics,
   resolveNetwinPlantState,
 } from '../netwin-migration-kit.js';
+import {
+  pickSpecification,
+  rackTypeSpecId,
+  SpecCoverage,
+  subrackTypeSpecId,
+} from './concrete-specs.js';
 import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
 import { chunksOf, selectFullTableIds } from './source-batches.js';
 import { createScopedInfranodePager } from './scoped-infranode-ids.js';
@@ -208,16 +214,34 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
       rack: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${RACK_SPEC_NAME}`),
       subrack: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_SPEC:${SUBRACK_SPEC_NAME}`),
     };
+    const availableSpecIds = new Set<string>();
+    const rackCoverage = new SpecCoverage();
+    const subrackCoverage = new SpecCoverage();
     if (target) {
       const found = await target.execute<{ ID: string }>(
-        `SELECT id FROM ${ctx.t('resource_specification')} WHERE id IN (:1, :2)`,
-        [specIds.rack, specIds.subrack],
+        `SELECT id FROM ${ctx.t('resource_specification')} WHERE tenant_id = :1`,
+        [ctx.options.tenantId],
         { outFormat: oracledb.OUT_FORMAT_OBJECT },
       );
-      if ((found.rows ?? []).length < 2) {
+      for (const row of found.rows ?? []) availableSpecIds.add(row.ID);
+      if (!availableSpecIds.has(specIds.rack) || !availableSpecIds.has(specIds.subrack)) {
         throw new Error('Specs Netwin Rack/Shelf ausentes. Execute a Fase 1 antes.');
       }
     }
+    const pickSpec = (
+      typeId: number | null,
+      idOf: (id: number) => string,
+      generic: string,
+      coverage: SpecCoverage,
+    ): string => {
+      if (!target) return generic;
+      const concrete = typeId !== null && typeId !== undefined ? idOf(typeId) : null;
+      const picked = pickSpecification(concrete, availableSpecIds, generic, coverage);
+      if (picked === generic) {
+        coverage.record('unmapped', typeId ?? 'sem-tipo');
+      }
+      return picked;
+    };
     const resourceColumns = [
       'id',
       'tenant_id',
@@ -291,7 +315,12 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
             0,
             255,
           ),
-          resource_specification_id: specIds.rack,
+          resource_specification_id: pickSpec(
+            rack.ID_BD_TIPO_BASTIDOR,
+            rackTypeSpecId,
+            specIds.rack,
+            rackCoverage,
+          ),
           status: state.status,
           status_code: state.statusCode ?? null,
           place_id: siteId,
@@ -306,6 +335,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
               ['rackRow', rack.FIADA],
               ['rackPosition', rack.POSICAO],
               ['sourceRackType', rack.TIPO_SIGLA ?? rack.TIPO_NOME],
+              ['sourceRackTypeId', rack.ID_BD_TIPO_BASTIDOR],
             ]),
             ...netwinOriginCharacteristics('ISP_INS_BASTIDOR', rack.ID_BD_BASTIDOR),
           ]),
@@ -328,7 +358,12 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
             sub.CODIGO?.trim() ||
             `Subrack ${sub.ID_BD_SUBBASTIDOR}`
           ).slice(0, 255),
-          resource_specification_id: specIds.subrack,
+          resource_specification_id: pickSpec(
+            sub.ID_BD_TIPO_SUBBASTIDOR,
+            subrackTypeSpecId,
+            specIds.subrack,
+            subrackCoverage,
+          ),
           status: state.status,
           status_code: state.statusCode ?? null,
           place_id: parent.siteId,
@@ -342,6 +377,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
               ['subrackCode', sub.CODIGO ?? sub.CODIGOSB],
               ['subrackPosition', sub.POSICAO],
               ['sourceSubrackType', sub.TIPO_SIGLA ?? sub.TIPO_NOME],
+              ['sourceSubrackTypeId', sub.ID_BD_TIPO_SUBBASTIDOR],
             ]),
             ...netwinOriginCharacteristics('ISP_INS_SUBBASTIDOR', sub.ID_BD_SUBBASTIDOR),
           ]),
@@ -389,6 +425,10 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
     console.log(
       `[Fase 2.D] ${target ? 'Gravados' : 'DRY-RUN'}: racks=${stats.racks}; subracks=${stats.subracks}; rejeitados(sem site)=${stats.rejected}.`,
     );
+    if (target) {
+      console.log(rackCoverage.format('Rack (ISP_CAT_BASTIDOR)'));
+      console.log(subrackCoverage.format('Shelf (ISP_CAT_SUBBASTIDOR)'));
+    }
     return stats;
   } finally {
     await source.close();

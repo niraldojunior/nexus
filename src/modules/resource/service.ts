@@ -1,6 +1,13 @@
 import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import {
+  aiProposalStale,
+  aiUnavailable,
+  ResourceCatalogAiOptimizer,
+  type ResourceCatalogAiCompletionPort,
+} from './resource-catalog-ai-optimizer.js';
+import { computeCatalogChecksum, planAiOperations } from './resource-catalog-ai-planner.js';
+import {
   buildHref,
   type Characteristic,
   type CharacteristicLevel,
@@ -56,6 +63,9 @@ import type {
   MoveResourceCatalogNodeInput,
   ReorderResourceCatalogNodesInput,
   ResourceCatalogNodeImpact,
+  ApplyResourceCatalogAiProposalResult,
+  ResourceCatalogAiPreview,
+  ResourceCatalogAiProposal,
   ResourceRelationshipType,
   CreateResourceRelationshipTypeInput,
   UpdateResourceRelationshipTypeInput,
@@ -149,6 +159,8 @@ type ResourceServiceDependencies = {
     tenantId: string,
   ) => Promise<GeoSiteRef | undefined> | GeoSiteRef | undefined;
   mapFeatureSynchronizer?: MapFeatureSynchronizer;
+  /** Porta do LLM para a otimização estrutural da hierarquia (issue #365); ausente = indisponível. */
+  aiCompletion?: ResourceCatalogAiCompletionPort;
   lookupActiveVisualAsset?: (tenantId: string, assetId: string) => Promise<boolean> | boolean;
   /** Trilha de auditoria + outbox (C7) — best-effort: sem `db` (ex.: testes que montam o
    *  serviço com um repositório em memória), a auditoria só não roda. */
@@ -1385,6 +1397,194 @@ export class ResourceService {
     }
 
     return reorderedNodes;
+  }
+
+  /** Prévia da otimização por IA (issue #365): chama o LLM, valida e simula; não escreve. */
+  public async previewResourceCatalogAiOptimization(
+    catalogId: string,
+    context?: RequestContext,
+    signal?: AbortSignal,
+  ): Promise<ResourceCatalogAiPreview> {
+    const optimizer = new ResourceCatalogAiOptimizer(this.dependencies.aiCompletion);
+    if (!optimizer.available) throw aiUnavailable();
+    const source = await this.getResourceModelSnapshotSource(catalogId, context, true);
+    return await optimizer.preview(source, signal);
+  }
+
+  /**
+   * Aplica uma proposta de IA de forma atômica. Relê o catálogo, recalcula o checksum e repete a
+   * validação/simulação (nunca confia na árvore projetada do cliente). Eventos e auditoria saem
+   * dentro da mesma transação; nada é excluído fisicamente (C6).
+   */
+  public async applyResourceCatalogAiProposal(
+    catalogId: string,
+    proposal: ResourceCatalogAiProposal,
+    context?: RequestContext,
+  ): Promise<ApplyResourceCatalogAiProposalResult> {
+    const catalog = await this.getResourceCatalogOrThrow(catalogId, context);
+    if (proposal.catalogId !== catalog.id) {
+      throw new AppError('AI proposal belongs to another catalog', {
+        code: 'RESOURCE_CATALOG_AI_INVALID_PROPOSAL',
+        statusCode: 422,
+      });
+    }
+    const tenantId = tenantOf(context);
+    const actor = context?.actorSub ? { updatedBy: context.actorSub } : {};
+
+    return await this.repository.transaction(async () => {
+      const current = await this.repository.listResourceCatalogNodes(catalog.id, {
+        ...scopeOf(context),
+        includeInactive: true,
+      });
+      if (computeCatalogChecksum(catalog.id, current) !== proposal.baselineChecksum) {
+        throw aiProposalStale();
+      }
+      const plan = planAiOperations(current, proposal.operations);
+      const idOf = new Map<string, string>();
+      for (const ref of plan.createdRefs) idOf.set(ref, createCanonicalId());
+      const real = (ref: string): string => idOf.get(ref) ?? ref;
+
+      // 1. Cria os agregados novos (pais antes dos filhos, pela ordem das operações).
+      for (const ref of plan.createdRefs) {
+        const planned = plan.nodes.get(ref)!;
+        const id = real(ref);
+        const resourceTypeId = planned.kind === 'RESOURCE_TYPE' ? createCanonicalId() : undefined;
+        if (resourceTypeId) {
+          const typeDuplicate = await this.repository.getResourceTypeByCode(planned.code, {
+            tenantId,
+          });
+          if (typeDuplicate) {
+            throw new AppError('resource type code already exists', {
+              code: 'RESOURCE_TYPE_CODE_DUPLICATE',
+              statusCode: 409,
+            });
+          }
+          const mapConfiguration = resolveResourceTypeMapConfiguration(undefined, {});
+          const visualIdentity = await this.resolveVisualIdentity(undefined, undefined, context);
+          const createdType = await this.repository.upsertResourceType({
+            '@type': 'ResourceType',
+            id: resourceTypeId,
+            href: buildHref('resourceType', resourceTypeId),
+            code: planned.code,
+            name: planned.name,
+            categoryCode: 'Uncategorized',
+            ...(planned.description ? { description: planned.description } : {}),
+            status: 'active',
+            ...mapConfiguration,
+            ...(visualIdentity ? { visualIdentity } : {}),
+            resourceTypeCharacteristic: [],
+            tenantId,
+          });
+          await this.emit(
+            'ResourceTypeCreateEvent',
+            createdType.id,
+            'ResourceType',
+            createdType,
+            context,
+          );
+        }
+        const parentId = planned.parentId ? real(planned.parentId) : undefined;
+        const created = await this.repository.upsertResourceCatalogNode({
+          '@type': 'ResourceCatalogNode',
+          id,
+          href: buildHref('resourceCatalogNode', id),
+          catalogId: catalog.id,
+          code: planned.code,
+          name: planned.name,
+          kind: planned.kind,
+          status: 'active',
+          sortOrder: planned.sortOrder,
+          tenantId,
+          ...(parentId ? { parentNodeId: parentId } : {}),
+          ...(resourceTypeId ? { resourceTypeId } : {}),
+          ...(planned.description ? { description: planned.description } : {}),
+          ...(context?.actorSub
+            ? { createdBy: context.actorSub, updatedBy: context.actorSub }
+            : {}),
+        });
+        await this.emit(
+          'ResourceCatalogNodeCreateEvent',
+          created.id,
+          'ResourceCatalogNode',
+          created,
+          context,
+        );
+      }
+
+      // 2. Reconcilia os nós existentes com o estado final simulado. Preserva todos os campos
+      // não estruturais (metadata, tipo, características, regras, identidade visual).
+      for (const original of current) {
+        const planned = plan.nodes.get(original.id);
+        if (!planned) continue;
+        const nextParent = planned.parentId ? real(planned.parentId) : undefined;
+        const unchanged =
+          planned.name === original.name &&
+          (planned.description ?? '') === (original.description ?? '') &&
+          planned.status === original.status &&
+          nextParent === original.parentNodeId &&
+          planned.sortOrder === original.sortOrder;
+        if (unchanged) continue;
+
+        const {
+          parentNodeId: _previousParent,
+          description: _previousDescription,
+          ...rest
+        } = original;
+        const updated = await this.repository.upsertResourceCatalogNode({
+          ...rest,
+          name: planned.name,
+          status: planned.status,
+          sortOrder: planned.sortOrder,
+          ...(nextParent ? { parentNodeId: nextParent } : {}),
+          ...(planned.description ? { description: planned.description } : {}),
+          ...actor,
+        });
+
+        if (original.kind === 'RESOURCE_TYPE' && original.resourceTypeId) {
+          const resourceType = await this.repository.getResourceType(
+            original.resourceTypeId,
+            scopeOf(context),
+          );
+          const typeChanged =
+            resourceType &&
+            (resourceType.name !== planned.name ||
+              (resourceType.description ?? '') !== (planned.description ?? '') ||
+              resourceType.status !== planned.status);
+          if (resourceType && typeChanged) {
+            const { description: _typeDescription, ...typeRest } = resourceType;
+            const syncedType = await this.repository.upsertResourceType({
+              ...typeRest,
+              name: planned.name,
+              status: planned.status,
+              ...(planned.description ? { description: planned.description } : {}),
+            });
+            await this.emit(
+              'ResourceTypeAttributeValueChangeEvent',
+              syncedType.id,
+              'ResourceType',
+              syncedType,
+              context,
+              resourceType,
+            );
+          }
+        }
+        await this.emit(
+          'ResourceCatalogNodeAttributeValueChangeEvent',
+          updated.id,
+          'ResourceCatalogNode',
+          updated,
+          context,
+          original,
+        );
+      }
+
+      return {
+        proposalId: proposal.proposalId,
+        catalogId: catalog.id,
+        counters: plan.counters,
+        createdNodeIds: Object.fromEntries(idOf),
+      };
+    });
   }
 
   /**

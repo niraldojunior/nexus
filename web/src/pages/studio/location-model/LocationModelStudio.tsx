@@ -208,7 +208,7 @@ export function LocationModelStudio({
       <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
         <div className="vt-card flex min-h-[580px] flex-col p-4">
           <StudioCollectionHeader
-            title="Tipos de Locais"
+            title="Tipos"
             showSearch
             searchLabel="Buscar locais"
             badge={

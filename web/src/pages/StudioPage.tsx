@@ -217,60 +217,58 @@ export function StudioPage({
   if (!activeItem) return null;
 
   return (
-    <div className="h-full overflow-y-auto bg-app-bg px-[11px] pb-4 pt-3 sm:px-[17px] sm:pb-6 lg:px-6">
-      <div
-        className="relative mx-auto grid gap-5 lg:grid-cols-[202px_minmax(0,1fr)]"
-        style={{ maxWidth: 'var(--content-max)' }}
-      >
-        <aside className="vt-studio-control relative h-fit rounded-[10px] bg-app-ink-soft p-3 text-app-on-ink shadow-soft lg:sticky lg:top-0">
-          <div className="flex items-center gap-3 px-3 pb-4 pt-2">
-            <img
-              src="/assets/studio/studio-logo-icon.svg"
-              alt=""
-              aria-hidden="true"
-              className="h-10 w-10 shrink-0"
-            />
-            <div>
-              <span className="block" style={{ font: 'var(--text-h3)' }}>
-                Studio
-              </span>
-              <p className="text-[0.78rem] text-app-on-ink-muted">Control</p>
-            </div>
+    <div className="flex h-full min-h-0 flex-col bg-app-bg lg:flex-row">
+      <aside className="vt-studio-control shrink-0 overflow-y-auto bg-app-ink-soft p-3 text-app-on-ink lg:h-full lg:w-[224px]">
+        <div className="flex items-center gap-2.5 px-3 pb-4 pt-2">
+          <img
+            src="/assets/studio/studio-logo-icon.svg"
+            alt=""
+            aria-hidden="true"
+            className="h-8 w-8 shrink-0"
+          />
+          <div className="leading-tight">
+            <span className="block text-[1rem] font-bold">Studio</span>
+            <p className="text-[0.75rem] text-app-on-ink-muted">Control</p>
           </div>
+        </div>
 
-          <nav aria-label="Áreas do Studio" className="vt-studio-nav vt-studio-nav-ink space-y-4">
-            {studioNavigation.map((group) => (
-              <div key={group.label}>
-                <p className="vt-sb-group-label">{group.label}</p>
-                <div className="space-y-1">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    const active = item.id === section;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => onSectionChange(item.id)}
-                        className={`vt-sb-btn w-full${active ? ' is-active' : ''}`}
-                        aria-current={active ? 'page' : undefined}
-                      >
-                        <Icon className="h-[1.05rem] w-[1.05rem] shrink-0" strokeWidth={1.8} />
-                        <span className="flex-1 truncate text-left">{item.label}</span>
-                        {PLACEHOLDER_SECTIONS.has(item.id) ? (
-                          <span className="rounded-full border border-current px-1.5 text-[0.65rem] opacity-80">
-                            Em breve
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
+        <nav aria-label="Áreas do Studio" className="vt-studio-nav vt-studio-nav-ink space-y-4">
+          {studioNavigation.map((group) => (
+            <div key={group.label}>
+              <p className="vt-sb-group-label">{group.label}</p>
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = item.id === section;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onSectionChange(item.id)}
+                      className={`vt-sb-btn w-full${active ? ' is-active' : ''}`}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <Icon className="h-[1.05rem] w-[1.05rem] shrink-0" strokeWidth={1.8} />
+                      <span className="flex-1 truncate text-left">{item.label}</span>
+                      {PLACEHOLDER_SECTIONS.has(item.id) ? (
+                        <span className="rounded-full border border-current px-1.5 text-[0.65rem] opacity-80">
+                          Em breve
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </nav>
-        </aside>
+            </div>
+          ))}
+        </nav>
+      </aside>
 
-        <section className="min-w-0 vt-studio-scope">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[11px] pb-4 pt-3 sm:px-[17px] sm:pb-6 lg:px-6">
+        <section
+          className="vt-studio-scope mx-auto min-w-0"
+          style={{ maxWidth: 'var(--content-max)' }}
+        >
           <PageHead
             title={activeItem.label}
             actions={

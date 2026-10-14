@@ -311,7 +311,7 @@ button {
      bastante com o canvas branco e continua como estava. */
   [data-theme='dark'] .vt-studio-control {
     background: var(--surface-sidebar);
-    border: 1px solid var(--sidebar-border);
+    border-right: 1px solid var(--sidebar-border);
   }
 
   /* Conversa recente ativa (ResearchHistoryPage, dentro da sidebar principal):

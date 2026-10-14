@@ -1,0 +1,34 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <linearGradient id="goldA" x1="110" y1="70" x2="392" y2="300" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#FFD35A"/>
+    <stop offset="0.48" stop-color="#F5B623"/>
+    <stop offset="1" stop-color="#C98A00"/>
+  </linearGradient>
+  <linearGradient id="goldB" x1="80" y1="150" x2="258" y2="350" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#F7C948"/>
+    <stop offset="1" stop-color="#B97800"/>
+  </linearGradient>
+  <linearGradient id="navyA" x1="110" y1="260" x2="420" y2="440" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#16324B"/>
+    <stop offset="1" stop-color="#071827"/>
+  </linearGradient>
+</defs>
+
+<!-- top structural ring -->
+<path d="M256 54L438 158L256 262L74 158L256 54Z" fill="url(#goldA)"/>
+<path d="M256 108L344 158L256 208L168 158L256 108Z" fill="#FFF8E7"/>
+
+<!-- gold structural sides -->
+<path d="M74 158L256 262V316L74 212V158Z" fill="url(#goldB)"/>
+<path d="M438 158L256 262V316L438 212V158Z" fill="#E9A514"/>
+
+<!-- cream separator layer -->
+<path d="M96 229L256 321L416 229V273L256 365L96 273V229Z" fill="#FFF3D2"/>
+
+<!-- navy lower layer -->
+<path d="M96 287L256 379L416 287V345L256 437L96 345V287Z" fill="url(#navyA)"/>
+
+<!-- highlight -->
+<path d="M256 54L438 158L409 175L256 88L103 175L74 158L256 54Z" fill="#FFD763" fill-opacity=".42"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg width="480" height="320" viewBox="0 0 480 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <filter id="blur" x="80" y="120" width="320" height="150" filterUnits="userSpaceOnUse">
+    <feGaussianBlur stdDeviation="18"/>
+  </filter>
+</defs>
+<ellipse cx="240" cy="224" rx="122" ry="32" fill="#EEF1F4" filter="url(#blur)"/>
+<path d="M240 82L303 118L240 154L177 118L240 82Z" stroke="#C7CDD4" stroke-width="8" stroke-linejoin="round"/>
+<path d="M177 118V190L240 226V154L177 118Z" stroke="#C7CDD4" stroke-width="8" stroke-linejoin="round"/>
+<path d="M303 118V190L240 226V154L303 118Z" stroke="#C7CDD4" stroke-width="8" stroke-linejoin="round"/>
+<path d="M341 72V96M329 84H353" stroke="#F5B623" stroke-width="6" stroke-linecap="round"/>
+<path d="M127 118V134M119 126H135" stroke="#F5B623" stroke-width="5" stroke-linecap="round"/>
+</svg>

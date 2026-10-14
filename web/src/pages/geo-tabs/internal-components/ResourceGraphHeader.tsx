@@ -31,11 +31,11 @@ export function ResourceGraphHeader({
       <div
         data-testid="resource-graph-header"
         data-view-mode="simplified"
-        className={`${className} flex min-w-0 items-center gap-2 rounded-[8px] border border-app-border bg-[var(--surface-subtle)] px-2 py-1.5`}
+        className={`${className} flex min-w-0 items-center gap-2 rounded-[8px] border border-app-border px-2 py-1.5`}
       >
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${indicatorClassName}`} aria-hidden="true" />
         <ResourceIcon resource={{ resourceType: resourceType ?? '', status, name }} variant="glyph" size={16} />
-        <div className="min-w-0 flex-1 truncate text-[0.76rem] font-semibold text-app-text">
+        <div className="min-w-0 flex-1 break-words text-[0.76rem] font-semibold leading-snug text-app-text">
           {name} <span className="font-normal text-app-muted">({specification})</span>
         </div>
       </div>
@@ -46,13 +46,13 @@ export function ResourceGraphHeader({
     <div
       data-testid="resource-graph-header"
       data-view-mode="detailed"
-      className={`${className} flex min-w-0 items-center gap-2 rounded-[8px] border border-app-border bg-[var(--surface-subtle)] px-2 py-2`}
+      className={`${className} flex min-w-0 items-center gap-2 rounded-[8px] border border-app-border px-2 py-2`}
     >
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${indicatorClassName}`} aria-hidden="true" />
       <ResourceIcon resource={{ resourceType: resourceType ?? '', status, name }} variant="glyph" size={18} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[0.78rem] font-semibold text-app-text">{name}</div>
-        <div className="truncate text-[0.68rem] text-app-muted">{specification}</div>
+        <div className="break-words text-[0.78rem] font-semibold leading-snug text-app-text">{name}</div>
+        <div className="break-words text-[0.68rem] leading-snug text-app-muted">{specification}</div>
       </div>
     </div>
   );

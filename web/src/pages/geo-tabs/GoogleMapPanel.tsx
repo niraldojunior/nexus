@@ -60,7 +60,11 @@ import { bottomInsetForOverlay, flyTo, cancelFlight, type FlyTarget } from '../.
 import { BRAZIL_CENTER, BRAZIL_DEFAULT_ZOOM, type MapCamera } from '../../utils/geoViewState';
 import { acquireDeviceLocation, DEVICE_LOCATION_POOR_ACCURACY_M } from '../../utils/deviceLocation';
 import { useSession } from '../../hooks/useSession';
-import { resourceIconFor, MARKER_ICON_SIZE, CABLE_STROKE_WEIGHT } from '../../utils/resourceIcon';
+import { resourceIconFor, CABLE_STROKE_WEIGHT } from '../../utils/resourceIcon';
+import {
+  selectedResourceHighlightGeometry,
+  selectedResourceMarkerSize,
+} from '../../utils/mapSelection';
 import { selectionPinDataUrl, addressSourcePin, SELECTION_PIN_ASPECT } from '../../utils/siteIcon';
 import {
   type AddressPinLocation,
@@ -178,7 +182,11 @@ function buildPointMarkerVisual(
   // configuração, ambos os domínios usam o fallback neutro de Resource, sem privilegiar
   // códigos, nomes ou papéis de Local.
   const baseSize = node.kind === 'site' ? stationMarkerSize : resourceMarkerSize;
-  const size = selected ? baseSize + 6 : (pointStyle?.sizePx ?? baseSize);
+  const size = selected
+    ? node.kind === 'resource'
+      ? selectedResourceMarkerSize(resourceMarkerSize, pointStyle?.sizePx)
+      : baseSize + 6
+    : (pointStyle?.sizePx ?? baseSize);
   const resolved = resolveOperationalIcon(facts, visualIdentityForTreeNode(node, catalog), {
     size,
     color: pointStyle?.color,
@@ -1495,9 +1503,17 @@ export function GoogleMapPanel({
     // no canto do ícone em vez do seu centro visual. Local não precisa: seu ícone já é
     // centrado na coordenada, então a ponta cai certa sem ajuste.
     const isPointResource = node?.kind === 'resource' && node.geometry?.type === 'Point';
-    const resourceSize = MARKER_ICON_SIZE + 6; // tamanho do ícone quando selecionado
+    const selectedPointStyle = node
+      ? pointStyleForNode(node, mapLayerCatalog, mapVisualScaleMeters)
+      : undefined;
+    const resourceSize = selectedResourceMarkerSize(resourceMarkerSize, selectedPointStyle?.sizePx);
+    const resourceHighlight = selectedResourceHighlightGeometry(
+      resourceSize,
+      width,
+      SELECTION_PIN_HEIGHT,
+    );
     const anchor = isPointResource
-      ? new maps.Point(width / 2 - resourceSize / 2, SELECTION_PIN_HEIGHT + resourceSize / 2)
+      ? new maps.Point(resourceHighlight.pinAnchorX, resourceHighlight.pinAnchorY)
       : new maps.Point(width / 2, SELECTION_PIN_HEIGHT);
     const iconOptions = {
       url: selectionPinDataUrl(SELECTION_PIN_HEIGHT),
@@ -1524,7 +1540,17 @@ export function GoogleMapPanel({
           : `Localização usada: ${addressLocation?.source === 'geonet' ? 'GEONET' : 'Google Maps'} · ${addressLocation?.precision ?? ''}`,
       });
     }
-  }, [mapsReady, selectedNodeId, selectedNode, nodes, addressPoint, addressResolution]);
+  }, [
+    mapsReady,
+    selectedNodeId,
+    selectedNode,
+    nodes,
+    addressPoint,
+    addressResolution,
+    resourceMarkerSize,
+    mapLayerCatalog,
+    mapVisualScaleMeters,
+  ]);
 
   // Destaque do item selecionado. Ponto: círculo azul translúcido atrás do ícone (um Marker com
   // símbolo CIRCLE, de tamanho fixo em pixels). Linha: faixa larga e translúcida sob o traçado,
@@ -1565,18 +1591,26 @@ export function GoogleMapPanel({
       // Ícone de recurso ancora no canto inferior-esquerdo; o de local é centrado (mesma regra
       // do alfinete acima). O símbolo desloca o centro do halo para o centro visual do ícone.
       const isPointResource = node?.kind === 'resource';
-      const iconSize = MARKER_ICON_SIZE + 6;
-      const scale = iconSize / 2 + 8;
-      const shift = isPointResource ? iconSize / 2 : 0;
+      const selectedPointStyle = node
+        ? pointStyleForNode(node, mapLayerCatalog, mapVisualScaleMeters)
+        : undefined;
+      const resourceSize = selectedResourceMarkerSize(
+        resourceMarkerSize,
+        selectedPointStyle?.sizePx,
+      );
+      const resourceHighlight = selectedResourceHighlightGeometry(resourceSize, 0, 0);
       const icon = {
         path: maps.SymbolPath.CIRCLE,
-        scale,
+        scale: isPointResource ? resourceHighlight.haloScale : stationMarkerSize / 2 + 11,
         fillColor: SELECTION_HIGHLIGHT_COLOR,
         fillOpacity: 0.3,
         strokeColor: SELECTION_HIGHLIGHT_COLOR,
         strokeOpacity: 0.6,
         strokeWeight: 1.5,
-        anchor: new maps.Point(-shift / scale, shift / scale),
+        anchor: new maps.Point(
+          isPointResource ? resourceHighlight.haloAnchorX : 0,
+          isPointResource ? resourceHighlight.haloAnchorY : 0,
+        ),
       };
       if (selectionHaloRef.current) {
         selectionHaloRef.current.setPosition({ lng, lat });
@@ -1594,7 +1628,16 @@ export function GoogleMapPanel({
       selectionHaloRef.current?.setMap(null);
       selectionHaloRef.current = null;
     }
-  }, [mapsReady, selectedNodeId, selectedNode, nodes]);
+  }, [
+    mapsReady,
+    selectedNodeId,
+    selectedNode,
+    nodes,
+    resourceMarkerSize,
+    stationMarkerSize,
+    mapLayerCatalog,
+    mapVisualScaleMeters,
+  ]);
 
   useEffect(() => {
     const maps = window.google?.maps;

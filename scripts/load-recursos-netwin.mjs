@@ -470,9 +470,7 @@ async function main() {
       siteBySigla.set(ORPHAN_SIGLA, orphanSiteId);
     }
 
-    const { rows: specRows } = await client.query(
-      `SELECT id, name FROM resource_specification`,
-    );
+    const { rows: specRows } = await client.query(`SELECT id, name FROM resource_specification`);
     const specByName = new Map(specRows.map((r) => [r.name, r.id]));
     const { rows: resourceTypeRows } = await client.query(
       `SELECT id, code FROM resource_type WHERE tenant_id = 'vtal' AND code IN ('CTO', 'Splitter')`,
@@ -793,8 +791,10 @@ async function main() {
         resource_specification_id: specIdFor.get('Splitter'),
         status,
         status_code: resolveStatusCode(substatus) ?? null,
-        place_id: caixa?.locationId ?? null,
-        place_type: caixa?.locationId ? 'GeographicLocation' : null,
+        // Recurso interno: sem place/serving. O lugar dele é resolvido pelo recurso que o
+        // contém (`containsAsChild`), nunca pelo Site/Location da caixa.
+        place_id: null,
+        place_type: null,
         serving_site_id: siteBySigla.get(s.sigla) ?? null,
         characteristics: JSON.stringify(
           originChars(

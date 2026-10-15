@@ -7,7 +7,7 @@ import { forwardRef, useState, type ButtonHTMLAttributes, type CSSProperties } f
  * ghost é sem chrome; dark para superfícies invertidas; danger para ações destrutivas.
  * Use no máximo um `primary` por vista.
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'dark' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'dark' | 'danger' | 'danger-soft';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -48,6 +48,11 @@ const VARIANTS: Record<ButtonVariant, CSSProperties> = {
     color: 'var(--on-status-solid)',
     borderColor: 'var(--status-red)',
   },
+  'danger-soft': {
+    background: 'var(--status-red-soft)',
+    color: 'var(--status-red)',
+    borderColor: 'color-mix(in srgb, var(--status-red) 30%, transparent)',
+  },
 };
 
 const HOVERS: Partial<Record<ButtonVariant, CSSProperties>> = {
@@ -56,6 +61,10 @@ const HOVERS: Partial<Record<ButtonVariant, CSSProperties>> = {
   ghost: { background: 'var(--surface-muted)', color: 'var(--text-primary)' },
   dark: { background: 'var(--neutral-700)', borderColor: 'var(--neutral-700)' },
   danger: { background: 'var(--status-red-hover)', borderColor: 'var(--status-red-hover)' },
+  'danger-soft': {
+    background: 'color-mix(in srgb, var(--status-red-soft) 85%, var(--status-red))',
+    borderColor: 'var(--status-red)',
+  },
 };
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

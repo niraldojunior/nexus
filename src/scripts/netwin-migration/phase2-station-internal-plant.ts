@@ -185,8 +185,10 @@ function textCharacteristics(fields: Array<[string, unknown]>) {
 
 /**
  * Carga de bastidores e subbastidores de estações. O local vem de ISP_INS_BASTIDOR.ID_BD_PI
- * (= DL_INFRANODE.PI_ID = LOCATION.ID), então `place_id` é o GeographicSite do andar, sala,
- * torre ou armário (C2). Equipamentos de estação já entram pela Fase 2.B (espelho OSP).
+ * (= DL_INFRANODE.PI_ID = LOCATION.ID), então `place_id` do bastidor é o GeographicSite do
+ * andar, sala, torre ou armário (C2). Subbastidores (shelves) são recursos internos contidos
+ * no bastidor (`containsAsChild`), portanto ficam com `place_id: null` e `place_type: null`.
+ * Equipamentos de estação já entram pela Fase 2.B (espelho OSP).
  */
 export async function runPhase2StationRacks(ctx: MigrationContext): Promise<StationRackLoadStats> {
   console.log('\n=== Fase 2.D: Bastidores e subbastidores de estações ===');
@@ -366,8 +368,10 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
           ),
           status: state.status,
           status_code: state.statusCode ?? null,
-          place_id: parent.siteId,
-          place_type: 'GeographicSite',
+          // Recurso interno: sem place/serving. O lugar dele é resolvido pelo recurso que o
+          // contém (`containsAsChild`), nunca pelo Site do bastidor pai.
+          place_id: null,
+          place_type: null,
           administrative_state: state.administrative_state,
           operational_state: state.operational_state,
           usage_state: state.usage_state,

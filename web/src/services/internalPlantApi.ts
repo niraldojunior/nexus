@@ -28,6 +28,25 @@ export type InternalPlantChildrenPage = {
   offset: number;
 };
 
+export type InternalPlantSiteContext = {
+  site: {
+    id: string;
+    name: string;
+    specificationName: string;
+    visualIdentity?: VisualIdentity;
+  };
+  hierarchy: Array<{ id: string; name: string; specificationName: string }>;
+  address?: {
+    streetType?: string;
+    streetName?: string;
+    streetNr?: string;
+    locality?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+  };
+};
+
 export type InternalPlantResourceRow = {
   id: string;
   '@type': 'PhysicalResource' | 'LogicalResource';
@@ -35,10 +54,8 @@ export type InternalPlantResourceRow = {
   status: string;
   statusCode?: string;
   resourceType: { id: string; code: string; name: string };
-  resourceSpecification: { id: string; name: string };
+  resourceSpecification: { id: string; name: string; manufacturer?: { id: string; name?: string } };
   place?: { id: string; name: string };
-  stateOrProvince?: string;
-  city?: string;
 };
 
 export type InternalPlantResourcePage = {
@@ -74,7 +91,11 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return payload as T;
 }
 
-async function sendJson<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function sendJson<T>(
+  method: 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const response = await fetch(path, {
     method,
     headers: {
@@ -257,7 +278,7 @@ export const saveResourceAggregate = (payload: SaveResourceAggregatePayload) =>
 export const terminateInternalPlantResource = (id: string) =>
   sendJson<unknown>('DELETE', `${BASE}/resources/${encodeURIComponent(id)}`);
 
-export const fetchInternalPlantRoots =(signal?: AbortSignal) =>
+export const fetchInternalPlantRoots = (signal?: AbortSignal) =>
   getJson<InternalPlantLocationRootNode[]>(`${BASE}/locations/roots`, signal);
 
 export const fetchInternalPlantChildren = (
@@ -270,6 +291,9 @@ export const fetchInternalPlantChildren = (
   if (options.offset !== undefined) params.set('offset', String(options.offset));
   return getJson<InternalPlantChildrenPage>(`${BASE}/locations/children?${params}`, signal);
 };
+
+export const fetchInternalPlantSiteContext = (siteId: string, signal?: AbortSignal) =>
+  getJson<InternalPlantSiteContext>(`${BASE}/sites/${encodeURIComponent(siteId)}/context`, signal);
 
 export const fetchInternalPlantResources = (
   filter: InternalPlantResourceFilter,

@@ -15,6 +15,10 @@ import { listGeoSiteSpecifications } from '../../services/geoApi';
 import type { VisualIdentity } from '../../services/studioGeoApi';
 import { useVisualIdentityPreviewUrl } from '../../hooks/useVisualIdentityPreviewUrl';
 import {
+  STUDIO_GEO_CUSTOM_ICON_COLOR,
+  STUDIO_GEO_NEUTRAL_ICON_COLOR,
+} from '../../utils/studioGeoDefaults';
+import {
   fetchInternalPlantChildren,
   fetchInternalPlantRoots,
   type InternalPlantLocationNode,
@@ -75,9 +79,11 @@ function SiteSpecIcon({ node }: { node: InternalPlantLocationNode }) {
   }, []);
   const specId = node.kind === 'site-type' ? node.refId : node.siteSpecificationId;
   const presentation = specId ? identities?.get(specId) : undefined;
-  const url = useVisualIdentityPreviewUrl(presentation?.identity ?? node.visualIdentity, 14, {
+  const identity = presentation?.identity ?? node.visualIdentity;
+  const url = useVisualIdentityPreviewUrl(identity, 14, {
     shape: 'none',
-    color: '#0284c7',
+    color: STUDIO_GEO_NEUTRAL_ICON_COLOR,
+    assetColor: STUDIO_GEO_CUSTOM_ICON_COLOR,
   });
   if (url) return <img src={url} alt="" className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />;
   // Mesmo fallback do Studio: glifo da categoria da especificação (Região/Externo/Interno).

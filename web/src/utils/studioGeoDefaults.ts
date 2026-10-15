@@ -37,6 +37,9 @@ export const STUDIO_GEO_COLOR_PALETTE = [
  */
 export const STUDIO_GEO_NEUTRAL_ICON_COLOR = '#334155';
 
+/** Cor que identifica uma identidade visual personalizada fora da superfície do mapa. */
+export const STUDIO_GEO_CUSTOM_ICON_COLOR = '#0284c7';
+
 export type StudioGeoStatusOption = { value: string; label: string };
 
 export const RESOURCE_STATUS_OPTIONS: readonly StudioGeoStatusOption[] = [

@@ -32,6 +32,26 @@ export type InternalPlantLocationChildrenPage = {
   offset: number;
 };
 
+export type InternalPlantSiteContext = {
+  site: {
+    id: string;
+    name: string;
+    specificationName: string;
+    visualIdentity?: InternalPlantVisualIdentity;
+  };
+  /** Cadeia da raiz ao local selecionado, com nome da instância e seu tipo de Site. */
+  hierarchy: Array<{ id: string; name: string; specificationName: string }>;
+  address?: {
+    streetType?: string;
+    streetName?: string;
+    streetNr?: string;
+    locality?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+  };
+};
+
 export type InternalPlantResourceQuery = {
   q?: string;
   siteId?: string;
@@ -58,13 +78,12 @@ export type InternalPlantResourceRow = {
   resourceSpecification: {
     id: string;
     name: string;
+    manufacturer?: { id: string; name?: string };
   };
   place?: {
     id: string;
     name: string;
   };
-  stateOrProvince?: string;
-  city?: string;
 };
 
 export type InternalPlantResourcePage = {

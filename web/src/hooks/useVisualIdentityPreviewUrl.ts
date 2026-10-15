@@ -6,8 +6,23 @@ import type { IconShape } from '../utils/resourceIcon';
 
 export type VisualIdentityPreviewOptions = {
   shape?: IconShape;
+  /** Cor de uma identidade do sistema. */
   color?: string;
+  /** Cor aplicada ao SVG de uma identidade personalizada. */
+  assetColor?: string;
   opacity?: number;
+};
+
+const tintSvgDataUrl = (dataUrl: string, color: string): string => {
+  const prefix = 'data:image/svg+xml;charset=UTF-8,';
+  if (!dataUrl.startsWith(prefix)) return dataUrl;
+  const svg = decodeURIComponent(dataUrl.slice(prefix.length))
+    .replace(
+      /\s(fill|stroke)=(['"])(?!none\2)[^'"]*\2/gi,
+      (_, property: string) => ` ${property}="${color}"`,
+    )
+    .replace(/<svg\b([^>]*)>/i, `<svg$1 color="${color}" fill="${color}" stroke="${color}">`);
+  return `${prefix}${encodeURIComponent(svg)}`;
 };
 
 /**
@@ -22,7 +37,7 @@ export function useVisualIdentityPreviewUrl(
   options: VisualIdentityPreviewOptions = {},
 ): string | undefined {
   const [assetUrl, setAssetUrl] = useState<string>();
-  const { shape, color, opacity } = options;
+  const { shape, color, assetColor, opacity } = options;
   const assetId = identity?.kind === 'asset' ? identity.assetId : undefined;
   const iconCode = identity?.kind === 'system' ? identity.iconCode : undefined;
 
@@ -42,7 +57,7 @@ export function useVisualIdentityPreviewUrl(
     };
   }, [assetId]);
 
-  if (assetUrl) return assetUrl;
+  if (assetUrl) return assetColor ? tintSvgDataUrl(assetUrl, assetColor) : assetUrl;
   if (!iconCode) return undefined;
   const nativeIcon = nativeMapIconForCode(iconCode);
   if (!nativeIcon) return undefined;

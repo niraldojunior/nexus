@@ -20,34 +20,41 @@ export default function PageHead({
 }) {
   return (
     <div
+      className="min-w-0 w-full"
       style={{
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
         gap: 24,
         marginBottom,
+        minWidth: 0,
+        width: '100%',
       }}
     >
-      <div style={{ minWidth: 0 }}>
-        <div style={{ height: 48, display: 'flex', alignItems: 'center' }}>
+      <div className="min-w-0 flex-1" style={{ minWidth: 0, flex: 1 }}>
+        <div
+          className="min-w-0 w-full"
+          style={{ height: 48, display: 'flex', alignItems: 'center', minWidth: 0, width: '100%' }}
+        >
           <h1
-            className="truncate text-app-text"
+            className="min-w-0 w-full truncate text-app-text"
             style={{
               font: 'var(--text-h1)',
               letterSpacing: 'var(--tracking-snug)',
               lineHeight: 'var(--lh-tight)',
+              minWidth: 0,
             }}
           >
             {title}
           </h1>
         </div>
         {subtitle && (
-          <p
-            className="mt-1"
+          <div
+            className="mt-1 min-w-0"
             style={{ fontSize: 'var(--fs-body-lg)', color: 'var(--text-tertiary)' }}
           >
             {subtitle}
-          </p>
+          </div>
         )}
       </div>
       {actions && (

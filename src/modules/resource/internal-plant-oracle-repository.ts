@@ -487,11 +487,18 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     );
     if (rows.length === 0) return { items: [], total, limit, offset };
 
-    const specs = await this.specMap(rows.map((row) => row.spec_id));
+    const [specs, placeAdministrativeLocations] = await Promise.all([
+      this.specMap(rows.map((row) => row.spec_id)),
+      this.placeAdministrativeLocationMap(
+        tenantId,
+        rows.flatMap((row) => (row.place_id ? [row.place_id] : [])),
+      ),
+    ]);
     const items: InternalPlantResourceRow[] = [];
     for (const row of rows) {
       const spec = specs.get(row.spec_id);
       if (!spec) continue;
+      const location = row.place_id ? placeAdministrativeLocations.get(row.place_id) : undefined;
       items.push({
         id: row.id,
         '@type': row.entity_type,
@@ -504,9 +511,35 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
           name: spec.name,
           ...(spec.manufacturer ? { manufacturer: spec.manufacturer } : {}),
         },
+        ...(location?.stateOrProvince ? { stateOrProvince: location.stateOrProvince } : {}),
+        ...(location?.city ? { city: location.city } : {}),
       });
     }
     return { items, total, limit, offset };
+  }
+
+  private async placeAdministrativeLocationMap(tenantId: string, placeIds: string[]) {
+    const ids = [...new Set(placeIds)];
+    const locations = new Map<string, { stateOrProvince?: string; city?: string }>();
+    if (ids.length === 0) return locations;
+    const rows = await this.db.all<{
+      id: string;
+      state_code: string | null;
+      city_name: string | null;
+    }>(
+      `SELECT s.id, c.state_code, c.city_name
+         FROM geographic_site s
+         JOIN geographic_administrative_city c ON c.id = s.administrative_city_id
+        WHERE s.tenant_id = ? AND s.id IN (${placeholders(ids)})`,
+      [tenantId, ...ids],
+    );
+    for (const row of rows) {
+      locations.set(row.id, {
+        ...(row.state_code ? { stateOrProvince: row.state_code } : {}),
+        ...(row.city_name ? { city: row.city_name } : {}),
+      });
+    }
+    return locations;
   }
 
   private async specMap(specIds: string[]) {

@@ -152,6 +152,11 @@ const baseColumns: DataTableColumn<InternalPlantResourceRow>[] = [
   },
 ];
 
+const administrativeLocationColumns: DataTableColumn<InternalPlantResourceRow>[] = [
+  { key: 'stateOrProvince', header: 'UF', render: (row) => row.stateOrProvince ?? '—' },
+  { key: 'city', header: 'Cidade', render: (row) => row.city ?? '—' },
+];
+
 function formatSiteAddress(address: InternalPlantSiteContext['address']): string {
   if (!address) return 'Sem endereço';
   const parts = [
@@ -168,12 +173,17 @@ function formatSiteAddress(address: InternalPlantSiteContext['address']): string
 
 function SiteContextSubtitle({ context }: { context: InternalPlantSiteContext }) {
   const hierarchy = context.hierarchy.map((item) => item.name).join(' → ');
+  const addressText = formatSiteAddress(context.address);
   return (
-    <span className="text-[0.8rem] leading-snug text-app-muted">
+    <span className="block min-w-0 text-[0.8rem] leading-snug text-app-muted">
       {context.hierarchy.length > 1 ? (
-        <span className="block">Hierarquia: {hierarchy}</span>
+        <span className="block min-w-0 truncate" title={`Hierarquia: ${hierarchy}`}>
+          Hierarquia: {hierarchy}
+        </span>
       ) : null}
-      <span className="block">Endereço: {formatSiteAddress(context.address)}</span>
+      <span className="block min-w-0 truncate" title={`Endereço: ${addressText}`}>
+        Endereço: {addressText}
+      </span>
     </span>
   );
 }
@@ -238,6 +248,9 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
 
   const columns: DataTableColumn<InternalPlantResourceRow>[] = [
     ...baseColumns,
+    ...(context?.icon.kind === 'search' || context?.icon.kind === 'type'
+      ? administrativeLocationColumns
+      : []),
     ...(canEdit
       ? [
           {
@@ -587,25 +600,29 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             />
           </section>
         ) : (
-          <section aria-label="Recursos" className="grid gap-0.5">
-            <PageHead
-              title={
-                <span className="flex min-w-0 items-center gap-3">
-                  <ContextTitleIcon icon={context.icon} siteContext={siteContext} />
-                  <span className="truncate">
-                    {context.icon.kind === 'site' && siteContext
-                      ? `[${siteContext.site.specificationName}] ${siteContext.site.name}`
-                      : context.label}
-                  </span>
-                </span>
-              }
-              subtitle={
-                context.icon.kind === 'site' && siteContext ? (
-                  <SiteContextSubtitle context={siteContext} />
-                ) : undefined
-              }
-              marginBottom="8px"
-              actions={
+          <section aria-label="Recursos" className="grid min-w-0 w-full gap-0.5">
+            {(() => {
+              const fullTitle =
+                context.icon.kind === 'site' && siteContext
+                  ? `[${siteContext.site.specificationName}] ${siteContext.site.name}`
+                  : context.label;
+              return (
+                <PageHead
+                  title={
+                    <span className="flex min-w-0 w-full items-center gap-3">
+                      <ContextTitleIcon icon={context.icon} siteContext={siteContext} />
+                      <span className="min-w-0 truncate" title={fullTitle}>
+                        {fullTitle}
+                      </span>
+                    </span>
+                  }
+                  subtitle={
+                    context.icon.kind === 'site' && siteContext ? (
+                      <SiteContextSubtitle context={siteContext} />
+                    ) : undefined
+                  }
+                  marginBottom="8px"
+                  actions={
                 canEdit && context.icon.kind === 'site' && context.key ? (
                   <div className="flex items-center gap-1.5">
                     <Button
@@ -637,6 +654,8 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 ) : undefined
               }
             />
+              );
+            })()}
             {state.status === 'error' ? (
               <div role="alert" className="grid justify-items-start gap-2 text-[0.92rem]">
                 <p className="text-app-text">{state.message}</p>

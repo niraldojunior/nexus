@@ -1053,7 +1053,6 @@ export const SCHEMA_SQL = `
         serving_site_id TEXT,
         tenant_id TEXT NOT NULL DEFAULT 'default',
         serial_number TEXT UNIQUE,
-        part_number TEXT,
         label TEXT,
         asset_reference TEXT,
         project_id TEXT,

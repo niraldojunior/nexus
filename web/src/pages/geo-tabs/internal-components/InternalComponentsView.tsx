@@ -86,7 +86,7 @@ export function InternalComponentsView({
             status={rootResource.status}
             indicatorClassName={rootVisualState.indicatorClassName}
             viewMode={viewMode}
-            className="mb-3"
+            className="mb-1.5"
           />
           <div
             data-testid="internal-components-diagram"

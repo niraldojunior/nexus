@@ -11,7 +11,6 @@ import {
   FileText,
   Fingerprint,
   FolderKanban,
-  Hash,
   Layers,
   MapPin,
   Tag,
@@ -93,8 +92,6 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch }: ResourceOvervi
   const [labelDraft, setLabelDraft] = useState('');
   const [editingSerial, setEditingSerial] = useState(false);
   const [serialDraft, setSerialDraft] = useState('');
-  const [editingPartNumber, setEditingPartNumber] = useState(false);
-  const [partNumberDraft, setPartNumberDraft] = useState('');
   const [editingAsset, setEditingAsset] = useState(false);
   const [assetDraft, setAssetDraft] = useState('');
 
@@ -188,16 +185,6 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch }: ResourceOvervi
     const next = serialDraft.trim();
     setEditingSerial(false);
     if (next !== (resource.serialNumber ?? '')) void onPatch({ serialNumber: next });
-  };
-
-  const startEditPartNumber = () => {
-    setPartNumberDraft(resource.partNumber ?? '');
-    setEditingPartNumber(true);
-  };
-  const commitPartNumber = () => {
-    const next = partNumberDraft.trim();
-    setEditingPartNumber(false);
-    if (next !== (resource.partNumber ?? '')) void onPatch({ partNumber: next });
   };
 
   const startEditAsset = () => {
@@ -583,32 +570,6 @@ export function ResourceOverviewTab({ detail, canEdit, onPatch }: ResourceOvervi
         </InlineEditRow>
       ) : resource.serialNumber ? (
         <IconInfoRow icon={Barcode} hint="Nº de série" value={resource.serialNumber} mono />
-      ) : null}
-
-      {canEdit ? (
-        <InlineEditRow
-          label="Part Number"
-          icon={Hash}
-          editing={editingPartNumber}
-          onActivate={startEditPartNumber}
-          value={<span className="font-mono text-[0.78rem]">{resource.partNumber ?? '—'}</span>}
-        >
-          <input
-            autoFocus
-            value={partNumberDraft}
-            onChange={(event) => setPartNumberDraft(event.target.value)}
-            onBlur={commitPartNumber}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') event.currentTarget.blur();
-              if (event.key === 'Escape') setEditingPartNumber(false);
-            }}
-            placeholder="Part Number…"
-            aria-label="Part Number"
-            className="geo-input geo-input-inline font-mono"
-          />
-        </InlineEditRow>
-      ) : resource.partNumber ? (
-        <IconInfoRow icon={Hash} hint="Part Number" value={resource.partNumber} mono />
       ) : null}
 
       {formatDateBR(resource.createdAt) ? (

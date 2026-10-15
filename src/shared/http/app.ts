@@ -5885,8 +5885,8 @@ const parseSaveResourceAggregateInput = (
     'usageState',
     'label',
     'serialNumber',
-    'partNumber',
     'assetReference',
+    'relatedParty',
     'supportingPhysicalResourceId',
     'placeId',
     'placeType',
@@ -5951,6 +5951,7 @@ const parseSaveResourceAggregateInput = (
       });
     }
   };
+  assertArray('relatedParty');
   assertArray('characteristic');
   assertArray('components');
   assertArray('relationships');

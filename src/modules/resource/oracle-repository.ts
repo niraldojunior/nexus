@@ -246,7 +246,7 @@ const PHYSICAL_RESOURCE_COLUMNS = `r.id, r.name, r.resource_specification_id,
        rt.code AS resource_type, r.status, r.status_code, r.place_id, r.place_type,
        r.administrative_state, r.operational_state, r.usage_state,
        r.status_changed_at, r.administrative_state_changed_at, r.operational_state_changed_at, r.usage_state_changed_at,
-       r.serial_number, r.part_number, r.label, r.asset_reference, r.project_id,
+       r.serial_number, r.label, r.asset_reference, r.project_id,
        r.valid_for_start, r.valid_for_end, r.related_party, r.characteristics, r.tenant_id,
        r.created_at, r.updated_at`;
 
@@ -1427,9 +1427,9 @@ export class OracleResourceRepository implements IResourceRepository {
        (id, name, resource_specification_id, status, status_code,
         place_id, place_type, serving_site_id, administrative_state, operational_state, usage_state,
         status_changed_at, administrative_state_changed_at, operational_state_changed_at, usage_state_changed_at,
-        serial_number, part_number, label, asset_reference, project_id, valid_for_start, valid_for_end,
+        serial_number, label, asset_reference, project_id, valid_for_start, valid_for_end,
         related_party, characteristics, tenant_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        resource_specification_id = excluded.resource_specification_id,
@@ -1446,7 +1446,6 @@ export class OracleResourceRepository implements IResourceRepository {
        operational_state_changed_at = excluded.operational_state_changed_at,
        usage_state_changed_at = excluded.usage_state_changed_at,
        serial_number = excluded.serial_number,
-       part_number = excluded.part_number,
        label = excluded.label,
        asset_reference = excluded.asset_reference,
        project_id = excluded.project_id,
@@ -1469,7 +1468,6 @@ export class OracleResourceRepository implements IResourceRepository {
         resource.usageState,
         ...stateChangedAtParams(resource),
         resource.serialNumber ?? null,
-        resource.partNumber ?? null,
         resource.label ?? null,
         resource.assetReference ?? null,
         resource.projectId ?? null,
@@ -3300,7 +3298,6 @@ export class OracleResourceRepository implements IResourceRepository {
     }
     if (row.status_code) resource.statusCode = row.status_code;
     if (row.serial_number) resource.serialNumber = row.serial_number;
-    if (row.part_number) resource.partNumber = row.part_number;
     if (row.label) resource.label = row.label;
     if (row.asset_reference) resource.assetReference = row.asset_reference;
     if (row.project_id) resource.projectId = row.project_id;

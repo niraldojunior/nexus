@@ -63,13 +63,13 @@ describe('InternalComponentsView', () => {
     const leaves = screen.getByTestId('root-component-leaves');
     const containers = screen.getByTestId('root-component-containers');
 
-    expect(screen.getByText('CDOE-01')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-graph-header').textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'CDOE-01 (CDOE 1:8 NC-NC)',
+    );
     expect(screen.getByTestId('resource-icon-CDOE')).toBeInTheDocument();
-    expect(screen.getByText('CDOE 1:8 NC-NC')).toBeInTheDocument();
     expect(screen.queryByText('CDOE · 3 componentes')).not.toBeInTheDocument();
     const root = screen.getByText('CDOE-01').closest('section');
     expect(root).toHaveClass('bg-[var(--surface-muted-hover)]', 'border-[var(--border-strong)]');
-    expect(root?.querySelector('[class*="bg-[var(--surface-subtle)]"]')).not.toBeNull();
     expect(root?.querySelector('.bg-status-green')).not.toBeNull();
     const contentArea = root?.querySelector('.bg-white');
     expect(contentArea).not.toBeNull();
@@ -115,8 +115,9 @@ describe('InternalComponentsView', () => {
 
     expect(detalhada).toHaveAttribute('aria-pressed', 'true');
     expect(simplificada).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('CDOE-01')).toBeInTheDocument();
-    expect(screen.getByText('CDOE 1:8 NC-NC')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-graph-header').textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'CDOE-01 (CDOE 1:8 NC-NC)',
+    );
     expect(screen.getByTestId('component-port-01')).toHaveAttribute('data-view-mode', 'detailed');
     expect(screen.getByTestId('component-splitter')).toHaveAttribute('data-view-mode', 'detailed');
   });

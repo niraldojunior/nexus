@@ -68,11 +68,6 @@ const TRACKED_FIELDS: Array<{
     read: (s) => (typeof s.serialNumber === 'string' ? s.serialNumber : null),
   },
   {
-    key: 'partNumber',
-    label: 'Part Number',
-    read: (s) => (typeof s.partNumber === 'string' ? s.partNumber : null),
-  },
-  {
     key: 'place',
     label: 'Local',
     read: (s) =>

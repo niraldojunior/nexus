@@ -18,6 +18,7 @@ import {
   CatalogTreeCombobox,
   type CatalogResourceTypeRef,
 } from '../../components/CatalogTreePicker';
+import { ResourceIcon } from '../../components/ResourceIcon';
 import Button from '../../components/ui/Button';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { useModalDialog } from '../../hooks/useModalDialog';
@@ -41,7 +42,6 @@ import {
 } from '../../services/geoApi';
 import { SitePinMap } from './SitePinMap';
 import {
-  GeoPlaceSection,
   persistPendingGeoPlace,
   type GeoPlaceDraft,
   type GeoPlaceType,
@@ -112,7 +112,6 @@ type Draft = {
   usageState: string;
   label: string;
   serialNumber: string;
-  partNumber: string;
   assetReference: string;
   notes: string;
   placeId: string | null;
@@ -140,6 +139,10 @@ const notesOf = (characteristic: EditorCharacteristic[] | undefined): string => 
   const found = characteristic?.find((c) => NOTES_NAMES.includes(c.name));
   return found?.value === undefined || found.value === null ? '' : String(found.value);
 };
+
+const manufacturerNameOf = (specification: ResourceSpecification | undefined): string =>
+  specification?.relatedParty.find((party) => party.role === 'manufacturer')?.name ??
+  'Não informado';
 
 /** Rede externa: o `place` é a Location/Address do ponto; o site atendido vive na characteristic `servingSite`. */
 const placeIsSite = (snap: ResourceEditorSnapshot | null): boolean => {
@@ -372,7 +375,6 @@ export function ResourceEditorModal({
             usageState: snap.resource.usageState ?? 'idle',
             label: snap.resource.label ?? '',
             serialNumber: snap.resource.serialNumber ?? '',
-            partNumber: snap.resource.partNumber ?? '',
             assetReference: snap.resource.assetReference ?? '',
             notes: notesOf(snap.resource.characteristic),
             placeId:
@@ -406,7 +408,6 @@ export function ResourceEditorModal({
             usageState: 'idle',
             label: '',
             serialNumber: '',
-            partNumber: '',
             assetReference: '',
             notes: '',
             placeId: initialPlace?.id ?? null,
@@ -432,6 +433,7 @@ export function ResourceEditorModal({
   }, [resourceId, initialTypeId, initialPlace, ensureRules]);
 
   const type = draft ? typeById.get(draft.typeId) : undefined;
+  const manufacturerName = manufacturerNameOf(draft ? specById.get(draft.specId) : undefined);
   const nature: EditorResourceKind =
     type?.nature ?? snapshot?.resource['@type'] ?? 'PhysicalResource';
 
@@ -587,7 +589,6 @@ export function ResourceEditorModal({
       ...(nature === 'PhysicalResource'
         ? {
             serialNumber: draft.serialNumber,
-            partNumber: draft.partNumber,
             assetReference: draft.assetReference,
           }
         : {}),
@@ -646,19 +647,26 @@ export function ResourceEditorModal({
       >
         <nav
           aria-label="Recurso"
-          className="flex w-[210px] shrink-0 flex-col gap-1 bg-app-sidebar border-r border-app-border p-4 max-sm:hidden"
+          className="flex w-[220px] shrink-0 flex-col gap-1 bg-app-sidebar border-r border-app-border p-4 max-sm:hidden"
         >
-          <div className="mb-3 flex items-center gap-2.5 border-b border-app-border pb-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-app-accent-soft text-app-text">
-              <Boxes size={18} aria-hidden="true" />
+          <div className="mb-3.5 flex items-center gap-3 border-b border-app-border pb-3.5">
+            <span className="grid size-11 shrink-0 place-items-center rounded-[12px] bg-app-accent-soft text-app-text">
+              {type ? (
+                <ResourceIcon
+                  resource={type.code}
+                  visualIdentity={type.visualIdentity}
+                  variant="glyph"
+                  size={26}
+                />
+              ) : (
+                <Boxes size={26} aria-hidden="true" />
+              )}
             </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[0.86rem] font-semibold text-app-text">
-                {resourceId ? draft?.name || 'Recurso' : 'Novo recurso'}
-              </span>
-              <span className="truncate text-[0.72rem] text-app-muted">
-                {type?.name ?? 'Sem tipo'}
-              </span>
+            <span
+              className="truncate text-[1.15rem] font-semibold leading-tight text-app-text"
+              title={type?.name ?? 'Sem tipo'}
+            >
+              {type?.name ?? 'Sem tipo'}
             </span>
           </div>
           {TABS.map((t) => (
@@ -681,11 +689,14 @@ export function ResourceEditorModal({
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-between gap-3 border-b border-app-border px-6 py-4">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
                 {resourceId ? 'Editar recurso' : 'Novo recurso'}
               </p>
-              <h2 className="truncate text-[1.15rem] font-semibold text-app-text">
+              <h2
+                className="truncate text-[1.15rem] font-semibold text-app-text"
+                title={draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
+              >
                 {draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
               </h2>
             </div>
@@ -728,6 +739,7 @@ export function ResourceEditorModal({
                 onOpenTree={ensureTree}
                 typeName={type?.name}
                 nature={nature}
+                manufacturerName={manufacturerName}
                 specs={specsOfDraftType}
                 onType={selectType}
                 patch={patch}
@@ -826,6 +838,7 @@ function GeneralTab({
   onOpenTree,
   typeName,
   nature,
+  manufacturerName,
   specs,
   onType,
   patch,
@@ -837,6 +850,7 @@ function GeneralTab({
   onOpenTree: () => void;
   typeName: string | undefined;
   nature: EditorResourceKind;
+  manufacturerName: string;
   specs: ResourceSpecification[];
   onType: (ref: CatalogResourceTypeRef) => void;
   patch: (c: Partial<Draft>) => void;
@@ -848,11 +862,11 @@ function GeneralTab({
     'aria-describedby': attempted && bad ? 'resource-editor-error' : undefined,
   });
   return (
-    <div className="grid gap-6">
-      <h3 className="-mb-3 border-b border-app-border pb-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
+    <div className="grid gap-3">
+      <h3 className="border-b border-app-border pb-1 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
         Identificação
       </h3>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <label className={labelClass}>
           Nome
           <input
@@ -871,8 +885,18 @@ function GeneralTab({
             onChange={(e) => patch({ label: e.target.value })}
           />
         </label>
+        {nature === 'PhysicalResource' ? (
+          <label className={labelClass}>
+            Número de série
+            <input
+              className={inputClass}
+              value={draft.serialNumber}
+              onChange={(e) => patch({ serialNumber: e.target.value })}
+            />
+          </label>
+        ) : null}
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div className={labelClass}>
           <span>Tipo</span>
           <CatalogTreeCombobox
@@ -902,39 +926,25 @@ function GeneralTab({
             ))}
           </select>
         </label>
+        {nature === 'PhysicalResource' ? (
+          <div className={labelClass}>
+            <span>Fabricante</span>
+            <output className={`${inputClass} flex items-center bg-app-hover text-app-muted`}>
+              {manufacturerName}
+            </output>
+          </div>
+        ) : null}
       </div>
       {nature === 'PhysicalResource' ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className={labelClass}>
-            Número de série
-            <input
-              className={inputClass}
-              value={draft.serialNumber}
-              onChange={(e) => patch({ serialNumber: e.target.value })}
-            />
-          </label>
-          <label className={labelClass}>
-            Part number
-            <input
-              className={inputClass}
-              value={draft.partNumber}
-              onChange={(e) => patch({ partNumber: e.target.value })}
-            />
-          </label>
-          <label className={labelClass}>
-            Referência de ativo
-            <input
-              className={inputClass}
-              value={draft.assetReference}
-              onChange={(e) => patch({ assetReference: e.target.value })}
-            />
-          </label>
-        </div>
+        <label className={labelClass}>
+          Código ERP
+          <input
+            className={inputClass}
+            value={draft.assetReference}
+            onChange={(e) => patch({ assetReference: e.target.value })}
+          />
+        </label>
       ) : null}
-      <h3 className="-mb-3 border-b border-app-border pb-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
-        Localização e observações
-      </h3>
-      <GeoPlaceSection value={draft.geoPlace} onChange={(geoPlace) => patch({ geoPlace })} />
       <label className={labelClass}>
         Observação
         <textarea
@@ -1161,8 +1171,8 @@ function CharacteristicsTab({
   onChange: (name: string, value: string) => void;
 }) {
   return (
-    <div className="grid gap-6">
-      <section aria-label="Nível de especificação" className="grid gap-2">
+    <div className="grid gap-4">
+      <section aria-label="Nível de especificação" className="grid gap-1.5">
         <h3 className="text-[0.85rem] font-semibold text-app-text">Nível de especificação</h3>
         {specLevel.length === 0 ? (
           <p className="text-[0.82rem] text-app-muted">Nenhuma característica de especificação.</p>
@@ -1180,12 +1190,12 @@ function CharacteristicsTab({
           ))
         )}
       </section>
-      <section aria-label="Nível de instância" className="grid gap-3 sm:grid-cols-2">
-        <h3 className="text-[0.85rem] font-semibold text-app-text sm:col-span-2">
+      <section aria-label="Nível de instância" className="grid gap-2 sm:grid-cols-3">
+        <h3 className="text-[0.85rem] font-semibold text-app-text sm:col-span-3">
           Nível de instância
         </h3>
         {instanceDefs.length === 0 ? (
-          <p className="text-[0.82rem] text-app-muted sm:col-span-2">
+          <p className="text-[0.82rem] text-app-muted sm:col-span-3">
             Este tipo não define características de instância.
           </p>
         ) : (
@@ -1613,8 +1623,7 @@ const HISTORY_FIELDS: Array<[string, string]> = [
   ['usageState', 'Estado de uso'],
   ['label', 'Rótulo'],
   ['serialNumber', 'Nº de série'],
-  ['partNumber', 'Part number'],
-  ['assetReference', 'Referência de ativo'],
+  ['assetReference', 'Código ERP'],
 ];
 
 const historyText = (v: unknown): string =>

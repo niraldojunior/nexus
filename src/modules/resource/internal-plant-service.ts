@@ -45,6 +45,24 @@ export class InternalPlantService {
     });
   }
 
+  public async getSiteContext(siteId: string, context: RequestContext) {
+    const normalizedSiteId = siteId.trim();
+    if (!normalizedSiteId) {
+      throw new AppError('siteId is required', {
+        code: 'INTERNAL_PLANT_SITE_ID_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const result = await this.repository.getSiteContext(normalizedSiteId, context.tenantId);
+    if (!result) {
+      throw new AppError('site not found', {
+        code: 'GEOGRAPHIC_SITE_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return result;
+  }
+
   public async listResources(
     options: {
       q?: string;

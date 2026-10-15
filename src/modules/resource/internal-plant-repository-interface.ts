@@ -3,6 +3,7 @@ import type {
   InternalPlantLocationRootNode,
   InternalPlantResourcePage,
   InternalPlantResourceQuery,
+  InternalPlantSiteContext,
 } from './internal-plant-domain.js';
 
 export interface IInternalPlantRepository {
@@ -12,6 +13,8 @@ export interface IInternalPlantRepository {
     nodeId: string,
     options: { tenantId: string; limit: number; offset: number },
   ): Promise<InternalPlantLocationChildrenPage>;
+
+  getSiteContext(siteId: string, tenantId: string): Promise<InternalPlantSiteContext | undefined>;
 
   listResources(query: InternalPlantResourceQuery): Promise<InternalPlantResourcePage>;
 }

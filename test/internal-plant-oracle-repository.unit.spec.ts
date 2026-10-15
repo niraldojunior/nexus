@@ -115,7 +115,96 @@ test('país e UF não consultam o banco', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('listResources filtra place_id exato, sem CONNECT BY', async () => {
+test('getSiteContext devolve a cadeia raiz→site e o endereço do site selecionado', async () => {
+  const { db, calls } = fakeDb([
+    [
+      {
+        id: 'building-1',
+        name: 'Prédio A',
+        specification_name: 'Prédio',
+        site_specification_id: 'building-spec',
+        geographic_address_id: null,
+        street_type: null,
+        street_name: null,
+        street_nr: null,
+        locality: null,
+        city: null,
+        state_or_province: null,
+        postcode: null,
+        lvl: 3,
+      },
+      {
+        id: 'site-1',
+        name: 'Sala Técnica',
+        specification_name: 'Sala Técnica',
+        site_specification_id: 'room-spec',
+        geographic_address_id: 'a1',
+        street_type: 'Rua',
+        street_name: 'Cinco de Julho',
+        street_nr: '237',
+        locality: null,
+        city: 'Niterói',
+        state_or_province: 'RJ',
+        postcode: '24220110',
+        lvl: 1,
+      },
+    ],
+    [{ site_specification_id: 'room-spec', icon_code: 'Room', icon_asset_id: null }],
+  ]);
+  const result = await new OracleInternalPlantRepository(db).getSiteContext('site-1', 'tenant-a');
+  assert.deepEqual(
+    result?.hierarchy.map((item) => item.name),
+    ['Prédio A', 'Sala Técnica'],
+  );
+  assert.deepEqual(result?.site.visualIdentity, { kind: 'system', iconCode: 'Room' });
+  assert.equal(result?.site.id, 'site-1');
+  assert.equal(result?.address?.city, 'Niterói');
+  assert.match(calls[0]!.sql, /CONNECT BY NOCYCLE/);
+  assert.deepEqual(calls[0]!.params, ['site-1', 'tenant-a']);
+});
+
+test('listResources herda o fabricante da ResourceSpecification', async () => {
+  const { db } = fakeDb([
+    [
+      {
+        id: 'resource-1',
+        entity_type: 'PhysicalResource',
+        name: 'OLT-01',
+        spec_id: 'spec-1',
+        status: 'active',
+        status_code: null,
+        place_id: 'site-1',
+        total: 1,
+      },
+    ],
+    [
+      {
+        spec_id: 'spec-1',
+        spec_name: 'MA5800',
+        related_party: JSON.stringify([
+          { id: 'manufacturer-1', name: 'Huawei', role: 'manufacturer' },
+        ]),
+        type_id: 'type-1',
+        type_code: 'OLT',
+        type_name: 'OLT',
+        icon_code: null,
+        icon_asset_id: null,
+      },
+    ],
+  ]);
+  const result = await new OracleInternalPlantRepository(db).listResources({
+    tenantId: 'tenant-a',
+    siteId: 'site-1',
+    limit: 50,
+    offset: 0,
+  });
+  assert.deepEqual(result.items[0]?.resourceSpecification.manufacturer, {
+    id: 'manufacturer-1',
+    name: 'Huawei',
+  });
+});
+
+test('listResources filtra place_id exato, sem resolução de endereço', async () => {
   const { db, calls } = fakeDb([[]]);
   await new OracleInternalPlantRepository(db).listResources({
     tenantId: 'tenant-a',

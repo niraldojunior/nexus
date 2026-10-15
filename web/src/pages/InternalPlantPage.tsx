@@ -1,4 +1,4 @@
-import { Layers, MapPin, Plus, Search, Trash2, X } from 'lucide-react';
+import { Layers, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   useEffect,
   useState,
@@ -18,6 +18,11 @@ import {
   useInternalPlantResources,
 } from '../hooks/useInternalPlantResources';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useVisualIdentityPreviewUrl } from '../hooks/useVisualIdentityPreviewUrl';
+import {
+  STUDIO_GEO_CUSTOM_ICON_COLOR,
+  STUDIO_GEO_NEUTRAL_ICON_COLOR,
+} from '../utils/studioGeoDefaults';
 import { useSession } from '../hooks/useSession';
 import {
   fetchSiteReferences,
@@ -26,8 +31,10 @@ import {
   type SiteReferences,
 } from '../services/siteEditorApi';
 import {
+  fetchInternalPlantSiteContext,
   terminateInternalPlantResource,
   type InternalPlantLocationNode,
+  type InternalPlantSiteContext,
   InternalPlantResourceFilter,
   InternalPlantResourceRow,
 } from '../services/internalPlantApi';
@@ -82,12 +89,33 @@ function StatusLight({ status }: { status: string }) {
   );
 }
 
+function SiteTitleIcon({ context }: { context: InternalPlantSiteContext | null }) {
+  const identity = context?.site.visualIdentity;
+  const previewUrl = useVisualIdentityPreviewUrl(identity, 24, {
+    shape: 'none',
+    color: STUDIO_GEO_NEUTRAL_ICON_COLOR,
+    assetColor: STUDIO_GEO_CUSTOM_ICON_COLOR,
+  });
+  return previewUrl ? (
+    <img src={previewUrl} alt="" aria-hidden="true" className="h-6 w-6 shrink-0" />
+  ) : (
+    <MapPin size={22} aria-hidden="true" className="shrink-0 text-app-muted" />
+  );
+}
+
 /** Ícone do título: o mesmo da origem do filtro (Local, tipo de recurso ou busca). */
-function ContextTitleIcon({ icon }: { icon: ContextIcon }) {
+function ContextTitleIcon({
+  icon,
+  siteContext,
+}: {
+  icon: ContextIcon;
+  siteContext: InternalPlantSiteContext | null;
+}) {
+  if (icon.kind === 'site') return <SiteTitleIcon context={siteContext} />;
   if (icon.kind === 'type' && icon.resourceTypeCode) {
-    return <ResourceIcon resource={icon.resourceTypeCode} variant="glyph" size={24} />;
+    return <ResourceIcon resource={icon.resourceTypeCode} variant="glyph" size={24} catalogTone />;
   }
-  const Icon = icon.kind === 'search' ? Search : icon.kind === 'type' ? Layers : MapPin;
+  const Icon = icon.kind === 'search' ? Search : Layers;
   return <Icon size={22} aria-hidden="true" className="shrink-0 text-app-muted" />;
 }
 
@@ -107,25 +135,55 @@ const baseColumns: DataTableColumn<InternalPlantResourceRow>[] = [
     key: 'icon',
     header: <span className="sr-only">Ícone</span>,
     cellClassName: 'w-10',
-    render: (row) => <ResourceIcon resource={row.resourceType.code} variant="glyph" />,
+    render: (row) => <ResourceIcon resource={row.resourceType.code} variant="glyph" catalogTone />,
   },
   { key: 'name', header: 'Nome', render: (row) => row.name },
   { key: 'type', header: 'Tipo', render: (row) => row.resourceType.name },
   { key: 'spec', header: 'Especificação', render: (row) => row.resourceSpecification.name },
   {
+    key: 'manufacturer',
+    header: 'Fabricante',
+    render: (row) => row.resourceSpecification.manufacturer?.name ?? '—',
+  },
+  {
     key: 'status',
     header: <div className="text-center">Status</div>,
     render: (row) => <StatusLight status={row.statusCode ?? row.status} />,
   },
-  { key: 'uf', header: 'UF', render: (row) => row.stateOrProvince ?? '—' },
-  { key: 'city', header: 'Município', render: (row) => row.city ?? '—' },
 ];
+
+function formatSiteAddress(address: InternalPlantSiteContext['address']): string {
+  if (!address) return 'Sem endereço';
+  const parts = [
+    address.streetType,
+    address.streetName,
+    address.streetNr ? `nº ${address.streetNr}` : undefined,
+    address.locality,
+    address.city,
+    address.stateOrProvince,
+    address.postcode,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : 'Sem endereço';
+}
+
+function SiteContextSubtitle({ context }: { context: InternalPlantSiteContext }) {
+  const hierarchy = context.hierarchy.map((item) => item.name).join(' → ');
+  return (
+    <span className="text-[0.8rem] leading-snug text-app-muted">
+      {context.hierarchy.length > 1 ? (
+        <span className="block">Hierarquia: {hierarchy}</span>
+      ) : null}
+      <span className="block">Endereço: {formatSiteAddress(context.address)}</span>
+    </span>
+  );
+}
 
 export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?: () => void }) {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<DockTab>('locations');
   const [draft, setDraft] = useState('');
   const [context, setContext] = useState<Context | null>(null);
+  const [siteContext, setSiteContext] = useState<InternalPlantSiteContext | null>(null);
   const [offset, setOffset] = useState(0);
   const [retryToken, setRetryToken] = useState(0);
   const [dockWidth, setDockWidth] = useState(readStoredDockWidth);
@@ -158,6 +216,25 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const [pendingDelete, setPendingDelete] = useState<InternalPlantResourceRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (context?.icon.kind !== 'site' || !context.key) {
+      setSiteContext(null);
+      return;
+    }
+    let active = true;
+    setSiteContext(null);
+    void fetchInternalPlantSiteContext(context.key)
+      .then((next) => {
+        if (active) setSiteContext(next);
+      })
+      .catch(() => {
+        if (active) setSiteContext(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [context?.icon.kind, context?.key, treeToken]);
 
   const columns: DataTableColumn<InternalPlantResourceRow>[] = [
     ...baseColumns,
@@ -212,17 +289,17 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     setRetryToken((n) => n + 1);
   };
 
-  const askRemoveSite = async (node: InternalPlantLocationNode) => {
-    if (!node.refId) return;
+  const askRemoveSite = async (target: { refId?: string; label: string }) => {
+    if (!target.refId) return;
     setSiteRemovalError(null);
     let blocking: string[] = [];
     try {
-      const refs = await fetchSiteReferences(node.refId);
+      const refs = await fetchSiteReferences(target.refId);
       blocking = refs.blocking ? describeSiteReferences(refs) : [];
     } catch {
       // Sem o impacto, a confirmação segue e o servidor ainda bloqueia com 409.
     }
-    setPendingSiteRemoval({ id: node.refId, name: node.label, blocking });
+    setPendingSiteRemoval({ id: target.refId, name: target.label, blocking });
   };
 
   const confirmRemoveSite = async () => {
@@ -395,7 +472,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           >
             <span className={tabLabelClass(tab === 'types')}>
               <Layers size={14} aria-hidden="true" />
-              Tipos
+              Recursos
             </span>
           </button>
         </div>
@@ -514,28 +591,49 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             <PageHead
               title={
                 <span className="flex min-w-0 items-center gap-3">
-                  <ContextTitleIcon icon={context.icon} />
-                  <span className="truncate">{context.label}</span>
+                  <ContextTitleIcon icon={context.icon} siteContext={siteContext} />
+                  <span className="truncate">
+                    {context.icon.kind === 'site' && siteContext
+                      ? `[${siteContext.site.specificationName}] ${siteContext.site.name}`
+                      : context.label}
+                  </span>
                 </span>
+              }
+              subtitle={
+                context.icon.kind === 'site' && siteContext ? (
+                  <SiteContextSubtitle context={siteContext} />
+                ) : undefined
               }
               marginBottom="8px"
               actions={
-                canEdit && (context.leafTypeId || (context.icon.kind === 'site' && context.key)) ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    aria-label="Novo recurso"
-                    title="Novo recurso"
-                    onClick={() =>
-                      setEditor(
-                        context.leafTypeId
-                          ? { typeId: context.leafTypeId }
-                          : { initialPlace: { id: context.key!, name: context.label } },
-                      )
-                    }
-                  >
-                    <Plus size={16} aria-hidden="true" />
-                  </Button>
+                canEdit && context.icon.kind === 'site' && context.key ? (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      aria-label="Editar local"
+                      title="Editar local"
+                      style={{ width: 32, padding: 0 }}
+                      onClick={() => setSiteEditor({ siteId: context.key })}
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="danger-soft"
+                      size="sm"
+                      aria-label="Remover local"
+                      title="Remover local"
+                      style={{ width: 32, padding: 0 }}
+                      onClick={() =>
+                        void askRemoveSite({
+                          refId: context.key,
+                          label: siteContext?.site.name ?? context.label,
+                        })
+                      }
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </Button>
+                  </div>
                 ) : undefined
               }
             />
@@ -551,39 +649,67 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 Carregando recursos...
               </p>
             ) : (
-              <>
-                <DataTablePagination
-                  navLabel="Paginação superior"
-                  count={state.page.items.length}
-                  total={state.page.total}
-                  label="recursos"
-                  offset={offset}
-                  pageSize={INTERNAL_PLANT_PAGE_SIZE}
-                  onOffsetChange={setOffset}
-                />
-                <DataTable
-                  className="internal-plant-table"
-                  columns={columns}
-                  rows={state.page.items}
-                  rowKey={(row) => `${row['@type']}:${row.id}`}
-                  {...(canEdit
-                    ? {
-                        onRowClick: (row: InternalPlantResourceRow) =>
-                          setEditor({ resourceId: row.id }),
+              (() => {
+                const canCreateResource = Boolean(
+                  canEdit &&
+                    (context.leafTypeId || (context.icon.kind === 'site' && context.key)),
+                );
+                return (
+                  <>
+                    <DataTablePagination
+                      navLabel="Paginação superior"
+                      count={state.page.items.length}
+                      total={state.page.total}
+                      label="recursos"
+                      offset={offset}
+                      pageSize={INTERNAL_PLANT_PAGE_SIZE}
+                      onOffsetChange={setOffset}
+                      action={
+                        canCreateResource ? (
+                          <button
+                            type="button"
+                            aria-label="Novo recurso"
+                            title="Novo recurso"
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[var(--vt-yellow-light)] bg-[var(--vt-yellow-light)] text-[var(--text-primary)] transition hover:brightness-95"
+                            onClick={() =>
+                              setEditor(
+                                context.leafTypeId
+                                  ? { typeId: context.leafTypeId }
+                                  : { initialPlace: { id: context.key!, name: context.label } },
+                              )
+                            }
+                          >
+                            <Plus size={14} aria-hidden="true" />
+                          </button>
+                        ) : undefined
                       }
-                    : {})}
-                  emptyMessage="Nenhum recurso encontrado."
-                />
-                <DataTablePagination
-                  navLabel="Paginação inferior"
-                  count={state.page.items.length}
-                  total={state.page.total}
-                  label="recursos"
-                  offset={offset}
-                  pageSize={INTERNAL_PLANT_PAGE_SIZE}
-                  onOffsetChange={setOffset}
-                />
-              </>
+                    />
+                    <DataTable
+                      className="internal-plant-table"
+                      columns={columns}
+                      rows={state.page.items}
+                      rowKey={(row) => `${row['@type']}:${row.id}`}
+                      {...(canEdit
+                        ? {
+                            onRowClick: (row: InternalPlantResourceRow) =>
+                              setEditor({ resourceId: row.id }),
+                          }
+                        : {})}
+                      emptyMessage="Nenhum recurso encontrado."
+                    />
+                    <DataTablePagination
+                      navLabel="Paginação inferior"
+                      count={state.page.items.length}
+                      total={state.page.total}
+                      label="recursos"
+                      offset={offset}
+                      pageSize={INTERNAL_PLANT_PAGE_SIZE}
+                      onOffsetChange={setOffset}
+                      reserveActionSpace={canCreateResource}
+                    />
+                  </>
+                );
+              })()
             )}
           </section>
         )}

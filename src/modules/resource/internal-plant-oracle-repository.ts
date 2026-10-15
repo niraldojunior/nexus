@@ -7,6 +7,7 @@ import type {
   InternalPlantResourcePage,
   InternalPlantResourceQuery,
   InternalPlantResourceRow,
+  InternalPlantSiteContext,
   InternalPlantVisualIdentity,
 } from './internal-plant-domain.js';
 import type { IInternalPlantRepository } from './internal-plant-repository-interface.js';
@@ -167,6 +168,76 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       sql: `s.tenant_id = ? AND s.administrative_city_id = ?
             AND s.parent_site_id IS NULL AND s.status <> 'Retired'`,
       params: [tenantId, cityId],
+    };
+  }
+
+  public async getSiteContext(
+    siteId: string,
+    tenantId: string,
+  ): Promise<InternalPlantSiteContext | undefined> {
+    const rows = await this.db.all<{
+      id: string;
+      name: string;
+      specification_name: string;
+      site_specification_id: string;
+      geographic_address_id: string | null;
+      street_type: string | null;
+      street_name: string | null;
+      street_nr: string | null;
+      locality: string | null;
+      city: string | null;
+      state_or_province: string | null;
+      postcode: string | null;
+      lvl: number | string;
+    }>(
+      `SELECT x.id, x.name, sp.name AS specification_name,
+              x.site_specification_id AS site_specification_id, x.geographic_address_id,
+              a.street_type, a.street_name, a.street_nr, a.locality, a.city,
+              a.state_or_province, a.postcode, LEVEL AS lvl
+         FROM geographic_site x
+         JOIN geographic_site_specification sp ON sp.id = x.site_specification_id
+         LEFT JOIN geographic_address a ON a.id = x.geographic_address_id
+        START WITH x.id = ? AND x.tenant_id = ? AND x.status <> 'Retired'
+      CONNECT BY NOCYCLE PRIOR x.parent_site_id = x.id
+        ORDER BY LEVEL DESC`,
+      [siteId, tenantId],
+    );
+    const selected = rows[rows.length - 1];
+    if (!selected) return undefined;
+    const hierarchy = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      specificationName: row.specification_name,
+    }));
+    const address = [
+      selected.street_type,
+      selected.street_name,
+      selected.street_nr,
+      selected.locality,
+      selected.city,
+      selected.state_or_province,
+      selected.postcode,
+    ].some(Boolean)
+      ? {
+          ...(selected.street_type ? { streetType: selected.street_type } : {}),
+          ...(selected.street_name ? { streetName: selected.street_name } : {}),
+          ...(selected.street_nr ? { streetNr: selected.street_nr } : {}),
+          ...(selected.locality ? { locality: selected.locality } : {}),
+          ...(selected.city ? { city: selected.city } : {}),
+          ...(selected.state_or_province ? { stateOrProvince: selected.state_or_province } : {}),
+          ...(selected.postcode ? { postcode: selected.postcode } : {}),
+        }
+      : undefined;
+    const visualIdentity = (await this.identityMap(tenantId, [selected.site_specification_id])).get(
+      selected.site_specification_id,
+    );
+    return {
+      site: {
+        ...hierarchy[hierarchy.length - 1]!,
+        ...(visualIdentity ? { visualIdentity } : {}),
+      },
+      hierarchy,
+      ...(address ? { address } : {}),
     };
   }
 
@@ -416,15 +487,11 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     );
     if (rows.length === 0) return { items: [], total, limit, offset };
 
-    const [specs, places] = await Promise.all([
-      this.specMap(rows.map((row) => row.spec_id)),
-      this.placeMap(rows.map((row) => row.place_id).filter((id): id is string => Boolean(id))),
-    ]);
+    const specs = await this.specMap(rows.map((row) => row.spec_id));
     const items: InternalPlantResourceRow[] = [];
     for (const row of rows) {
       const spec = specs.get(row.spec_id);
       if (!spec) continue;
-      const place = row.place_id ? places.get(row.place_id) : undefined;
       items.push({
         id: row.id,
         '@type': row.entity_type,
@@ -432,10 +499,11 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
         status: row.status,
         ...(row.status_code ? { statusCode: row.status_code } : {}),
         resourceType: spec.type,
-        resourceSpecification: { id: row.spec_id, name: spec.name },
-        ...(place ? { place: { id: place.id, name: place.name } } : {}),
-        ...(place?.uf ? { stateOrProvince: place.uf } : {}),
-        ...(place?.city ? { city: place.city } : {}),
+        resourceSpecification: {
+          id: row.spec_id,
+          name: spec.name,
+          ...(spec.manufacturer ? { manufacturer: spec.manufacturer } : {}),
+        },
       });
     }
     return { items, total, limit, offset };
@@ -447,6 +515,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       string,
       {
         name: string;
+        manufacturer?: { id: string; name?: string };
         type: { id: string; code: string; name: string; iconCode?: string; iconAssetId?: string };
       }
     >();
@@ -454,22 +523,38 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
     const rows = await this.db.all<{
       spec_id: string;
       spec_name: string;
+      related_party: string | null;
       type_id: string;
       type_code: string;
       type_name: string;
       icon_code: string | null;
       icon_asset_id: string | null;
     }>(
-      `SELECT rs.id AS spec_id, rs.name AS spec_name, rt.id AS type_id, rt.code AS type_code,
-              rt.name AS type_name, rt.icon_code AS icon_code, rt.icon_asset_id AS icon_asset_id
+      `SELECT rs.id AS spec_id, rs.name AS spec_name, rs.related_party AS related_party,
+              rt.id AS type_id, rt.code AS type_code, rt.name AS type_name,
+              rt.icon_code AS icon_code, rt.icon_asset_id AS icon_asset_id
          FROM resource_specification rs
          JOIN resource_type rt ON rt.id = rs.resource_type_id
         WHERE rs.id IN (${placeholders(ids)})`,
       ids,
     );
     for (const row of rows) {
+      const relatedParty = JSON.parse(row.related_party || '[]') as Array<{
+        id: string;
+        name?: string;
+        role?: string;
+      }>;
+      const manufacturer = relatedParty.find((party) => party.role === 'manufacturer');
       map.set(row.spec_id, {
         name: row.spec_name,
+        ...(manufacturer
+          ? {
+              manufacturer: {
+                id: manufacturer.id,
+                ...(manufacturer.name ? { name: manufacturer.name } : {}),
+              },
+            }
+          : {}),
         type: {
           id: row.type_id,
           code: row.type_code,
@@ -477,59 +562,6 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
           ...(row.icon_code ? { iconCode: row.icon_code } : {}),
           ...(row.icon_asset_id ? { iconAssetId: row.icon_asset_id } : {}),
         },
-      });
-    }
-    return map;
-  }
-
-  // UF/Município vêm do diretório, a partir do município do Site ou do ancestral mais próximo
-  // que tenha município vinculado (CONNECT BY NOCYCLE em lote: uma consulta para a página toda).
-  private async placeMap(siteIds: string[]) {
-    const ids = [...new Set(siteIds)];
-    const map = new Map<string, { id: string; name: string; uf?: string; city?: string }>();
-    if (ids.length === 0) return map;
-    const chain = await this.db.all<{
-      root_id: string;
-      root_name: string;
-      lvl: number | string;
-      city_id: string | null;
-    }>(
-      `SELECT CONNECT_BY_ROOT x.id AS root_id, CONNECT_BY_ROOT x.name AS root_name,
-              LEVEL AS lvl,
-              x.administrative_city_id AS city_id
-         FROM geographic_site x
-        START WITH x.id IN (${placeholders(ids)})
-      CONNECT BY NOCYCLE PRIOR x.parent_site_id = x.id`,
-      ids,
-    );
-    const nearest = new Map<string, { name: string; lvl: number; cityId: string }>();
-    for (const row of chain) {
-      const current = nearest.get(row.root_id);
-      const lvl = toNumber(row.lvl);
-      if (!current) nearest.set(row.root_id, { name: row.root_name, lvl: Infinity, cityId: '' });
-      if (!row.city_id) continue;
-      const entry = nearest.get(row.root_id)!;
-      if (lvl < entry.lvl)
-        nearest.set(row.root_id, { name: row.root_name, lvl, cityId: row.city_id });
-    }
-    const cityIds = [
-      ...new Set([...nearest.values()].map((entry) => entry.cityId).filter(Boolean)),
-    ];
-    const cities = new Map<string, { uf: string; city: string }>();
-    if (cityIds.length > 0) {
-      const rows = await this.db.all<{ id: string; state_code: string; city_name: string }>(
-        `SELECT id, state_code, city_name FROM geographic_administrative_city
-          WHERE id IN (${placeholders(cityIds)})`,
-        cityIds,
-      );
-      for (const row of rows) cities.set(row.id, { uf: row.state_code, city: row.city_name });
-    }
-    for (const [id, entry] of nearest) {
-      const city = cities.get(entry.cityId);
-      map.set(id, {
-        id,
-        name: entry.name,
-        ...(city ? { uf: city.uf, city: city.city } : {}),
       });
     }
     return map;

@@ -22,6 +22,10 @@ const build = () => {
       childCalls.push({ nodeId, ...options });
       return { nodeId, nodes: [], total: 0, limit: options.limit, offset: options.offset };
     },
+    getSiteContext: async (siteId) => ({
+      site: { id: siteId, name: 'Sala Técnica', specificationName: 'Sala' },
+      hierarchy: [{ id: siteId, name: 'Sala Técnica', specificationName: 'Sala' }],
+    }),
     listResources: async (query) => {
       queries.push(query);
       return { items: [], total: 0, limit: query.limit, offset: query.offset };
@@ -57,6 +61,15 @@ test('listResources normaliza paginação, deduplica tipos e usa o tenant do con
     offset: 0,
     tenantId: 'tenant-a',
   });
+});
+
+test('getSiteContext exige siteId e o resolve no tenant do contexto', async () => {
+  const { service } = build();
+  await assert.rejects(() => service.getSiteContext('  ', context), {
+    code: 'INTERNAL_PLANT_SITE_ID_REQUIRED',
+  });
+  const result = await service.getSiteContext(' site-1 ', context);
+  assert.equal(result.site.id, 'site-1');
 });
 
 test('children exige nodeId e repassa tenant e página padrão', async () => {

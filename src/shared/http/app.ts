@@ -4012,6 +4012,16 @@ const routeResourceRequest = async ({
     if (url.pathname === '/v1/resource/internal-plant/locations/roots') {
       return sendJson(response, 200, await internalPlantService.roots(context));
     }
+    const siteContextMatch = url.pathname.match(
+      /^\/v1\/resource\/internal-plant\/sites\/([^/]+)\/context$/,
+    );
+    if (siteContextMatch?.[1]) {
+      return sendJson(
+        response,
+        200,
+        await internalPlantService.getSiteContext(decodeURIComponent(siteContextMatch[1]), context),
+      );
+    }
     if (url.pathname === '/v1/resource/internal-plant/locations/children') {
       const limit = intParam('limit');
       const offset = intParam('offset');

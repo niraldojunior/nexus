@@ -2,6 +2,10 @@ import { Box } from 'lucide-react';
 import { useResourceTypeVisualIdentities } from '../hooks/useResourceTypeVisualIdentities';
 import { useVisualIdentityPreviewUrl } from '../hooks/useVisualIdentityPreviewUrl';
 import type { VisualIdentity } from '../services/studioGeoApi';
+import {
+  STUDIO_GEO_CUSTOM_ICON_COLOR,
+  STUDIO_GEO_NEUTRAL_ICON_COLOR,
+} from '../utils/studioGeoDefaults';
 import type { IconResourceLike } from '../utils/resourceIcon';
 import {
   resourceTypeFallbackColor,
@@ -17,10 +21,7 @@ export type ResourceIconProps = {
   variant?: 'badge' | 'glyph';
   size?: number;
   className?: string;
-  /**
-   * Segue o padrão das árvores da Modelagem: glifo nativo (sem identidade própria) em cinza e
-   * identidade customizada em azul, para destacar o que foi alterado.
-   */
+  /** Aplica o fallback nativo em cinza-escuro na tabela operacional. */
   catalogTone?: boolean;
 };
 
@@ -44,7 +45,9 @@ export function ResourceIcon({
   const title = presentation?.name ?? 'Recurso';
   const visualIdentityUrl = useVisualIdentityPreviewUrl(resolvedVisualIdentity, box, {
     shape: 'none',
-    color: catalogTone ? '#0284c7' : '#334155',
+    // Ícone nativo do sistema em cinza; SVG personalizado pelo usuário em azul.
+    color: STUDIO_GEO_NEUTRAL_ICON_COLOR,
+    assetColor: STUDIO_GEO_CUSTOM_ICON_COLOR,
   });
 
   if (visualIdentityUrl) {

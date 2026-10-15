@@ -222,6 +222,8 @@ export function DataTablePagination({
   pageSize,
   onOffsetChange,
   navLabel = 'Paginação',
+  action,
+  reserveActionSpace = false,
 }: {
   count: number;
   total: number;
@@ -231,6 +233,9 @@ export function DataTablePagination({
   onOffsetChange: (offset: number) => void;
   /** Nome do landmark; distinga-o quando houver mais de uma barra na mesma página. */
   navLabel?: string;
+  action?: ReactNode;
+  /** Reserva o mesmo espaço do botão de ação à direita para manter o alinhamento com outra barra. */
+  reserveActionSpace?: boolean;
 }) {
   const last = Math.max(1, Math.ceil(total / pageSize));
   const current = Math.min(Math.floor(offset / pageSize) + 1, last);
@@ -248,46 +253,60 @@ export function DataTablePagination({
       <span style={{ fontSize: 'var(--fs-body)', color: 'var(--text-tertiary)' }}>
         {count.toLocaleString('pt-BR')} de {total.toLocaleString('pt-BR')} {label}
       </span>
-      <nav aria-label={navLabel} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="Página anterior"
-          title="Página anterior"
-          disabled={current <= 1}
-          onClick={() => go(current - 1)}
-        >
-          <ChevronLeft size={16} aria-hidden="true" />
-        </Button>
-        {pageWindow(current, last).map((item, index) =>
-          item === 'gap' ? (
-            <span key={`gap-${index}`} aria-hidden="true" style={{ color: 'var(--text-tertiary)' }}>
-              …
-            </span>
-          ) : (
-            <Button
-              key={item}
-              variant={item === current ? 'secondary' : 'ghost'}
-              size="sm"
-              aria-current={item === current ? 'page' : undefined}
-              aria-label={`Página ${item}`}
-              onClick={() => go(item)}
-            >
-              {item.toLocaleString('pt-BR')}
-            </Button>
-          ),
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={current >= last}
-          onClick={() => go(current + 1)}
-          aria-label="Próxima página"
-          title="Próxima página"
-        >
-          <ChevronRight size={16} aria-hidden="true" />
-        </Button>
-      </nav>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <nav aria-label={navLabel} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Página anterior"
+            title="Página anterior"
+            disabled={current <= 1}
+            onClick={() => go(current - 1)}
+          >
+            <ChevronLeft size={16} aria-hidden="true" />
+          </Button>
+          {pageWindow(current, last).map((item, index) =>
+            item === 'gap' ? (
+              <span
+                key={`gap-${index}`}
+                aria-hidden="true"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                …
+              </span>
+            ) : (
+              <Button
+                key={item}
+                variant={item === current ? 'secondary' : 'ghost'}
+                size="sm"
+                aria-current={item === current ? 'page' : undefined}
+                aria-label={`Página ${item}`}
+                onClick={() => go(item)}
+              >
+                {item.toLocaleString('pt-BR')}
+              </Button>
+            ),
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={current >= last}
+            onClick={() => go(current + 1)}
+            aria-label="Próxima página"
+            title="Próxima página"
+          >
+            <ChevronRight size={16} aria-hidden="true" />
+          </Button>
+        </nav>
+        {action ??
+          (reserveActionSpace ? (
+            <span
+              aria-hidden="true"
+              className="inline-block h-6 w-6 shrink-0"
+              style={{ width: 24, height: 24 }}
+            />
+          ) : null)}
+      </div>
     </div>
   );
 }

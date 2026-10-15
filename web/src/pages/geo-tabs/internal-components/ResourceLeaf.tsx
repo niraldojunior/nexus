@@ -22,7 +22,7 @@ export function ResourceLeaf({
   const visualState = getResourceVisualState(node);
 
   return (
-    <div className="flex w-12 min-w-0 flex-col items-center gap-1">
+    <div className="flex min-w-0 items-center gap-1.5">
       <button
         type="button"
         data-graph-node-id={node.id}
@@ -39,11 +39,11 @@ export function ResourceLeaf({
           <ResourceIcon
             resource={{ resourceType: node.resourceType ?? '', status: node.status, name: node.name }}
             variant="glyph"
-            size={16}
+            size={13}
           />
         </span>
       </button>
-      <span className="w-full truncate text-center text-[0.66rem] font-medium leading-none text-app-text">
+      <span className="min-w-0 break-words text-[0.66rem] font-medium leading-tight text-app-text">
         {node.name}
       </span>
     </div>

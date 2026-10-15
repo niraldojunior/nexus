@@ -34,7 +34,6 @@ type ResourceRowBase = {
 
 export type PhysicalResourceRow = ResourceRowBase & {
   serial_number: string | null;
-  part_number: string | null;
   label: string | null;
   asset_reference: string | null;
   project_id: string | null;

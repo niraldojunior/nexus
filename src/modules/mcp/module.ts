@@ -1225,7 +1225,6 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           manufacturer: { type: 'string' },
           model: { type: 'string' },
           serialNumber: { type: 'string' },
-          partNumber: { type: 'string' },
           relatedParty: entityRefArraySchema,
           characteristic: characteristicArraySchema,
         },

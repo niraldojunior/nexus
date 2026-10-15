@@ -46,7 +46,7 @@ export function ResourceContainer({
     <section
       data-graph-node-id={node.id}
       aria-label={`${node.name}, ${visualState.label}`}
-      className={`min-w-0 rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-muted-hover)] p-3 transition ${
+      className={`min-w-0 rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-muted-hover)] px-2 py-1.5 transition ${
         node.id === interaction.selectedId ? 'ring-2 ring-app-accent-border/40' : ''
       }`}
     >

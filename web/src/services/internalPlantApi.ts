@@ -56,6 +56,8 @@ export type InternalPlantResourceRow = {
   resourceType: { id: string; code: string; name: string };
   resourceSpecification: { id: string; name: string; manufacturer?: { id: string; name?: string } };
   place?: { id: string; name: string };
+  stateOrProvince?: string;
+  city?: string;
 };
 
 export type InternalPlantResourcePage = {
@@ -170,8 +172,8 @@ export type EditorResource = {
   };
   label?: string;
   serialNumber?: string;
-  partNumber?: string;
   assetReference?: string;
+  relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
   supportingPhysicalResourceId?: string;
   place?: { id: string; name?: string; '@referredType'?: string };
   characteristic?: EditorCharacteristic[];
@@ -206,6 +208,7 @@ export type ResourceEditorSnapshot = {
     id: string;
     name: string;
     resourceTypeId?: string;
+    relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
     resourceSpecificationCharacteristic?: EditorCharacteristic[];
   };
   resourceType: {
@@ -241,8 +244,8 @@ export type SaveResourceAggregatePayload = {
   usageState?: string;
   label?: string;
   serialNumber?: string;
-  partNumber?: string;
   assetReference?: string;
+  relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
   supportingPhysicalResourceId?: string | null;
   placeId?: string | null;
   placeType?: 'GeographicSite' | 'GeographicAddress' | 'GeographicLocation';

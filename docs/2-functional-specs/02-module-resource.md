@@ -9,7 +9,7 @@ TMFC003 + TMFC024 · TMF634 / TMF639 / TMF688
 | Campo                   | Valor                                                              |
 | ----------------------- | ------------------------------------------------------------------ |
 | **Document Reference**  | VTN-HLD-MOD02-RES                                                  |
-| **Versão**              | 1.16 — draft                                                       |
+| **Versão**              | 1.17 — draft                                                       |
 | **Data**                | Setembro 2026                                                      |
 | **Documento âncora**    | VTN-HLD-OVERVIEW-001                                               |
 | **HLD predecessor**     | VTN-HLD-MOD01-GEO (Geographic)                                     |
@@ -685,7 +685,7 @@ Um Resource é uma instância concreta de um tipo de recurso definido por Resour
 
 ### 10.2 Racional arquitetural
 
-O TMF639 define Resource como entidade abstrata com duas especializações: PhysicalResource (com atributos como serialNumber, manufactureDate, partNumber, weight) e LogicalResource (sem materialização física). Esta é a base sobre a qual todos os requisitos subsequentes do módulo (REQ-008 a REQ-023) constroem casos de uso específicos (postes, cabos, OLTs, IPs). O design canônico do CRUD é fundamental para garantir consistência: mesmo padrão de API, mesmo modelo de eventos, mesmo mecanismo de extensão. Os sistemas legados tratam cada tipo de recurso com formulário e API próprios — abordagem inferior pela duplicação e divergência. O Nexus adota o modelo TMF639 unificado.
+O TMF639 define Resource como entidade abstrata com duas especializações: PhysicalResource (com atributos como serialNumber, manufactureDate e weight) e LogicalResource (sem materialização física). Esta é a base sobre a qual todos os requisitos subsequentes do módulo (REQ-008 a REQ-023) constroem casos de uso específicos (postes, cabos, OLTs, IPs). O design canônico do CRUD é fundamental para garantir consistência: mesmo padrão de API, mesmo modelo de eventos, mesmo mecanismo de extensão. Os sistemas legados tratam cada tipo de recurso com formulário e API próprios — abordagem inferior pela duplicação e divergência. O Nexus adota o modelo TMF639 unificado.
 
 ### 10.3 Mapeamento de atributos TMF
 
@@ -3810,6 +3810,7 @@ Esta seção não replica estados; ver §2.3 para o vínculo de cada requisito c
 | 1.14   | Setembro 2026        | Engenharia — V.tal Nexus | Canonização de modelo e governança comercial do recurso ([#251](https://github.com/niraldojunior/nexus/issues/251)): characteristic canônica `model` com tipagem estrita; `ResourceSpecification` com edição governada de `manufacturer` via Studio; `PhysicalResource` com suporte a `vendor` de aquisição (RN-002) e bloqueio de `manufacturer` direto na instância; filtros de busca `relatedPartyId` e `relatedPartyRole` (RF-004) implementados e indexáveis no Oracle 19c; remoção física e definitiva das colunas mortas `manufacturer` e `model` de `tmf_physical_resource`.                                                                                                                          |
 | 1.15   | Setembro 2026        | Engenharia — V.tal Nexus | Nível de característica — especificação × instância ([#273](https://github.com/niraldojunior/nexus/issues/273)): novo eixo `characteristicLevel` (`specification`, padrão, ou `instance`) no `Characteristic` canônico; RN-008 em REQ-MOD02-001 e nota em REQ-MOD02-005 (§10.3) sobre o corte de preenchimento; aba Características do Studio passa a exibir os dois agrupamentos; modal de ResourceSpecification só preenche/exibe nível especificação; painel do recurso no módulo Geo passa a preencher o nível instância por exemplar.                                                                                                                                                                    |
 | 1.16   | 9 de outubro de 2026 | Engenharia — V.tal Nexus | Planta Interna: árvore de Locais dinâmica (Brasil → UF → município → tipo de Site raiz com volume → Site → Sub-Site); clicar em um Site lista apenas os Resources com `place_id` igual ao Site (issue #329).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 1.17   | 15 de outubro de 2026 | Engenharia — V.tal Nexus | Remoção de `partNumber` do contrato Nexus e do schema canônico de PhysicalResource; o fornecedor de aquisição permanece `relatedParty` com papel `vendor` (RN-002). A aba Geral da Planta Interna passa a concentrar identificação operacional sem duplicar o Local Atendido, que permanece na aba Locais. |
 
 ---
 

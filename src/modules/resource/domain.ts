@@ -583,7 +583,6 @@ export type ResourceBase = {
 export type PhysicalResource = ResourceBase & {
   '@type': 'PhysicalResource';
   serialNumber?: string;
-  partNumber?: string;
   /** Etiqueta física da caixa — o que está escrito nela em campo, distinto de `name`. */
   label?: string;
   /** ID Imobilizado (SAP) — referência patrimonial do exemplar. */
@@ -796,7 +795,6 @@ export type CreatePhysicalResourceInput = {
   operationalState?: OperationalState;
   usageState?: UsageState;
   serialNumber?: string;
-  partNumber?: string;
   statusCode?: string;
   label?: string;
   assetReference?: string;
@@ -891,8 +889,8 @@ export type SaveResourceAggregateInput = {
   usageState?: UsageState;
   label?: string;
   serialNumber?: string;
-  partNumber?: string;
   assetReference?: string;
+  relatedParty?: RelatedParty[];
   supportingPhysicalResourceId?: string | null;
   placeId?: string | null;
   /** Tipo referenciado por `placeId`; ausente = GeographicSite (vínculo canônico). */

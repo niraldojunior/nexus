@@ -27,7 +27,13 @@ import {
   type AdministrativeCity,
   type SiteEditorPayload,
 } from '../../services/siteEditorApi';
+import { useVisualIdentityPreviewUrl } from '../../hooks/useVisualIdentityPreviewUrl';
+import {
+  STUDIO_GEO_CUSTOM_ICON_COLOR,
+  STUDIO_GEO_NEUTRAL_ICON_COLOR,
+} from '../../utils/studioGeoDefaults';
 import { SITE_STATUS_OPTIONS } from '../../utils/geoLabels';
+import { locationCategoryIcon } from '../studio/location-model/locationCategoryPresentation';
 import { SiteInstanceCharacteristics } from '../geo-tabs/SiteInstanceCharacteristics';
 import { SiteSubSitesTab } from '../geo-tabs/SiteSubSitesTab';
 
@@ -65,6 +71,21 @@ type Draft = {
 };
 
 const isTenantRole = (role?: string) => role?.toLowerCase() === 'tenant';
+
+function SiteTypeIcon({ spec }: { spec?: GeoSpec | undefined }) {
+  const previewUrl = useVisualIdentityPreviewUrl(spec?.visualIdentity, 26, {
+    shape: 'none',
+    color: STUDIO_GEO_NEUTRAL_ICON_COLOR,
+    assetColor: STUDIO_GEO_CUSTOM_ICON_COLOR,
+  });
+  if (previewUrl) {
+    return (
+      <img src={previewUrl} alt="" className="h-[26px] w-[26px] shrink-0" aria-hidden="true" />
+    );
+  }
+  const CategoryIcon = spec ? locationCategoryIcon(spec.category) : Building2;
+  return <CategoryIcon size={26} aria-hidden="true" />;
+}
 
 export type SiteEditorModalProps = {
   /** Edição quando presente; criação caso contrário. */
@@ -285,19 +306,17 @@ export function SiteEditorModal({
       >
         <nav
           aria-label="Local"
-          className="flex w-[210px] shrink-0 flex-col gap-1 border-r border-app-border bg-app-sidebar p-4 max-sm:hidden"
+          className="flex w-[220px] shrink-0 flex-col gap-1 border-r border-app-border bg-app-sidebar p-4 max-sm:hidden"
         >
-          <div className="mb-3 flex items-center gap-2.5 border-b border-app-border pb-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-app-accent-soft text-app-text">
-              <Building2 size={18} aria-hidden="true" />
+          <div className="mb-3.5 flex items-center gap-3 border-b border-app-border pb-3.5">
+            <span className="grid size-11 shrink-0 place-items-center rounded-[12px] bg-app-accent-soft text-app-text">
+              <SiteTypeIcon spec={currentSpec} />
             </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[0.86rem] font-semibold text-app-text">
-                {draft?.name || 'Novo local'}
-              </span>
-              <span className="truncate text-[0.72rem] text-app-muted">
-                {currentSpec?.name ?? 'Sem tipo'}
-              </span>
+            <span
+              className="truncate text-[1.15rem] font-semibold leading-tight text-app-text"
+              title={currentSpec?.name ?? 'Sem tipo'}
+            >
+              {currentSpec?.name ?? 'Sem tipo'}
             </span>
           </div>
           {TABS.map((t) => (
@@ -320,11 +339,14 @@ export function SiteEditorModal({
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-between gap-3 border-b border-app-border px-6 py-4">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
                 {title}
               </p>
-              <h2 className="truncate text-[1.15rem] font-semibold text-app-text">
+              <h2
+                className="truncate text-[1.15rem] font-semibold text-app-text"
+                title={draft?.name || 'Sem nome'}
+              >
                 {draft?.name || 'Sem nome'}
               </h2>
             </div>

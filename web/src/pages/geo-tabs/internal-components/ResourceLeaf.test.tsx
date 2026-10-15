@@ -5,8 +5,8 @@ import { ResourceLeaf } from './ResourceLeaf';
 afterEach(cleanup);
 
 vi.mock('../../../components/ResourceIcon', () => ({
-  ResourceIcon: ({ resource }: { resource: { resourceType?: string } }) => (
-    <span data-testid={`resource-icon-${resource.resourceType ?? 'unknown'}`} />
+  ResourceIcon: ({ resource, size }: { resource: { resourceType?: string }; size?: number }) => (
+    <span data-testid={`resource-icon-${resource.resourceType ?? 'unknown'}`} data-size={size} />
   ),
 }));
 
@@ -23,14 +23,16 @@ const leaf = {
 };
 
 describe('ResourceLeaf', () => {
-  it('shows a semantic resource tile with its name below', () => {
+  it('shows a semantic resource tile with its name beside it in detailed mode', () => {
     render(<ResourceLeaf node={leaf} selected={false} onSelect={vi.fn()} />);
 
     const tile = screen.getByRole('button', { name: 'ONT-01, Disponível' });
     expect(tile).toHaveClass('bg-status-green-soft', 'border-status-green/60');
     expect(tile).toContainElement(screen.getByTestId('resource-icon-ONT'));
+    expect(screen.getByTestId('resource-icon-ONT')).toHaveAttribute('data-size', '13');
     expect(screen.getByTestId('resource-icon-ONT').parentElement).toHaveClass('bg-status-green');
-    expect(screen.getByText('ONT-01')).toBeInTheDocument();
+    expect(screen.getByText('ONT-01')).toHaveClass('break-words');
+    expect(tile.parentElement).toHaveClass('items-center', 'gap-1.5');
   });
 
   it('shrinks to a bordered status tile with no visible label in simplified mode', () => {

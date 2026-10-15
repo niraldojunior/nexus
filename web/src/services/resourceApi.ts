@@ -132,7 +132,6 @@ export type ResourceBase = {
 export type PhysicalResource = ResourceBase & {
   '@type'?: 'PhysicalResource';
   serialNumber?: string;
-  partNumber?: string;
 };
 
 export type LogicalResource = ResourceBase & {
@@ -250,7 +249,6 @@ export type PhysicalResourcePayload = {
   label?: string;
   assetReference?: string;
   serialNumber?: string;
-  partNumber?: string;
   relatedParty?: Array<{ id: string; '@referredType': string; role?: string; name?: string }>;
   characteristic?: PhysicalResource['characteristic'];
   validFor?: TimePeriod;

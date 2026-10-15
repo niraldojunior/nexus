@@ -163,8 +163,8 @@ test('getSiteContext devolve a cadeia raiz→site e o endereço do site selecion
   assert.deepEqual(calls[0]!.params, ['site-1', 'tenant-a']);
 });
 
-test('listResources herda o fabricante da ResourceSpecification', async () => {
-  const { db } = fakeDb([
+test('listResources herda o fabricante da ResourceSpecification e a localização administrativa do Site', async () => {
+  const { db, calls } = fakeDb([
     [
       {
         id: 'resource-1',
@@ -191,6 +191,7 @@ test('listResources herda o fabricante da ResourceSpecification', async () => {
         icon_asset_id: null,
       },
     ],
+    [{ id: 'site-1', state_code: 'RJ', city_name: 'Niterói' }],
   ]);
   const result = await new OracleInternalPlantRepository(db).listResources({
     tenantId: 'tenant-a',
@@ -202,6 +203,14 @@ test('listResources herda o fabricante da ResourceSpecification', async () => {
     id: 'manufacturer-1',
     name: 'Huawei',
   });
+  assert.equal(result.items[0]?.stateOrProvince, 'RJ');
+  assert.equal(result.items[0]?.city, 'Niterói');
+  assert.match(calls[2]!.sql, /geographic_site/);
+  assert.match(calls[2]!.sql, /administrative_city_id/);
+  assert.match(calls[2]!.sql, /geographic_administrative_city/);
+  assert.match(calls[2]!.sql, /s\.id IN \(\?\)/);
+  assert.doesNotMatch(calls[2]!.sql, /CONNECT BY/);
+  assert.deepEqual(calls[2]!.params, ['tenant-a', 'site-1']);
 });
 
 test('listResources filtra place_id exato, sem resolução de endereço', async () => {

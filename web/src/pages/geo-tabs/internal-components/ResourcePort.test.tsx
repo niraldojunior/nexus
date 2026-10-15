@@ -5,8 +5,8 @@ import { ResourcePort } from './ResourcePort';
 afterEach(cleanup);
 
 vi.mock('../../../components/ResourceIcon', () => ({
-  ResourceIcon: ({ resource }: { resource: { resourceType?: string } }) => (
-    <span data-testid={`resource-icon-${resource.resourceType ?? 'unknown'}`} />
+  ResourceIcon: ({ resource, size }: { resource: { resourceType?: string }; size?: number }) => (
+    <span data-testid={`resource-icon-${resource.resourceType ?? 'unknown'}`} data-size={size} />
   ),
 }));
 
@@ -23,14 +23,16 @@ const port = {
 };
 
 describe('ResourcePort', () => {
-  it('shows the resource icon in a semantic tile and its label below', () => {
+  it('shows the resource icon with its label beside it in detailed mode', () => {
     render(<ResourcePort node={port} selected={false} onSelect={vi.fn()} />);
 
     const tile = screen.getByRole('button', { name: 'FO.O.1, Disponível' });
     expect(tile).toHaveClass('bg-status-green-soft', 'border-status-green/60');
     expect(tile).toContainElement(screen.getByTestId('resource-icon-Port'));
+    expect(screen.getByTestId('resource-icon-Port')).toHaveAttribute('data-size', '13');
     expect(screen.getByTestId('resource-icon-Port').parentElement).toHaveClass('bg-status-green');
-    expect(screen.getByText('FO.O.1')).toBeInTheDocument();
+    expect(screen.getByText('FO.O.1')).toHaveClass('break-words');
+    expect(tile.parentElement).toHaveClass('items-center', 'gap-1.5');
   });
 
   it('shrinks to a bordered status tile with no visible label in simplified mode', () => {

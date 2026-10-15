@@ -119,8 +119,14 @@ test('saveResourceAggregate cria árvore multinível atomicamente e o snapshot a
     (await service.getResourceEditorSnapshot(saved.resource.id, context)).components.length,
     0,
   );
-  assert.equal((await service.deletePhysicalResource(saved.resource.id, context)).status, 'terminated');
-  assert.ok(await service.getResource(saved.createdIds[1]!, context), 'filho removido não é excluído');
+  assert.equal(
+    (await service.deletePhysicalResource(saved.resource.id, context)).status,
+    'terminated',
+  );
+  assert.ok(
+    await service.getResource(saved.createdIds[1]!, context),
+    'filho removido não é excluído',
+  );
 });
 
 test('saveResourceAggregate valida GeographicSiteSpecification e persiste relação adicional', async () => {
@@ -161,7 +167,63 @@ test('saveResourceAggregate valida GeographicSiteSpecification e persiste relaç
     context,
   );
   const snapshot = await service.getResourceEditorSnapshot(saved.resource.id, context);
-  assert.deepEqual(snapshot.siteRelationships.map((item) => item.site.name), ['Poste 1']);
+  assert.deepEqual(
+    snapshot.siteRelationships.map((item) => item.site.name),
+    ['Poste 1'],
+  );
+});
+
+test('saveResourceAggregate persiste e remove o vendor sem alterar o local instalado', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never, {
+    lookupPlace: async (id, tenantId) =>
+      id === 'site-1' && tenantId === 'vtal'
+        ? { id, '@referredType': 'GeographicSite' }
+        : undefined,
+  });
+  const ctoSpec = await createTestSpec(repo, 'CTO', '-vendor');
+
+  const created = await service.saveResourceAggregate(
+    {
+      '@type': 'PhysicalResource',
+      name: 'CTO-COM-FORNECEDOR',
+      resourceSpecificationId: ctoSpec.id,
+      placeId: 'site-1',
+      relatedParty: [
+        {
+          id: 'vendor-1',
+          name: 'Fornecedor Óptico',
+          '@referredType': 'Organization',
+          role: 'vendor',
+        },
+      ],
+    },
+    context,
+  );
+
+  assert.deepEqual(created.resource.relatedParty, [
+    {
+      id: 'vendor-1',
+      name: 'Fornecedor Óptico',
+      '@referredType': 'Organization',
+      role: 'vendor',
+    },
+  ]);
+  assert.equal(created.resource.place?.id, 'site-1');
+
+  const updated = await service.saveResourceAggregate(
+    {
+      id: created.resource.id,
+      '@type': 'PhysicalResource',
+      name: created.resource.name,
+      resourceSpecificationId: ctoSpec.id,
+      relatedParty: [],
+    },
+    context,
+  );
+
+  assert.deepEqual(updated.resource.relatedParty, []);
+  assert.equal(updated.resource.place?.id, 'site-1');
 });
 
 test('saveResourceAggregate faz rollback quando cardinalidade global falha durante a transação', async () => {
@@ -210,8 +272,5 @@ test('saveResourceAggregate faz rollback quando cardinalidade global falha duran
   );
 
   assert.equal(await service.countResources(undefined, context), before);
-  assert.equal(
-    (await service.listResources({ name: 'CTO-DEVE-ROLLBACK' }, context)).length,
-    0,
-  );
+  assert.equal((await service.listResources({ name: 'CTO-DEVE-ROLLBACK' }, context)).length, 0);
 });

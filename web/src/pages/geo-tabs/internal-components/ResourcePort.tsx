@@ -26,7 +26,7 @@ export function ResourcePort({
   const visualState = getResourceVisualState(node);
 
   return (
-    <div className="flex w-10 shrink-0 flex-col items-center gap-1">
+    <div className="flex min-w-0 items-center gap-1.5">
       <button
         type="button"
         data-graph-node-id={node.id}
@@ -43,11 +43,11 @@ export function ResourcePort({
           <ResourceIcon
             resource={{ resourceType: node.resourceType ?? '', status: node.status, name: node.name }}
             variant="glyph"
-            size={16}
+            size={13}
           />
         </span>
       </button>
-      <span className="w-full truncate text-center font-mono text-[0.66rem] font-semibold leading-none text-app-text">
+      <span className="min-w-0 break-words font-mono text-[0.66rem] font-semibold leading-tight text-app-text">
         {label}
       </span>
     </div>

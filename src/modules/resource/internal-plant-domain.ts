@@ -84,6 +84,9 @@ export type InternalPlantResourceRow = {
     id: string;
     name: string;
   };
+  /** Contexto administrativo do Site em `place`, quando disponível. */
+  stateOrProvince?: string;
+  city?: string;
 };
 
 export type InternalPlantResourcePage = {

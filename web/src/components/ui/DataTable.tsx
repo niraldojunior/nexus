@@ -33,6 +33,8 @@ interface DataTableProps<T> {
   footer?: ReactNode;
   /** Classe extra na casca da tabela, para ajustes locais de tipografia. */
   className?: string;
+  /** Permite rolagem horizontal quando as colunas não couberem no painel. */
+  horizontalScroll?: boolean;
   /** Mostra linhas-esqueleto no lugar do corpo e marca a tabela como ocupada. */
   loading?: boolean;
   /** Cabeçalho fixo ao rolar; a casca passa a rolar na vertical até `maxHeight`. */
@@ -53,6 +55,7 @@ export default function DataTable<T>({
   emptyMessage = 'Nenhum item encontrado.',
   footer,
   className,
+  horizontalScroll = false,
   loading = false,
   stickyHeader = false,
   maxHeight = 480,
@@ -63,7 +66,7 @@ export default function DataTable<T>({
     <div
       className={`vt-card vt-table-card ${className ?? ''}`}
       style={{
-        overflow: stickyHeader ? 'auto' : 'hidden',
+        overflow: stickyHeader ? 'auto' : horizontalScroll ? 'auto' : 'hidden',
         padding: 0,
         maxHeight: stickyHeader ? maxHeight : undefined,
       }}

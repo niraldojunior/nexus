@@ -836,6 +836,85 @@ test('ResourceModelStudioAdapter: updates relationship rule cardinality when cha
   assert.equal(currentRule?.cardinality?.maxTargetPerSource, 16);
 });
 
+test('ResourceModelStudioAdapter: preserves relationship rules and clears configuration explicitly removed from the snapshot', async () => {
+  const { adapter, resourceService } = createTestServices();
+  await resourceService.ensureBootstrapResourceRelationshipTypes(context);
+
+  const catalog = await resourceService.createResourceCatalog(
+    { code: 'catalog-rules-configuration', name: 'Catálogo Regras de Configuração' },
+    context,
+  );
+  const sourceNode = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'node-rack-config', name: 'Bastidor', kind: 'RESOURCE_TYPE', sortOrder: 0 },
+    context,
+  );
+  const targetNode = await resourceService.createResourceCatalogNode(
+    catalog.id,
+    { code: 'node-equipment-config', name: 'Equipamento', kind: 'RESOURCE_TYPE', sortOrder: 1 },
+    context,
+  );
+  assert.ok(sourceNode.resourceTypeId);
+  assert.ok(targetNode.resourceTypeId);
+
+  const initialRule = await resourceService.createResourceTypeRelationshipRule(
+    sourceNode.resourceTypeId,
+    {
+      relationshipTypeCode: 'containsAsChild',
+      targetKind: 'RESOURCE_TYPE',
+      targetId: targetNode.resourceTypeId,
+      configuration: {
+        version: 1,
+        placementPolicy: 'LINEAR',
+        axis: 'vertical',
+        unitLabel: 'U',
+        capacity: 42,
+        numberingDirection: 'ascending',
+      },
+      validationRules: { exclusive: true, required: true },
+    },
+    context,
+  );
+
+  const snapshot: ResourceModelSnapshot = {
+    catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+    nodes: [sourceNode, targetNode].map((node) => ({
+      id: node.id,
+      code: node.code,
+      name: node.name,
+      kind: node.kind,
+      ...(node.resourceTypeId ? { resourceTypeId: node.resourceTypeId } : {}),
+      parentNodeId: node.parentNodeId ?? null,
+      sortOrder: node.sortOrder,
+      status: node.status,
+      relationshipRules:
+        node.id === sourceNode.id
+          ? [
+              {
+                relationshipTypeCode: initialRule.relationshipTypeCode,
+                targetKind: initialRule.targetKind,
+                targetId: initialRule.targetId,
+                ...(initialRule.validationRules
+                  ? { validationRules: initialRule.validationRules }
+                  : {}),
+              },
+            ]
+          : [],
+    })),
+  };
+
+  const updateRuleSpy = vi.spyOn(resourceService, 'updateResourceTypeRelationshipRule');
+  await adapter.materialize(snapshot, { tenantId: context.tenantId });
+
+  assert.equal(updateRuleSpy.mock.calls.length, 1);
+  assert.deepEqual(updateRuleSpy.mock.calls[0]?.[2], { configuration: null });
+
+  const rules = await resourceService.listResourceTypeRelationshipRules(sourceNode.resourceTypeId, context);
+  const updated = rules.find((rule) => rule.id === initialRule.id);
+  assert.equal(updated?.configuration, undefined);
+  assert.deepEqual(updated?.validationRules, { exclusive: true, required: true });
+});
+
 test('ResourceService.updateResourceType: geometryKind is required, preserved and explicitly clearable (issue #240)', async () => {
   const { resourceService } = createTestServices();
   const catalog = await resourceService.createResourceCatalog(

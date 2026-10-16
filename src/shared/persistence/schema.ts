@@ -1097,12 +1097,19 @@ export const SCHEMA_SQL = `
 
       -- Resource Relationship (containment, dependency entre recursos)
       CREATE TABLE IF NOT EXISTS resource_relationship (
+        id TEXT NOT NULL,
         resource_from_id TEXT NOT NULL,
         resource_to_id TEXT NOT NULL,
         relationship_type TEXT NOT NULL,
+        relationship_definition_id TEXT,
+        placement TEXT,
+        attributes TEXT,
         valid_for_start DATETIME,
         valid_for_end DATETIME,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (resource_from_id, resource_to_id, relationship_type),
+        UNIQUE(id),
         FOREIGN KEY (resource_from_id) REFERENCES resource_physical(id),
         FOREIGN KEY (resource_to_id) REFERENCES resource_physical(id)
       );
@@ -1905,6 +1912,8 @@ const MIGRATIONS_SQL_V15_RESOURCE_TYPE_LEAF_IDENTITY = `
     target_kind TEXT NOT NULL CHECK(target_kind IN ('RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION')),
     target_id TEXT NOT NULL,
     cardinality TEXT,
+    configuration TEXT,
+    validation_rules TEXT,
     lifecycle_status TEXT NOT NULL DEFAULT 'Active' CHECK(lifecycle_status IN ('Active', 'Retired')),
     valid_for_start TIMESTAMPTZ,
     valid_for_end TIMESTAMPTZ,
@@ -2186,6 +2195,36 @@ const MIGRATIONS_SQL_V31_RESOURCE_STATE_CHANGED_AT = `
 // em hook (oracle-database.ts), pois o rewriter de DDL não prefixa DROP INDEX.
 const MIGRATIONS_SQL_V38_RESOURCE_REDUNDANT_INDEXES = ``;
 
+// V39: identidade e placement da aresta de inventário. A PK natural continua ativa para impedir
+// duplicação durante a transição; os metadados novos são opcionais para relações históricas.
+const MIGRATIONS_SQL_V39_RESOURCE_RELATIONSHIP_PLACEMENT = `
+  ALTER TABLE resource_type_relationship_rule ADD COLUMN IF NOT EXISTS configuration TEXT;
+  ALTER TABLE resource_type_relationship_rule ADD COLUMN IF NOT EXISTS validation_rules TEXT;
+
+  ALTER TABLE resource_relationship ADD COLUMN IF NOT EXISTS id TEXT;
+  ALTER TABLE resource_relationship ADD COLUMN IF NOT EXISTS relationship_definition_id TEXT;
+  ALTER TABLE resource_relationship ADD COLUMN IF NOT EXISTS placement TEXT;
+  ALTER TABLE resource_relationship ADD COLUMN IF NOT EXISTS attributes TEXT;
+  ALTER TABLE resource_relationship ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+  ALTER TABLE resource_relationship ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS resource_uq_relationship_id ON resource_relationship(id);
+  CREATE INDEX IF NOT EXISTS resource_idx_relationship_definition
+    ON resource_relationship(relationship_definition_id, resource_from_id);
+  CREATE INDEX IF NOT EXISTS resource_idx_relationship_to_type
+    ON resource_relationship(resource_to_id, relationship_type);
+`;
+
+// V40: cursores da Fase 3.A incremental e remoção das projeções antigas por entidade.
+const MIGRATIONS_SQL_V40_PHASE3_MAP_INCREMENTAL_INDEXES = `
+  CREATE INDEX IF NOT EXISTS resource_idx_physical_tenant_updated_id
+    ON resource_physical(tenant_id, updated_at, id);
+  CREATE INDEX IF NOT EXISTS geographic_idx_site_tenant_updated_id
+    ON geographic_site(tenant_id, updated_at, id);
+  CREATE INDEX IF NOT EXISTS geographic_idx_map_feature_entity
+    ON geographic_map_feature(tenant_id, feature_kind, entity_id);
+`;
+
 const MIGRATIONS_SQL_V37_NETWIN_UF_SYNC_CONTROL = `
   CREATE TABLE IF NOT EXISTS environment_netwin_uf_sync_control (
     id TEXT PRIMARY KEY,
@@ -2384,6 +2423,16 @@ export const MIGRATION_BATCHES: readonly MigrationBatch[] = [
     version: 38,
     name: 'resource-redundant-indexes',
     sql: MIGRATIONS_SQL_V38_RESOURCE_REDUNDANT_INDEXES,
+  },
+  {
+    version: 39,
+    name: 'resource-relationship-placement',
+    sql: MIGRATIONS_SQL_V39_RESOURCE_RELATIONSHIP_PLACEMENT,
+  },
+  {
+    version: 40,
+    name: 'phase3-map-incremental-indexes',
+    sql: MIGRATIONS_SQL_V40_PHASE3_MAP_INCREMENTAL_INDEXES,
   },
 ];
 

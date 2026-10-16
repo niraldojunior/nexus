@@ -52,6 +52,8 @@ import type {
   ResourceConnectionsView,
   ResourceComponentsView,
   ResourceRelationshipCardinality,
+  ResourceRelationshipDefinitionConfiguration,
+  ResourceRelationshipDefinitionValidationRules,
   UpdateLogicalResourceInput,
   UpdatePhysicalResourceInput,
   UpdateResourceFunctionSpecificationInput,
@@ -676,6 +678,7 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<ResourceTypeRelationshipRule> {
     this.assertCardinality(input.cardinality);
+    this.assertRelationshipDefinitionConfiguration(input.configuration, input.validationRules);
     const source = await this.getResourceTypeByIdOrThrow(resourceTypeId, context);
     const tenantId = tenantOf(context);
     const relationshipType = await this.getResourceRelationshipTypeOrThrow(
@@ -685,6 +688,12 @@ export class ResourceService {
     if (relationshipType.lifecycleStatus !== 'Active') {
       throw new AppError('resource relationship type is retired', {
         code: 'RESOURCE_RELATIONSHIP_TYPE_RETIRED',
+        statusCode: 409,
+      });
+    }
+    if (input.configuration && relationshipType.code !== 'containsAsChild') {
+      throw new AppError('placement configuration is only allowed for containment relationships', {
+        code: 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_NOT_CONTAINMENT',
         statusCode: 409,
       });
     }
@@ -731,6 +740,8 @@ export class ResourceService {
       targetKind: input.targetKind,
       targetId: input.targetId,
       ...(input.cardinality ? { cardinality: input.cardinality } : {}),
+      ...(input.configuration ? { configuration: input.configuration } : {}),
+      ...(input.validationRules ? { validationRules: input.validationRules } : {}),
       lifecycleStatus: 'Active',
       tenantId,
       ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -762,6 +773,14 @@ export class ResourceService {
         statusCode: 404,
       });
     }
+    const configuration =
+      input.configuration === undefined
+        ? current.configuration
+        : input.configuration ?? undefined;
+    const validationRules = input.validationRules ?? current.validationRules;
+    if (input.configuration !== undefined || input.validationRules !== undefined) {
+      this.assertRelationshipDefinitionConfiguration(configuration, validationRules);
+    }
     const relationshipTypeCode = input.relationshipTypeCode ?? current.relationshipTypeCode;
     const targetKind = input.targetKind ?? current.targetKind;
     const targetId = input.targetId ?? current.targetId;
@@ -772,6 +791,12 @@ export class ResourceService {
     if (relationshipType.lifecycleStatus !== 'Active') {
       throw new AppError('resource relationship type is retired', {
         code: 'RESOURCE_RELATIONSHIP_TYPE_RETIRED',
+        statusCode: 409,
+      });
+    }
+    if (configuration && relationshipType.code !== 'containsAsChild') {
+      throw new AppError('placement configuration is only allowed for containment relationships', {
+        code: 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_NOT_CONTAINMENT',
         statusCode: 409,
       });
     }
@@ -810,8 +835,14 @@ export class ResourceService {
         statusCode: 409,
       });
     }
+    const {
+      cardinality: currentCardinality,
+      configuration: _currentConfiguration,
+      validationRules: _currentValidationRules,
+      ...currentWithoutOptionalFields
+    } = current;
     const stored = await this.repository.upsertResourceTypeRelationshipRule({
-      ...current,
+      ...currentWithoutOptionalFields,
       relationshipTypeCode,
       targetKind,
       targetId,
@@ -819,9 +850,11 @@ export class ResourceService {
         ? input.cardinality
           ? { cardinality: input.cardinality }
           : {}
-        : current.cardinality
-          ? { cardinality: current.cardinality }
+        : currentCardinality
+          ? { cardinality: currentCardinality }
           : {}),
+      ...(configuration ? { configuration } : {}),
+      ...(validationRules ? { validationRules } : {}),
       ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
       lifecycleStatus: input.lifecycleStatus ?? current.lifecycleStatus,
     });
@@ -861,30 +894,83 @@ export class ResourceService {
         statusCode: 400,
       });
     }
-    const { maxSourcePerTarget, maxTargetPerSource } = cardinality;
-    if (maxSourcePerTarget !== undefined) {
-      if (
-        typeof maxSourcePerTarget !== 'number' ||
-        !Number.isInteger(maxSourcePerTarget) ||
-        maxSourcePerTarget < 1
-      ) {
-        throw new AppError('cardinality must be a positive integer', {
-          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
-          statusCode: 400,
-        });
-      }
+    const minimums = [cardinality.minSourcePerTarget, cardinality.minTargetPerSource];
+    const maximums = [cardinality.maxSourcePerTarget, cardinality.maxTargetPerSource];
+    if (
+      minimums.some(
+        (value) =>
+          value !== undefined &&
+          (typeof value !== 'number' || !Number.isInteger(value) || value < 0),
+      ) ||
+      maximums.some(
+        (value) =>
+          value !== undefined &&
+          (typeof value !== 'number' || !Number.isInteger(value) || value < 1),
+      )
+    ) {
+      throw new AppError('cardinality contains invalid bounds', {
+        code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
+        statusCode: 400,
+      });
     }
-    if (maxTargetPerSource !== undefined) {
+    if (
+      (cardinality.minSourcePerTarget ?? 0) >
+        (cardinality.maxSourcePerTarget ?? Number.POSITIVE_INFINITY) ||
+      (cardinality.minTargetPerSource ?? 0) >
+        (cardinality.maxTargetPerSource ?? Number.POSITIVE_INFINITY)
+    ) {
+      throw new AppError('cardinality minimum cannot exceed maximum', {
+        code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
+        statusCode: 400,
+      });
+    }
+  }
+
+  private assertRelationshipDefinitionConfiguration(
+    configuration?: ResourceRelationshipDefinitionConfiguration,
+    validationRules?: ResourceRelationshipDefinitionValidationRules,
+  ): void {
+    if (validationRules && typeof validationRules !== 'object') {
+      throw new AppError('relationship validation rules must be an object', {
+        code: 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_INVALID',
+        statusCode: 400,
+      });
+    }
+    if (!configuration) return;
+    if (configuration.version !== 1) {
+      throw new AppError('relationship definition configuration version is not supported', {
+        code: 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_INVALID',
+        statusCode: 400,
+      });
+    }
+    if (configuration.placementPolicy === 'NONE') return;
+    if (configuration.placementPolicy === 'LINEAR') {
       if (
-        typeof maxTargetPerSource !== 'number' ||
-        !Number.isInteger(maxTargetPerSource) ||
-        maxTargetPerSource < 1
+        !['vertical', 'horizontal'].includes(configuration.axis) ||
+        !configuration.unitLabel.trim() ||
+        !Number.isInteger(configuration.capacity) ||
+        configuration.capacity < 1 ||
+        !['ascending', 'descending'].includes(configuration.numberingDirection)
       ) {
-        throw new AppError('cardinality must be a positive integer', {
-          code: 'RESOURCE_RELATIONSHIP_CARDINALITY_INVALID',
+        throw new AppError('invalid LINEAR relationship definition configuration', {
+          code: 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_INVALID',
           statusCode: 400,
         });
       }
+      return;
+    }
+    if (
+      configuration.placementPolicy !== 'GRID' ||
+      !Number.isInteger(configuration.rows) ||
+      configuration.rows < 1 ||
+      !Number.isInteger(configuration.columns) ||
+      configuration.columns < 1 ||
+      !['row-major', 'column-major'].includes(configuration.fillOrder)
+    ) {
+      throw new AppError('invalid GRID relationship definition configuration', {
+        code: 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_INVALID',
+        statusCode: 400,
+      });
     }
   }
 
@@ -2446,6 +2532,7 @@ export class ResourceService {
       resourceRelationship: [],
       characteristic: input.characteristic ?? [],
       tenantId: tenantOf(context),
+      ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
       ...(place ? { place } : {}),
       ...(supporting ? { supportingPhysicalResourceId: supporting.id } : {}),
       ...(input.validFor ? { validFor: input.validFor } : {}),
@@ -2521,6 +2608,7 @@ export class ResourceService {
           : current.relatedParty,
         resourceRelationship: current.resourceRelationship,
         characteristic: input.characteristic ?? current.characteristic,
+        ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : current.statusCode ? { statusCode: current.statusCode } : {}),
         ...(place ? { place } : {}),
         ...(supporting ? { supportingPhysicalResourceId: supporting.id } : {}),
         ...(input.validFor !== undefined ? { validFor: input.validFor } : {}),
@@ -2757,6 +2845,7 @@ export class ResourceService {
     const componentPlans = input.components
       ? await planChildren(input.components, resourceType)
       : undefined;
+    if (componentPlans) this.assertPlannedContainmentPlacement(componentPlans);
 
     if (componentPlans && current) {
       const managedIds = new Set([current.id, ...existingComponentIds]);
@@ -2807,10 +2896,6 @@ export class ResourceService {
       : undefined;
     if (siteRelationshipPlans) this.assertPlannedSiteCardinality(siteRelationshipPlans);
 
-    const servingPlace =
-      input.placeId !== undefined
-        ? await this.resolvePlace(input.placeId, input.placeType ?? 'GeographicSite', context)
-        : current?.place;
     const createdIds: string[] = [];
 
     const result = await this.repository.transaction(async () => {
@@ -2824,13 +2909,7 @@ export class ResourceService {
       if (!current) createdIds.push(root.id);
 
       if (componentPlans) {
-        await this.persistAggregateChildren(
-          root,
-          componentPlans,
-          servingPlace?.['@referredType'] === 'GeographicSite' ? servingPlace.id : undefined,
-          createdIds,
-          context,
-        );
+        await this.persistAggregateChildren(root, componentPlans, createdIds, context);
       }
       if (relationshipPlans) {
         await this.reconcileEditorRelationships(root, relationshipPlans, context);
@@ -3014,10 +3093,109 @@ export class ResourceService {
     }
   }
 
+  private assertPlannedContainmentPlacement(plans: AggregateChildPlan[]): void {
+    const occupiedLinear = new Map<string, Array<{ start: number; end: number }>>();
+    const occupiedGrid = new Map<string, Array<{ row: number; column: number; rowSpan: number; columnSpan: number }>>();
+    const visit = (siblings: AggregateChildPlan[], parentKey: string): void => {
+      for (const plan of siblings) {
+        const configuration = plan.rule.rule.configuration;
+        const placement = plan.draft.placement;
+        if (!configuration || configuration.placementPolicy === 'NONE') {
+          if (placement) {
+            throw new AppError('placement is not allowed by this containment definition', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_NOT_ALLOWED',
+              statusCode: 409,
+            });
+          }
+        } else if (configuration.placementPolicy === 'LINEAR') {
+          if (!placement || placement.placementPolicy !== 'LINEAR') {
+            throw new AppError('LINEAR containment requires a LINEAR placement', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_REQUIRED',
+              statusCode: 409,
+            });
+          }
+          const span = placement.span ?? 1;
+          if (
+            !Number.isSafeInteger(placement.position) ||
+            placement.position < 1 ||
+            !Number.isSafeInteger(span) ||
+            span < 1 ||
+            placement.position + span - 1 > configuration.capacity
+          ) {
+            throw new AppError('LINEAR placement exceeds containment capacity', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_OUT_OF_BOUNDS',
+              statusCode: 409,
+            });
+          }
+          const key = `${parentKey}|${plan.rule.rule.id}`;
+          const slots = occupiedLinear.get(key) ?? [];
+          const end = placement.position + span - 1;
+          if (slots.some((slot) => placement.position <= slot.end && end >= slot.start)) {
+            throw new AppError('LINEAR placement overlaps another component', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_OVERLAP',
+              statusCode: 409,
+            });
+          }
+          slots.push({ start: placement.position, end });
+          occupiedLinear.set(key, slots);
+        } else {
+          if (!placement || placement.placementPolicy !== 'GRID') {
+            throw new AppError('GRID containment requires a GRID placement', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_REQUIRED',
+              statusCode: 409,
+            });
+          }
+          const rowSpan = placement.rowSpan ?? 1;
+          const columnSpan = placement.columnSpan ?? 1;
+          if (
+            !Number.isSafeInteger(placement.row) ||
+            placement.row < 1 ||
+            !Number.isSafeInteger(placement.column) ||
+            placement.column < 1 ||
+            !Number.isSafeInteger(rowSpan) ||
+            rowSpan < 1 ||
+            !Number.isSafeInteger(columnSpan) ||
+            columnSpan < 1 ||
+            placement.row + rowSpan - 1 > configuration.rows ||
+            placement.column + columnSpan - 1 > configuration.columns
+          ) {
+            throw new AppError('GRID placement exceeds containment bounds', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_OUT_OF_BOUNDS',
+              statusCode: 409,
+            });
+          }
+          const key = `${parentKey}|${plan.rule.rule.id}`;
+          const cells = occupiedGrid.get(key) ?? [];
+          const overlaps = cells.some(
+            (cell) =>
+              placement.row <= cell.row + cell.rowSpan - 1 &&
+              placement.row + rowSpan - 1 >= cell.row &&
+              placement.column <= cell.column + cell.columnSpan - 1 &&
+              placement.column + columnSpan - 1 >= cell.column,
+          );
+          if (overlaps) {
+            throw new AppError('GRID placement overlaps another component', {
+              code: 'RESOURCE_RELATIONSHIP_PLACEMENT_OVERLAP',
+              statusCode: 409,
+            });
+          }
+          cells.push({
+            row: placement.row,
+            column: placement.column,
+            rowSpan,
+            columnSpan,
+          });
+          occupiedGrid.set(key, cells);
+        }
+        visit(plan.children, plan.existing?.id ?? `new:${plan.draft.name}`);
+      }
+    };
+    visit(plans, 'root');
+  }
+
   private async persistAggregateChildren(
     root: Resource,
     plans: AggregateChildPlan[],
-    inheritedPlaceId: string | undefined,
     createdIds: string[],
     context?: RequestContext,
   ): Promise<void> {
@@ -3026,21 +3204,22 @@ export class ResourceService {
       maxDepth: 32,
     });
     const currentIds = new Set(currentTree.components.map((component) => component.id));
-    const sources = [root.id, ...currentIds];
-    for (const sourceId of sources) {
+    const currentContainments = new Map<string, { parentId: string; relationship: ResourceRelationship }>();
+    for (const sourceId of [root.id, ...currentIds]) {
       for (const relationship of await this.repository.listResourceRelationships(sourceId)) {
-        if (
-          relationship.relationshipType === 'containsAsChild' &&
-          currentIds.has(relationship.id)
-        ) {
-          await this.repository.deleteResourceRelationship(
-            sourceId,
-            relationship.id,
-            'containsAsChild',
-          );
+        if (relationship.relationshipType === 'containsAsChild' && currentIds.has(relationship.id)) {
+          const key = relationship.relationshipId ?? `${sourceId}|${relationship.id}|${relationship.relationshipType}`;
+          currentContainments.set(key, { parentId: sourceId, relationship });
         }
       }
     }
+    const retainedContainments = new Set<string>();
+    const mutations: Array<{
+      action: 'created' | 'updated' | 'moved' | 'unlinked';
+      relationshipId?: string;
+      before?: { parentId: string; relationship: ResourceRelationship };
+      after?: { parentId: string; relationship: ResourceRelationship };
+    }> = [];
 
     const persist = async (parent: Resource, childPlans: AggregateChildPlan[]): Promise<void> => {
       for (const plan of childPlans) {
@@ -3051,12 +3230,18 @@ export class ResourceService {
                 {
                   name: plan.draft.name,
                   resourceSpecificationId: plan.specification.id,
-                  ...(plan.draft.characteristic
-                    ? { characteristic: plan.draft.characteristic }
+                  ...(plan.draft.status ? { status: plan.draft.status } : {}),
+                  ...(plan.draft.statusCode !== undefined
+                    ? { statusCode: plan.draft.statusCode }
                     : {}),
-                  ...(inheritedPlaceId && !plan.existing.place
-                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                  ...(plan.draft.administrativeState
+                    ? { administrativeState: plan.draft.administrativeState }
                     : {}),
+                  ...(plan.draft.operationalState
+                    ? { operationalState: plan.draft.operationalState }
+                    : {}),
+                  ...(plan.draft.usageState ? { usageState: plan.draft.usageState } : {}),
+                  ...(plan.draft.characteristic ? { characteristic: plan.draft.characteristic } : {}),
                 },
                 context,
               )
@@ -3065,12 +3250,18 @@ export class ResourceService {
                 {
                   name: plan.draft.name,
                   resourceSpecificationId: plan.specification.id,
-                  ...(plan.draft.characteristic
-                    ? { characteristic: plan.draft.characteristic }
+                  ...(plan.draft.status ? { status: plan.draft.status } : {}),
+                  ...(plan.draft.statusCode !== undefined
+                    ? { statusCode: plan.draft.statusCode }
                     : {}),
-                  ...(inheritedPlaceId && !plan.existing.place
-                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                  ...(plan.draft.administrativeState
+                    ? { administrativeState: plan.draft.administrativeState }
                     : {}),
+                  ...(plan.draft.operationalState
+                    ? { operationalState: plan.draft.operationalState }
+                    : {}),
+                  ...(plan.draft.usageState ? { usageState: plan.draft.usageState } : {}),
+                  ...(plan.draft.characteristic ? { characteristic: plan.draft.characteristic } : {}),
                 },
                 context,
               )
@@ -3079,12 +3270,18 @@ export class ResourceService {
                 {
                   name: plan.draft.name,
                   resourceSpecificationId: plan.specification.id,
-                  ...(plan.draft.characteristic
-                    ? { characteristic: plan.draft.characteristic }
+                  ...(plan.draft.status ? { status: plan.draft.status } : {}),
+                  ...(plan.draft.statusCode !== undefined
+                    ? { statusCode: plan.draft.statusCode }
                     : {}),
-                  ...(inheritedPlaceId
-                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                  ...(plan.draft.administrativeState
+                    ? { administrativeState: plan.draft.administrativeState }
                     : {}),
+                  ...(plan.draft.operationalState
+                    ? { operationalState: plan.draft.operationalState }
+                    : {}),
+                  ...(plan.draft.usageState ? { usageState: plan.draft.usageState } : {}),
+                  ...(plan.draft.characteristic ? { characteristic: plan.draft.characteristic } : {}),
                 },
                 context,
               )
@@ -3092,25 +3289,104 @@ export class ResourceService {
                 {
                   name: plan.draft.name,
                   resourceSpecificationId: plan.specification.id,
-                  ...(plan.draft.characteristic
-                    ? { characteristic: plan.draft.characteristic }
+                  ...(plan.draft.status ? { status: plan.draft.status } : {}),
+                  ...(plan.draft.statusCode !== undefined
+                    ? { statusCode: plan.draft.statusCode }
                     : {}),
-                  ...(inheritedPlaceId
-                    ? { placeId: inheritedPlaceId, placeType: 'GeographicSite' }
+                  ...(plan.draft.administrativeState
+                    ? { administrativeState: plan.draft.administrativeState }
                     : {}),
+                  ...(plan.draft.operationalState
+                    ? { operationalState: plan.draft.operationalState }
+                    : {}),
+                  ...(plan.draft.usageState ? { usageState: plan.draft.usageState } : {}),
+                  ...(plan.draft.characteristic ? { characteristic: plan.draft.characteristic } : {}),
                 },
                 context,
               );
         if (!plan.existing) createdIds.push(child.id);
-        await this.repository.upsertResourceRelationship(parent.id, {
+
+        const relationshipKey = plan.draft.relationshipId;
+        const current = relationshipKey
+          ? currentContainments.get(relationshipKey)
+          : [...currentContainments.values()].find(
+              (candidate) =>
+                candidate.parentId === parent.id && candidate.relationship.id === child.id,
+            );
+        if (relationshipKey && !current) {
+          throw new AppError('component containment relationship was not found', {
+            code: 'RESOURCE_COMPONENT_RELATIONSHIP_NOT_IN_AGGREGATE',
+            statusCode: 409,
+          });
+        }
+        const relationshipId = current?.relationship.relationshipId ?? relationshipKey;
+        const currentKey = current
+          ? current.relationship.relationshipId ??
+            `${current.parentId}|${current.relationship.id}|${current.relationship.relationshipType}`
+          : undefined;
+        if (currentKey) retainedContainments.add(currentKey);
+        if (current && current.parentId !== parent.id) {
+          await this.repository.deleteResourceRelationship(
+            current.parentId,
+            current.relationship.id,
+            'containsAsChild',
+          );
+        }
+        const nextRelationship = await this.repository.upsertResourceRelationship(parent.id, {
           id: child.id,
           relationshipType: 'containsAsChild',
           '@referredType': 'Resource',
+          ...(relationshipId ? { relationshipId } : {}),
+          relationshipDefinitionId: plan.rule.rule.id,
+          ...(plan.draft.placement ? { placement: plan.draft.placement } : {}),
+        });
+        mutations.push({
+          action: current ? (current.parentId === parent.id ? 'updated' : 'moved') : 'created',
+          ...(nextRelationship.relationshipId
+            ? { relationshipId: nextRelationship.relationshipId }
+            : {}),
+          ...(current ? { before: current } : {}),
+          after: { parentId: parent.id, relationship: nextRelationship },
         });
         await persist(child, plan.children);
       }
     };
     await persist(root, plans);
+
+    for (const [key, current] of currentContainments) {
+      const relationshipId = current.relationship.relationshipId;
+      if ((relationshipId && retainedContainments.has(relationshipId)) || (!relationshipId && retainedContainments.has(key))) {
+        continue;
+      }
+      await this.repository.deleteResourceRelationship(
+        current.parentId,
+        current.relationship.id,
+        'containsAsChild',
+      );
+      mutations.push({
+        action: 'unlinked',
+        ...(current.relationship.relationshipId
+          ? { relationshipId: current.relationship.relationshipId }
+          : {}),
+        before: current,
+      });
+    }
+    for (const mutation of mutations) {
+      const eventType =
+        mutation.action === 'created'
+          ? 'ResourceContainmentRelationshipCreateEvent'
+          : mutation.action === 'unlinked'
+            ? 'ResourceContainmentRelationshipUnlinkedEvent'
+            : 'ResourceContainmentRelationshipUpdateEvent';
+      await this.emit(
+        eventType,
+        mutation.relationshipId ?? root.id,
+        'ResourceRelationship',
+        mutation,
+        context,
+        mutation.before,
+      );
+    }
   }
 
   private async reconcileEditorRelationships(
@@ -3434,7 +3710,11 @@ export class ResourceService {
 
     if (this.dependencies.db && context) {
       await recordMutation(this.dependencies.db, context, {
-        action: eventType.includes('Create') ? 'create' : 'update',
+        action: eventType.includes('Create')
+          ? 'create'
+          : eventType.includes('Unlinked') || eventType.includes('Delete')
+            ? 'delete'
+            : 'update',
         entityType,
         entityId,
         ...(before !== undefined ? { before } : {}),
@@ -3629,6 +3909,7 @@ const aggregateLogicalCreate = (input: SaveResourceAggregateInput): CreateLogica
     ? { supportingPhysicalResourceId: input.supportingPhysicalResourceId }
     : {}),
   ...(input.status ? { status: input.status } : {}),
+  ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
   ...(input.administrativeState ? { administrativeState: input.administrativeState } : {}),
   ...(input.operationalState ? { operationalState: input.operationalState } : {}),
   ...(input.usageState ? { usageState: input.usageState } : {}),

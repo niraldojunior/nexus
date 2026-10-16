@@ -1,4 +1,4 @@
-export type MigrationPhase = '1' | '2' | '2c' | '2d' | '3' | '3b' | 'all';
+export type MigrationPhase = '1' | '2' | '2c' | '2d' | '3' | '3a' | '3b' | 'all';
 
 export type MigrationScope = {
   municipio?: string | undefined;
@@ -19,6 +19,7 @@ export type CliOptions = {
   resume: boolean;
   jobId?: string | undefined;
   sourceScn?: string | undefined;
+  updatedSince?: Date | undefined;
 };
 
 export type PhaseStats = {

@@ -15,10 +15,12 @@ export const CLOB_COLUMNS = new Set([
   'allowed_target_categories',
   'allowed_values',
   'applicable_to_entity_types',
+  'attributes',
   'avatar_url',
   'baseline_snapshot',
   'before_state',
   'characteristics',
+  'configuration',
   'content',
   'context',
   'event_data',
@@ -30,6 +32,7 @@ export const CLOB_COLUMNS = new Set([
   'observation',
   'payload',
   'place',
+  'placement',
   'related_party',
   'resource_function_specification_relationship',
   'resource_order_item',
@@ -45,6 +48,7 @@ export const CLOB_COLUMNS = new Set([
   'supporting_resources',
   'supporting_services',
   'validation',
+  'validation_rules',
   'warnings',
 ]);
 

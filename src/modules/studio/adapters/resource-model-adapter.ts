@@ -211,13 +211,52 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
         const rules = node.relationshipRules ?? [];
         for (let r = 0; r < rules.length; r++) {
           const rule = rules[r];
+          const rulePath = `${pathPrefix}.relationshipRules[${r}]`;
           if (!rule?.relationshipTypeCode?.trim() || !rule.targetKind || !rule.targetId?.trim()) {
             issues.push({
               severity: 'error',
               code: 'RELATIONSHIP_RULE_INCOMPLETE',
               message: `Regra de relação incompleta no nó '${node.code}'.`,
-              path: `${pathPrefix}.relationshipRules[${r}]`,
+              path: rulePath,
             });
+            continue;
+          }
+          const configuration = rule.configuration;
+          if (!configuration) continue;
+          if (configuration.version !== 1) {
+            issues.push({
+              severity: 'error',
+              code: 'RELATIONSHIP_CONFIGURATION_VERSION_INVALID',
+              message: `Versão de configuração inválida na regra do nó '${node.code}'.`,
+              path: `${rulePath}.configuration.version`,
+            });
+          } else if (configuration.placementPolicy === 'LINEAR') {
+            if (
+              !Number.isInteger(configuration.capacity) ||
+              configuration.capacity < 1 ||
+              !configuration.unitLabel?.trim()
+            ) {
+              issues.push({
+                severity: 'error',
+                code: 'RELATIONSHIP_CONFIGURATION_LINEAR_INVALID',
+                message: `Configuração LINEAR inválida no nó '${node.code}'.`,
+                path: `${rulePath}.configuration`,
+              });
+            }
+          } else if (configuration.placementPolicy === 'GRID') {
+            if (
+              !Number.isInteger(configuration.rows) ||
+              configuration.rows < 1 ||
+              !Number.isInteger(configuration.columns) ||
+              configuration.columns < 1
+            ) {
+              issues.push({
+                severity: 'error',
+                code: 'RELATIONSHIP_CONFIGURATION_GRID_INVALID',
+                message: `Configuração GRID inválida no nó '${node.code}'.`,
+                path: `${rulePath}.configuration`,
+              });
+            }
           }
         }
       }
@@ -657,26 +696,30 @@ export class ResourceModelStudioAdapter implements StudioDomainAdapter {
               targetKind: rule.targetKind,
               targetId: resolvedTargetId,
               ...(rule.cardinality ? { cardinality: rule.cardinality } : {}),
+              ...(rule.configuration ? { configuration: rule.configuration } : {}),
+              ...(rule.validationRules ? { validationRules: rule.validationRules } : {}),
               ...(rule.validFor ? { validFor: rule.validFor } : {}),
             },
             reqContext,
           );
         } else {
-          const snapCard = rule.cardinality;
-          const currCard = current.cardinality;
-          const snapMaxTarget = snapCard?.maxTargetPerSource;
-          const currMaxTarget = currCard?.maxTargetPerSource;
-          const snapMaxSource = snapCard?.maxSourcePerTarget;
-          const currMaxSource = currCard?.maxSourcePerTarget;
           const cardinalityChanged =
-            snapMaxTarget !== currMaxTarget || snapMaxSource !== currMaxSource;
+            JSON.stringify(rule.cardinality ?? null) !== JSON.stringify(current.cardinality ?? null);
+          const configurationChanged =
+            JSON.stringify(rule.configuration ?? null) !==
+            JSON.stringify(current.configuration ?? null);
+          const validationRulesChanged =
+            JSON.stringify(rule.validationRules ?? null) !==
+            JSON.stringify(current.validationRules ?? null);
 
-          if (cardinalityChanged) {
+          if (cardinalityChanged || configurationChanged || validationRulesChanged) {
             await this.resourceService.updateResourceTypeRelationshipRule(
               typeId,
               current.id,
               {
-                cardinality: snapCard ?? null,
+                ...(cardinalityChanged ? { cardinality: rule.cardinality ?? null } : {}),
+                ...(configurationChanged ? { configuration: rule.configuration ?? null } : {}),
+                ...(validationRulesChanged ? { validationRules: rule.validationRules } : {}),
               },
               reqContext,
             );

@@ -17,6 +17,7 @@ import { loadConfig } from '../shared/config/env.js';
 import { createDatabaseClient } from '../shared/persistence/database-factory.js';
 import type { DatabaseClient, DatabaseSession } from '../shared/persistence/database-client.js';
 import { netwinEquipmentId, netwinInternalEquipmentId } from './netwin-migration/identity.js';
+import { createCanonicalId } from '../shared/utils/canonical-id.js';
 
 loadEnv();
 
@@ -415,13 +416,14 @@ async function applyRepair(client: DatabaseClient, report: AuditReport): Promise
         if (!candidate.parentIds.includes(candidate.canonicalParentId)) {
           const inserted = await session.execute(
             `INSERT INTO resource_relationship
-             (resource_from_id, resource_to_id, relationship_type)
-             SELECT ?, ?, 'containsAsChild'
+             (id, resource_from_id, resource_to_id, relationship_type, created_at, updated_at)
+             SELECT ?, ?, ?, 'containsAsChild', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                WHERE NOT EXISTS (
                  SELECT 1 FROM resource_relationship
                   WHERE resource_from_id = ? AND resource_to_id = ? AND relationship_type = 'containsAsChild'
                )`,
             [
+              createCanonicalId(),
               candidate.canonicalParentId,
               candidate.portId,
               candidate.canonicalParentId,

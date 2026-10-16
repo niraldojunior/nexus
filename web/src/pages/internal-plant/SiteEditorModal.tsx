@@ -338,16 +338,15 @@ export function SiteEditorModal({
           ))}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between gap-3 border-b border-app-border px-6 py-4">
+          <header className="box-border flex h-[65px] shrink-0 items-center justify-between gap-3 border-b border-app-border px-6">
             <div className="min-w-0 flex-1">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
-                {title}
-              </p>
-              <h2
-                className="truncate text-[1.15rem] font-semibold text-app-text"
-                title={draft?.name || 'Sem nome'}
-              >
-                {draft?.name || 'Sem nome'}
+              <h2 className="flex min-w-0 items-baseline gap-2 text-[1.15rem] font-semibold text-app-text">
+                <span className="shrink-0 text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
+                  {title}
+                </span>
+                <span className="truncate" title={draft?.name || 'Sem nome'}>
+                  {draft?.name || 'Sem nome'}
+                </span>
               </h2>
             </div>
             <button

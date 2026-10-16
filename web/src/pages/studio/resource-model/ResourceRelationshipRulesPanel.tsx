@@ -1,20 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Link2, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, Link2, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import {
   ensureBootstrapResourceRelationshipTypes,
-  listResourceRelationshipTypes,
   listResourceTypeRelationshipRules,
   createResourceTypeRelationshipRule,
   updateResourceTypeRelationshipRule,
   type ResourceRelationshipType,
   type ResourceRelationshipTargetKind,
-  type ResourceRelationshipCardinality,
+  type ResourceRelationshipDefinitionConfiguration,
+  type ResourceType,
   type ResourceTypeRelationshipRule,
 } from '../../../services/resourceApi';
-import { listResourceTypes as listCatalogResourceTypes } from '../../../services/resourceCatalogApi';
-import type { ResourceType } from '../../../services/resourceApi';
-import { listGeoSiteSpecifications, type GeoSpec } from '../../../services/geoApi';
-import { Button, Modal } from '../../../components/ui';
+import type { GeoSpec } from '../../../services/geoApi';
+import { Badge, Button, DataTable, type DataTableColumn } from '../../../components/ui';
+import {
+  ResourceRelationshipRuleModal,
+  type RelationshipRuleModalMode,
+  type ResourceRelationshipRuleFormValue,
+} from './ResourceRelationshipRuleModal';
+import { ResourceRelationshipRuleRetireModal } from './ResourceRelationshipRuleRetireModal';
+import {
+  invalidateRelationshipTypesCache,
+  loadRelationshipTypesCached,
+  loadResourceTypesCached,
+  loadSiteSpecificationsCached,
+} from '../../../services/internalPlantCatalogCache';
 
 export type ResourceRelationshipRulesPanelProps = {
   resourceTypeId: string;
@@ -62,19 +72,22 @@ function cardinalityLabel(rule: ResourceTypeRelationshipRule): string {
   return 'sem restrição';
 }
 
-// Rede de segurança: `tmf_resource_type` pode conter linhas legadas com o mesmo `code` de um
-// tipo canônico (cutover de ID, ver `oracle-repository.ts#seedResourceCatalog`). Mantém apenas a
-// primeira ocorrência de cada código para não duplicar a opção na combo.
-function dedupeByCode(types: ResourceType[]): ResourceType[] {
-  const seen = new Set<string>();
-  const result: ResourceType[] = [];
-  for (const rt of types) {
-    const key = rt.code || rt.id;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(rt);
+function configurationPresentation(
+  configuration: ResourceRelationshipDefinitionConfiguration | undefined,
+): { title: string; detail: string } {
+  if (!configuration || configuration.placementPolicy === 'NONE') {
+    return { title: 'Padrão', detail: 'Lista simples' };
   }
-  return result;
+  if (configuration.placementPolicy === 'LINEAR') {
+    return {
+      title: `Linear (${configuration.axis === 'vertical' ? 'Vertical' : 'Horizontal'})`,
+      detail: `${configuration.unitLabel} · ${configuration.capacity} posições`,
+    };
+  }
+  return {
+    title: 'Grade',
+    detail: `${configuration.rows} × ${configuration.columns} posições`,
+  };
 }
 
 export function ResourceRelationshipRulesPanel({
@@ -92,26 +105,22 @@ export function ResourceRelationshipRulesPanel({
   const [error, setError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<RelationshipRuleModalMode>('create');
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
-  const [formRelationshipCode, setFormRelationshipCode] = useState('');
-  const [formTargetKind, setFormTargetKind] =
-    useState<ResourceRelationshipTargetKind>('RESOURCE_TYPE');
-  const [formTargetId, setFormTargetId] = useState('');
-  const [formCardinalityMode, setFormCardinalityMode] = useState<'none' | 'max' | 'one'>('none');
-  const [formCardinalityMax, setFormCardinalityMax] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
+  const [retiringRuleId, setRetiringRuleId] = useState<string | null>(null);
+  const [retireError, setRetireError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const typesPromise = listResourceRelationshipTypes();
       const [typesRes, resourceTypesRes, geoSpecsRes, rulesRes] = await Promise.all([
-        typesPromise,
-        listCatalogResourceTypes(),
-        listGeoSiteSpecifications(),
+        loadRelationshipTypesCached(),
+        loadResourceTypesCached(),
+        loadSiteSpecificationsCached(),
         listResourceTypeRelationshipRules(resourceTypeId),
       ]);
       setRelationshipTypes(typesRes.filter((t) => t.lifecycleStatus === 'Active'));
@@ -119,8 +128,10 @@ export function ResourceRelationshipRulesPanel({
       setGeoSpecs(geoSpecsRes);
       setRules(rulesRes);
       void ensureBootstrapResourceRelationshipTypes()
-        .then(async () => {
-          const refreshedTypes = await listResourceRelationshipTypes();
+        .then(async ({ created }) => {
+          if (created === 0) return;
+          invalidateRelationshipTypesCache();
+          const refreshedTypes = await loadRelationshipTypesCached();
           setRelationshipTypes(refreshedTypes.filter((t) => t.lifecycleStatus === 'Active'));
         })
         .catch(() => undefined);
@@ -169,91 +180,33 @@ export function ResourceRelationshipRulesPanel({
     return geoSpecById.get(rule.targetId)?.name ?? 'Tipo de local removido';
   };
 
-  const selectedRelationshipType = relationshipTypeByCode.get(formRelationshipCode);
-  const allowedTargetKinds = selectedRelationshipType?.allowedTargetKinds ?? [];
-  const targetOptions =
-    formTargetKind === 'RESOURCE_TYPE'
-      ? dedupeByCode(
-          resourceTypes.filter((rt) => rt.id !== resourceTypeId && rt.status === 'active'),
-        )
-          .map((rt) => ({ id: rt.id, name: rt.name }))
-          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
-      : geoSpecs
-          .map((s) => ({ id: s.id, name: s.name }))
-          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
-
   const handleOpenCreate = () => {
+    setModalMode('create');
     setEditingRuleId(null);
-    setFormRelationshipCode(selectRelationshipTypes[0]?.code ?? '');
-    setFormTargetKind(selectRelationshipTypes[0]?.allowedTargetKinds[0] ?? 'RESOURCE_TYPE');
-    setFormTargetId('');
-    setFormCardinalityMode('none');
-    setFormCardinalityMax('');
     setFormError(null);
     setModalOpen(true);
   };
 
-  const handleOpenEdit = (rule: ResourceTypeRelationshipRule) => {
+  const handleOpenRule = (rule: ResourceTypeRelationshipRule, mode: 'edit' | 'view') => {
+    setModalMode(mode);
     setEditingRuleId(rule.id);
-    setFormRelationshipCode(rule.relationshipTypeCode);
-    setFormTargetKind(rule.targetKind);
-    setFormTargetId(rule.targetId);
-    const max = rule.cardinality?.maxTargetPerSource;
-    if (max === 1) {
-      setFormCardinalityMode('one');
-      setFormCardinalityMax('');
-    } else if (typeof max === 'number' && max > 1) {
-      setFormCardinalityMode('max');
-      setFormCardinalityMax(String(max));
-    } else {
-      setFormCardinalityMode('none');
-      setFormCardinalityMax('');
-    }
     setFormError(null);
     setModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formRelationshipCode) {
-      setFormError('Selecione um tipo de relação.');
-      return;
-    }
-    if (!formTargetId) {
-      setFormError('Selecione um alvo para a relação.');
-      return;
-    }
-
-    let cardinality: ResourceRelationshipCardinality | undefined;
-    if (formCardinalityMode === 'one') {
-      cardinality = { maxTargetPerSource: 1 };
-    } else if (formCardinalityMode === 'max') {
-      const parsed = parseInt(formCardinalityMax.trim(), 10);
-      if (!Number.isInteger(parsed) || parsed < 1) {
-        setFormError('Informe uma quantidade máxima válida (número inteiro >= 1).');
-        return;
-      }
-      cardinality = { maxTargetPerSource: parsed };
-    }
-
+  const handleSubmit = async (value: ResourceRelationshipRuleFormValue) => {
+    if (modalMode === 'view') return;
     setFormSaving(true);
     setFormError(null);
     try {
       if (editingRuleId) {
         const updated = await updateResourceTypeRelationshipRule(resourceTypeId, editingRuleId, {
-          relationshipTypeCode: formRelationshipCode,
-          targetKind: formTargetKind,
-          targetId: formTargetId,
-          cardinality: cardinality ?? null,
+          ...value,
+          cardinality: value.cardinality ?? null,
         });
-        setRules((prev) => prev.map((r) => (r.id === editingRuleId ? updated : r)));
+        setRules((prev) => prev.map((rule) => (rule.id === editingRuleId ? updated : rule)));
       } else {
-        const created = await createResourceTypeRelationshipRule(resourceTypeId, {
-          relationshipTypeCode: formRelationshipCode,
-          targetKind: formTargetKind,
-          targetId: formTargetId,
-          cardinality,
-        });
+        const created = await createResourceTypeRelationshipRule(resourceTypeId, value);
         setRules((prev) => [...prev, created]);
       }
       setModalOpen(false);
@@ -272,20 +225,93 @@ export function ResourceRelationshipRulesPanel({
 
   const handleRetire = async (rule: ResourceTypeRelationshipRule) => {
     setRetiringId(rule.id);
-    setError(null);
+    setRetireError(null);
     try {
       const updated = await updateResourceTypeRelationshipRule(resourceTypeId, rule.id, {
         lifecycleStatus: 'Retired',
       });
       setRules((prev) => prev.map((r) => (r.id === rule.id ? updated : r)));
+      setRetiringRuleId(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Falha ao inativar relação.');
+      const message = err instanceof Error ? err.message : 'Falha ao inativar relação.';
+      setRetireError(message);
+      throw err;
     } finally {
       setRetiringId(null);
     }
   };
 
   const activeRules = rules.filter((r) => r.lifecycleStatus === 'Active');
+  const retiringRule = retiringRuleId ? rules.find((rule) => rule.id === retiringRuleId) : undefined;
+  const sourceName = resourceTypeById.get(resourceTypeId)?.name ?? 'Tipo de recurso atual';
+  const tableColumns: DataTableColumn<ResourceTypeRelationshipRule>[] = [
+    {
+      key: 'relationshipType',
+      header: 'Tipo',
+      render: (rule) => {
+        const relType = relationshipTypeByCode.get(rule.relationshipTypeCode);
+        const presentation = relationshipPresentationByCode.get(rule.relationshipTypeCode);
+        return (
+          <Badge tone="purple">
+            {presentation?.shortLabel ?? relType?.name ?? rule.relationshipTypeCode}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'target',
+      header: 'Recurso relacionado',
+      render: (rule) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-app-text">{targetName(rule)}</p>
+          <p className="mt-0.5 text-[0.75rem] text-app-muted">{targetKindLabel[rule.targetKind]}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'cardinality',
+      header: 'Cardinalidade',
+      render: (rule) => (
+        <span className="text-[0.85rem] text-app-text">{cardinalityLabel(rule)}</span>
+      ),
+    },
+    {
+      key: 'configuration',
+      header: 'Configuração',
+      render: (rule) => {
+        const configuration = configurationPresentation(rule.configuration);
+        return (
+          <div>
+            <p className="font-medium text-app-text">{configuration.title}</p>
+            <p className="mt-0.5 text-[0.75rem] text-app-muted">{configuration.detail}</p>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Ações</span>,
+      headerClassName: 'w-10',
+      cellClassName: 'w-10 text-right',
+      render: (rule) =>
+        canMutate ? (
+          <button
+            type="button"
+            title="Inativar relação"
+            aria-label="Inativar relação"
+            onClick={(event) => {
+              event.stopPropagation();
+              setRetireError(null);
+              setRetiringRuleId(rule.id);
+            }}
+            disabled={retiringId === rule.id}
+            className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft focus-visible:border-status-red focus-visible:bg-status-red-soft disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null,
+    },
+  ];
 
   useEffect(() => {
     if (!loading) {
@@ -342,66 +368,13 @@ export function ResourceRelationshipRulesPanel({
           </p>
         </div>
       ) : (
-        <div className="divide-y divide-app-border rounded-[18px] border border-app-border overflow-hidden">
-          {activeRules.map((rule) => {
-            const relType = relationshipTypeByCode.get(rule.relationshipTypeCode);
-            const presentation = relationshipPresentationByCode.get(rule.relationshipTypeCode);
-            const relationAndTarget = `${presentation?.shortLabel ?? relType?.name ?? rule.relationshipTypeCode} ${targetName(rule)}`;
-            return (
-              <div
-                key={rule.id}
-                role={canMutate ? 'button' : undefined}
-                tabIndex={canMutate ? 0 : undefined}
-                onClick={canMutate ? () => handleOpenEdit(rule) : undefined}
-                onKeyDown={
-                  canMutate
-                    ? (event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          handleOpenEdit(rule);
-                        }
-                      }
-                    : undefined
-                }
-                className={`group min-h-12 px-3.5 py-2.5 transition flex items-center justify-between gap-3 ${
-                  canMutate ? 'cursor-pointer vt-hover-muted focus:outline-none' : ''
-                }`}
-              >
-                <p className="min-w-0 truncate whitespace-nowrap text-[0.88rem] text-app-text">
-                  <strong className="font-semibold">{relationAndTarget}</strong>{' '}
-                  <span className="font-normal">({cardinalityLabel(rule)})</span>
-                </p>
-                {canMutate && (
-                  <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      title="Editar relação"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleOpenEdit(rule);
-                      }}
-                      className="rounded-xl border border-transparent p-1.5 text-app-muted transition hover:border-app-border hover:bg-app-accent-soft hover:text-app-text"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Inativar relação"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleRetire(rule);
-                      }}
-                      disabled={retiringId === rule.id}
-                      className="rounded-xl border border-transparent p-1.5 text-status-red transition hover:border-status-red hover:bg-status-red-soft disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <DataTable
+          columns={tableColumns}
+          rows={activeRules}
+          rowKey={(rule) => rule.id}
+          onRowClick={(rule) => handleOpenRule(rule, canMutate ? 'edit' : 'view')}
+          horizontalScroll
+        />
       )}
 
       {rules.some((r) => r.lifecycleStatus === 'Retired') && (
@@ -413,11 +386,17 @@ export function ResourceRelationshipRulesPanel({
             {rules
               .filter((r) => r.lifecycleStatus === 'Retired')
               .map((r) => (
-                <li key={r.id} className="flex items-center gap-1.5">
-                  <RotateCcw className="h-3 w-3" />
-                  {relationshipTypeByCode.get(r.relationshipTypeCode)?.name ??
-                    r.relationshipTypeCode}{' '}
-                  · {targetName(r)}
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenRule(r, 'view')}
+                    className="flex items-center gap-1.5 rounded text-left hover:text-app-text focus-visible:text-app-text"
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                    {relationshipTypeByCode.get(r.relationshipTypeCode)?.name ??
+                      r.relationshipTypeCode}{' '}
+                    · {targetName(r)}
+                  </button>
                 </li>
               ))}
           </ul>
@@ -425,180 +404,39 @@ export function ResourceRelationshipRulesPanel({
       )}
 
       {modalOpen && (
-        <Modal
-          title={editingRuleId ? 'Editar relação' : 'Adicionar relação'}
+        <ResourceRelationshipRuleModal
+          mode={modalMode}
+          rule={editingRuleId ? rules.find((rule) => rule.id === editingRuleId) : undefined}
+          relationshipTypes={selectRelationshipTypes}
+          resourceTypes={resourceTypes}
+          geoSpecs={geoSpecs}
+          sourceResourceTypeId={resourceTypeId}
+          sourceResourceTypeName={sourceName}
+          saving={formSaving}
+          error={formError}
           onClose={() => setModalOpen(false)}
-          footer={
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setModalOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                form="resource-relationship-rule-form"
-                variant="primary"
-                size="sm"
-                disabled={formSaving}
-              >
-                {formSaving ? 'Salvando…' : editingRuleId ? 'Salvar' : 'Adicionar'}
-              </Button>
-            </>
+          onSubmit={handleSubmit}
+        />
+      )}
+
+      {retiringRule && (
+        <ResourceRelationshipRuleRetireModal
+          sourceName={sourceName}
+          relationshipName={
+            relationshipPresentationByCode.get(retiringRule.relationshipTypeCode)?.shortLabel ??
+            relationshipTypeByCode.get(retiringRule.relationshipTypeCode)?.name ??
+            retiringRule.relationshipTypeCode
           }
-        >
-          <form id="resource-relationship-rule-form" onSubmit={handleSubmit} className="space-y-4">
-            {formError && (
-              <div
-                className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
-                style={{ background: 'var(--status-red-soft)', color: 'var(--status-red)' }}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <div>
-              <label
-                htmlFor="form-rule-relationship-type"
-                className="block text-[0.8rem] font-semibold text-app-text mb-1.5"
-              >
-                Tipo de relação
-              </label>
-              <select
-                id="form-rule-relationship-type"
-                value={formRelationshipCode}
-                onChange={(e) => {
-                  const code = e.target.value;
-                  setFormRelationshipCode(code);
-                  const kinds = relationshipTypeByCode.get(code)?.allowedTargetKinds ?? [];
-                  setFormTargetKind(kinds[0] ?? 'RESOURCE_TYPE');
-                  setFormTargetId('');
-                }}
-                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
-              >
-                {selectRelationshipTypes.map((t) => (
-                  <option key={t.code} value={t.code}>
-                    {relationshipPresentationByCode.get(t.code)?.selectLabel ?? t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {allowedTargetKinds.length > 1 && (
-              <div>
-                <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-                  Tipo de alvo
-                </label>
-                <div className="inline-flex rounded-xl bg-[var(--surface-muted)] p-1 gap-1">
-                  {allowedTargetKinds.map((kind) => (
-                    <button
-                      key={kind}
-                      type="button"
-                      onClick={() => {
-                        setFormTargetKind(kind);
-                        setFormTargetId('');
-                      }}
-                      className={`rounded-lg px-3.5 py-1.5 text-[0.84rem] font-medium transition disabled:opacity-60 ${
-                        formTargetKind === kind
-                          ? 'bg-app-panel text-app-text font-semibold shadow-sm'
-                          : 'text-app-muted hover:text-app-text'
-                      }`}
-                    >
-                      {targetKindLabel[kind]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label
-                htmlFor="form-rule-target-id"
-                className="block text-[0.8rem] font-semibold text-app-text mb-1.5"
-              >
-                {targetKindLabel[formTargetKind]}
-              </label>
-              <select
-                id="form-rule-target-id"
-                value={formTargetId}
-                onChange={(e) => setFormTargetId(e.target.value)}
-                className="geo-input disabled:bg-[var(--surface-muted)] disabled:text-app-muted"
-              >
-                <option value="">Selecione…</option>
-                {targetOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[0.8rem] font-semibold text-app-text mb-1.5">
-                Quantidade permitida
-              </label>
-              <div className="inline-flex rounded-xl bg-[var(--surface-muted)] p-1 gap-1 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setFormCardinalityMode('none')}
-                  className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
-                    formCardinalityMode === 'none'
-                      ? 'bg-app-panel text-app-text font-semibold shadow-sm'
-                      : 'text-app-muted hover:text-app-text'
-                  }`}
-                >
-                  Sem restrição
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormCardinalityMode('one')}
-                  className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
-                    formCardinalityMode === 'one'
-                      ? 'bg-app-panel text-app-text font-semibold shadow-sm'
-                      : 'text-app-muted hover:text-app-text'
-                  }`}
-                >
-                  Exatamente 1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormCardinalityMode('max')}
-                  className={`rounded-lg px-3 py-1.5 text-[0.82rem] font-medium transition ${
-                    formCardinalityMode === 'max'
-                      ? 'bg-app-panel text-app-text font-semibold shadow-sm'
-                      : 'text-app-muted hover:text-app-text'
-                  }`}
-                >
-                  No máximo N
-                </button>
-              </div>
-
-              {formCardinalityMode === 'max' && (
-                <div className="mt-1">
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    autoFocus
-                    placeholder="Ex.: 8"
-                    value={formCardinalityMax}
-                    onChange={(e) => setFormCardinalityMax(e.target.value)}
-                    aria-label="Quantidade máxima"
-                    className="geo-input font-mono w-32"
-                  />
-                  <p className="text-[0.76rem] text-app-muted mt-1">
-                    Número máximo de instâncias deste alvo que um recurso de origem pode conter ou
-                    ligar.
-                  </p>
-                </div>
-              )}
-            </div>
-          </form>
-        </Modal>
+          targetName={targetName(retiringRule)}
+          retiring={retiringId === retiringRule.id}
+          error={retireError}
+          onClose={() => {
+            if (retiringId) return;
+            setRetiringRuleId(null);
+            setRetireError(null);
+          }}
+          onConfirm={() => handleRetire(retiringRule)}
+        />
       )}
     </div>
   );

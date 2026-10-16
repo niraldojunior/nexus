@@ -371,11 +371,16 @@ const DATE_TEXT_COLUMNS = new Set([
   'usage_state_changed_at',
 ]);
 
+export type MergeOptions = {
+  touchUpdatedAt?: boolean;
+};
+
 export function mergeSql(
   t: TablePrefixer,
   table: string,
   keys: string[],
   columns: string[],
+  options: MergeOptions = {},
 ): string {
   if (keys.length === 0) throw new Error(`MERGE ${table} exige ao menos uma chave.`);
   const source = columns
@@ -387,10 +392,14 @@ export function mergeSql(
     .join(', ');
   const on = keys.map((key) => `target.${quote(key)}=source.${quote(key)}`).join(' AND ');
   const mutable = columns.filter((column) => !keys.includes(column));
+  const assignments = mutable.map(
+    (column) => `target.${quote(column)}=source.${quote(column)}`,
+  );
+  if (options.touchUpdatedAt && !columns.includes('updated_at')) {
+    assignments.push(`target.${quote('updated_at')}=SYSTIMESTAMP`);
+  }
   const matched =
-    mutable.length > 0
-      ? `WHEN MATCHED THEN UPDATE SET ${mutable.map((column) => `target.${quote(column)}=source.${quote(column)}`).join(', ')}`
-      : '';
+    assignments.length > 0 ? `WHEN MATCHED THEN UPDATE SET ${assignments.join(', ')}` : '';
   return `MERGE INTO ${t(table)} target USING (SELECT ${source} FROM DUAL) source ON (${on})
     ${matched}
     WHEN NOT MATCHED THEN INSERT (${columns.map(quote).join(',')}) VALUES (${columns.map((column) => `source.${quote(column)}`).join(',')})`;
@@ -492,10 +501,11 @@ export async function bulkMergeRows(
   columns: string[],
   rows: Array<Record<string, unknown>>,
   chunkSize = 1000,
+  options: MergeOptions = {},
 ): Promise<number> {
   if (rows.length === 0) return 0;
 
-  const sql = mergeSql(t, table, keys, columns);
+  const sql = mergeSql(t, table, keys, columns, options);
   const safeChunkSize = Math.max(1, chunkSize);
   let executed = 0;
   for (let offset = 0; offset < rows.length; offset += safeChunkSize) {

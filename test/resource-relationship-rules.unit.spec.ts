@@ -169,6 +169,120 @@ test('ResourceService.createResourceTypeRelationshipRule: RESOURCE_TYPE target v
   );
 });
 
+test('ResourceService.createResourceTypeRelationshipRule: persists a typed LINEAR definition configuration', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never);
+  await service.ensureBootstrapResourceRelationshipTypes(context);
+  const types = await service.listResourceTypes(context);
+  const rackType = types.find((type) => type.code === 'Rack') ?? types[0]!;
+  const equipmentType = types.find((type) => type.code === 'Equipment') ?? types[1]!;
+
+  const rule = await service.createResourceTypeRelationshipRule(
+    rackType.id,
+    {
+      relationshipTypeCode: 'containsAsChild',
+      targetKind: 'RESOURCE_TYPE',
+      targetId: equipmentType.id,
+      configuration: {
+        version: 1,
+        placementPolicy: 'LINEAR',
+        axis: 'vertical',
+        unitLabel: 'U',
+        capacity: 42,
+        numberingDirection: 'ascending',
+      },
+      validationRules: { exclusive: true },
+    },
+    context,
+  );
+
+  assert.deepEqual(rule.configuration, {
+    version: 1,
+    placementPolicy: 'LINEAR',
+    axis: 'vertical',
+    unitLabel: 'U',
+    capacity: 42,
+    numberingDirection: 'ascending',
+  });
+  assert.deepEqual(rule.validationRules, { exclusive: true });
+});
+
+test('ResourceService.updateResourceTypeRelationshipRule: preserves omitted configuration, clears explicit null, and allows changing semantics', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never);
+  await service.ensureBootstrapResourceRelationshipTypes(context);
+  const types = await service.listResourceTypes(context);
+  const rackType = types.find((type) => type.code === 'Rack') ?? types[0]!;
+  const equipmentType = types.find((type) => type.code === 'Equipment') ?? types[1]!;
+
+  const created = await service.createResourceTypeRelationshipRule(
+    rackType.id,
+    {
+      relationshipTypeCode: 'containsAsChild',
+      targetKind: 'RESOURCE_TYPE',
+      targetId: equipmentType.id,
+      configuration: {
+        version: 1,
+        placementPolicy: 'LINEAR',
+        axis: 'vertical',
+        unitLabel: 'U',
+        capacity: 42,
+        numberingDirection: 'ascending',
+      },
+      validationRules: { exclusive: true },
+    },
+    context,
+  );
+
+  const preserved = await service.updateResourceTypeRelationshipRule(
+    rackType.id,
+    created.id,
+    { validationRules: { exclusive: true, required: true } },
+    context,
+  );
+  assert.equal(preserved.configuration?.placementPolicy, 'LINEAR');
+  assert.deepEqual(preserved.validationRules, { exclusive: true, required: true });
+
+  const cleared = await service.updateResourceTypeRelationshipRule(
+    rackType.id,
+    created.id,
+    { relationshipTypeCode: 'mountedOn', configuration: null },
+    context,
+  );
+  assert.equal(cleared.relationshipTypeCode, 'mountedOn');
+  assert.equal(cleared.configuration, undefined);
+  assert.deepEqual(cleared.validationRules, { exclusive: true, required: true });
+});
+
+test('ResourceService.createResourceTypeRelationshipRule: rejects invalid GRID definition configuration', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never);
+  await service.ensureBootstrapResourceRelationshipTypes(context);
+  const types = await service.listResourceTypes(context);
+  const boardType = types.find((type) => type.code === 'Board') ?? types[0]!;
+  const portType = types.find((type) => type.code === 'Port') ?? types[1]!;
+
+  await assert.rejects(
+    service.createResourceTypeRelationshipRule(
+      boardType.id,
+      {
+        relationshipTypeCode: 'containsAsChild',
+        targetKind: 'RESOURCE_TYPE',
+        targetId: portType.id,
+        configuration: {
+          version: 1,
+          placementPolicy: 'GRID',
+          rows: 0,
+          columns: 8,
+          fillOrder: 'row-major',
+        },
+      },
+      context,
+    ),
+    (error: unknown) => error instanceof AppError && error.code === 'RESOURCE_RELATIONSHIP_DEFINITION_CONFIGURATION_INVALID',
+  );
+});
+
 test('ResourceService.createResourceTypeRelationshipRule: GEOGRAPHIC_SITE_SPECIFICATION target uses the injected lookup port, never a hardcoded Geo import', async () => {
   const repo = new ResourceRepository();
   const lookupGeoSiteSpecification = vi.fn(async (id: string) =>

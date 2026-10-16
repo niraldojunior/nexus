@@ -47,6 +47,21 @@ type TableStatistic = {
   STALE_STATS: 'YES' | 'NO' | null;
 };
 
+type IncrementalCandidate = Candidate & {
+  UPDATED_AT: Date | string;
+};
+
+type ExistingFeatureTile = {
+  TILE_Z: number;
+  TILE_X: number;
+  TILE_Y: number;
+};
+
+type IncrementalCursor = {
+  updatedAt: Date;
+  id: string;
+};
+
 const FEATURE_COLUMNS = [
   'tenant_id',
   'tile_z',
@@ -76,6 +91,20 @@ const FEATURE_COLUMNS = [
 const PHASE3_MAP_PAGE_SIZE = 5000;
 
 const PHYSICAL_RESOURCE_INDEX_COLUMNS = ['TENANT_ID', 'RESOURCE_SPECIFICATION_ID', 'ID'];
+const INCREMENTAL_INDEXES = [
+  {
+    table: 'resource_physical',
+    columns: ['TENANT_ID', 'UPDATED_AT', 'ID'],
+  },
+  {
+    table: 'geographic_site',
+    columns: ['TENANT_ID', 'UPDATED_AT', 'ID'],
+  },
+  {
+    table: 'geographic_map_feature',
+    columns: ['TENANT_ID', 'FEATURE_KIND', 'ENTITY_ID'],
+  },
+] as const;
 const DIAGNOSTIC_TABLES = [
   'resource_physical',
   'resource_specification',
@@ -225,7 +254,113 @@ export function phase3MapCandidatePageSql(t: (table: string) => string): string 
   return phase3MapResourcePageSql(t);
 }
 
-export function hasPhase3ResourceScanIndex(rows: readonly IndexColumn[]): string | null {
+export function phase3IncrementalResourcePageSql(t: (table: string) => string): string {
+  return `WITH changed AS (
+            SELECT r.id, r.name, r.status, r.place_id, r.tenant_id,
+                   r.resource_specification_id, r.updated_at
+              FROM ${t('resource_physical')} r
+             WHERE r.tenant_id = :tenantId
+               AND r.updated_at >= :updatedSince
+               AND r.updated_at < :updatedBefore
+               AND (
+                 r.updated_at > :lastUpdatedAt OR
+                 (r.updated_at = :lastUpdatedAt AND r.id > :lastId)
+               )
+             ORDER BY r.updated_at, r.id
+             FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
+          ), resolved AS (
+            SELECT /*+ USE_NL(place_site) USE_NL(place_address) */
+                   r.id, r.name, r.status, r.tenant_id, r.updated_at,
+                   COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id) AS location_id,
+                   rt.code AS type_code,
+                   CASE
+                     WHEN r.status <> 'terminated'
+                      AND ${excludeInternalResourceTypesSql('rt')}
+                      AND COALESCE(rt.map_presence, 1) = 1
+                     THEN 1 ELSE 0
+                   END AS visible
+              FROM changed r
+              LEFT JOIN ${t('resource_specification')} rs
+                ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
+              LEFT JOIN ${t('resource_type')} rt ON rt.id = rs.resource_type_id
+              LEFT JOIN ${t('geographic_site')} place_site
+                ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
+              LEFT JOIN ${t('geographic_address')} place_address
+                ON place_address.id = r.place_id AND place_address.tenant_id = r.tenant_id
+          )
+          SELECT /*+ USE_NL(l) */
+                 r.id AS "ID", r.name AS "NAME", 'resource' AS "FEATURE_KIND",
+                 'PhysicalResource' AS "ENTITY_TYPE", r.type_code AS "TYPE_CODE", NULL AS "SITE_CATEGORY",
+                 'RESOURCE_TYPE' AS "SOURCE_MODEL_TYPE", r.type_code AS "SOURCE_MODEL_ID", r.status AS "STATUS",
+                 NULL AS "SUBLABEL",
+                 CASE
+                   WHEN r.visible = 1 AND l.geometry_type IN ('Point', 'LineString')
+                   THEN l.geometry_type ELSE NULL
+                 END AS "GEOMETRY_TYPE",
+                 CASE
+                   WHEN r.visible = 1 AND l.geometry_type IN ('Point', 'LineString')
+                   THEN l.geometry ELSE NULL
+                 END AS "GEOMETRY",
+                 r.updated_at AS "UPDATED_AT"
+            FROM resolved r
+            LEFT JOIN ${t('geographic_location')} l
+              ON l.id = r.location_id AND l.tenant_id = r.tenant_id
+           ORDER BY r.updated_at, r.id`;
+}
+
+export function phase3IncrementalSitePageSql(t: (table: string) => string): string {
+  return `WITH changed AS (
+            SELECT s.id, s.name, s.status, s.site_specification_id,
+                   s.geographic_location_id, s.tenant_id, s.updated_at
+              FROM ${t('geographic_site')} s
+             WHERE s.tenant_id = :tenantId
+               AND s.updated_at >= :updatedSince
+               AND s.updated_at < :updatedBefore
+               AND (
+                 s.updated_at > :lastUpdatedAt OR
+                 (s.updated_at = :lastUpdatedAt AND s.id > :lastId)
+               )
+             ORDER BY s.updated_at, s.id
+             FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
+          )
+          SELECT s.id AS "ID", s.name AS "NAME", 'site' AS "FEATURE_KIND",
+                 'GeographicSite' AS "ENTITY_TYPE", NULL AS "TYPE_CODE", spec.category AS "SITE_CATEGORY",
+                 'GEOGRAPHIC_SITE_SPECIFICATION' AS "SOURCE_MODEL_TYPE", spec.code AS "SOURCE_MODEL_ID",
+                 s.status AS "STATUS", spec.code AS "SUBLABEL",
+                 CASE
+                   WHEN spec.category = 'Site'
+                    AND s.status NOT IN ('Retired', 'terminated')
+                    AND l.geometry_type = 'Point'
+                    AND NOT EXISTS (
+                      SELECT 1 FROM ${t('project_site')} ps
+                      JOIN ${t('project')} p ON p.id = ps.project_id
+                     WHERE ps.site_id = s.id AND p.status <> 'terminated'
+                    )
+                   THEN l.geometry_type ELSE NULL
+                 END AS "GEOMETRY_TYPE",
+                 CASE
+                   WHEN spec.category = 'Site'
+                    AND s.status NOT IN ('Retired', 'terminated')
+                    AND l.geometry_type = 'Point'
+                    AND NOT EXISTS (
+                      SELECT 1 FROM ${t('project_site')} ps
+                      JOIN ${t('project')} p ON p.id = ps.project_id
+                     WHERE ps.site_id = s.id AND p.status <> 'terminated'
+                    )
+                   THEN l.geometry ELSE NULL
+                 END AS "GEOMETRY",
+                 s.updated_at AS "UPDATED_AT"
+            FROM changed s
+            LEFT JOIN ${t('geographic_site_specification')} spec ON spec.id = s.site_specification_id
+            LEFT JOIN ${t('geographic_location')} l
+              ON l.id = s.geographic_location_id AND l.tenant_id = s.tenant_id
+           ORDER BY s.updated_at, s.id`;
+}
+
+function indexWithPrefix(
+  rows: readonly IndexColumn[],
+  expectedColumns: readonly string[],
+): string | null {
   const byIndex = new Map<string, IndexColumn[]>();
   for (const row of rows) {
     const columns = byIndex.get(row.INDEX_NAME) ?? [];
@@ -235,11 +370,22 @@ export function hasPhase3ResourceScanIndex(rows: readonly IndexColumn[]): string
   for (const [indexName, columns] of byIndex) {
     const prefix = columns
       .sort((left, right) => left.COLUMN_POSITION - right.COLUMN_POSITION)
-      .slice(0, PHYSICAL_RESOURCE_INDEX_COLUMNS.length)
+      .slice(0, expectedColumns.length)
       .map((column) => column.COLUMN_NAME.toUpperCase());
-    if (prefix.join(',') === PHYSICAL_RESOURCE_INDEX_COLUMNS.join(',')) return indexName;
+    if (prefix.join(',') === expectedColumns.join(',')) return indexName;
   }
   return null;
+}
+
+export function hasPhase3ResourceScanIndex(rows: readonly IndexColumn[]): string | null {
+  return indexWithPrefix(rows, PHYSICAL_RESOURCE_INDEX_COLUMNS);
+}
+
+export function hasPhase3IncrementalIndex(
+  rows: readonly IndexColumn[],
+  expectedColumns: readonly string[],
+): string | null {
+  return indexWithPrefix(rows, expectedColumns);
 }
 
 export function stalePhase3Statistics(rows: readonly TableStatistic[]): string[] {
@@ -367,17 +513,36 @@ async function insertFeatures(
   }
 }
 
+function addDensityTile(
+  densityTiles: Set<string>,
+  tileZ: number,
+  tileX: number,
+  tileY: number,
+): void {
+  for (const zoom of MAP_DENSITY_ZOOMS) {
+    if (tileZ < zoom) continue;
+    const factor = 2 ** (tileZ - zoom);
+    densityTiles.add(
+      `${zoom}:${Math.floor(tileX / factor)}:${Math.floor(tileY / factor)}`,
+    );
+  }
+}
+
 function addDensityTiles(densityTiles: Set<string>, rows: FeatureRow[]): void {
   for (const row of rows) {
-    for (const zoom of MAP_DENSITY_ZOOMS) {
-      const tileZ = Number(row.tile_z);
-      if (tileZ < zoom) continue;
-      const factor = 2 ** (tileZ - zoom);
-      densityTiles.add(
-        `${zoom}:${Math.floor(Number(row.tile_x) / factor)}:${Math.floor(Number(row.tile_y) / factor)}`,
-      );
-    }
+    addDensityTile(
+      densityTiles,
+      Number(row.tile_z),
+      Number(row.tile_x),
+      Number(row.tile_y),
+    );
   }
+}
+
+export function densityTileCoordinates(key: string): { zoom: number; x: number; y: number } {
+  const [zoom, x, y] = key.split(':').map(Number);
+  if (![zoom, x, y].every(Number.isFinite)) throw new Error(`Célula de densidade inválida: ${key}`);
+  return { zoom: zoom!, x: x!, y: y! };
 }
 
 type CandidateScan = Omit<Phase3MapStats, 'densityCells'> & {
@@ -386,8 +551,7 @@ type CandidateScan = Omit<Phase3MapStats, 'densityCells'> & {
   sites: number;
 };
 
-async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext): Promise<void> {
-  const tableName = oracleDictionaryObjectName(ctx.t('resource_physical'));
+async function tableIndexColumns(conn: Connection, tableName: string): Promise<IndexColumn[]> {
   const result = await conn.execute<IndexColumn>(
     `SELECT index_name AS "INDEX_NAME", column_name AS "COLUMN_NAME", column_position AS "COLUMN_POSITION"
        FROM user_ind_columns
@@ -396,7 +560,12 @@ async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext):
     { tableName },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
-  const indexName = hasPhase3ResourceScanIndex(result.rows ?? []);
+  return result.rows ?? [];
+}
+
+async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext): Promise<void> {
+  const tableName = oracleDictionaryObjectName(ctx.t('resource_physical'));
+  const indexName = hasPhase3ResourceScanIndex(await tableIndexColumns(conn, tableName));
   if (!indexName) {
     throw new Error(
       `Rebuild de mapa abortado: falta índice ${PHYSICAL_RESOURCE_INDEX_COLUMNS.join(', ')} em ${tableName}. Rode npm run db:migrate para aplicar a migration phase3-map-scan-indexes.`,
@@ -405,6 +574,24 @@ async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext):
   console.log(
     `[Mapa] Índice Oracle confirmado: ${indexName} (${PHYSICAL_RESOURCE_INDEX_COLUMNS.join(', ')}).`,
   );
+}
+
+async function ensureIncrementalIndexes(conn: Connection, ctx: MigrationContext): Promise<void> {
+  for (const requirement of INCREMENTAL_INDEXES) {
+    const tableName = oracleDictionaryObjectName(ctx.t(requirement.table));
+    const indexName = hasPhase3IncrementalIndex(
+      await tableIndexColumns(conn, tableName),
+      requirement.columns,
+    );
+    if (!indexName) {
+      throw new Error(
+        `Fase 3.A incremental abortada: falta índice ${requirement.columns.join(', ')} em ${tableName}. Rode npm run db:migrate para aplicar a migration phase3-map-incremental-indexes.`,
+      );
+    }
+    console.log(
+      `[Mapa] Índice incremental confirmado: ${indexName} (${requirement.columns.join(', ')}).`,
+    );
+  }
 }
 
 const MAP_INDEX_TABLES = ['geographic_map_feature', 'geographic_map_density'] as const;
@@ -837,6 +1024,238 @@ async function scanCandidates(
   return scan;
 }
 
+async function existingFeatureTiles(
+  conn: Connection,
+  ctx: MigrationContext,
+  featureKind: Candidate['FEATURE_KIND'],
+  entityIds: string[],
+): Promise<ExistingFeatureTile[]> {
+  const result: ExistingFeatureTile[] = [];
+  for (let offset = 0; offset < entityIds.length; offset += 900) {
+    const chunk = entityIds.slice(offset, offset + 900);
+    const binds: Record<string, string> = {
+      tenantId: ctx.options.tenantId,
+      featureKind,
+    };
+    const clause = chunk
+      .map((id, index) => {
+        binds[`id${index}`] = id;
+        return `:id${index}`;
+      })
+      .join(', ');
+    const query = await conn.execute<ExistingFeatureTile>(
+      `SELECT tile_z AS "TILE_Z", tile_x AS "TILE_X", tile_y AS "TILE_Y"
+         FROM ${ctx.t('geographic_map_feature')}
+        WHERE tenant_id = :tenantId AND feature_kind = :featureKind
+          AND entity_id IN (${clause})`,
+      binds,
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    result.push(...(query.rows ?? []));
+  }
+  return result;
+}
+
+async function deleteExistingFeatures(
+  conn: Connection,
+  ctx: MigrationContext,
+  featureKind: Candidate['FEATURE_KIND'],
+  entityIds: string[],
+): Promise<number> {
+  let removed = 0;
+  for (let offset = 0; offset < entityIds.length; offset += 900) {
+    const chunk = entityIds.slice(offset, offset + 900);
+    const binds: Record<string, string> = {
+      tenantId: ctx.options.tenantId,
+      featureKind,
+    };
+    const clause = chunk
+      .map((id, index) => {
+        binds[`id${index}`] = id;
+        return `:id${index}`;
+      })
+      .join(', ');
+    const result = await conn.execute(
+      `DELETE FROM ${ctx.t('geographic_map_feature')}
+        WHERE tenant_id = :tenantId AND feature_kind = :featureKind
+          AND entity_id IN (${clause})`,
+      binds,
+    );
+    removed += result.rowsAffected ?? 0;
+  }
+  return removed;
+}
+
+async function rebuildDensityCells(
+  conn: Connection,
+  ctx: MigrationContext,
+  densityTiles: Set<string>,
+): Promise<number> {
+  let rebuilt = 0;
+  for (const key of densityTiles) {
+    const { zoom, x, y } = densityTileCoordinates(key);
+    const binds = { tenantId: ctx.options.tenantId, zoom, x, y };
+    await conn.execute(
+      `DELETE FROM ${ctx.t('geographic_map_density')}
+        WHERE tenant_id = :tenantId AND tile_z = :zoom AND tile_x = :x AND tile_y = :y`,
+      binds,
+    );
+    const result = await conn.execute(
+      `INSERT INTO ${ctx.t('geographic_map_density')}
+        (tenant_id,tile_z,tile_x,tile_y,feature_count,resource_count,site_count,lng,lat)
+       SELECT tenant_id,:zoom,:x,:y,COUNT(DISTINCT entity_id),
+              COUNT(DISTINCT CASE WHEN feature_kind='resource' THEN entity_id END),
+              COUNT(DISTINCT CASE WHEN feature_kind='site' THEN entity_id END),AVG(lng),AVG(lat)
+         FROM ${ctx.t('geographic_map_feature')}
+        WHERE tenant_id=:tenantId AND tile_z>=:zoom
+          AND FLOOR(tile_x/POWER(2,tile_z-:zoom))=:x
+          AND FLOOR(tile_y/POWER(2,tile_z-:zoom))=:y
+        GROUP BY tenant_id`,
+      binds,
+    );
+    rebuilt += result.rowsAffected ?? 0;
+  }
+  return rebuilt;
+}
+
+async function scanIncrementalKind(
+  conn: Connection,
+  ctx: MigrationContext,
+  featureKind: Candidate['FEATURE_KIND'],
+  pageSql: string,
+  updatedSince: Date,
+  updatedBefore: Date,
+  scan: CandidateScan,
+  progress: MigrationProgress,
+): Promise<{ removedFeatures: number }> {
+  // A primeira página usa cursor imediatamente anterior ao corte, preservando a semântica
+  // inclusiva de `updated_at >= :updatedSince` sem introduzir OR/NULL no predicado indexável.
+  const cursor: IncrementalCursor = {
+    updatedAt: new Date(updatedSince.getTime() - 1),
+    id: '',
+  };
+  let removedFeatures = 0;
+  while (true) {
+    const result = await conn.execute<IncrementalCandidate>(
+      pageSql,
+      {
+        tenantId: ctx.options.tenantId,
+        updatedSince,
+        updatedBefore,
+        lastUpdatedAt: cursor.updatedAt,
+        lastId: cursor.id,
+      },
+      {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        fetchArraySize: PHASE3_MAP_PAGE_SIZE,
+        prefetchRows: PHASE3_MAP_PAGE_SIZE,
+      },
+    );
+    const candidates = result.rows ?? [];
+    if (candidates.length === 0) return { removedFeatures };
+
+    const entityIds = candidates.map((candidate) => candidate.ID);
+    const oldTiles = await existingFeatureTiles(conn, ctx, featureKind, entityIds);
+    for (const tile of oldTiles) {
+      addDensityTile(scan.densityTiles, tile.TILE_Z, tile.TILE_X, tile.TILE_Y);
+    }
+
+    const rows: FeatureRow[] = [];
+    for (const candidate of candidates) {
+      scan.candidates += 1;
+      if (featureKind === 'resource') scan.resources += 1;
+      else scan.sites += 1;
+      const generated = phase3MapFeaturesForCandidate(ctx.options.tenantId, candidate, lineTiling);
+      if (!generated) scan.skippedGeometry += 1;
+      else rows.push(...generated);
+    }
+    scan.features += rows.length;
+    addDensityTiles(scan.densityTiles, rows);
+
+    if (ctx.options.apply) {
+      removedFeatures += await deleteExistingFeatures(conn, ctx, featureKind, entityIds);
+      await insertFeatures(conn, ctx, rows);
+      await conn.execute('COMMIT');
+    } else {
+      removedFeatures += oldTiles.length;
+    }
+
+    progress.advance(candidates.length);
+    const last = candidates[candidates.length - 1]!;
+    cursor.updatedAt = new Date(last.UPDATED_AT);
+    cursor.id = last.ID;
+  }
+}
+
+async function runIncrementalMapFeatures(
+  conn: Connection,
+  ctx: MigrationContext,
+  updatedSince: Date,
+): Promise<Phase3MapStats> {
+  const updatedBefore = new Date();
+  console.log(
+    `[Mapa] Janela incremental: [${updatedSince.toISOString()}, ${updatedBefore.toISOString()}).`,
+  );
+  await ensureIncrementalIndexes(conn, ctx);
+  const scan: CandidateScan = {
+    candidates: 0,
+    features: 0,
+    skippedGeometry: 0,
+    densityTiles: new Set<string>(),
+    resources: 0,
+    sites: 0,
+  };
+  const progress = new MigrationProgress({
+    label: `Fase 3.A — ${ctx.options.apply ? 'gravação incremental' : 'validação incremental'}`,
+    unit: 'entidades',
+    reportEvery: ctx.options.batchSize,
+  });
+  progress.start();
+  let removedFeatures = 0;
+  const resources = await scanIncrementalKind(
+    conn,
+    ctx,
+    'resource',
+    phase3IncrementalResourcePageSql(ctx.t),
+    updatedSince,
+    updatedBefore,
+    scan,
+    progress,
+  );
+  removedFeatures += resources.removedFeatures;
+  const sites = await scanIncrementalKind(
+    conn,
+    ctx,
+    'site',
+    phase3IncrementalSitePageSql(ctx.t),
+    updatedSince,
+    updatedBefore,
+    scan,
+    progress,
+  );
+  removedFeatures += sites.removedFeatures;
+  progress.finish();
+
+  if (scan.candidates === 0) {
+    console.log('[Mapa] nenhuma entidade alterada na janela; projeções vigentes preservadas.');
+    return { candidates: 0, features: 0, skippedGeometry: 0, densityCells: 0 };
+  }
+
+  const densityCells = ctx.options.apply
+    ? await rebuildDensityCells(conn, ctx, scan.densityTiles)
+    : scan.densityTiles.size;
+  if (ctx.options.apply) await conn.execute('COMMIT');
+  console.log(
+    `[Mapa] incremental: recursos=${scan.resources}; sites=${scan.sites}; features removidas=${removedFeatures}; features geradas=${scan.features}; geometrias/invisíveis sem feature=${scan.skippedGeometry}; células de densidade afetadas=${scan.densityTiles.size}; células materializadas=${densityCells}.`,
+  );
+  return {
+    candidates: scan.candidates,
+    features: scan.features,
+    skippedGeometry: scan.skippedGeometry,
+    densityCells,
+  };
+}
+
 async function rebuildDensity(conn: Connection, ctx: MigrationContext): Promise<number> {
   let densityCells = 0;
   for (const zoom of MAP_DENSITY_ZOOMS) {
@@ -864,8 +1283,11 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
     console.log('\n=== Fase 3.A: Índices de mapa e densidade ===');
     lineTiling = await loadPublishedLineTiling(conn, ctx.t, ctx.options.tenantId);
     console.log(`[Mapa] ${lineTiling.size} camada(s) de linha com perfis de LOD do Studio.`);
-    await ensureResourceScanIndex(conn, ctx);
     await recoverUnusableMapIndexes(conn, ctx);
+    if (ctx.options.updatedSince) {
+      return await runIncrementalMapFeatures(conn, ctx, ctx.options.updatedSince);
+    }
+    await ensureResourceScanIndex(conn, ctx);
     await reportStatistics(conn, ctx);
     const specifications = await visibleSpecifications(conn, ctx);
     console.log(

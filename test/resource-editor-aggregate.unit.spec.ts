@@ -129,6 +129,224 @@ test('saveResourceAggregate cria árvore multinível atomicamente e o snapshot a
   );
 });
 
+test('saveResourceAggregate persiste estados, motivo e characteristics do componente', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never);
+  await service.ensureBootstrapResourceRelationshipTypes(context);
+  const ctoSpec = await createTestSpec(repo, 'CTO', '-state');
+  const splitterSpec = await createTestSpec(repo, 'Splitter', '-state');
+  await service.createResourceTypeRelationshipRule(typeId('CTO'), {
+    relationshipTypeCode: 'containsAsChild', targetKind: 'RESOURCE_TYPE', targetId: typeId('Splitter'),
+  }, context);
+
+  const created = await service.saveResourceAggregate({
+    '@type': 'PhysicalResource', name: 'CTO-STATE-01', resourceSpecificationId: ctoSpec.id,
+    components: [{
+      name: 'SPLITTER-STATE-01', resourceSpecificationId: splitterSpec.id,
+      status: 'suspended', statusCode: 'maintenance_window', administrativeState: 'locked', operationalState: 'disabled', usageState: 'busy',
+      characteristic: [{ name: 'etiquetaOperacional', value: 'BLOQUEADO', valueType: 'string' }],
+    }],
+  }, context);
+  const component = (await service.getResourceEditorSnapshot(created.resource.id, context)).components[0]!;
+  assert.equal(component.status, 'suspended');
+  assert.equal(component.statusCode, 'maintenance_window');
+  assert.equal(component.administrativeState, 'locked');
+  assert.equal(component.operationalState, 'disabled');
+  assert.equal(component.usageState, 'busy');
+  assert.deepEqual(component.characteristics, [{ name: 'etiquetaOperacional', value: 'BLOQUEADO', valueType: 'string' }]);
+
+  await service.saveResourceAggregate({
+    id: created.resource.id, '@type': 'PhysicalResource', name: created.resource.name, resourceSpecificationId: ctoSpec.id,
+    components: [{
+      id: component.id,
+      ...(component.relationshipId ? { relationshipId: component.relationshipId } : {}),
+      ...(component.relationshipDefinitionId ? { relationshipDefinitionId: component.relationshipDefinitionId } : {}),
+      name: component.name, resourceSpecificationId: splitterSpec.id,
+      status: 'active', statusCode: 'released', administrativeState: 'unlocked', operationalState: 'enabled', usageState: 'idle',
+      characteristic: [{ name: 'etiquetaOperacional', value: 'LIBERADO', valueType: 'string' }],
+    }],
+  }, context);
+  const updated = (await service.getResourceEditorSnapshot(created.resource.id, context)).components[0]!;
+  assert.equal(updated.status, 'active');
+  assert.equal(updated.statusCode, 'released');
+  assert.equal(updated.administrativeState, 'unlocked');
+  assert.equal(updated.operationalState, 'enabled');
+  assert.equal(updated.usageState, 'idle');
+  assert.deepEqual(updated.characteristics, [{ name: 'etiquetaOperacional', value: 'LIBERADO', valueType: 'string' }]);
+});
+
+test('saveResourceAggregate mantém a identidade da aresta, atualiza placement e não herda place', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never, {
+    lookupPlace: async (id, tenantId) =>
+      id === 'site-rack' && tenantId === 'vtal'
+        ? { id, '@referredType': 'GeographicSite' }
+        : undefined,
+  });
+  await service.ensureBootstrapResourceRelationshipTypes(context);
+  const ctoSpec = await createTestSpec(repo, 'CTO', '-linear');
+  const splitterSpec = await createTestSpec(repo, 'Splitter', '-linear');
+  await service.createResourceTypeRelationshipRule(
+    typeId('CTO'),
+    {
+      relationshipTypeCode: 'containsAsChild',
+      targetKind: 'RESOURCE_TYPE',
+      targetId: typeId('Splitter'),
+      cardinality: { maxTargetPerSource: 2 },
+      configuration: {
+        version: 1,
+        placementPolicy: 'LINEAR',
+        axis: 'vertical',
+        unitLabel: 'U',
+        capacity: 42,
+        numberingDirection: 'ascending',
+      },
+    },
+    context,
+  );
+
+  const created = await service.saveResourceAggregate(
+    {
+      '@type': 'PhysicalResource',
+      name: 'RACK-01',
+      resourceSpecificationId: ctoSpec.id,
+      placeId: 'site-rack',
+      components: [
+        {
+          name: 'OLT-01',
+          resourceSpecificationId: splitterSpec.id,
+          placement: { placementPolicy: 'LINEAR', position: 10, span: 5 },
+        },
+      ],
+    },
+    context,
+  );
+  const first = await service.getResourceEditorSnapshot(created.resource.id, context);
+  const olt = first.components[0]!;
+  assert.equal(olt.placement?.placementPolicy, 'LINEAR');
+  assert.ok(olt.relationshipId);
+  assert.equal((await service.getResource(olt.id, context))?.place, undefined);
+  const relationshipId = olt.relationshipId;
+
+  await service.saveResourceAggregate(
+    {
+      id: created.resource.id,
+      '@type': 'PhysicalResource',
+      name: created.resource.name,
+      resourceSpecificationId: ctoSpec.id,
+      components: [
+        {
+          id: olt.id,
+          relationshipId,
+          ...(olt.relationshipDefinitionId
+            ? { relationshipDefinitionId: olt.relationshipDefinitionId }
+            : {}),
+          name: olt.name,
+          resourceSpecificationId: splitterSpec.id,
+          placement: { placementPolicy: 'LINEAR', position: 14, span: 5 },
+        },
+      ],
+    },
+    context,
+  );
+  const moved = (await service.getResourceEditorSnapshot(created.resource.id, context)).components[0]!;
+  assert.equal(moved.relationshipId, relationshipId);
+  assert.deepEqual(moved.placement, { placementPolicy: 'LINEAR', position: 14, span: 5 });
+
+  await assert.rejects(
+    service.saveResourceAggregate(
+      {
+        id: created.resource.id,
+        '@type': 'PhysicalResource',
+        name: created.resource.name,
+        resourceSpecificationId: ctoSpec.id,
+        components: [
+          {
+            id: olt.id,
+            relationshipId,
+            name: olt.name,
+            resourceSpecificationId: splitterSpec.id,
+            placement: { placementPolicy: 'LINEAR', position: 40, span: 5 },
+          },
+        ],
+      },
+      context,
+    ),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_RELATIONSHIP_PLACEMENT_OUT_OF_BOUNDS',
+  );
+});
+
+test('saveResourceAggregate rejeita colisão e limites GRID da mesma contenção', async () => {
+  const repo = new ResourceRepository();
+  const service = new ResourceService(repo, createEventService() as never);
+  await service.ensureBootstrapResourceRelationshipTypes(context);
+  const boardSpec = await createTestSpec(repo, 'CTO', '-grid');
+  const portSpec = await createTestSpec(repo, 'Port', '-grid');
+  await service.createResourceTypeRelationshipRule(
+    typeId('CTO'),
+    {
+      relationshipTypeCode: 'containsAsChild',
+      targetKind: 'RESOURCE_TYPE',
+      targetId: typeId('Port'),
+      cardinality: { maxTargetPerSource: 8 },
+      configuration: {
+        version: 1,
+        placementPolicy: 'GRID',
+        rows: 2,
+        columns: 8,
+        fillOrder: 'row-major',
+      },
+    },
+    context,
+  );
+
+  const input = {
+    '@type': 'PhysicalResource' as const,
+    name: 'BOARD-01',
+    resourceSpecificationId: boardSpec.id,
+  };
+  await assert.rejects(
+    service.saveResourceAggregate(
+      {
+        ...input,
+        components: [
+          {
+            name: 'PORTA-01',
+            resourceSpecificationId: portSpec.id,
+            placement: { placementPolicy: 'GRID', row: 1, column: 1 },
+          },
+          {
+            name: 'PORTA-02',
+            resourceSpecificationId: portSpec.id,
+            placement: { placementPolicy: 'GRID', row: 1, column: 1 },
+          },
+        ],
+      },
+      context,
+    ),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_RELATIONSHIP_PLACEMENT_OVERLAP',
+  );
+  await assert.rejects(
+    service.saveResourceAggregate(
+      {
+        ...input,
+        components: [
+          {
+            name: 'PORTA-FORA',
+            resourceSpecificationId: portSpec.id,
+            placement: { placementPolicy: 'GRID', row: 2, column: 8, columnSpan: 2 },
+          },
+        ],
+      },
+      context,
+    ),
+    (error: unknown) =>
+      error instanceof AppError && error.code === 'RESOURCE_RELATIONSHIP_PLACEMENT_OUT_OF_BOUNDS',
+  );
+});
+
 test('saveResourceAggregate valida GeographicSiteSpecification e persiste relação adicional', async () => {
   const repo = new ResourceRepository();
   const service = new ResourceService(repo, createEventService() as never, {

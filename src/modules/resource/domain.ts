@@ -283,8 +283,57 @@ export type UpdateResourceCatalogNodeInput = {
 export type ResourceRelationshipTargetKind = 'RESOURCE_TYPE' | 'GEOGRAPHIC_SITE_SPECIFICATION';
 
 export type ResourceRelationshipCardinality = {
+  minSourcePerTarget?: number;
   maxSourcePerTarget?: number;
+  minTargetPerSource?: number;
   maxTargetPerSource?: number;
+};
+
+/**
+ * Configuração versionada da definição de relacionamento. Ausência preserva a semântica legada
+ * (`NONE`): a relação existe, mas não oferece posições estruturais virtuais.
+ */
+export type ResourceRelationshipDefinitionConfiguration =
+  | {
+      version: 1;
+      placementPolicy: 'NONE';
+    }
+  | {
+      version: 1;
+      placementPolicy: 'LINEAR';
+      axis: 'vertical' | 'horizontal';
+      unitLabel: string;
+      capacity: number;
+      numberingDirection: 'ascending' | 'descending';
+    }
+  | {
+      version: 1;
+      placementPolicy: 'GRID';
+      rows: number;
+      columns: number;
+      fillOrder: 'row-major' | 'column-major';
+    };
+
+/** Placement estrutural virtual da aresta de containment; nunca materializa um PhysicalResource. */
+export type ResourceRelationshipPlacement =
+  | {
+      placementPolicy: 'LINEAR';
+      position: number;
+      span?: number;
+    }
+  | {
+      placementPolicy: 'GRID';
+      row: number;
+      column: number;
+      rowSpan?: number;
+      columnSpan?: number;
+    };
+
+/** Flags declarativas da definição, aplicadas quando houver comportamento correspondente. */
+export type ResourceRelationshipDefinitionValidationRules = {
+  required?: boolean;
+  ordered?: boolean;
+  exclusive?: boolean;
 };
 
 /** Catálogo governado de semânticas de relação permitidas no modelo de recursos. */
@@ -328,6 +377,8 @@ export type ResourceTypeRelationshipRule = {
   targetKind: ResourceRelationshipTargetKind;
   targetId: string;
   cardinality?: ResourceRelationshipCardinality;
+  configuration?: ResourceRelationshipDefinitionConfiguration;
+  validationRules?: ResourceRelationshipDefinitionValidationRules;
   lifecycleStatus: 'Active' | 'Retired';
   tenantId: string;
   validFor?: TimePeriod;
@@ -338,13 +389,18 @@ export type CreateResourceTypeRelationshipRuleInput = {
   targetKind: ResourceRelationshipTargetKind;
   targetId: string;
   cardinality?: ResourceRelationshipCardinality;
+  configuration?: ResourceRelationshipDefinitionConfiguration;
+  validationRules?: ResourceRelationshipDefinitionValidationRules;
   validFor?: TimePeriod;
 };
 
-export type UpdateResourceTypeRelationshipRuleInput = Partial<
-  Omit<CreateResourceTypeRelationshipRuleInput, 'cardinality'>
+export type UpdateResourceTypeRelationshipRuleInput = Omit<
+  Partial<CreateResourceTypeRelationshipRuleInput>,
+  'cardinality' | 'configuration'
 > & {
   cardinality?: ResourceRelationshipCardinality | null;
+  /** `null` remove a configuração estrutural ao trocar containment por outra semântica. */
+  configuration?: ResourceRelationshipDefinitionConfiguration | null;
   lifecycleStatus?: ResourceTypeRelationshipRule['lifecycleStatus'];
 };
 
@@ -397,6 +453,8 @@ export type ResourceModelSnapshotRelationshipRule = {
   targetKind: ResourceRelationshipTargetKind;
   targetId: string;
   cardinality?: ResourceRelationshipCardinality;
+  configuration?: ResourceRelationshipDefinitionConfiguration;
+  validationRules?: ResourceRelationshipDefinitionValidationRules;
   validFor?: TimePeriod;
 };
 
@@ -501,9 +559,17 @@ export type ApplyResourceCatalogAiProposalResult = {
 };
 
 export type ResourceRelationship = {
+  /** ID do Resource relacionado, preservado no contrato TMF existente. */
   id: string;
   relationshipType: string;
   '@referredType': 'Resource';
+  /** Identidade estável da aresta de inventário; ausente apenas em linhas legadas ainda não migradas. */
+  relationshipId?: string;
+  /** Regra de ResourceType que autorizou a relação; `undefined` mantém a relação legada consultável. */
+  relationshipDefinitionId?: string;
+  placement?: ResourceRelationshipPlacement;
+  /** Metadados extensíveis da aresta, validados pela definição quando houver schema publicado. */
+  attributes?: Record<string, unknown>;
   validFor?: TimePeriod;
 };
 
@@ -684,9 +750,14 @@ export type ResourceComponentNode = {
   name: string;
   resourceType?: string;
   status?: string;
+  statusCode?: string;
   kind: ResourceKind;
   parentId: string | null;
   depth: number;
+  /** Metadados da aresta de containment que liga este nó ao `parentId`. */
+  relationshipId?: string;
+  relationshipDefinitionId?: string;
+  placement?: ResourceRelationshipPlacement;
   administrativeState?: AdministrativeState;
   operationalState?: OperationalState;
   usageState?: UsageState;
@@ -822,6 +893,7 @@ export type CreateLogicalResourceInput = {
   administrativeState?: AdministrativeState;
   operationalState?: OperationalState;
   usageState?: UsageState;
+  statusCode?: string;
   relatedParty?: RelatedParty[];
   resourceRelationship?: ResourceRelationship[];
   characteristic?: Characteristic[];
@@ -854,9 +926,21 @@ export type ResourceSiteRelationship = {
 
 /** Filho novo (sem `id`) ou existente (com `id`) na árvore `containsAsChild` do agregado. */
 export type ResourceAggregateChildDraft = {
+  /** Recurso já existente na árvore do agregado; ausente para um novo componente. */
   id?: string;
+  /** Identidade estável da aresta `containsAsChild` que liga o componente ao pai. */
+  relationshipId?: string;
+  /** Definição resolvida pelo backend para a aresta; o cliente pode repeti-la para detectar drafts obsoletos. */
+  relationshipDefinitionId?: string;
+  /** Placement estrutural da aresta, nunca uma propriedade do Resource filho. */
+  placement?: ResourceRelationshipPlacement;
   name: string;
   resourceSpecificationId: string;
+  status?: ResourceStatus;
+  statusCode?: string;
+  administrativeState?: AdministrativeState;
+  operationalState?: OperationalState;
+  usageState?: UsageState;
   characteristic?: Characteristic[];
   children?: ResourceAggregateChildDraft[];
 };

@@ -50,6 +50,35 @@ export type InternalPlantSiteContext = {
     stateOrProvince?: string;
     postcode?: string;
   };
+  /** Ids dos nós da árvore de Locais, do país ao Site (mesmos formatos de `roots`/`children`). */
+  treePath: string[];
+};
+
+export type InternalPlantSiteQuery = {
+  q: string;
+  limit: number;
+  offset: number;
+  tenantId: string;
+};
+
+export type InternalPlantSiteRow = {
+  id: string;
+  name: string;
+  status: string;
+  siteSpecification: { id: string; name: string };
+  visualIdentity?: InternalPlantVisualIdentity;
+  /** Endereço do Site em uma linha (logradouro, localidade, cidade, UF, CEP). */
+  address?: string;
+  /** Município do Site raiz da cadeia, quando houver. */
+  stateOrProvince?: string;
+  city?: string;
+};
+
+export type InternalPlantSitePage = {
+  items: InternalPlantSiteRow[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type InternalPlantResourceQuery = {

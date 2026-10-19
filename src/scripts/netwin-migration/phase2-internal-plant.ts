@@ -29,7 +29,6 @@ import {
   saveNativeCheckpoint,
 } from './checkpoint.js';
 import {
-  cardTypeSpecId,
   CDO_TYPE_TO_SPEC,
   genericSpecId,
   parseSplitterRatioStrict,
@@ -37,6 +36,11 @@ import {
   portTypeSpecId,
   SpecCoverage,
 } from './concrete-specs.js';
+import {
+  buildSplitterSpecIndex,
+  loadManufacturerResolver,
+  loadSplitterCatalogRows,
+} from './concrete-spec-sources.js';
 import { MigrationProgress } from './progress.js';
 import { disableResourceLoadIndexes, rebuildResourceLoadIndexes } from './resource-load-indexes.js';
 import type { PhaseStats } from './types.js';
@@ -340,6 +344,11 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
     await requireSpecIds(ctx, target);
     const portSpecId = await requirePortSpecification(ctx, target);
     const splitterSpecsByRatio = await requireSplitterSpecifications(ctx, target);
+    const [splitterCatalogRows, resolveManufacturer] = await Promise.all([
+      loadSplitterCatalogRows(source),
+      loadManufacturerResolver(source),
+    ]);
+    const splitterSpecIndex = buildSplitterSpecIndex(splitterCatalogRows, resolveManufacturer);
     const availableSpecIds = new Set<string>();
     const specRows = await target.execute<{ ID: string }>(
       `SELECT id FROM ${ctx.t('resource_specification')} WHERE tenant_id = :1`,
@@ -510,10 +519,14 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
         if (strictRatio === null) splitterRatioFallbacks++;
         const ratio = strictRatio ?? 8;
         const ratioSpecId = splitterSpecsByRatio.get(ratio) ?? splitterSpecsByRatio.get(8)!;
+        const semanticSplitterSpecId =
+          card.ID_BD_TIPO_CARTA === null
+            ? null
+            : (splitterSpecIndex.canonicalIdBySourceId.get(String(card.ID_BD_TIPO_CARTA)) ?? null);
         const splitterSpecId =
-          strictRatio !== null && card.ID_BD_TIPO_CARTA
+          strictRatio !== null && semanticSplitterSpecId
             ? pickSpecification(
-                cardTypeSpecId(card.ID_BD_TIPO_CARTA),
+                semanticSplitterSpecId,
                 availableSpecIds,
                 ratioSpecId,
                 splitterCoverage,

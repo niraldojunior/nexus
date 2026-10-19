@@ -11,8 +11,6 @@ import {
 import { MODEL_CHARACTERISTIC } from '../../modules/resource/canonical-characteristics.js';
 import {
   CDO_TYPE_TO_SPEC,
-  cardTypeSpecId,
-  equipmentModelSpecId,
   equipmentTypeSpecId,
   isRadioCellTypeName,
   NETWIN_OTHER_EQUIPMENT_FOLDER,
@@ -20,12 +18,23 @@ import {
   type NetwinTechnologyUsage,
   normalizeTypeKey,
   resolveEquipmentTypeCode,
-  parseSplitterRatioStrict,
   portTypeSpecId,
-  rackTypeSpecId,
-  subrackTypeSpecId,
   uniqueSpecNames,
 } from './concrete-specs.js';
+import {
+  buildEquipmentSpecIndex,
+  buildRackSpecIndex,
+  buildSplitterSpecIndex,
+  equipmentGroupNames,
+  loadEquipmentCatalogRows,
+  loadManufacturerResolver,
+  loadRackCatalogRows,
+  loadSplitterCatalogRows,
+  RACK_CATALOGS,
+  rackGroupNames,
+  specOriginExtra,
+  splitterGroupNames,
+} from './concrete-spec-sources.js';
 import {
   enrichmentInstanceDefinitions,
   radioCellInstanceDefinitions,
@@ -783,95 +792,52 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     console.log(
       'Consultando modelos de equipamento em uso (ISP_CAT_TIPO_EQUIPAMENTO/MODELO_EQUIP)...',
     );
-    const equipmentModels = await source.execute<{
-      ID_BD_TIPO_NE: number;
-      ID_BD_TIPO_EQUIP: number;
-      TIPO_NOME: string | null;
-      TIPO_SIGLA: string | null;
-      MODELO_NOME: string | null;
-      MODELO_SIGLA: string | null;
-      MODELO_ALIAS: string | null;
-      SIGLA_FABRICANTE: string | null;
-      SIGLA_TECNOLOGIA: string | null;
-      COD_MATERIAL_SAP: string | null;
-    }>(
-      `SELECT k.ID_BD_TIPO_NE, k.ID_BD_TIPO_EQUIP,
-              ne.NOME AS TIPO_NOME, ne.SIGLA AS TIPO_SIGLA,
-              me.NOME_EQUIP AS MODELO_NOME, me.SIGLA_EQUIP AS MODELO_SIGLA,
-              me.OUTRO_NOME_EQUIP AS MODELO_ALIAS, me.SIGLA_FABRICANTE,
-              me.SIGLA_TECNOLOGIA, me.COD_MATERIAL_SAP
-         FROM (
-           SELECT DISTINCT e.ID_BD_TIPO_NE, e.ID_BD_TIPO_EQUIP
-             FROM NETWIN.ISP_INS_EQUIPAMENTO e
-            WHERE e.ID_BD_TIPO_NE IS NOT NULL
-              AND e.ID_BD_TIPO_EQUIP IS NOT NULL
-         ) k
-         JOIN NETWIN.ISP_CAT_MODELO_EQUIP me ON me.ID_BD_TIPO_EQUIP = k.ID_BD_TIPO_EQUIP
-         LEFT JOIN NETWIN.ISP_CAT_TIPO_EQUIPAMENTO ne ON ne.ID_BD_TIPO_EQUIPAMENTO = k.ID_BD_TIPO_NE
-        ORDER BY k.ID_BD_TIPO_NE, k.ID_BD_TIPO_EQUIP`,
-      [],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    const [equipmentCatalogRows, resolveManufacturer] = await Promise.all([
+      loadEquipmentCatalogRows(source),
+      loadManufacturerResolver(source),
+    ]);
+    const equipmentIndex = buildEquipmentSpecIndex(
+      equipmentCatalogRows,
+      (row) => equipmentTypeCode(row.ID_BD_TIPO_NE),
+      resolveManufacturer,
     );
-    // Fabricantes por nome/sigla normalizados; chave ambígua (2+ fabricantes) não é adivinhada.
-    const manufacturerRows = await source.execute<{
-      ID: number;
-      NAME: string | null;
-      ACRONYM: string | null;
-    }>(`SELECT ID, NAME, ACRONYM FROM NETWIN.MANUFACTURER`, [], {
-      outFormat: oracledb.OUT_FORMAT_OBJECT,
-    });
-    const manufacturerByKey = new Map<string, { id: number; name: string } | null>();
-    for (const m of manufacturerRows.rows ?? []) {
-      const name = text(m.NAME);
-      if (!name) continue;
-      for (const key of new Set([normalizeTypeKey(name), normalizeTypeKey(m.ACRONYM)])) {
-        if (!key) continue;
-        const known = manufacturerByKey.get(key);
-        manufacturerByKey.set(
-          key,
-          known === null || (known && known.id !== m.ID) ? null : { id: m.ID, name },
-        );
-      }
-    }
+    const equipmentNames = equipmentGroupNames(equipmentIndex);
     let manufacturerResolved = 0;
     let manufacturerUnresolved = 0;
-    const equipmentRows = (equipmentModels.rows ?? []).filter((row) => text(row.MODELO_NOME));
-    const equipmentKey = (row: { ID_BD_TIPO_NE: number; ID_BD_TIPO_EQUIP: number }): number =>
-      row.ID_BD_TIPO_NE * 1_000_000_000 + row.ID_BD_TIPO_EQUIP;
-    const equipmentNames = uniqueSpecNames(
-      equipmentRows,
-      (row) =>
-        `${text(row.TIPO_SIGLA) ?? text(row.TIPO_NOME) ?? 'Equipamento'} ${text(row.MODELO_NOME)}`,
-      equipmentKey,
-    );
-    for (const row of equipmentRows) {
-      const name = equipmentNames.get(equipmentKey(row))!;
-      const manufacturerKey = normalizeTypeKey(row.SIGLA_FABRICANTE);
-      const manufacturer = manufacturerKey ? manufacturerByKey.get(manufacturerKey) : undefined;
-      if (manufacturer) manufacturerResolved++;
-      else if (manufacturerKey) manufacturerUnresolved++;
+    for (const group of equipmentIndex.groups) {
+      const row = group.representative.row;
+      const name = equipmentNames.get(group.canonicalId)!;
+      if (group.representative.resolvedManufacturer) manufacturerResolved++;
+      else if (text(row.SIGLA_FABRICANTE)) manufacturerUnresolved++;
       await upsertConcreteSpec(
-        equipmentModelSpecId(row.ID_BD_TIPO_NE, row.ID_BD_TIPO_EQUIP),
+        group.canonicalId,
         name,
-        equipmentTypeCode(row.ID_BD_TIPO_NE),
+        group.representative.resourceTypeCode,
         `Modelo de equipamento Netwin ${name}`,
         [
           ...netwinOriginCharacteristics(
             'ISP_CAT_MODELO_EQUIP',
-            `${row.ID_BD_TIPO_NE}:${row.ID_BD_TIPO_EQUIP}`,
+            group.representativeSourceId,
+            specOriginExtra(group),
           ),
-          modelCharacteristic(text(row.MODELO_NOME)!),
-          ...(text(row.MODELO_SIGLA)
-            ? [{ name: 'modelCode', value: text(row.MODELO_SIGLA)!, valueType: 'string' as const }]
+          modelCharacteristic(group.representative.model!),
+          ...(group.representative.modelCode
+            ? [
+                {
+                  name: 'modelCode',
+                  value: group.representative.modelCode,
+                  valueType: 'string' as const,
+                },
+              ]
             : []),
           ...(text(row.TIPO_NOME)
             ? [{ name: 'equipmentType', value: text(row.TIPO_NOME)!, valueType: 'string' as const }]
             : []),
-          ...(text(row.COD_MATERIAL_SAP)
+          ...(group.representative.sapMaterialCode
             ? [
                 {
                   name: 'sapMaterialCode',
-                  value: text(row.COD_MATERIAL_SAP)!,
+                  value: group.representative.sapMaterialCode,
                   valueType: 'string' as const,
                 },
               ]
@@ -889,14 +855,17 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
             ? [{ name: 'modelAlias', value: text(row.MODELO_ALIAS)!, valueType: 'string' as const }]
             : []),
         ],
-        manufacturer
-          ? { partyId: netwinPartyId(manufacturer.id), name: manufacturer.name }
+        group.representative.resolvedManufacturer
+          ? {
+              partyId: netwinPartyId(group.representative.resolvedManufacturer.id),
+              name: group.representative.resolvedManufacturer.name,
+            }
           : undefined,
       );
     }
     await flushConcreteSpecs();
     console.log(
-      `Modelos de equipamento em uso (specs concretas): ${equipmentRows.length}; fabricante resolvido=${manufacturerResolved}, sem correspondência única=${manufacturerUnresolved}`,
+      `Modelos de equipamento em uso: ${equipmentCatalogRows.length} linha(s), ${equipmentIndex.groups.length} specification(s) semântica(s); fabricante resolvido=${manufacturerResolved}, sem correspondência única=${manufacturerUnresolved}`,
     );
 
     // Spec "de tipo": todo tipo interno em uso ganha uma specification própria, mesmo sem modelo
@@ -926,58 +895,62 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     }
 
     console.log('Consultando tipos de carta/splitter (ISP_CAT_CARTA)...');
-    const cardTypes = await source.execute<{
-      ID_BD_TIPO_CARTA: number;
-      NOME_CARTA: string | null;
-      SIGLA_CARTA: string | null;
-    }>(
-      `SELECT c.ID_BD_TIPO_CARTA, c.NOME_CARTA, c.SIGLA_CARTA
-         FROM NETWIN.ISP_CAT_CARTA c
-        WHERE EXISTS (SELECT 1 FROM NETWIN.ISP_INS_CARTA i
-                       WHERE i.ID_BD_TIPO_CARTA = c.ID_BD_TIPO_CARTA)
-        ORDER BY c.ID_BD_TIPO_CARTA`,
-      [],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
-    );
-    const splitterCardRows = (cardTypes.rows ?? []).filter(
-      (row) =>
-        text(row.NOME_CARTA) &&
-        // Só cartas declaradamente splitter: `1X2M`/`1/4` também casam a razão em placas de
-        // transmissão (STM1/4/16, 21X2M...), que não são divisores ópticos.
-        /SPLIT/i.test(`${row.NOME_CARTA} ${row.SIGLA_CARTA ?? ''}`) &&
-        parseSplitterRatioStrict(row.NOME_CARTA, row.SIGLA_CARTA, null) !== null,
-    );
-    const cardNames = uniqueSpecNames(
-      splitterCardRows,
-      (row) => text(row.NOME_CARTA)!,
-      (row) => row.ID_BD_TIPO_CARTA,
-    );
+    const splitterCatalogRows = await loadSplitterCatalogRows(source);
+    const splitterIndex = buildSplitterSpecIndex(splitterCatalogRows, resolveManufacturer);
+    const splitterNames = splitterGroupNames(splitterIndex);
     let splitterDone = 0;
-    for (const row of splitterCardRows) {
+    for (const group of splitterIndex.groups) {
       if (++splitterDone % 250 === 0) {
-        console.log(`  splitters: ${splitterDone}/${splitterCardRows.length}...`);
+        console.log(`  splitters: ${splitterDone}/${splitterIndex.groups.length}...`);
       }
-      const ratio = parseSplitterRatioStrict(row.NOME_CARTA, row.SIGLA_CARTA, null)!;
-      const name = cardNames.get(row.ID_BD_TIPO_CARTA)!;
+      const name = splitterNames.get(group.canonicalId)!;
+      const { ratio } = group.representative;
       await upsertConcreteSpec(
-        cardTypeSpecId(row.ID_BD_TIPO_CARTA),
+        group.canonicalId,
         name,
         'Splitter',
         `Tipo de carta Netwin ${name} (divisor 1:${ratio})`,
         [
-          ...netwinOriginCharacteristics('ISP_CAT_CARTA', row.ID_BD_TIPO_CARTA),
-          modelCharacteristic(text(row.NOME_CARTA)!),
-          ...(text(row.SIGLA_CARTA)
-            ? [{ name: 'modelCode', value: text(row.SIGLA_CARTA)!, valueType: 'string' as const }]
+          ...netwinOriginCharacteristics(
+            'ISP_CAT_CARTA',
+            group.representativeSourceId,
+            specOriginExtra(group),
+          ),
+          modelCharacteristic(group.representative.model!),
+          ...(group.representative.modelCode
+            ? [
+                {
+                  name: 'modelCode',
+                  value: group.representative.modelCode,
+                  valueType: 'string' as const,
+                },
+              ]
+            : []),
+          ...(group.representative.sapMaterialCode
+            ? [
+                {
+                  name: 'sapMaterialCode',
+                  value: group.representative.sapMaterialCode,
+                  valueType: 'string' as const,
+                },
+              ]
             : []),
           { name: 'splitRatio', value: `1:${ratio}`, valueType: 'string' },
           { name: 'inputPorts', value: 1, valueType: 'integer' },
           { name: 'outputPorts', value: ratio, valueType: 'integer' },
         ],
+        group.representative.resolvedManufacturer
+          ? {
+              partyId: netwinPartyId(group.representative.resolvedManufacturer.id),
+              name: group.representative.resolvedManufacturer.name,
+            }
+          : undefined,
       );
     }
     await flushConcreteSpecs();
-    console.log(`Tipos de carta/splitter em uso (concretos): ${splitterCardRows.length}`);
+    console.log(
+      `Tipos de carta/splitter em uso: ${splitterCatalogRows.length} linha(s), ${splitterIndex.groups.length} specification(s) semântica(s)`,
+    );
 
     console.log('Consultando tipos de porta física (ISP_CAT_PORTO_FISICO)...');
     const portTypes = await source.execute<{
@@ -1029,67 +1002,50 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
     console.log(`Tipos de porta física em uso (concretos): ${portRows.length}`);
 
     console.log('Consultando modelos de bastidor/subbastidor (ISP_CAT_BASTIDOR/SUBBASTIDOR)...');
-    const rackCatalogs = [
-      {
-        typeCode: 'Rack',
-        label: 'bastidor',
-        catalogTable: 'ISP_CAT_BASTIDOR',
-        instanceTable: 'ISP_INS_BASTIDOR',
-        idColumn: 'ID_BD_TIPO_BASTIDOR',
-        nameColumn: 'NOME_BASTIDOR',
-        siglaColumn: 'SIGLA_BASTIDOR',
-        specId: rackTypeSpecId,
-      },
-      {
-        typeCode: 'Shelf',
-        label: 'subbastidor',
-        catalogTable: 'ISP_CAT_SUBBASTIDOR',
-        instanceTable: 'ISP_INS_SUBBASTIDOR',
-        idColumn: 'ID_BD_TIPO_SUBBASTIDOR',
-        nameColumn: 'NOME_SUBBASTIDOR',
-        siglaColumn: 'SIGLA_SUBBASTIDOR',
-        specId: subrackTypeSpecId,
-      },
-    ];
-    for (const catalog of rackCatalogs) {
-      const modelRows = await source.execute<{
-        TIPO_ID: number;
-        NOME: string | null;
-        SIGLA: string | null;
-      }>(
-        `SELECT c.${catalog.idColumn} AS TIPO_ID, c.${catalog.nameColumn} AS NOME,
-                c.${catalog.siglaColumn} AS SIGLA
-           FROM NETWIN.${catalog.catalogTable} c
-          WHERE EXISTS (SELECT 1 FROM NETWIN.${catalog.instanceTable} i
-                         WHERE i.${catalog.idColumn} = c.${catalog.idColumn})
-          ORDER BY c.${catalog.idColumn}`,
-        [],
-        { outFormat: oracledb.OUT_FORMAT_OBJECT },
-      );
-      const rows = modelRows.rows ?? [];
-      const names = uniqueSpecNames(
-        rows,
-        (row) => text(row.NOME) ?? text(row.SIGLA) ?? `${catalog.typeCode} ${row.TIPO_ID}`,
-        (row) => row.TIPO_ID,
-      );
-      for (const row of rows) {
-        const name = names.get(row.TIPO_ID)!;
+    for (const catalog of RACK_CATALOGS) {
+      const rackRows = await loadRackCatalogRows(source, catalog);
+      const rackIndex = buildRackSpecIndex(catalog, rackRows, resolveManufacturer);
+      const rackNames = rackGroupNames(catalog, rackIndex);
+      for (const group of rackIndex.groups) {
+        const name = rackNames.get(group.canonicalId)!;
+        const rep = group.representative;
+        const charac = (key: string, value: string | number | null | undefined) =>
+          value === null || value === undefined || value === ''
+            ? []
+            : [
+                {
+                  name: key,
+                  value,
+                  valueType: typeof value === 'number' ? ('integer' as const) : ('string' as const),
+                },
+              ];
         await upsertConcreteSpec(
-          catalog.specId(row.TIPO_ID),
+          group.canonicalId,
           name,
           catalog.typeCode,
           `Modelo de ${catalog.label} Netwin ${name}`,
           [
-            ...netwinOriginCharacteristics(catalog.catalogTable, row.TIPO_ID),
-            ...(text(row.NOME) ? [modelCharacteristic(text(row.NOME)!)] : []),
-            ...(text(row.SIGLA)
-              ? [{ name: 'modelCode', value: text(row.SIGLA)!, valueType: 'string' as const }]
-              : []),
+            ...netwinOriginCharacteristics(
+              catalog.catalogTable,
+              group.representativeSourceId,
+              specOriginExtra(group),
+            ),
+            ...(rep.model ? [modelCharacteristic(rep.model)] : []),
+            ...charac('modelCode', rep.modelCode),
+            ...charac('sapMaterialCode', rep.sapMaterialCode),
           ],
+          rep.resolvedManufacturer
+            ? {
+                partyId: netwinPartyId(rep.resolvedManufacturer.id),
+                name: rep.resolvedManufacturer.name,
+              }
+            : undefined,
         );
       }
       await flushConcreteSpecs();
-      console.log(`Modelos de ${catalog.label} em uso (concretos): ${rows.length}`);
+      console.log(
+        `Modelos de ${catalog.label} em uso: ${rackRows.length} linha(s), ${rackIndex.groups.length} specification(s) semântica(s)`,
+      );
     }
 
     // 5. Carga de Catálogo e Árvore de Nós no Studio (resource_catalog & resource_catalog_node)

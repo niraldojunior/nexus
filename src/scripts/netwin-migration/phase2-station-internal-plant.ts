@@ -20,12 +20,13 @@ import {
   netwinOriginCharacteristics,
   resolveNetwinPlantState,
 } from '../netwin-migration-kit.js';
+import { pickSpecification, SpecCoverage } from './concrete-specs.js';
 import {
-  pickSpecification,
-  rackTypeSpecId,
-  SpecCoverage,
-  subrackTypeSpecId,
-} from './concrete-specs.js';
+  buildRackSpecIndex,
+  loadManufacturerResolver,
+  loadRackCatalogRows,
+  rackCatalogOf,
+} from './concrete-spec-sources.js';
 import { resolveMunicipalityScopePrefilter } from './scope-resolution.js';
 import { chunksOf, selectFullTableIds } from './source-batches.js';
 import { createScopedInfranodePager } from './scoped-infranode-ids.js';
@@ -230,6 +231,21 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
         throw new Error('Specs Netwin Rack/Shelf ausentes. Execute a Fase 1 antes.');
       }
     }
+    const resolveManufacturer = await loadManufacturerResolver(source);
+    const rackSpecIndex = buildRackSpecIndex(
+      rackCatalogOf('rack'),
+      await loadRackCatalogRows(source, rackCatalogOf('rack')),
+      resolveManufacturer,
+    );
+    const shelfSpecIndex = buildRackSpecIndex(
+      rackCatalogOf('shelf'),
+      await loadRackCatalogRows(source, rackCatalogOf('shelf')),
+      resolveManufacturer,
+    );
+    const rackSpecId = (id: number): string =>
+      rackSpecIndex.canonicalIdBySourceId.get(String(id)) ?? '';
+    const subrackSpecId = (id: number): string =>
+      shelfSpecIndex.canonicalIdBySourceId.get(String(id)) ?? '';
     const pickSpec = (
       typeId: number | null,
       idOf: (id: number) => string,
@@ -319,7 +335,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
           ),
           resource_specification_id: pickSpec(
             rack.ID_BD_TIPO_BASTIDOR,
-            rackTypeSpecId,
+            rackSpecId,
             specIds.rack,
             rackCoverage,
           ),
@@ -362,7 +378,7 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
           ).slice(0, 255),
           resource_specification_id: pickSpec(
             sub.ID_BD_TIPO_SUBBASTIDOR,
-            subrackTypeSpecId,
+            subrackSpecId,
             specIds.subrack,
             subrackCoverage,
           ),

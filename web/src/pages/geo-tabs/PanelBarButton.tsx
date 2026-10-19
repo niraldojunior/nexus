@@ -16,8 +16,13 @@ export const PanelBarButton = forwardRef<
     ariaLabel?: string;
     /** Semântica de aba (role=tab + aria-selected) — só dentro de um role="tablist". */
     asTab?: boolean;
+    /** Ação destrutiva (Remover) — ícone e rótulo em vermelho. */
+    danger?: boolean;
   }
->(function PanelBarButton({ icon: Icon, label, badge, active, onClick, ariaLabel, asTab }, ref) {
+>(function PanelBarButton(
+  { icon: Icon, label, badge, active, onClick, ariaLabel, asTab, danger },
+  ref,
+) {
   return (
     <button
       ref={ref}
@@ -32,14 +37,20 @@ export const PanelBarButton = forwardRef<
       // Aba ativa ganha a barra amarela na base (estilo Google Maps). É um pseudo-elemento porque
       // o reset global `button { border: 0 }` (fora de @layer) vence as utilidades `border-*`.
       className={`relative flex w-[72px] shrink-0 flex-col items-center gap-1 rounded-t-[14px] px-2 pb-2 pt-1.5 text-center transition after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-t-full ${
-        active
-          ? 'text-app-text after:bg-app-accent'
-          : 'text-app-muted after:bg-transparent hover:text-app-text'
+        danger
+          ? 'text-status-red after:bg-transparent hover:brightness-90'
+          : active
+            ? 'text-app-text after:bg-app-accent'
+            : 'text-app-muted after:bg-transparent hover:text-app-text'
       }`}
     >
       <span
         className={`relative flex h-8 w-8 items-center justify-center rounded-full border transition ${
-          active ? 'border-app-accent-border bg-app-accent' : 'border-app-border bg-app-accent-soft'
+          danger
+            ? 'border-status-red/30 bg-status-red-soft'
+            : active
+              ? 'border-app-accent-border bg-app-accent'
+              : 'border-app-border bg-app-accent-soft'
         }`}
       >
         {/* Ativo = círculo em amarelo sólido (bg-app-accent); `--vt-ink` é o token dedicado a

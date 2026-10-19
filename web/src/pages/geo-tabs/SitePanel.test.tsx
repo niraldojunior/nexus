@@ -113,28 +113,52 @@ const renderPanel = (
   return props;
 };
 
+vi.mock('../internal-plant/SiteEditorModal', () => ({
+  SiteEditorModal: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>editor-fechar</button>
+  ),
+}));
+vi.mock('../../components/inventory/RemoveSiteDialog', () => ({
+  RemoveSiteDialog: ({ onRemoved }: { onRemoved: () => void }) => (
+    <button onClick={onRemoved}>dialogo-remover</button>
+  ),
+}));
+
 describe('SitePanel', () => {
-  it('modo consulta: mostra nome editável e as 4 abas do painel unificado', () => {
+  it('modo consulta: mostra nome somente leitura e as 4 abas do painel unificado', () => {
     renderPanel();
-    expect(screen.getByLabelText('Nome do local')).toHaveValue('CDO Rua Miguel de Frias, 380');
+    expect(screen.getByText('CDO Rua Miguel de Frias, 380')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nome do local')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Geral' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Sub-locais' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Recursos' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Histórico' })).toBeInTheDocument();
   });
 
-  it('editar o nome e perder o foco grava via PATCH /v1/geo/sites/:id', async () => {
-    mocks.patchJson.mockResolvedValue({});
-    renderPanel();
-    const nameInput = screen.getByLabelText('Nome do local');
-    fireEvent.change(nameInput, { target: { value: 'Novo nome do local' } });
-    fireEvent.blur(nameInput);
+  it('Editar/Remover aparecem só com canEdit', () => {
+    renderPanel({ canEdit: false, onRemoved: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remover' })).not.toBeInTheDocument();
+    cleanup();
+    renderPanel({});
+    expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remover' })).toBeInTheDocument();
+  });
 
-    await waitFor(() =>
-      expect(mocks.patchJson).toHaveBeenCalledWith('/v1/geo/sites/site-1', {
-        name: 'Novo nome do local',
-      }),
-    );
+  it('Editar abre o modal compartilhado e, ao fechar, recarrega o painel', () => {
+    const props = renderPanel({ onRemoved: vi.fn() });
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.click(screen.getByText('editor-fechar'));
+    expect(props.onChanged).toHaveBeenCalled();
+    expect(screen.queryByText('editor-fechar')).not.toBeInTheDocument();
+  });
+
+  it('Remover abre a confirmação e, ao remover, chama onRemoved', () => {
+    const onRemoved = vi.fn();
+    renderPanel({ onRemoved });
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+    fireEvent.click(screen.getByText('dialogo-remover'));
+    expect(onRemoved).toHaveBeenCalled();
   });
 
   it('"Remover do projeto" pede confirmação antes de chamar onRemoveFromProject', async () => {
@@ -152,59 +176,6 @@ describe('SitePanel', () => {
   it('sem onRemoveFromProject, o botão "Remover do projeto" não aparece', () => {
     renderPanel();
     expect(screen.queryByRole('button', { name: 'Remover do projeto' })).not.toBeInTheDocument();
-  });
-
-  it('Status fica travado (somente leitura) enquanto o projeto de origem está em curso', () => {
-    renderPanel(
-      { project: project({ status: 'active' }), projectId: 'prj-1' },
-      { origin: { kind: 'project', projectId: 'prj-1', projectName: 'Expansão Icaraí' } },
-    );
-    expect(screen.getByText(/herdado do projeto Expansão Icaraí/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Status do local')).not.toBeInTheDocument();
-  });
-
-  it('Status é editável quando o site não pertence a um projeto em curso', () => {
-    renderPanel();
-    fireEvent.click(screen.getByLabelText('Editar Status'));
-    expect(screen.getByLabelText('Status do local')).toBeInTheDocument();
-  });
-
-  // Regressão: o combo de tipo do cabeçalho oferecia sempre a lista fixa de tipos
-  // category:'Site' (CO/POP/Cabinet/Ponto de Instalação…), mesmo ao visualizar um
-  // sub-local (categoria SubSite) — que nunca está nessa lista. Um sub-local só pode
-  // trocar entre os tipos que a spec do PAI aceita como filho.
-  it('sub-local: combo de tipo oferece só os tipos aceitos pelo pai, não a lista fixa de Site', () => {
-    const co = spec({
-      id: 'spec-co',
-      name: 'Central Office',
-      code: 'CO',
-      category: 'Site',
-      allowedChildSpecIds: ['spec-room'],
-    });
-    const room = spec({
-      id: 'spec-room',
-      name: 'Sala',
-      code: 'ROOM',
-      category: 'SubSite',
-      allowedParentSpecIds: ['spec-co'],
-    });
-    const installationPoint = spec({ id: 'spec-pi', code: 'INSTALLATION_POINT' });
-    const coSite = site({ id: 'co-1', name: 'Icaraí (ICI)', siteSpecificationId: 'spec-co' });
-    const roomSite = site({
-      id: 'room-1',
-      name: 'Sala 1',
-      siteSpecificationId: 'spec-room',
-      parentSite: { id: 'co-1', '@referredType': 'GeographicSite' },
-    });
-
-    renderPanel(
-      { siteId: 'room-1', specs: [co, room, installationPoint], sites: [coSite, roomSite] },
-      { site: roomSite },
-    );
-
-    const combo = screen.getByLabelText('Tipo de local') as HTMLSelectElement;
-    const optionLabels = Array.from(combo.options).map((option) => option.text);
-    expect(optionLabels).toEqual(['Sala']);
   });
 
   it('modo criação: botão Criar local fica desabilitado até um candidato Geonet ser escolhido', async () => {

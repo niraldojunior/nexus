@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceAboutTab } from './ResourceAboutTab';
 import type { PhysicalResourceDetail } from '../../services/resourceApi';
@@ -64,7 +64,7 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
 
 describe('ResourceAboutTab', () => {
   it('mostra as características de nível especificação, somente leitura', () => {
-    render(<ResourceAboutTab detail={detail()} canEdit={true} onPatch={vi.fn()} />);
+    render(<ResourceAboutTab detail={detail()} />);
 
     expect(screen.getByText('CTO 8 portas')).toBeInTheDocument();
     expect(screen.getByText('ports')).toBeInTheDocument();
@@ -73,8 +73,7 @@ describe('ResourceAboutTab', () => {
     expect(screen.queryByLabelText('Editar ports')).not.toBeInTheDocument();
   });
 
-  it('exibe e edita características de instância preservando _origin e notes (issue #273)', async () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
+  it('exibe características de instância sem controles de edição (issue #273)', async () => {
     mocks.getResourceTypeCatalogContext.mockResolvedValueOnce({
       ...CATALOG_CONTEXT,
       resourceType: {
@@ -103,8 +102,6 @@ describe('ResourceAboutTab', () => {
             ],
           },
         })}
-        canEdit={true}
-        onPatch={onPatch}
       />,
     );
 
@@ -113,19 +110,7 @@ describe('ResourceAboutTab', () => {
     expect(screen.getByText('mac_address')).toBeInTheDocument();
     expect(screen.getByText('00:11:22:33:44:55')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Editar mac_address'));
-    const input = screen.getByLabelText('mac_address');
-    fireEvent.change(input, { target: { value: 'AA:BB:CC:DD:EE:FF' } });
-    fireEvent.blur(input);
-
-    // O PATCH deve conter o array completo (incluindo _origin e notes) — nunca um array parcial.
-    expect(onPatch).toHaveBeenCalledWith({
-      characteristic: [
-        { name: '_origin.system', value: 'Netwin', group: '_origin' },
-        { name: 'notes', value: 'observação existente' },
-        { name: 'mac_address', value: 'AA:BB:CC:DD:EE:FF', valueType: 'string' },
-      ],
-    });
+    expect(screen.queryByLabelText('Editar mac_address')).not.toBeInTheDocument();
   });
 
   it('em modo somente leitura (canEdit=false), exibe valor de instância sem botão de edição', async () => {
@@ -147,8 +132,6 @@ describe('ResourceAboutTab', () => {
             characteristic: [{ name: 'mac_address', value: '00:11:22:33:44:55' }],
           },
         })}
-        canEdit={false}
-        onPatch={vi.fn()}
       />,
     );
 
@@ -168,7 +151,7 @@ describe('ResourceAboutTab', () => {
       },
     });
 
-    render(<ResourceAboutTab detail={detail()} canEdit={true} onPatch={vi.fn()} />);
+    render(<ResourceAboutTab detail={detail()} />);
 
     await waitFor(() => {
       expect(screen.queryByText('Deste recurso')).not.toBeInTheDocument();
@@ -181,8 +164,6 @@ describe('ResourceAboutTab', () => {
         detail={detail({
           specification: { ...detail().specification, resourceSpecificationCharacteristic: [] },
         })}
-        canEdit={true}
-        onPatch={vi.fn()}
       />,
     );
 

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Boxes,
   Building2,
@@ -7,16 +8,12 @@ import {
   History as HistoryIcon,
   Info as InfoIcon,
   Loader2,
+  Pencil,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
-import {
-  patchJson,
-  postJson,
-  type GeoSite,
-  type GeoSiteStatus,
-  type GeoSpec,
-} from '../../services/geoApi';
+import { postJson, type GeoSite, type GeoSpec } from '../../services/geoApi';
 import type { GeoProject } from '../../services/geoProjectApi';
 import {
   fetchGeonetCandidates,
@@ -25,6 +22,7 @@ import {
 } from '../../services/geonetAddressApi';
 import type { DraftAddress } from '../../utils/googleMaps';
 import { useSiteDetail } from '../../hooks/useSiteDetail';
+import { invalidateSiteChildren } from '../../hooks/useSiteChildren';
 import { useAutoResizeTextarea } from '../../hooks/useAutoResizeTextarea';
 import { allowedChildSpecsOf, siteSpecLabel } from '../../utils/geoLabels';
 import { siteStreetViewMarker } from '../../utils/streetViewMarker';
@@ -44,7 +42,8 @@ import { SiteOverviewTab } from './SiteOverviewTab';
 import { SiteSubSitesTab } from './SiteSubSitesTab';
 import { SiteResourcesTab } from './SiteResourcesTab';
 import { SiteHistoryTab } from './SiteHistoryTab';
-import { SiteAddressModal } from './SiteAddressModal';
+import { RemoveSiteDialog } from '../../components/inventory/RemoveSiteDialog';
+import { SiteEditorModal } from '../internal-plant/SiteEditorModal';
 
 const ADDRESS_DEBOUNCE_MS = 250;
 type SiteTab = 'overview' | 'subsites' | 'resources' | 'history';
@@ -83,6 +82,9 @@ export type SitePanelProps = {
   // seguida. Ausente fora do contexto de Projeto ou depois que ele terminou (aí o Site já tem
   // vida própria — RF-010 — e "remover" vira a mesma troca de Status de qualquer outro local).
   onRemoveFromProject?: () => Promise<void>;
+  // Chamado depois que o local raiz aberto é removido pelo botão "Remover" da barra (ausente no
+  // contexto de Projeto, onde vale "Remover do projeto"). Sub-locais removidos só desempilham.
+  onRemoved?: () => void;
 };
 
 const geonetDetailInFlight = new Map<string, ReturnType<typeof fetchGeonetDetail>>();
@@ -116,6 +118,7 @@ export function SitePanel({
   onChanged,
   onOpenResource,
   onRemoveFromProject,
+  onRemoved,
 }: SitePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const { isClosing, requestExit } = usePanelExit(isMobile);
@@ -123,7 +126,8 @@ export function SitePanel({
   const currentSiteId = stack.length > 0 ? stack[stack.length - 1] : null;
   const detail = useSiteDetail(currentSiteId ?? null);
   const [tab, setTab] = useState<SiteTab>('overview');
-  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [confirmingRemoveFromProject, setConfirmingRemoveFromProject] = useState(false);
   const [removingFromProject, setRemovingFromProject] = useState(false);
   const [createDirty, setCreateDirty] = useState(false);
@@ -182,19 +186,10 @@ export function SitePanel({
     }
   };
 
-  const patchCurrentSite = async (
-    patch: Partial<{
-      name: string;
-      siteSpecificationId: string;
-      status: GeoSiteStatus;
-      parentSiteId: string | null;
-      note: string | null;
-      characteristic: Array<{ name: string; value: unknown; valueType?: string; group?: string }>;
-    }>,
-  ) => {
+  const reloadAfterEdit = () => {
     if (!currentSiteId) return;
-    await patchJson(`/v1/geo/sites/${currentSiteId}`, patch);
-    await detail.reload();
+    invalidateSiteChildren(currentSiteId);
+    void detail.reload();
     onChanged();
   };
 
@@ -219,8 +214,6 @@ export function SitePanel({
     <ViewHeader
       site={detail.site}
       siteSpecs={siteSpecs}
-      canEdit={canEdit}
-      onPatch={patchCurrentSite}
       onBack={handleBack}
       onClose={() => requestExit(onClose)}
     />
@@ -245,42 +238,55 @@ export function SitePanel({
   ) : detail.loading && !detail.site ? (
     <div className="px-2 py-6 text-center text-[0.86rem] text-app-muted">Carregando local…</div>
   ) : detail.site ? (
-    <div className="grid gap-4">
-      <PanelTabBar
-        activeTab={tab}
-        role="tablist"
-        ariaLabel="Seções do local"
-        className="border-b border-app-border"
-      >
-        <PanelBarButton
-          asTab
-          icon={InfoIcon}
-          label="Geral"
-          active={tab === 'overview'}
-          onClick={() => setTab('overview')}
-        />
-        <PanelBarButton
-          asTab
-          icon={Building2}
-          label="Sub-locais"
-          active={tab === 'subsites'}
-          onClick={() => setTab('subsites')}
-        />
-        <PanelBarButton
-          asTab
-          icon={Boxes}
-          label="Recursos"
-          active={tab === 'resources'}
-          onClick={() => setTab('resources')}
-        />
-        <PanelBarButton
-          asTab
-          icon={HistoryIcon}
-          label="Histórico"
-          active={tab === 'history'}
-          onClick={() => setTab('history')}
-        />
-      </PanelTabBar>
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
+      <div className="flex items-end border-b border-app-border">
+        <PanelTabBar
+          activeTab={tab}
+          role="tablist"
+          ariaLabel="Seções do local"
+          className="min-w-0 flex-1"
+        >
+          <PanelBarButton
+            asTab
+            icon={InfoIcon}
+            label="Geral"
+            active={tab === 'overview'}
+            onClick={() => setTab('overview')}
+          />
+          <PanelBarButton
+            asTab
+            icon={Building2}
+            label="Sub-locais"
+            active={tab === 'subsites'}
+            onClick={() => setTab('subsites')}
+          />
+          <PanelBarButton
+            asTab
+            icon={Boxes}
+            label="Recursos"
+            active={tab === 'resources'}
+            onClick={() => setTab('resources')}
+          />
+          <PanelBarButton
+            asTab
+            icon={HistoryIcon}
+            label="Histórico"
+            active={tab === 'history'}
+            onClick={() => setTab('history')}
+          />
+        </PanelTabBar>
+        {canEdit ? (
+          <div className="flex shrink-0 items-end">
+            <PanelBarButton icon={Pencil} label="Editar" onClick={() => setEditing(true)} />
+            <PanelBarButton
+              icon={Trash2}
+              label="Remover"
+              danger
+              onClick={() => setRemoving(true)}
+            />
+          </div>
+        ) : null}
+      </div>
 
       {tab === 'overview' ? (
         <SiteOverviewTab
@@ -290,14 +296,6 @@ export function SitePanel({
           origin={detail.origin}
           sites={sites}
           specById={specById}
-          canEdit={canEdit}
-          lockedByProjectName={
-            project && project.status !== 'terminated' && detail.origin?.kind === 'project'
-              ? project.name
-              : undefined
-          }
-          onPatchSite={patchCurrentSite}
-          onEditAddress={() => setAddressModalOpen(true)}
         />
       ) : null}
 
@@ -307,18 +305,14 @@ export function SitePanel({
           siteSpecificationId={detail.site.siteSpecificationId}
           specs={specs}
           specById={specById}
-          canEdit={canEdit}
+          canEdit={false}
           onOpenSubSite={handleOpenSubSite}
           onChanged={onChanged}
         />
       ) : null}
 
       {tab === 'resources' ? (
-        <SiteResourcesTab
-          siteId={detail.site.id}
-          canEdit={canEdit}
-          onOpenResource={onOpenResource}
-        />
+        <SiteResourcesTab siteId={detail.site.id} canEdit={false} onOpenResource={onOpenResource} />
       ) : null}
 
       {tab === 'history' ? <SiteHistoryTab siteId={detail.site.id} /> : null}
@@ -335,19 +329,41 @@ export function SitePanel({
         </div>
       ) : null}
 
-      {addressModalOpen ? (
-        <SiteAddressModal
-          siteId={detail.site.id}
-          currentAddressId={detail.site.address?.id}
-          currentLocationId={detail.site.place?.id}
-          currentSubAddress={detail.address?.subAddress}
-          onClose={() => setAddressModalOpen(false)}
-          onSaved={() => {
-            void detail.reload();
-            onChanged();
-          }}
-        />
-      ) : null}
+      {canEdit && editing && currentSiteId
+        ? createPortal(
+            <SiteEditorModal
+              siteId={currentSiteId}
+              onChanged={reloadAfterEdit}
+              onClose={() => {
+                setEditing(false);
+                reloadAfterEdit();
+              }}
+            />,
+            document.body,
+          )
+        : null}
+
+      {canEdit && removing
+        ? createPortal(
+            <RemoveSiteDialog
+              site={{ id: detail.site.id, name: detail.site.name }}
+              statusReason="Removido pela Planta Externa"
+              onClose={() => setRemoving(false)}
+              onRemoved={() => {
+                setRemoving(false);
+                if (stack.length > 1) {
+                  setStack((current) => current.slice(0, -1));
+                  setTab('overview');
+                  onChanged();
+                } else {
+                  if (onRemoved) onRemoved();
+                  else onClose();
+                }
+              }}
+            />,
+            document.body,
+          )
+        : null}
 
       {confirmingRemoveFromProject ? (
         <Modal
@@ -355,7 +371,7 @@ export function SitePanel({
           title="Excluir local"
           eyebrow="Projetos"
         >
-          <div className="grid gap-4">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
             <p className="text-[0.9rem] leading-snug text-app-text">
               Excluir <strong>{detail.site.name}</strong> deste projeto? O local será encerrado.
             </p>
@@ -399,7 +415,7 @@ export function SitePanel({
       <OverlayScrollArea className="overflow-x-hidden" hostClassName="min-h-0">
         {!isCreating ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
-        <div className="px-3 py-3">{body}</div>
+        <div className="min-w-0 px-3 py-3">{body}</div>
       </OverlayScrollArea>
     </div>
   );
@@ -431,41 +447,14 @@ function CreateHeader({ onClose }: { onClose: () => void }) {
 function ViewHeader({
   site,
   siteSpecs,
-  canEdit,
-  onPatch,
   onBack,
   onClose,
 }: {
   site: GeoSite;
   siteSpecs: GeoSpec[];
-  canEdit: boolean;
-  onPatch: (patch: { name?: string; siteSpecificationId?: string }) => Promise<void>;
   onBack: () => void;
   onClose: () => void;
 }) {
-  const [nameDraft, setNameDraft] = useState(site.name);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setNameDraft(site.name);
-  }, [site.id, site.name]);
-
-  const commitTitle = () => {
-    const next = nameDraft.trim() || site.name;
-    setNameDraft(next);
-    if (next !== site.name) void onPatch({ name: next });
-  };
-
-  const handleTitleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      titleInputRef.current?.blur();
-    } else if (event.key === 'Escape') {
-      setNameDraft(site.name);
-      titleInputRef.current?.blur();
-    }
-  };
-
   return (
     <div className="flex items-start gap-2 border-y border-app-border px-3 py-3">
       <button
@@ -477,40 +466,12 @@ function ViewHeader({
         <ChevronLeft className="h-5 w-5" />
       </button>
       <div className="min-w-0 flex-1">
-        {canEdit ? (
-          <>
-            <select
-              value={site.siteSpecificationId}
-              onChange={(event) => void onPatch({ siteSpecificationId: event.target.value })}
-              aria-label="Tipo de local"
-              className="-mx-1 mb-1 rounded-[6px] border border-transparent bg-transparent px-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-app-muted outline-none transition hover:border-app-border focus:border-app-accent-border"
-            >
-              {siteSpecs.map((spec) => (
-                <option key={spec.id} value={spec.id}>
-                  {siteSpecLabel(spec)}
-                </option>
-              ))}
-            </select>
-            <input
-              ref={titleInputRef}
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={handleTitleKeyDown}
-              aria-label="Nome do local"
-              className="-mx-1 w-full rounded-[8px] border border-transparent bg-transparent px-1 py-1 font-display text-[1.02rem] font-semibold leading-tight text-app-text outline-none transition hover:border-app-border focus:border-app-accent-border focus:bg-white"
-            />
-          </>
-        ) : (
-          <>
-            <p className="mb-1 break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
-              {siteSpecLabel(siteSpecs.find((spec) => spec.id === site.siteSpecificationId))}
-            </p>
-            <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
-              {site.name}
-            </p>
-          </>
-        )}
+        <p className="mb-1 break-words text-[0.66rem] font-semibold uppercase leading-snug tracking-[0.08em] text-app-muted">
+          {siteSpecLabel(siteSpecs.find((spec) => spec.id === site.siteSpecificationId))}
+        </p>
+        <p className="break-words font-display text-[1.02rem] font-semibold leading-tight text-app-text">
+          {site.name}
+        </p>
       </div>
       <button
         type="button"
@@ -713,7 +674,10 @@ function CreateBody({
           </div>
           {predictionsOpen && predictions.length > 0 ? (
             <>
-              <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setPredictionsOpen(false)} />
+              <div
+                className="fixed inset-0 z-[var(--z-dropdown)]"
+                onClick={() => setPredictionsOpen(false)}
+              />
               <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
                 {predictions.map((candidate) => (
                   <button

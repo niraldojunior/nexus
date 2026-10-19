@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchMapSites, type MapSiteResponse } from '../services/geoMapSiteApi';
 import type { MapTileFeature } from '../services/geoMapTileApi';
 import type { MapBounds } from '../services/geoTreeApi';
+import { MAP_TILES_INVALIDATED_EVENT } from '../utils/mapTileCache';
 
 const inFlight = new Map<string, Promise<MapSiteResponse>>();
 const EMPTY: MapTileFeature[] = [];
@@ -59,6 +60,18 @@ export function useMapSites(
   const lastIdsRef = useRef<string>('');
   const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
   const idsKey = sourceModelIds.join('|');
+  const [revision, setRevision] = useState(0);
+
+  // Edição/remoção de Site (ou Recurso) invalida o cache da viewport: força nova busca.
+  useEffect(() => {
+    const invalidate = () => {
+      lastKeyRef.current = null;
+      lastFetchedBoundsRef.current = null;
+      setRevision((value) => value + 1);
+    };
+    window.addEventListener(MAP_TILES_INVALIDATED_EVENT, invalidate);
+    return () => window.removeEventListener(MAP_TILES_INVALIDATED_EVENT, invalidate);
+  }, []);
 
   useEffect(() => {
     if (!bounds || sourceModelIds.length === 0) {
@@ -112,7 +125,7 @@ export function useMapSites(
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     };
     // sourceModelIds é representado por idsKey para estabilidade de identidade.
-  }, [bounds, idsKey]);
+  }, [bounds, idsKey, revision]);
 
   return {
     features: response?.features ?? EMPTY,

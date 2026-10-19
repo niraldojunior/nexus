@@ -1,4 +1,5 @@
 import { bearerToken } from './session';
+import { invalidateMapTiles } from '../utils/mapTileCache';
 import type { ResourceAuditEntry } from './resourceApi';
 import type { VisualIdentity } from './studioGeoApi';
 
@@ -142,7 +143,11 @@ async function sendJson<T>(
     throw new InternalPlantApiError(
       message,
       response.status,
-      typeof record?.code === 'string' ? record.code : undefined,
+      typeof record?.code === 'string'
+        ? record.code
+        : typeof record?.error === 'string'
+          ? record.error
+          : undefined,
     );
   }
   return payload as T;
@@ -331,8 +336,18 @@ export const saveResourceAggregate = (payload: SaveResourceAggregatePayload) =>
         payload,
       );
 
-export const terminateInternalPlantResource = (id: string) =>
-  sendJson<unknown>('DELETE', `${BASE}/resources/${encodeURIComponent(id)}`);
+export const terminateInternalPlantResource = async (
+  id: string,
+  options: { cascade?: boolean } = {},
+) => {
+  const query = options.cascade ? '?cascade=true' : '';
+  const result = await sendJson<unknown>(
+    'DELETE',
+    `${BASE}/resources/${encodeURIComponent(id)}${query}`,
+  );
+  invalidateMapTiles();
+  return result;
+};
 
 export const fetchInternalPlantRoots = (signal?: AbortSignal) =>
   getJson<InternalPlantLocationRootNode[]>(`${BASE}/locations/roots`, signal);

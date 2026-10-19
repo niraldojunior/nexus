@@ -39,7 +39,6 @@ export function InternalComponentsView({
   const { rootChildren, edges } = useInternalResourceGraph(components, connections);
   const { leaves: rootLeaves, containers: rootContainers } = splitGraphChildren(rootChildren);
   const { rects, contentSize } = useInternalGraphGeometry(hostRef, zoom);
-  const contentWidth = Math.max(contentSize.width, 1) * zoom;
   const interaction = {
     selectedId,
     onSelect: (selected: InternalGraphNode) => setSelectedId(selected.id),
@@ -77,8 +76,8 @@ export function InternalComponentsView({
           })}
         </div>
       </div>
-      <div className="overflow-auto rounded-[10px] border border-app-border bg-white p-2">
-        <section className="min-w-full rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-muted-hover)] p-3">
+      <div className="min-w-0 max-w-full overflow-x-hidden rounded-[10px] border border-app-border bg-white p-2">
+        <section className="min-w-0 max-w-full rounded-[10px] border border-[var(--border-strong)] bg-[var(--surface-muted-hover)] p-3">
           <ResourceGraphHeader
             name={rootResource.name}
             resourceType={rootResource.resourceType}
@@ -90,14 +89,13 @@ export function InternalComponentsView({
           />
           <div
             data-testid="internal-components-diagram"
-            className="rounded-[8px] border border-[var(--border-strong)] bg-white p-2"
-            style={{ width: contentWidth, minWidth: '100%' }}
+            className="min-w-0 max-w-full overflow-hidden rounded-[8px] border border-[var(--border-strong)] bg-white p-2"
           >
             <div
-              className="min-w-full origin-top-left"
-              style={{ transform: `scale(${zoom})`, width: contentSize.width || undefined }}
+              className="w-full min-w-0 origin-top-left"
+              style={zoom === 1 ? undefined : { transform: `scale(${zoom})` }}
             >
-              <div ref={hostRef} data-testid="internal-components-graph-host" className="relative min-w-full">
+              <div ref={hostRef} data-testid="internal-components-graph-host" className="relative w-full min-w-0">
                 <ResourceConnectionsLayer
                   connections={edges}
                   rects={rects}
@@ -115,7 +113,7 @@ export function InternalComponentsView({
                   {rootContainers.length ? (
                     <div
                       data-testid="root-component-containers"
-                      className={rootLeaves.length ? 'mt-2 grid gap-2' : 'grid gap-2'}
+                      className={rootLeaves.length ? 'mt-2 grid grid-cols-[minmax(0,1fr)] gap-2' : 'grid grid-cols-[minmax(0,1fr)] gap-2'}
                     >
                       {rootContainers.map((node) => (
                         <ResourceContainer key={node.id} node={node} interaction={interaction} viewMode={viewMode} />

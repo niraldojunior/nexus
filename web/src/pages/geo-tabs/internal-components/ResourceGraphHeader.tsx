@@ -34,7 +34,7 @@ export function ResourceGraphHeader({
       >
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${indicatorClassName}`} aria-hidden="true" />
         <ResourceIcon resource={{ resourceType: resourceType ?? '', status, name }} variant="glyph" size={16} />
-        <div className="min-w-0 flex-1 break-words text-[0.76rem] font-semibold leading-snug text-app-text">
+        <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] text-[0.76rem] font-semibold leading-snug text-app-text">
           {name} <span className="font-normal text-app-muted">({specification})</span>
         </div>
       </div>
@@ -49,7 +49,7 @@ export function ResourceGraphHeader({
     >
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${indicatorClassName}`} aria-hidden="true" />
       <ResourceIcon resource={{ resourceType: resourceType ?? '', status, name }} variant="glyph" size={16} />
-      <div className="min-w-0 flex-1 break-words text-[0.76rem] font-semibold leading-snug text-app-text">
+      <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] text-[0.76rem] font-semibold leading-snug text-app-text">
         {name} <span className="font-normal text-app-muted">({specification})</span>
       </div>
     </div>

@@ -63,7 +63,7 @@ export function ResourceComponentsTab({
   }
 
   return (
-    <div className="grid gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
       {truncated ? (
         <div className="flex items-center gap-2 rounded-[14px] border border-status-amber/30 bg-status-amber-soft p-3 text-[0.82rem] text-status-amber">
           <Info className="h-4 w-4 shrink-0" />

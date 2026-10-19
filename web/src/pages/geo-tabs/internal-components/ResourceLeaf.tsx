@@ -43,7 +43,7 @@ export function ResourceLeaf({
           />
         </span>
       </button>
-      <span className="min-w-0 break-words text-[0.66rem] font-medium leading-tight text-app-text">
+      <span className="min-w-0 break-words [overflow-wrap:anywhere] text-[0.66rem] font-medium leading-tight text-app-text">
         {node.name}
       </span>
     </div>

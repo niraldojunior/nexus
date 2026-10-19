@@ -1,4 +1,5 @@
 import { bearerToken } from './session';
+import { invalidateMapTiles } from '../utils/mapTileCache';
 import type { GeoAddress, GeoSite, GeoSiteStatus } from './geoApi';
 
 export type AdministrativeCity = {
@@ -26,8 +27,9 @@ export type SiteEditorPayload = {
     relatedParty?: Array<{ id: string; role?: string }>;
     characteristic?: Array<{ group?: string; name: string; value: unknown; valueType?: string }>;
   };
-  administrativeCityId: string;
-  street: string;
+  /** Opcionais apenas para sub-local (herda o endereço do local pai). */
+  administrativeCityId?: string;
+  street?: string;
   streetNr?: string;
   postcode?: string;
 };
@@ -99,16 +101,26 @@ export const loadAdministrativeCities = (): Promise<AdministrativeCity[]> => {
 export const fetchSiteEditor = (id: string) =>
   request<SiteEditorSnapshot>('GET', `/v1/geo/site-editor/${encodeURIComponent(id)}`);
 
-export const saveSiteEditor = (payload: SiteEditorPayload, siteId?: string) =>
-  siteId
-    ? request<SiteEditorSnapshot>('PUT', `/v1/geo/site-editor/${encodeURIComponent(siteId)}`, payload)
-    : request<SiteEditorSnapshot>('POST', '/v1/geo/site-editor', payload);
+export const saveSiteEditor = async (payload: SiteEditorPayload, siteId?: string) => {
+  const saved = siteId
+    ? await request<SiteEditorSnapshot>(
+        'PUT',
+        `/v1/geo/site-editor/${encodeURIComponent(siteId)}`,
+        payload,
+      )
+    : await request<SiteEditorSnapshot>('POST', '/v1/geo/site-editor', payload);
+  invalidateMapTiles();
+  return saved;
+};
 
 export const fetchSiteReferences = (id: string) =>
   request<SiteReferences>('GET', `/v1/geo/sites/${encodeURIComponent(id)}/deactivation-impact`);
 
-export const retireSite = (id: string, statusReason: string) =>
-  request<GeoSite>('PATCH', `/v1/geo/sites/${encodeURIComponent(id)}`, {
+export const retireSite = async (id: string, statusReason: string) => {
+  const site = await request<GeoSite>('PATCH', `/v1/geo/sites/${encodeURIComponent(id)}`, {
     status: 'Retired',
     statusReason,
   });
+  invalidateMapTiles();
+  return site;
+};

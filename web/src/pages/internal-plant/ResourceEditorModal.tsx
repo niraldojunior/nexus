@@ -1127,7 +1127,7 @@ const STATE_TONES: Record<
   usageState: USAGE_STATE_TONE,
 };
 
-const formatStateDate = (iso?: string): string => {
+export const formatStateDate = (iso?: string): string => {
   if (!iso) return 'Sem registro de alteração';
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
@@ -1206,7 +1206,7 @@ const TONE_DOT: Record<StatusTone, string> = {
   neutral: 'bg-app-muted',
 };
 
-function StateSelect({
+export function StateSelect({
   value,
   options,
   tones,

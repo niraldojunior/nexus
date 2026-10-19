@@ -57,8 +57,9 @@ type LocationInput = {
 
 export type SiteEditorInput = {
   site: Partial<SiteInput> & { name: string; siteSpecificationId: string };
-  administrativeCityId: string;
-  street: string;
+  /** Obrigatórios, exceto para sub-local (herda o endereço do local pai). */
+  administrativeCityId?: string;
+  street?: string;
   streetNr?: string;
   postcode?: string;
 };
@@ -1600,12 +1601,22 @@ export class GeoService {
   ): Promise<SiteEditorSnapshot> {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
-    assertRequiredString(input.street, 'street');
-    assertRequiredString(input.administrativeCityId, 'administrativeCityId');
-    const city = (await this.repository.listAdministrativeCities()).find(
-      (candidate) => candidate.id === input.administrativeCityId,
-    );
-    if (!city) {
+    const editorSpec = await this.getSpecOrThrow(input.site.siteSpecificationId);
+    const subSite =
+      editorSpec.category === 'SubSite' ||
+      Boolean(siteId && (await this.getSiteOrThrow(siteId, ctx)).parentSite?.id);
+    // Sub-local herda o endereço do pai: só os locais raiz exigem município e logradouro.
+    const hasAddress = Boolean(input.street?.trim() && input.administrativeCityId);
+    if (!subSite || input.street?.trim() || input.administrativeCityId) {
+      assertRequiredString(input.street, 'street');
+      assertRequiredString(input.administrativeCityId, 'administrativeCityId');
+    }
+    const city = hasAddress
+      ? (await this.repository.listAdministrativeCities()).find(
+          (candidate) => candidate.id === input.administrativeCityId,
+        )
+      : undefined;
+    if (hasAddress && !city) {
       throw new AppError('administrative city not found', {
         code: 'GEO_ADMINISTRATIVE_CITY_NOT_FOUND',
         statusCode: 422,
@@ -1613,6 +1624,16 @@ export class GeoService {
     }
     const saved = await this.repository.transaction(async () => {
       const current = siteId ? await this.getSiteOrThrow(siteId, ctx) : undefined;
+      if (!city) {
+        // Sub-local sem endereço próprio: mantém o endereço atual (se houver) e o município.
+        const site = current
+          ? await this.updateSite(current.id, { ...input.site }, ctx)
+          : await this.createSite(input.site as SiteInput, ctx);
+        const keptAddress = site.address?.id
+          ? await this.repository.getAddress(site.address.id, { tenantId: ctx.tenantId })
+          : undefined;
+        return { site, address: keptAddress };
+      }
       const currentAddress = current?.address?.id
         ? await this.repository.getAddress(current.address.id, { tenantId: ctx.tenantId })
         : undefined;
@@ -1626,7 +1647,7 @@ export class GeoService {
         ? currentAddress
         : await this.createAddress(
             {
-              street: input.street,
+              street: input.street!,
               ...(input.streetNr ? { streetNr: input.streetNr } : {}),
               ...(input.postcode ? { postcode: input.postcode } : {}),
               city: city.cityName,
@@ -1652,8 +1673,8 @@ export class GeoService {
     });
     return {
       site: saved.site,
-      address: saved.address,
-      administrativeCity: city,
+      ...(saved.address ? { address: saved.address } : {}),
+      ...(city ? { administrativeCity: city } : {}),
     };
   }
 

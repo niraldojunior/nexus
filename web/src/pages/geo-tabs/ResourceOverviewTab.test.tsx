@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourceOverviewTab } from './ResourceOverviewTab';
 import type {
@@ -270,7 +270,7 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
 
 describe('ResourceOverviewTab', () => {
   it('prioriza os atributos de catálogo e mostra os estados SID localizados', async () => {
-    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+    render(<ResourceOverviewTab detail={detail()} />);
 
     expect(screen.getByText('Furukawa')).toBeInTheDocument();
     expect(screen.getByText('FDT 8')).toBeInTheDocument();
@@ -298,8 +298,6 @@ describe('ResourceOverviewTab', () => {
             sourceSystem: 'NETWIN',
           },
         })}
-        canEdit={false}
-        onPatch={vi.fn()}
       />,
     );
 
@@ -309,7 +307,7 @@ describe('ResourceOverviewTab', () => {
   });
 
   it('quando há endereço, não mostra coordenadas em Localização (evita duplicidade com Endereço)', () => {
-    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+    render(<ResourceOverviewTab detail={detail()} />);
 
     expect(screen.queryByText('[-43.10944, -22.90278]')).not.toBeInTheDocument();
   });
@@ -318,8 +316,6 @@ describe('ResourceOverviewTab', () => {
     render(
       <ResourceOverviewTab
         detail={detail({ place: undefined })}
-        canEdit={false}
-        onPatch={vi.fn()}
       />,
     );
 
@@ -332,8 +328,6 @@ describe('ResourceOverviewTab', () => {
         detail={detail({
           place: { id: 'site-1', name: 'Icaraí', '@referredType': 'GeographicSite' },
         })}
-        canEdit={false}
-        onPatch={vi.fn()}
       />,
     );
 
@@ -346,8 +340,6 @@ describe('ResourceOverviewTab', () => {
         detail={detail({
           resource: { ...detail().resource, administrativeState: 'locked' },
         })}
-        canEdit={false}
-        onPatch={vi.fn()}
       />,
     );
 
@@ -355,7 +347,7 @@ describe('ResourceOverviewTab', () => {
     expect(badge.className).toContain('text-status-red');
   });
 
-  it('oculta campos vazios para quem não pode editar', () => {
+  it('oculta campos vazios', () => {
     render(
       <ResourceOverviewTab
         detail={detail({
@@ -372,8 +364,6 @@ describe('ResourceOverviewTab', () => {
           project: undefined,
           statusCatalogEntry: undefined,
         })}
-        canEdit={false}
-        onPatch={vi.fn()}
       />,
     );
 
@@ -381,71 +371,11 @@ describe('ResourceOverviewTab', () => {
     expect(screen.queryByText('Projeto de implantação')).not.toBeInTheDocument();
   });
 
-  it('mantém disponível para edição um campo vazio quando há permissão', () => {
-    render(
-      <ResourceOverviewTab
-        detail={detail({ resource: { ...detail().resource, serialNumber: undefined } })}
-        canEdit
-        onPatch={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByLabelText('Editar Nº de série')).toBeInTheDocument();
-  });
-
-  it('com canEdit, editar o estado administrativo chama onPatch com o novo valor', () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
-
-    fireEvent.click(screen.getByLabelText('Editar Estado administrativo'));
-    fireEvent.change(screen.getByLabelText('Estado administrativo'), {
-      target: { value: 'locked' },
-    });
-
-    expect(onPatch).toHaveBeenCalledWith({ administrativeState: 'locked' });
-  });
-
-  it('sem canEdit, não mostra nenhum alvo de edição no card e nas linhas', () => {
-    render(<ResourceOverviewTab detail={detail()} canEdit={false} onPatch={vi.fn()} />);
+  it('não mostra nenhum alvo de edição no card e nas linhas', () => {
+    render(<ResourceOverviewTab detail={detail()} />);
 
     expect(screen.queryByLabelText(/^Editar /)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Editar definição do recurso')).not.toBeInTheDocument();
-  });
-
-  it('Observações: editar preserva o grupo _origin (C5) — reenvia o array inteiro', () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
-
-    const note = screen.getByLabelText('Observações do recurso');
-    fireEvent.change(note, { target: { value: 'porta trocada em campo' } });
-    fireEvent.blur(note);
-
-    expect(onPatch).toHaveBeenCalledWith({
-      characteristic: [
-        { name: '_origin.system', value: 'Netwin', group: '_origin' },
-        { name: 'notes', value: 'porta trocada em campo' },
-      ],
-    });
-  });
-
-  it('Definição do recurso: clicar no card abre o modal com a árvore e permite trocar a especificação', async () => {
-    const onPatch = vi.fn().mockResolvedValue(undefined);
-    render(<ResourceOverviewTab detail={detail()} canEdit onPatch={onPatch} />);
-
-    fireEvent.click(screen.getByLabelText('Editar definição do recurso'));
-
-    // Espera o modal carregar os dados
-    expect(await screen.findByText('1. Caminho e Tipo de Recurso no Catálogo')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Definição do recurso' })).toBeInTheDocument();
-
-    // Seleciona outra especificação (lista à direita, não mais um <select>) e salva
-    fireEvent.click(await screen.findByRole('option', { name: 'CTO Nokia' }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar alteração' }));
-
-    await waitFor(() => {
-      expect(onPatch).toHaveBeenCalledWith({ resourceSpecificationId: 'spec-cto-nokia' });
-    });
   });
 
   // As características de instância (issue #273) saíram desta aba para ResourceAboutTab (aba

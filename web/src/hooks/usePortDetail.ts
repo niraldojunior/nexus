@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchResourcePortDetail, type ResourcePortDetail } from '../services/resourceApi';
 
 const inFlight = new Map<string, Promise<ResourcePortDetail>>();
@@ -18,10 +18,13 @@ export function usePortDetail(
   detail: ResourcePortDetail | null;
   loading: boolean;
   error: string | null;
+  reload: () => void;
 } {
   const [detail, setDetail] = useState<ResourcePortDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const reload = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -45,7 +48,7 @@ export function usePortDetail(
     return () => {
       cancelled = true;
     };
-  }, [enabled, portId]);
+  }, [enabled, portId, revision]);
 
-  return { detail, loading, error };
+  return { detail, loading, error, reload };
 }

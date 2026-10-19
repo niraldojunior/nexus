@@ -17,6 +17,7 @@ vi.mock('../../hooks/usePortDetail', () => ({ usePortDetail: mocks.usePortDetail
 vi.mock('../../hooks/usePortService', () => ({ usePortService: mocks.usePortService }));
 vi.mock('../../hooks/useResourceComponents', () => ({
   useResourceComponents: mocks.useResourceComponents,
+  invalidateResourceComponents: vi.fn(),
 }));
 vi.mock('../../hooks/useResourceConnections', () => ({
   useResourceConnections: mocks.useResourceConnections,
@@ -26,6 +27,16 @@ vi.mock('../../components/StreetViewHero', () => ({
 }));
 vi.mock('./ResourceOverviewTab', () => ({
   ResourceOverviewTab: () => <div>Detalhe da CTO</div>,
+}));
+vi.mock('../internal-plant/ResourceEditorModal', () => ({
+  ResourceEditorModal: ({ onSaved }: { onSaved: () => void }) => (
+    <button onClick={onSaved}>editor-salvar</button>
+  ),
+}));
+vi.mock('../../components/inventory/TerminateResourceDialog', () => ({
+  TerminateResourceDialog: ({ onTerminated }: { onTerminated: () => void }) => (
+    <button onClick={onTerminated}>dialogo-encerrar</button>
+  ),
 }));
 vi.mock('./PortOverviewTab', () => ({
   PortOverviewTab: () => <div>Detalhe da porta</div>,
@@ -132,12 +143,18 @@ function defaultMocks() {
     error: null,
     reload: vi.fn().mockResolvedValue(undefined),
   });
-  mocks.usePortDetail.mockReturnValue({ detail: null, loading: false, error: null });
+  mocks.usePortDetail.mockReturnValue({
+    detail: null,
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  });
   mocks.usePortService.mockReturnValue({
     service: null,
     hasActiveService: false,
     loading: false,
     error: null,
+    reload: vi.fn(),
   });
   mocks.useResourceComponents.mockReturnValue({
     components: [{ id: 'comp-1' }, { id: 'comp-2' }],
@@ -257,5 +274,36 @@ describe('ResourcePanel', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Serviço' }));
     expect(screen.getByText('Serviço da porta')).toBeInTheDocument();
+  });
+
+  it('Editar/Remover aparecem só com canEdit', () => {
+    renderPanel({ canEdit: false });
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remover' })).not.toBeInTheDocument();
+  });
+
+  it('Editar abre o modal compartilhado e, ao salvar, recarrega e avisa o pai', () => {
+    const onChanged = vi.fn();
+    const reload = vi.fn().mockResolvedValue(undefined);
+    mocks.useResourceDetail.mockReturnValue({
+      detail: { childCount: 2, specification: { name: 'X' } },
+      loading: false,
+      error: null,
+      reload,
+    });
+    renderPanel({ onChanged });
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.click(screen.getByText('editor-salvar'));
+    expect(reload).toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
+    expect(screen.queryByText('editor-salvar')).not.toBeInTheDocument();
+  });
+
+  it('Remover abre a confirmação e, ao encerrar, avisa o pai', () => {
+    const onTerminated = vi.fn();
+    renderPanel({ onTerminated });
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+    fireEvent.click(screen.getByText('dialogo-encerrar'));
+    expect(onTerminated).toHaveBeenCalled();
   });
 });

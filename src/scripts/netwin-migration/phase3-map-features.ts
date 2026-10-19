@@ -552,15 +552,33 @@ type CandidateScan = Omit<Phase3MapStats, 'densityCells'> & {
 };
 
 async function tableIndexColumns(conn: Connection, tableName: string): Promise<IndexColumn[]> {
-  const result = await conn.execute<IndexColumn>(
-    `SELECT index_name AS "INDEX_NAME", column_name AS "COLUMN_NAME", column_position AS "COLUMN_POSITION"
-       FROM user_ind_columns
-      WHERE table_name = :tableName
-      ORDER BY index_name, column_position`,
+  const result = await conn.execute<RawIndexColumn>(
+    `SELECT c.index_name AS "INDEX_NAME", c.column_name AS "COLUMN_NAME",
+            c.column_position AS "COLUMN_POSITION", e.column_expression AS "COLUMN_EXPRESSION"
+       FROM user_ind_columns c
+       LEFT JOIN user_ind_expressions e
+         ON e.index_name = c.index_name AND e.column_position = c.column_position
+      WHERE c.table_name = :tableName
+      ORDER BY c.index_name, c.column_position`,
     { tableName },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
-  return result.rows ?? [];
+  return (result.rows ?? []).map(resolveVirtualIndexColumn);
+}
+
+type RawIndexColumn = IndexColumn & { COLUMN_EXPRESSION?: string | null };
+
+// TIMESTAMP WITH TIME ZONE é indexado por coluna virtual (SYS_NC…$ = SYS_EXTRACT_UTC("COL")).
+export function resolveVirtualIndexColumn(row: RawIndexColumn): IndexColumn {
+  const base = {
+    INDEX_NAME: row.INDEX_NAME,
+    COLUMN_NAME: row.COLUMN_NAME,
+    COLUMN_POSITION: row.COLUMN_POSITION,
+  };
+  const wrapped = /^SYS_EXTRACT_UTC\(\s*"([^"]+)"\s*\)$/iu.exec(
+    row.COLUMN_EXPRESSION?.trim() ?? '',
+  );
+  return wrapped?.[1] ? { ...base, COLUMN_NAME: wrapped[1] } : base;
 }
 
 async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext): Promise<void> {
@@ -1086,6 +1104,23 @@ async function deleteExistingFeatures(
   return removed;
 }
 
+/**
+ * Predicado equivalente a `FLOOR(tile_x/2^(tile_z-zoom))=x AND FLOOR(tile_y/2^(tile_z-zoom))=y`,
+ * porém como faixa por `tile_z`, o que permite range scan pela PK (tenant, tile_z, tile_x, tile_y)
+ * em vez de varrer todas as features do tenant.
+ */
+export function densityCellTileRangesSql(zoom: number, x: number, y: number): string {
+  const ranges: string[] = [];
+  for (let z = zoom; z <= MAP_TILE_ZOOM; z += 1) {
+    const span = 2 ** (z - zoom);
+    ranges.push(
+      `(tile_z=${z} AND tile_x BETWEEN ${x * span} AND ${(x + 1) * span - 1}` +
+        ` AND tile_y BETWEEN ${y * span} AND ${(y + 1) * span - 1})`,
+    );
+  }
+  return ranges.join(' OR ');
+}
+
 async function rebuildDensityCells(
   conn: Connection,
   ctx: MigrationContext,
@@ -1107,9 +1142,7 @@ async function rebuildDensityCells(
               COUNT(DISTINCT CASE WHEN feature_kind='resource' THEN entity_id END),
               COUNT(DISTINCT CASE WHEN feature_kind='site' THEN entity_id END),AVG(lng),AVG(lat)
          FROM ${ctx.t('geographic_map_feature')}
-        WHERE tenant_id=:tenantId AND tile_z>=:zoom
-          AND FLOOR(tile_x/POWER(2,tile_z-:zoom))=:x
-          AND FLOOR(tile_y/POWER(2,tile_z-:zoom))=:y
+        WHERE tenant_id=:tenantId AND (${densityCellTileRangesSql(zoom, x, y)})
         GROUP BY tenant_id`,
       binds,
     );

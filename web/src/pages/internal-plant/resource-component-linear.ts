@@ -43,7 +43,11 @@ export const linearSlots = <T>(
 ): LinearSlot<T>[] => {
   const occupied = new Map<number, LinearOccupant<T>>();
   for (const occupant of occupants) {
-    for (let position = occupant.placement.position; position <= linearEnd(occupant.placement); position += 1) {
+    for (
+      let position = occupant.placement.position;
+      position <= linearEnd(occupant.placement);
+      position += 1
+    ) {
       occupied.set(position, occupant);
     }
   }

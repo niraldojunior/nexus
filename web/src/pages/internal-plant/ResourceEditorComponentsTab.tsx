@@ -1,7 +1,6 @@
 import { ChevronRight, Maximize2, Minus, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { EditorCharacteristic } from '../../services/internalPlantApi';
 import type {
   ResourceSpecification,
   ResourceType,
@@ -19,13 +18,18 @@ import {
   type LinearConfiguration,
   type LinearOccupant,
 } from './resource-component-linear';
-
-const inputClass =
-  'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent aria-[invalid=true]:border-status-red';
-const labelClass = 'grid gap-1 text-[0.78rem] font-semibold text-app-muted';
-const activeRule = (rule: ResourceTypeRelationshipRule) => rule.lifecycleStatus === 'Active';
-let sequence = 0;
-const nextKey = () => `component-${(sequence += 1)}`;
+import {
+  containmentRules,
+  findNode,
+  inputClass,
+  inlineLabelClass,
+  labelClass,
+  nextKey,
+  updateNode,
+} from './resource-component-shared';
+import { ResourceEditorStructureView } from './ResourceEditorStructureView';
+import { standardRules } from './resource-component-structure';
+import { ResourceNodeDetailsForm } from './ResourceNodeDetailsForm';
 
 type ActiveContext = { nodeKey: string | null; typeId: string; name: string };
 type Selection = { kind: 'empty'; position: number } | { kind: 'resource'; key: string } | null;
@@ -40,38 +44,6 @@ type Props = {
   ensureRules: (typeId: string) => Promise<void>;
   onChange: (children: ChildNode[]) => void;
 };
-
-const updateNode = (
-  nodes: ChildNode[],
-  key: string,
-  fn: (node: ChildNode) => ChildNode | null,
-): ChildNode[] =>
-  nodes.flatMap((node) => {
-    if (node.key === key) {
-      const updated = fn(node);
-      return updated ? [updated] : [];
-    }
-    return [{ ...node, children: updateNode(node.children, key, fn) }];
-  });
-
-const findNode = (nodes: ChildNode[], key: string): ChildNode | undefined => {
-  for (const node of nodes) {
-    if (node.key === key) return node;
-    const nested = findNode(node.children, key);
-    if (nested) return nested;
-  }
-  return undefined;
-};
-
-const containmentRules = (
-  rules: ResourceTypeRelationshipRule[] | undefined,
-): ResourceTypeRelationshipRule[] =>
-  (rules ?? []).filter(
-    (rule) =>
-      activeRule(rule) &&
-      rule.relationshipTypeCode === 'containsAsChild' &&
-      rule.targetKind === 'RESOURCE_TYPE',
-  );
 
 const linearRules = (rules: ResourceTypeRelationshipRule[] | undefined) =>
   containmentRules(rules).filter(
@@ -95,6 +67,7 @@ export function ResourceEditorComponentsTab({
   const activeContext = contexts[contexts.length - 1]!;
   const [selectedRuleId, setSelectedRuleId] = useState('');
   const [selection, setSelection] = useState<Selection>(null);
+  const [mode, setMode] = useState<'linear' | 'standard'>('linear');
 
   const activeNode = activeContext.nodeKey ? findNode(draft, activeContext.nodeKey) : undefined;
   const activeChildren = activeNode?.children ?? draft;
@@ -140,6 +113,40 @@ export function ResourceEditorComponentsTab({
       );
   };
 
+  const standard = standardRules(rulesByType[rootTypeId]);
+  const atRoot = contexts.length === 1;
+  const showStructure =
+    atRoot && standard.length > 0 && (linear.length === 0 || mode === 'standard');
+  if (showStructure) {
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
+        {linear.length > 0 ? (
+          <label className="flex items-center gap-2 text-[0.78rem] text-app-muted">
+            Estrutura
+            <select
+              className="rounded-[8px] border border-app-border bg-app-panel px-2 py-1 text-app-text"
+              value={mode}
+              onChange={(event) => setMode(event.target.value as 'linear' | 'standard')}
+            >
+              <option value="linear">Posicional (LINEAR)</option>
+              <option value="standard">Padrão</option>
+            </select>
+          </label>
+        ) : null}
+        <ResourceEditorStructureView
+          rootName={rootName}
+          rootTypeId={rootTypeId}
+          draft={draft}
+          typeById={typeById}
+          specs={specs}
+          rulesByType={rulesByType}
+          ensureRules={ensureRules}
+          onChange={onChange}
+        />
+      </div>
+    );
+  }
+
   if (!configuration || !selectedRule) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
@@ -168,7 +175,7 @@ export function ResourceEditorComponentsTab({
         selection={selection}
         onSelect={setSelection}
         toolbarLeading={
-          contexts.length > 1 || linear.length > 1 ? (
+          contexts.length > 1 || linear.length > 1 || (atRoot && standard.length > 0) ? (
             <>
               {contexts.length > 1 ? (
                 <nav
@@ -193,6 +200,19 @@ export function ResourceEditorComponentsTab({
                     </span>
                   ))}
                 </nav>
+              ) : null}
+              {atRoot && standard.length > 0 ? (
+                <label className="flex items-center gap-2 text-[0.78rem] text-app-muted">
+                  Organização
+                  <select
+                    className="rounded-[8px] border border-app-border bg-app-panel px-2 py-1 text-app-text"
+                    value={mode}
+                    onChange={(event) => setMode(event.target.value as 'linear' | 'standard')}
+                  >
+                    <option value="linear">Posicional (LINEAR)</option>
+                    <option value="standard">Padrão</option>
+                  </select>
+                </label>
               ) : null}
               {linear.length > 1 ? (
                 <label className="flex items-center gap-2 text-[0.78rem] text-app-muted">
@@ -380,9 +400,7 @@ function LinearCanvas({
           </button>
         </div>
         <div ref={scrollRef} className="h-full overflow-auto bg-app-subtle p-2">
-          <div
-            className={`mx-auto flex w-fit gap-1.5 ${isHorizontal ? 'min-w-max flex-col' : ''}`}
-          >
+          <div className={`mx-auto flex w-fit gap-1.5 ${isHorizontal ? 'min-w-max flex-col' : ''}`}>
             <div
               aria-hidden="true"
               className="grid shrink-0 font-mono font-bold text-app-muted"
@@ -481,7 +499,13 @@ function LinearCanvas({
                               const fontPx = Math.min(12.16, height * 0.72);
                               return height >= 20
                                 ? { paddingTop: 4 }
-                                : { alignItems: 'center', paddingTop: 0, paddingBottom: 0, lineHeight: 1, fontSize: fontPx };
+                                : {
+                                    alignItems: 'center',
+                                    paddingTop: 0,
+                                    paddingBottom: 0,
+                                    lineHeight: 1,
+                                    fontSize: fontPx,
+                                  };
                             })()
                           : {}),
                       }}
@@ -668,10 +692,10 @@ function LinearInspector({
     };
     return (
       <aside
-        className="min-h-0 overflow-y-auto rounded-[10px] border border-app-border bg-app-panel p-4"
+        className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden rounded-[10px] border border-app-border bg-app-panel p-4"
         aria-label="Criar componente"
       >
-        <div className="grid gap-3">
+        <div className="grid min-w-0 grid-cols-1 gap-3">
           <div>
             <p className="text-[0.85rem] font-semibold text-app-text">
               {linearLabel(configuration, position)} está disponível.
@@ -685,7 +709,7 @@ function LinearInspector({
             <output className={inputClass}>{typeById.get(rule.targetId)?.name ?? '—'}</output>
           </label>
           <label className={labelClass}>
-            Specification
+            Especificação
             <select
               className={inputClass}
               value={specId}
@@ -788,293 +812,76 @@ function LinearInspector({
   };
   return (
     <aside
-      className="min-h-0 overflow-y-auto rounded-[10px] border border-app-border bg-app-panel p-4"
+      className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden rounded-[10px] border border-app-border bg-app-panel p-4"
       aria-label="Detalhes do componente"
     >
-      <div className="grid gap-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3">
         <div>
-          <p className="text-[0.85rem] font-semibold text-app-text">{node.name || 'Componente'}</p>
           <p className="text-[0.78rem] text-app-muted">
             {placement
               ? `${linearLabel(configuration, placement.position)}${linearEnd(placement) > placement.position ? ` a ${linearLabel(configuration, linearEnd(placement))}` : ''}`
               : 'Sem posição'}
           </p>
         </div>
-        <label className={labelClass}>
-          Nome
-          <input
-            className={inputClass}
-            value={node.name}
-            onChange={(event) => update({ name: event.target.value })}
-          />
-        </label>
-        <label className={labelClass}>
-          Specification
-          <select
-            className={inputClass}
-            value={node.specId}
-            onChange={(event) => update({ specId: event.target.value })}
-          >
-            {specs
-              .filter((spec) => spec.resourceTypeId === node.typeId)
-              .map((spec) => (
-                <option key={spec.id} value={spec.id}>
-                  {spec.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className={labelClass}>
-            Posição
-            <input
-              className={inputClass}
-              type="number"
-              min="1"
-              max={configuration.capacity}
-              value={placement?.position ?? 1}
-              onChange={(event) => {
-                const position = Number.parseInt(event.target.value, 10);
-                if (Number.isInteger(position)) updatePlacement(position, placement?.span ?? 1);
-              }}
-            />
-          </label>
-          <label className={labelClass}>
-            Span
-            <input
-              className={inputClass}
-              type="number"
-              min="1"
-              value={placement?.span ?? 1}
-              onChange={(event) => {
-                const nextSpan = Number.parseInt(event.target.value, 10);
-                if (Number.isInteger(nextSpan) && nextSpan > 0)
-                  updatePlacement(placement?.position ?? 1, nextSpan);
-              }}
-            />
-          </label>
-        </div>
-        <div aria-live="polite" className="min-h-5 text-[0.78rem] text-status-red">
-          {placementMessage}
-        </div>
-        <fieldset className="grid gap-2 border-t border-app-border pt-3">
-          <legend className="text-[0.78rem] font-semibold text-app-text">Estados</legend>
-          <label className={labelClass}>
-            Status
-            <select
-              aria-label="Status do componente"
-              className={inputClass}
-              value={node.status}
-              onChange={(event) => update({ status: event.target.value })}
-            >
-              <option value="active">Ativo</option>
-              <option value="inactive">Inativo</option>
-              <option value="suspended">Suspenso</option>
-              <option value="terminated">Terminado</option>
-            </select>
-          </label>
-          <label className={labelClass}>
-            Motivo do status
-            <input
-              aria-label="Motivo do status do componente"
-              className={inputClass}
-              value={node.statusCode}
-              placeholder="Padrão"
-              onChange={(event) => update({ statusCode: event.target.value })}
-            />
-          </label>
-          <label className={labelClass}>
-            Estado administrativo
-            <select
-              aria-label="Estado administrativo do componente"
-              className={inputClass}
-              value={node.administrativeState}
-              onChange={(event) => update({ administrativeState: event.target.value })}
-            >
-              <option value="unlocked">Desbloqueado</option>
-              <option value="locked">Bloqueado</option>
-              <option value="shuttingDown">Em desligamento</option>
-            </select>
-          </label>
-          <label className={labelClass}>
-            Estado operacional
-            <select
-              aria-label="Estado operacional do componente"
-              className={inputClass}
-              value={node.operationalState}
-              onChange={(event) => update({ operationalState: event.target.value })}
-            >
-              <option value="enabled">Habilitado</option>
-              <option value="disabled">Desabilitado</option>
-            </select>
-          </label>
-          <label className={labelClass}>
-            Estado de uso
-            <select
-              aria-label="Estado de uso do componente"
-              className={inputClass}
-              value={node.usageState}
-              onChange={(event) => update({ usageState: event.target.value })}
-            >
-              <option value="idle">Livre</option>
-              <option value="active">Em uso parcial</option>
-              <option value="busy">Ocupado</option>
-              <option value="unknown">Desconhecido</option>
-            </select>
-          </label>
-        </fieldset>
-        <ChildCharacteristics
+        <ResourceNodeDetailsForm
           node={node}
+          specs={specs}
           type={typeById.get(node.typeId)}
-          onChange={(characteristics) => update({ characteristics })}
+          onUpdate={update}
+          onRemove={remove}
+          afterIdentity={
+            <>
+              <div className="grid gap-2">
+                <label className={inlineLabelClass}>
+                  Posição
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min="1"
+                    max={configuration.capacity}
+                    value={placement?.position ?? 1}
+                    onChange={(event) => {
+                      const position = Number.parseInt(event.target.value, 10);
+                      if (Number.isInteger(position))
+                        updatePlacement(position, placement?.span ?? 1);
+                    }}
+                  />
+                </label>
+                <label className={inlineLabelClass}>
+                  Span
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min="1"
+                    value={placement?.span ?? 1}
+                    onChange={(event) => {
+                      const nextSpan = Number.parseInt(event.target.value, 10);
+                      if (Number.isInteger(nextSpan) && nextSpan > 0)
+                        updatePlacement(placement?.position ?? 1, nextSpan);
+                    }}
+                  />
+                </label>
+              </div>
+              <div aria-live="polite" className="min-h-5 text-[0.78rem] text-status-red">
+                {placementMessage}
+              </div>
+            </>
+          }
+          afterCharacteristics={
+            childRules.length > 0 ? (
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-app-border px-3 text-[0.82rem] font-semibold text-app-text hover:bg-app-hover"
+                onClick={() => onEnter(node)}
+              >
+                Gerenciar componentes internos
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            ) : null
+          }
         />
-        {childRules.length > 0 ? (
-          <button
-            type="button"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-app-border px-3 text-[0.82rem] font-semibold text-app-text hover:bg-app-hover"
-            onClick={() => onEnter(node)}
-          >
-            Gerenciar componentes internos
-            <ChevronRight size={16} aria-hidden="true" />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-status-red/40 px-3 text-[0.82rem] font-semibold text-status-red hover:bg-status-red/10"
-          onClick={remove}
-        >
-          <Trash2 size={16} aria-hidden="true" />
-          {node.id ? 'Desvincular recurso' : 'Remover do rascunho'}
-        </button>
-        {node.id ? (
-          <p className="text-[0.75rem] text-app-muted">O recurso continuará no inventário.</p>
-        ) : null}
       </div>
     </aside>
-  );
-}
-
-function ChildCharacteristics({
-  node,
-  type,
-  onChange,
-}: {
-  node: ChildNode;
-  type?: ResourceType;
-  onChange: (characteristics: EditorCharacteristic[]) => void;
-}) {
-  const definitions = type?.resourceTypeCharacteristic ?? [];
-  const specification = definitions.filter(
-    (definition) => definition.characteristicLevel !== 'instance',
-  );
-  const instance = definitions.filter(
-    (definition) => definition.characteristicLevel === 'instance',
-  );
-  const values = new Map(
-    node.characteristics.map((characteristic) => [characteristic.name, characteristic]),
-  );
-  const update = (definition: EditorCharacteristic, value: string) => {
-    const existing = values.get(definition.name);
-    const next = node.characteristics.filter(
-      (characteristic) => characteristic.name !== definition.name,
-    );
-    if (value !== '') {
-      next.push({
-        ...existing,
-        name: definition.name,
-        value,
-        ...(definition.valueType ? { valueType: definition.valueType } : {}),
-      });
-    }
-    onChange(next);
-  };
-  const control = (definition: EditorCharacteristic, editable: boolean) => {
-    const value = String(values.get(definition.name)?.value ?? '');
-    if (!editable)
-      return (
-        <output className={`${inputClass} min-h-[2.125rem] truncate`}>
-          {definition.value === undefined || definition.value === null
-            ? '—'
-            : String(definition.value)}
-        </output>
-      );
-    if (definition.valueType === 'boolean') {
-      return (
-        <select
-          aria-label={definition.name}
-          className={inputClass}
-          value={value}
-          onChange={(event) => update(definition, event.target.value)}
-        >
-          <option value="">—</option>
-          <option value="true">Sim</option>
-          <option value="false">Não</option>
-        </select>
-      );
-    }
-    if (definition.allowedValues?.length) {
-      return (
-        <select
-          aria-label={definition.name}
-          className={inputClass}
-          value={value}
-          onChange={(event) => update(definition, event.target.value)}
-        >
-          <option value="">—</option>
-          {definition.allowedValues.map((allowed) => (
-            <option key={allowed} value={allowed}>
-              {allowed}
-            </option>
-          ))}
-        </select>
-      );
-    }
-    return (
-      <input
-        aria-label={definition.name}
-        className={inputClass}
-        type={
-          definition.valueType === 'date'
-            ? 'date'
-            : definition.valueType === 'integer' || definition.valueType === 'decimal'
-              ? 'number'
-              : 'text'
-        }
-        value={value}
-        onChange={(event) => update(definition, event.target.value)}
-      />
-    );
-  };
-  return (
-    <fieldset className="grid gap-2 border-t border-app-border pt-3">
-      <legend className="text-[0.78rem] font-semibold text-app-text">Características</legend>
-      {specification.length > 0 ? (
-        <div className="grid gap-2">
-          <p className="text-[0.75rem] font-semibold text-app-muted">Da specification</p>
-          {specification.map((definition) => (
-            <label key={definition.name} className={labelClass}>
-              {definition.name}
-              {control(definition, false)}
-            </label>
-          ))}
-        </div>
-      ) : null}
-      {instance.length > 0 ? (
-        <div className="grid gap-2">
-          <p className="text-[0.75rem] font-semibold text-app-muted">Da instância</p>
-          {instance.map((definition) => (
-            <label key={definition.name} className={labelClass}>
-              {definition.name}
-              {control(definition, true)}
-            </label>
-          ))}
-        </div>
-      ) : (
-        <p className="text-[0.78rem] text-app-muted">
-          Este tipo não define características de instância.
-        </p>
-      )}
-    </fieldset>
   );
 }
 

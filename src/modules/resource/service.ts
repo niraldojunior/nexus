@@ -50,6 +50,7 @@ import type {
   ResourcePortDetail,
   ResourcePortsView,
   ResourceConnectionsView,
+  ResourceComponentNode,
   ResourceComponentsView,
   ResourceRelationshipCardinality,
   ResourceRelationshipDefinitionConfiguration,
@@ -108,6 +109,8 @@ type AggregateChildPlan = {
   specification: ResourceSpecification;
   resourceType: ResourceType;
   rule: EditorRulePlan;
+  /** Identidade do filho já persistido; `existing` só é carregado quando o filho mudou. */
+  existingRef?: { id: string };
   existing?: Resource;
   children: AggregateChildPlan[];
 };
@@ -2773,7 +2776,21 @@ export class ResourceService {
     const existingComponentIds = new Set(
       existingComponentView.components.map((component) => component.id),
     );
+    const existingNodeById = new Map(existingComponentView.components.map((node) => [node.id, node]));
     const seenExistingIds = new Set<string>();
+
+    // Irmãos repetem especificação, tipo e regra: resolve cada um uma única vez por salvamento.
+    const memo = <T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>) => {
+      let hit = cache.get(key);
+      if (!hit) {
+        hit = load();
+        cache.set(key, hit);
+      }
+      return hit;
+    };
+    const specCache = new Map<string, Promise<ResourceSpecification>>();
+    const typeCache = new Map<string, Promise<ResourceType>>();
+    const ruleCache = new Map<string, ReturnType<typeof this.getActiveEditorRule>>();
 
     const planChildren = async (
       drafts: ResourceAggregateChildDraft[],
@@ -2782,13 +2799,11 @@ export class ResourceService {
       const plans: AggregateChildPlan[] = [];
       for (const draft of drafts) {
         assertName(draft.name);
-        const childSpecification = await this.getResourceSpecificationOrThrow(
-          draft.resourceSpecificationId,
-          context,
+        const childSpecification = await memo(specCache, draft.resourceSpecificationId, () =>
+          this.getResourceSpecificationOrThrow(draft.resourceSpecificationId, context),
         );
-        const childType = await this.getResourceTypeByIdOrThrow(
-          childSpecification.resourceTypeId,
-          context,
+        const childType = await memo(typeCache, childSpecification.resourceTypeId, () =>
+          this.getResourceTypeByIdOrThrow(childSpecification.resourceTypeId, context),
         );
         if (childType.nature !== parentType.nature) {
           throw new AppError('contained resources must have the same nature', {
@@ -2796,29 +2811,43 @@ export class ResourceService {
             statusCode: 409,
           });
         }
-        const rule = await this.getActiveEditorRule(
-          parentType.id,
-          'containsAsChild',
-          'RESOURCE_TYPE',
-          childType.id,
-          context,
+        const rule = await memo(ruleCache, `${parentType.id}|${childType.id}`, () =>
+          this.getActiveEditorRule(
+            parentType.id,
+            'containsAsChild',
+            'RESOURCE_TYPE',
+            childType.id,
+            context,
+          ),
         );
-        const existing = draft.id ? await this.getResourceOrThrow(draft.id, context) : undefined;
-        if (existing) {
-          if (!current || !existingComponentIds.has(existing.id)) {
+        const node = draft.id ? existingNodeById.get(draft.id) : undefined;
+        if (draft.id && (!current || !node)) {
+          throw new AppError("only existing children from this component tree may be edited", {
+            code: "RESOURCE_COMPONENT_NOT_IN_AGGREGATE",
+            statusCode: 409,
+          });
+        }
+        // A árvore já veio carregada: só lê o recurso completo se o filho realmente mudou.
+        const existing =
+          draft.id && node && !componentNodeUnchanged(node, draft, childSpecification.id)
+            ? await this.getResourceOrThrow(draft.id, context)
+            : undefined;
+        const existingRef = draft.id ? { id: draft.id } : undefined;
+        if (existingRef) {
+          if (!current || !existingComponentIds.has(existingRef.id)) {
             throw new AppError('only existing children from this component tree may be edited', {
               code: 'RESOURCE_COMPONENT_NOT_IN_AGGREGATE',
               statusCode: 409,
             });
           }
-          if (seenExistingIds.has(existing.id)) {
+          if (seenExistingIds.has(existingRef.id)) {
             throw new AppError('a component may appear only once in the aggregate', {
               code: 'RESOURCE_COMPONENT_DUPLICATE',
               statusCode: 409,
             });
           }
-          seenExistingIds.add(existing.id);
-          if (existing['@type'] !== childType.nature) {
+          seenExistingIds.add(existingRef.id);
+          if ((existing?.["@type"] ?? node?.kind) !== childType.nature) {
             throw new AppError('component nature cannot be changed', {
               code: 'RESOURCE_AGGREGATE_NATURE_CHANGE_NOT_ALLOWED',
               statusCode: 409,
@@ -2826,7 +2855,7 @@ export class ResourceService {
           }
         }
         assertEditorCharacteristics(
-          draft.characteristic ?? existing?.characteristic ?? [],
+          draft.characteristic ?? existing?.characteristic ?? node?.characteristics ?? [],
           childType,
         );
         plans.push({
@@ -2834,6 +2863,7 @@ export class ResourceService {
           specification: childSpecification,
           resourceType: childType,
           rule,
+          ...(existingRef ? { existingRef } : {}),
           ...(existing ? { existing } : {}),
           children: await planChildren(draft.children ?? [], childType),
         });
@@ -2852,12 +2882,14 @@ export class ResourceService {
       const desiredParent = new Map<string, string>();
       const indexParents = (plans: AggregateChildPlan[], parentId: string) => {
         for (const plan of plans) {
-          if (plan.existing) desiredParent.set(plan.existing.id, parentId);
-          indexParents(plan.children, plan.existing?.id ?? `new:${plan.draft.name}`);
+          if (plan.existingRef) desiredParent.set(plan.existingRef.id, parentId);
+          indexParents(plan.children, plan.existingRef?.id ?? `new:${plan.draft.name}`);
         }
       };
       indexParents(componentPlans, current.id);
       for (const [childId, parentId] of desiredParent) {
+        // Filho que continua sob o mesmo pai não ganhou vínculo novo: só reparentados precisam de checagem.
+        if (existingNodeById.get(childId)?.parentId === parentId) continue;
         const incoming = await this.repository.listIncomingResourceRelationships(
           childId,
           'containsAsChild',
@@ -3187,7 +3219,7 @@ export class ResourceService {
           });
           occupiedGrid.set(key, cells);
         }
-        visit(plan.children, plan.existing?.id ?? `new:${plan.draft.name}`);
+        visit(plan.children, plan.existingRef?.id ?? `new:${plan.draft.name}`);
       }
     };
     visit(plans, 'root');
@@ -3221,10 +3253,14 @@ export class ResourceService {
       after?: { parentId: string; relationship: ResourceRelationship };
     }> = [];
 
-    const persist = async (parent: Resource, childPlans: AggregateChildPlan[]): Promise<void> => {
+    const persist = async (parent: { id: string }, childPlans: AggregateChildPlan[]): Promise<void> => {
       for (const plan of childPlans) {
-        const child = plan.existing
-          ? plan.existing['@type'] === 'PhysicalResource'
+        const child: { id: string } = plan.existingRef && !plan.existing
+          ? plan.existingRef
+          : plan.existing
+          ? aggregateChildUnchanged(plan.existing, plan.draft, plan.specification.id)
+            ? plan.existing
+            : plan.existing['@type'] === 'PhysicalResource'
             ? await this.updatePhysicalResource(
                 plan.existing.id,
                 {
@@ -3304,7 +3340,7 @@ export class ResourceService {
                 },
                 context,
               );
-        if (!plan.existing) createdIds.push(child.id);
+        if (!plan.existingRef) createdIds.push(child.id);
 
         const relationshipKey = plan.draft.relationshipId;
         const current = relationshipKey
@@ -3325,6 +3361,16 @@ export class ResourceService {
             `${current.parentId}|${current.relationship.id}|${current.relationship.relationshipType}`
           : undefined;
         if (currentKey) retainedContainments.add(currentKey);
+        if (
+          current &&
+          current.parentId === parent.id &&
+          current.relationship.relationshipDefinitionId === plan.rule.rule.id &&
+          stableJson(current.relationship.placement) === stableJson(plan.draft.placement)
+        ) {
+          // Aresta idêntica: não regrava nem emite evento.
+          await persist(child, plan.children);
+          continue;
+        }
         if (current && current.parentId !== parent.id) {
           await this.repository.deleteResourceRelationship(
             current.parentId,
@@ -3395,6 +3441,20 @@ export class ResourceService {
     context?: RequestContext,
   ): Promise<void> {
     const current = await this.repository.listResourceConnections(root.id, scopeOf(context));
+    const signature = (direction: string, relationshipType: string, otherId: string) =>
+      `${direction}|${relationshipType}|${otherId}`;
+    const currentSignatures = current.map((connection) =>
+      signature(connection.direction, connection.relationshipType, connection.resource.id),
+    );
+    const plannedSignatures = plans.map((plan) =>
+      signature(plan.draft.direction ?? 'outgoing', plan.draft.relationshipType, plan.target.id),
+    );
+    if (
+      currentSignatures.length === plannedSignatures.length &&
+      [...currentSignatures].sort().join('\n') === [...plannedSignatures].sort().join('\n')
+    ) {
+      return; // Mesmo conjunto de conexões: nada a regravar.
+    }
     for (const connection of current) {
       const fromId = connection.direction === 'outgoing' ? root.id : connection.resource.id;
       const toId = connection.direction === 'outgoing' ? connection.resource.id : root.id;
@@ -4226,6 +4286,61 @@ const activationToStatus = (action: ResourceFunctionActivationInput['action']): 
 };
 
 /** Carimba `stateChangedAt` nos eixos cujo valor mudou em relação ao recurso atual. */
+function stableJson(value: unknown): string {
+  const sort = (input: unknown): unknown =>
+    Array.isArray(input)
+      ? input.map(sort)
+      : input && typeof input === 'object'
+        ? Object.fromEntries(
+            Object.entries(input as Record<string, unknown>)
+              .filter(([, v]) => v !== undefined)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, v]) => [k, sort(v)]),
+          )
+        : input;
+  return JSON.stringify(sort(value)) ?? '';
+}
+
+/** Versão de `aggregateChildUnchanged` sobre o nó da árvore já carregada (sem ler o recurso). */
+function componentNodeUnchanged(
+  node: ResourceComponentNode,
+  draft: ResourceAggregateChildDraft,
+  specificationId: string,
+): boolean {
+  return (
+    node.name === draft.name.trim() &&
+    node.specification?.id === specificationId &&
+    (draft.status === undefined || node.status === draft.status) &&
+    (draft.statusCode === undefined || node.statusCode === draft.statusCode) &&
+    (draft.administrativeState === undefined ||
+      node.administrativeState === draft.administrativeState) &&
+    (draft.operationalState === undefined || node.operationalState === draft.operationalState) &&
+    (draft.usageState === undefined || node.usageState === draft.usageState) &&
+    (draft.characteristic === undefined ||
+      stableJson(draft.characteristic) === stableJson(node.characteristics ?? []))
+  );
+}
+
+/** True quando o rascunho do filho não altera nada do recurso persistido. */
+function aggregateChildUnchanged(
+  existing: Resource,
+  draft: ResourceAggregateChildDraft,
+  specificationId: string,
+): boolean {
+  return (
+    existing.name === draft.name.trim() &&
+    existing.resourceSpecificationId === specificationId &&
+    (draft.status === undefined || existing.status === draft.status) &&
+    (draft.statusCode === undefined || existing.statusCode === draft.statusCode) &&
+    (draft.administrativeState === undefined ||
+      existing.administrativeState === draft.administrativeState) &&
+    (draft.operationalState === undefined || existing.operationalState === draft.operationalState) &&
+    (draft.usageState === undefined || existing.usageState === draft.usageState) &&
+    (draft.characteristic === undefined ||
+      stableJson(draft.characteristic) === stableJson(existing.characteristic))
+  );
+}
+
 function stampStateChanges<T extends Resource>(current: Resource, next: T): T {
   const now = new Date().toISOString();
   const at = { ...(next.stateChangedAt ?? current.stateChangedAt ?? {}) };

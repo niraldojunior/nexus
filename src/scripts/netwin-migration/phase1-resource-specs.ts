@@ -105,6 +105,64 @@ export const formatResourceCatalogLoadSummary = (
     'Acesse o Studio com uma sessão do mesmo tenant para visualizar esta árvore.',
   ].join(' | ');
 
+const CABLE_TYPE_CODES = ['BackboneCable', 'DistributionCable', 'DropCable'];
+const CABLE_ENDPOINT_TYPE_CODES = ['category:CDOE', 'category:CDOI', 'SpliceClosure', 'CTO'];
+const CABLE_SUPPORT_TYPE_CODES = ['AerialSpan', 'BuriedSpan', 'Duct'];
+
+export type NetwinRelationshipRulePair = {
+  relationshipTypeCode: 'connectedTo' | 'supportedBy' | 'containsAsChild';
+  source: string;
+  target: string;
+};
+
+/** Tipos de CDO cujo cartão vira Splitter na Fase 2 (`CDO_TYPE_TO_SPEC` e `netwin-ceo*`). */
+const SPLITTER_CONTAINER_TYPE_CODES = [
+  'category:CDOE',
+  'category:CDOI',
+  'netwin-ceo',
+  'netwin-ceos',
+];
+
+/**
+ * Regras que as relações gravadas pela Fase 2 exigem: `connectedTo` cabo <-> equipamento
+ * (pontas A/Z, nos dois sentidos) e `supportedBy` cabo -> lance/duto. Sem elas o editor
+ * agregado rejeita o save de recursos importados (RESOURCE_RELATIONSHIP_RULE_NOT_ALLOWED),
+ * porque reenvia as relações existentes.
+ */
+export const netwinRelationshipRulePairs = (
+  typeCodes: Iterable<string>,
+): NetwinRelationshipRulePair[] => {
+  const endpoints = new Set([
+    ...CABLE_ENDPOINT_TYPE_CODES,
+    ...[...typeCodes].filter((code) => code.startsWith('netwin-')),
+  ]);
+  const pairs: NetwinRelationshipRulePair[] = [];
+  for (const cable of CABLE_TYPE_CODES) {
+    for (const endpoint of endpoints) {
+      pairs.push(
+        { relationshipTypeCode: 'connectedTo', source: cable, target: endpoint },
+        { relationshipTypeCode: 'connectedTo', source: endpoint, target: cable },
+      );
+    }
+    for (const support of CABLE_SUPPORT_TYPE_CODES) {
+      pairs.push({ relationshipTypeCode: 'supportedBy', source: cable, target: support });
+    }
+  }
+  // Contenção gravada pela Fase 2 (planta interna): equipamento -> Porta e CDO -> Splitter.
+  // Sem `placementPolicy` na regra = organização padrão (sem posição).
+  for (const equipment of endpoints) {
+    pairs.push({ relationshipTypeCode: 'containsAsChild', source: equipment, target: 'Port' });
+  }
+  for (const container of SPLITTER_CONTAINER_TYPE_CODES) {
+    pairs.push({ relationshipTypeCode: 'containsAsChild', source: container, target: 'Splitter' });
+  }
+  pairs.push(
+    { relationshipTypeCode: 'containsAsChild', source: 'Splitter', target: 'Port' },
+    { relationshipTypeCode: 'connectedTo', source: 'Port', target: 'Port' },
+  );
+  return pairs;
+};
+
 export const CANONICAL_RESOURCE_TYPES: ResourceTypeItem[] = [
   // Equipamentos Ópticos de Acesso / Planta Externa
   {
@@ -1368,6 +1426,83 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
       }
 
       await target.execute('COMMIT');
+
+      // Regras de relação exigidas pelas relações da Fase 2. Aditivo: nunca altera nem reativa
+      // regra existente (inclusive as aposentadas/governadas pelo Studio).
+      const tenantId = ctx.options.tenantId;
+      const relTypes = await target.execute<{ CODE: string }>(
+        `SELECT code FROM ${ctx.t('resource_relationship_type')} WHERE tenant_id = :1`,
+        [tenantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const knownRelTypes = new Set((relTypes.rows ?? []).map((r) => r.CODE));
+      const relTypeDefaults = [
+        {
+          code: 'connectedTo',
+          name: 'Conectado a',
+          inverse_code: 'connectedTo',
+          is_symmetric: 1,
+        },
+        { code: 'supportedBy', name: 'Suportado por', inverse_code: 'supports', is_symmetric: 0 },
+      ];
+      for (const def of relTypeDefaults) {
+        if (knownRelTypes.has(def.code)) continue;
+        await merge(target, ctx.t, 'resource_relationship_type', ['tenant_id', 'code'], {
+          id: deterministicUuid(
+            NEXUS_NETWIN_NAMESPACE,
+            `RESOURCE_REL_TYPE:${tenantId}:${def.code}`,
+          ),
+          tenant_id: tenantId,
+          ...def,
+          allowed_target_kinds: JSON.stringify(['RESOURCE_TYPE', 'GEOGRAPHIC_SITE_SPECIFICATION']),
+          lifecycle_status: 'Active',
+          is_bootstrap: 0,
+        });
+        knownRelTypes.add(def.code);
+      }
+
+      const existingRules = await target.execute<{ SRC: string; REL: string; TGT: string }>(
+        `SELECT source_resource_type_id AS src, relationship_type_code AS rel, target_id AS tgt
+           FROM ${ctx.t('resource_type_relationship_rule')}
+          WHERE tenant_id = :1 AND target_kind = 'RESOURCE_TYPE'`,
+        [tenantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const seenRules = new Set(
+        (existingRules.rows ?? []).map((r) => `${r.SRC}|${r.REL}|${r.TGT}`),
+      );
+      const ruleRows: Array<Record<string, unknown>> = [];
+      for (const pair of netwinRelationshipRulePairs(resourceTypeIdByCode.keys())) {
+        const sourceId = resourceTypeIdByCode.get(pair.source);
+        const targetId = resourceTypeIdByCode.get(pair.target);
+        if (!sourceId || !targetId) continue;
+        const key = `${sourceId}|${pair.relationshipTypeCode}|${targetId}`;
+        if (seenRules.has(key)) continue;
+        seenRules.add(key);
+        ruleRows.push({
+          id: deterministicUuid(NEXUS_NETWIN_NAMESPACE, `RESOURCE_TYPE_RULE:${tenantId}:${key}`),
+          tenant_id: tenantId,
+          source_resource_type_id: sourceId,
+          relationship_type_code: pair.relationshipTypeCode,
+          target_kind: 'RESOURCE_TYPE',
+          target_id: targetId,
+          lifecycle_status: 'Active',
+        });
+      }
+      if (ruleRows.length > 0) {
+        await bulkMergeRows(
+          target,
+          ctx.t,
+          'resource_type_relationship_rule',
+          ['id'],
+          Object.keys(ruleRows[0]!),
+          ruleRows,
+        );
+        await target.execute('COMMIT');
+      }
+      console.log(
+        `Regras de relação (connectedTo/supportedBy/containsAsChild) criadas: ${ruleRows.length}.`,
+      );
 
       const catalogSummary = await target.execute<{
         CATALOG_CODE: string;

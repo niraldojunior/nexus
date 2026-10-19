@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Boxes,
   ChevronDown,
   Activity,
@@ -13,15 +14,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   CatalogTreeCombobox,
   type CatalogResourceTypeRef,
@@ -276,6 +269,11 @@ export function ResourceEditorModal({
   // Depois de tentar salvar, os obrigatórios vazios passam a ser sinalizados nos campos.
   const [attempted, setAttempted] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const baselineRef = useRef<{
+    components: string;
+    relationships: string;
+    siteRelationships: string;
+  } | null>(null);
   const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalDialog(panelRef, !confirmOpen);
@@ -408,6 +406,23 @@ export function ResourceEditorModal({
             });
           }
           setSnapshot(snap);
+          const loadedChildren = toTree(snap, typeOfSpec);
+          const loadedSiteRels = snap.siteRelationships.map((s) => ({
+            siteId: s.site.id,
+            relationshipType: s.relationshipType,
+          }));
+          // Foto das seções pesadas: só são reenviadas (e revalidadas no backend) se mudarem.
+          baselineRef.current = {
+            components: JSON.stringify(toDraftChildren(loadedChildren)),
+            relationships: JSON.stringify(
+              relations.map((r) => ({
+                targetId: r.targetId,
+                relationshipType: r.relationshipType,
+                direction: r.direction,
+              })),
+            ),
+            siteRelationships: JSON.stringify(loadedSiteRels),
+          };
           setDraft({
             name: snap.resource.name,
             typeId,
@@ -541,6 +556,34 @@ export function ResourceEditorModal({
   );
   const siteRules = rules.filter((r) => r.targetKind === 'GEOGRAPHIC_SITE_SPECIFICATION');
 
+  const rulesLoaded = draft ? rulesByType[draft.typeId] !== undefined : false;
+  const hasContainmentRule = rules.some(
+    (r) => r.relationshipTypeCode === 'containsAsChild' && r.targetKind === 'RESOURCE_TYPE',
+  );
+  const pendingRules = !rulesLoaded && Boolean(resourceId);
+  const showComponents = pendingRules || hasContainmentRule || (draft?.children.length ?? 0) > 0;
+  const showRelations = pendingRules || relRules.length > 0 || (draft?.relations.length ?? 0) > 0;
+  const showCharacteristics = (type?.resourceTypeCharacteristic ?? []).length > 0;
+  const tabVisible = (id: TabId) =>
+    id === 'components'
+      ? showComponents
+      : id === 'relations'
+        ? showRelations
+        : id === 'characteristics'
+          ? showCharacteristics
+          : true;
+  const countNodes = (nodes: ChildNode[]): number =>
+    nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
+  const tabCount = (id: TabId): number | undefined =>
+    !draft
+      ? undefined
+      : id === 'components'
+        ? countNodes(draft.children)
+        : id === 'relations'
+          ? draft.relations.length
+          : undefined;
+  const visibleTabs = TABS.filter((t) => t.id === tab || tabVisible(t.id));
+
   const specsOfDraftType = specs.filter((s) => s.resourceTypeId === draft?.typeId);
   const spec = draft ? specById.get(draft.specId) : undefined;
 
@@ -644,17 +687,28 @@ export function ResourceEditorModal({
         ...notesCharacteristic,
         ...edited,
       ],
-      components: toDraftChildren(draft.children),
-      relationships: draft.relations.map((r) => ({
-        targetId: r.targetId,
-        relationshipType: r.relationshipType,
-        direction: r.direction,
-      })),
-      siteRelationships: draft.siteRels.map((s) => ({
-        siteId: s.siteId,
-        relationshipType: s.relationshipType,
-      })),
     };
+    const components = toDraftChildren(draft.children);
+    const relationships = draft.relations.map((r) => ({
+      targetId: r.targetId,
+      relationshipType: r.relationshipType,
+      direction: r.direction,
+    }));
+    const siteRelationships = draft.siteRels.map((s) => ({
+      siteId: s.siteId,
+      relationshipType: s.relationshipType,
+    }));
+    const baseline = resourceId ? baselineRef.current : null;
+    // Seção omitida = intacta no backend (sem validar nem regravar a árvore inteira).
+    if (!baseline || JSON.stringify(components) !== baseline.components) {
+      payload.components = components;
+    }
+    if (!baseline || JSON.stringify(relationships) !== baseline.relationships) {
+      payload.relationships = relationships;
+    }
+    if (!baseline || JSON.stringify(siteRelationships) !== baseline.siteRelationships) {
+      payload.siteRelationships = siteRelationships;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -713,7 +767,7 @@ export function ResourceEditorModal({
               {type?.name ?? 'Sem tipo'}
             </span>
           </div>
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -728,6 +782,14 @@ export function ResourceEditorModal({
             >
               <t.icon size={16} aria-hidden="true" className="shrink-0" />
               {t.label}
+              {tabCount(t.id) !== undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="ml-auto text-[0.75rem] font-normal text-app-muted"
+                >
+                  {tabCount(t.id)}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
@@ -738,7 +800,10 @@ export function ResourceEditorModal({
                 <span className="shrink-0 text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
                   {resourceId ? 'Editar recurso' : 'Novo recurso'}
                 </span>
-                <span className="truncate" title={draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}>
+                <span
+                  className="truncate"
+                  title={draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
+                >
                   {draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
                 </span>
               </h2>
@@ -753,7 +818,7 @@ export function ResourceEditorModal({
             </button>
           </header>
           <div className="flex gap-1 overflow-x-auto border-b border-app-border px-3 py-1.5 sm:hidden">
-            {TABS.map((t) => (
+            {visibleTabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -762,6 +827,11 @@ export function ResourceEditorModal({
                 className={`shrink-0 rounded-lg px-2.5 py-1 text-[0.8rem] ${tab === t.id ? 'bg-app-accent-soft font-semibold' : 'text-app-muted'}`}
               >
                 {t.label}
+                {tabCount(t.id) !== undefined ? (
+                  <span aria-hidden="true" className="ml-1.5 text-[0.75rem] font-normal">
+                    {tabCount(t.id)}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -875,7 +945,8 @@ export function ResourceEditorModal({
                 variant="primary"
                 onClick={() => void save()}
                 loading={saving}
-                disabled={loading || !draft}
+                disabled={loading || !draft || (Boolean(resourceId) && !dirty)}
+                title={resourceId && !dirty ? 'Nenhuma alteração para salvar' : undefined}
               >
                 {saving ? 'Salvando...' : 'Salvar'}
               </Button>
@@ -1445,7 +1516,11 @@ export function ComponentsTab({
             placementPolicy: 'GRID',
             row: field === 'row' ? (Number.isInteger(parsed) ? parsed : 1) : (placement?.row ?? 1),
             column:
-              field === 'column' ? (Number.isInteger(parsed) ? parsed : 1) : (placement?.column ?? 1),
+              field === 'column'
+                ? Number.isInteger(parsed)
+                  ? parsed
+                  : 1
+                : (placement?.column ?? 1),
             ...(placement?.rowSpan && placement.rowSpan > 1 ? { rowSpan: placement.rowSpan } : {}),
             ...(placement?.columnSpan && placement.columnSpan > 1
               ? { columnSpan: placement.columnSpan }
@@ -1625,14 +1700,53 @@ function RelationsTab({
     };
   }, [q, selected, selfId, allowedTypeNames, draft.relations]);
 
+  const nameOf = (c: string) => relTypes.find((r) => r.code === c)?.name ?? c;
+  const orphans = draft.relations.filter((r) => !codes.includes(r.relationshipType));
+  const orphanSection =
+    orphans.length > 0 ? (
+      <section aria-label="Relações fora da modelagem" className="grid gap-2">
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[10px] border border-status-amber/50 bg-status-amber/10 px-3 py-2 text-[0.82rem] text-app-text"
+        >
+          <AlertTriangle
+            size={16}
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-status-amber"
+          />
+          <span>
+            {orphans.length === 1
+              ? 'Há 1 relação inconsistente com a modelagem do tipo de recurso no Studio.'
+              : `Há ${orphans.length} relações inconsistentes com a modelagem do tipo de recurso no Studio.`}{' '}
+            Elas são exibidas somente para leitura; configure a regra no Studio para editá-las.
+          </span>
+        </p>
+        <ul className="grid gap-1.5">
+          {orphans.map((r) => (
+            <li
+              key={r.key}
+              className="flex items-center gap-2 rounded-[10px] border border-app-border bg-[var(--surface-muted)] px-3 py-1.5 text-[0.85rem]"
+            >
+              <span className="text-app-muted">
+                {nameOf(r.relationshipType)}
+                {r.direction === 'incoming' ? ' (entrada)' : ''}:
+              </span>
+              <span className="min-w-0 flex-1 truncate">{r.targetName}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
   if (codes.length === 0) {
     return (
-      <p className="text-[0.85rem] text-app-muted">
-        O tipo não define regras de relação entre recursos.
-      </p>
+      <div className="grid gap-4">
+        <p className="text-[0.85rem] text-app-muted">
+          O tipo não define regras de relação entre recursos.
+        </p>
+        {orphanSection}
+      </div>
     );
   }
-  const nameOf = (c: string) => relTypes.find((r) => r.code === c)?.name ?? c;
   return (
     <div className="grid gap-4">
       <div className="grid gap-2 sm:grid-cols-[200px_1fr]">
@@ -1685,29 +1799,32 @@ function RelationsTab({
         </ul>
       ) : null}
       <ul className="grid gap-1.5">
-        {draft.relations.map((r) => (
-          <li
-            key={r.key}
-            className="flex items-center justify-between rounded-[10px] border border-app-border px-3 py-1.5 text-[0.85rem]"
-          >
-            <span>
-              <span className="text-app-muted">
-                {nameOf(r.relationshipType)}
-                {r.direction === 'incoming' ? ' (entrada)' : ''}:
-              </span>{' '}
-              {r.targetName}
-            </span>
-            <button
-              type="button"
-              aria-label={`Remover relação com ${r.targetName}`}
-              className="text-app-muted hover:text-status-red"
-              onClick={() => onChange(draft.relations.filter((x) => x.key !== r.key))}
+        {draft.relations
+          .filter((r) => codes.includes(r.relationshipType))
+          .map((r) => (
+            <li
+              key={r.key}
+              className="flex items-center justify-between rounded-[10px] border border-app-border px-3 py-1.5 text-[0.85rem]"
             >
-              <Trash2 size={15} />
-            </button>
-          </li>
-        ))}
+              <span>
+                <span className="text-app-muted">
+                  {nameOf(r.relationshipType)}
+                  {r.direction === 'incoming' ? ' (entrada)' : ''}:
+                </span>{' '}
+                {r.targetName}
+              </span>
+              <button
+                type="button"
+                aria-label={`Remover relação com ${r.targetName}`}
+                className="text-app-muted hover:text-status-red"
+                onClick={() => onChange(draft.relations.filter((x) => x.key !== r.key))}
+              >
+                <Trash2 size={15} />
+              </button>
+            </li>
+          ))}
       </ul>
+      {orphanSection}
     </div>
   );
 }

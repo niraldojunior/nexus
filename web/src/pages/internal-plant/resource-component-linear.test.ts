@@ -28,23 +28,37 @@ describe('resource-component-linear', () => {
   });
 
   it('inverte apenas a ordem visual para numberingDirection descending', () => {
-    expect(linearVisualPositions({ ...configuration, capacity: 3, numberingDirection: 'ascending' })).toEqual([1, 2, 3]);
-    expect(linearVisualPositions({ ...configuration, capacity: 3, numberingDirection: 'descending' })).toEqual([3, 2, 1]);
+    expect(
+      linearVisualPositions({ ...configuration, capacity: 3, numberingDirection: 'ascending' }),
+    ).toEqual([1, 2, 3]);
+    expect(
+      linearVisualPositions({ ...configuration, capacity: 3, numberingDirection: 'descending' }),
+    ).toEqual([3, 2, 1]);
   });
 
   it('projeta um recurso com span em uma única ocupação lógica', () => {
     const olt = { id: 'olt-01' };
-    const slots = linearSlots(configuration, [{ item: olt, placement: { placementPolicy: 'LINEAR', position: 13, span: 2 } }]);
+    const slots = linearSlots(configuration, [
+      { item: olt, placement: { placementPolicy: 'LINEAR', position: 13, span: 2 } },
+    ]);
     expect(slots[12]?.occupant?.item).toBe(olt);
     expect(slots[13]?.occupant?.item).toBe(olt);
   });
 
   it('detecta colisão e limites de capacidade, excetuando o próprio recurso', () => {
     const olt = { id: 'olt-01' };
-    const occupants = [{ item: olt, placement: { placementPolicy: 'LINEAR' as const, position: 13, span: 2 } }];
-    expect(linearConflictAt(occupants, { placementPolicy: 'LINEAR', position: 14 })).toMatchObject({ item: olt });
-    expect(linearFits(configuration, occupants, { placementPolicy: 'LINEAR', position: 14 }, olt)).toBe(true);
-    expect(linearFits(configuration, occupants, { placementPolicy: 'LINEAR', position: 20, span: 2 })).toBe(false);
+    const occupants = [
+      { item: olt, placement: { placementPolicy: 'LINEAR' as const, position: 13, span: 2 } },
+    ];
+    expect(linearConflictAt(occupants, { placementPolicy: 'LINEAR', position: 14 })).toMatchObject({
+      item: olt,
+    });
+    expect(
+      linearFits(configuration, occupants, { placementPolicy: 'LINEAR', position: 14 }, olt),
+    ).toBe(true);
+    expect(
+      linearFits(configuration, occupants, { placementPolicy: 'LINEAR', position: 20, span: 2 }),
+    ).toBe(false);
   });
 
   it('gera posições e nomes sequenciais para criação em lote', () => {

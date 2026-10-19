@@ -4,13 +4,7 @@
 // cliente tem as mesmas propriedades da do servidor, não que produzem o mesmo valor byte a
 // byte (isso exigiria importar um do outro, que é exatamente o que não pode acontecer).
 import { describe, expect, it } from 'vitest';
-import {
-  lngLatToTile,
-  tileBounds,
-  tileKey,
-  tilesForBounds,
-  MAP_TILE_ZOOM,
-} from './mapTile';
+import { lngLatToTile, tileBounds, tileKey, tilesForBounds, MAP_TILE_ZOOM } from './mapTile';
 
 type LngLatTuple = [number, number];
 const ICARAI: LngLatTuple = [-43.106, -22.906];
@@ -97,8 +91,15 @@ describe('tilesForBounds', () => {
     const width = 2_001;
     const nw = tileBounds(z, 0, 0);
     const se = tileBounds(z, width - 1, 0);
+    const epsilon = 1e-9;
     const tiles = tilesForBounds(
-      { minLng: nw.minLng, maxLng: se.maxLng, minLat: se.minLat, maxLat: nw.maxLat },
+      // Recuo mínimo: bordas exatas pertencem ao tile vizinho e inflariam a contagem.
+      {
+        minLng: nw.minLng + epsilon,
+        maxLng: se.maxLng - epsilon,
+        minLat: se.minLat + epsilon,
+        maxLat: nw.maxLat - epsilon,
+      },
       z,
     );
     expect(tiles).toHaveLength(width);

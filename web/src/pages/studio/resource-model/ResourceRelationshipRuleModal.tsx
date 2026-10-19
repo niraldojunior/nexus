@@ -69,7 +69,7 @@ const organizationOptions: OrganizationOption[] = [
     label: 'Grade',
     description: 'Matriz de linhas e colunas.',
     icon: Grid3X3,
-    available: true,
+    available: false,
   },
   {
     policy: 'REGIONS',

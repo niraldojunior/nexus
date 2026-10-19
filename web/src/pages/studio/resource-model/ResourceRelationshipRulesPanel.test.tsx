@@ -295,10 +295,10 @@ describe('ResourceRelationshipRulesPanel', () => {
     expect(screen.getByRole('group', { name: 'Organização dos componentes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Padrão/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Linear/ })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /Grade/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Grade/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Regiões/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Livre/ })).toBeDisabled();
-    expect(screen.getAllByText('Em breve')).toHaveLength(2);
+    expect(screen.getAllByText('Em breve')).toHaveLength(3);
 
     await user.selectOptions(screen.getByLabelText('Tipo de relação'), 'mountedOn');
 

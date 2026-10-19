@@ -126,10 +126,37 @@ describe('computeWalkRouteMatrix', () => {
     expect(legs[1]?.distanceMeters).toBe(120);
   });
 
+  it('trata ROUTE_EXISTS sem distanceMeters (proto3 omite o 0) como distância zero', async () => {
+    mockFetch([{ originIndex: 0, destinationIndex: 0, condition: 'ROUTE_EXISTS' }]);
+
+    const legs = await computeWalkRouteMatrix([-43.1, -22.9], [[-43.1, -22.9]]);
+
+    expect(legs[0]).toEqual({ distanceMeters: 0, durationSeconds: 0 });
+  });
+
   it('cai para uma lista de null quando a chamada falha', async () => {
     mockFetch({ error: 'PERMISSION_DENIED' }, false);
     const legs = await computeWalkRouteMatrix([-43.1, -22.9], [[-43.101, -22.901]]);
     expect(legs).toEqual([null]);
+  });
+
+  it('aborta a matriz pendurada no prazo e preserva o fallback', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_: string, options: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const pending = computeWalkRouteMatrix([-43.1, -22.9], [[-43.101, -22.901]]);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(pending).resolves.toEqual([null]);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    vi.useRealTimers();
   });
 
   it('não chama a API sem destinos', async () => {

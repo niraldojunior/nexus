@@ -234,7 +234,7 @@ describe('AddressDetailPanel', () => {
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
-    expect(screen.getByText(/Nenhuma CDO num raio de 300 m/)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhuma CDO num raio de 200 m/)).toBeInTheDocument();
     expect(screen.queryByText('Google Maps')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Geral' }));
@@ -286,6 +286,8 @@ describe('AddressDetailPanel', () => {
       point: [-43.108, -22.899],
       distanceMeters: 120,
       straightMeters: 120,
+      portsFree: 5,
+      portsTotal: 8,
       mode: 'straight',
     };
     viability.mockReturnValue({ status: 'ready', candidates: [candidate], error: null });

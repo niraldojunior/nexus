@@ -44,6 +44,8 @@ const candidate = (
   point: [-43.108, -22.899],
   distanceMeters,
   straightMeters: distanceMeters * 0.7,
+  portsFree: 5,
+  portsTotal: 8,
   durationSeconds: mode === 'walk' ? distanceMeters * 0.8 : undefined,
   mode,
 });
@@ -90,6 +92,18 @@ describe('ViabilityTab', () => {
     // A primeira CDO já entra selecionada, sem clique do usuário.
     await waitFor(() => expect(items[0]).toHaveAttribute('aria-pressed', 'true'));
     expect(items[1]).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('mostra as portas livres ao lado do nome, com o nome em negrito', () => {
+    useAddressViability.mockReturnValue(ready([candidate('CDOE-1111', 'active', 118, 'walk')]));
+
+    render(<ViabilityTab origin={ORIGIN} onSimulate={vi.fn()} />);
+
+    const button = screen.getByRole('button');
+    expect(button).toHaveTextContent('CDOE-1111 - 5 de 8 portas livres');
+    const name = screen.getByText('CDOE-1111');
+    expect(name.tagName).toBe('STRONG');
+    expect(name).not.toHaveTextContent('portas');
   });
 
   it('mostra o motivo do substatus entre parênteses numa CDO suspensa', () => {
@@ -206,7 +220,7 @@ describe('ViabilityTab', () => {
     const onSimulate = vi.fn();
     useAddressViability.mockReturnValue(ready([]));
     render(<ViabilityTab origin={ORIGIN} onSimulate={onSimulate} />);
-    expect(screen.getByText(/Nenhuma CDO num raio de 300 m/)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhuma CDO num raio de 200 m/)).toBeInTheDocument();
     // Sem candidata, nada é auto-selecionado nem simulado.
     expect(onSimulate).not.toHaveBeenCalled();
   });

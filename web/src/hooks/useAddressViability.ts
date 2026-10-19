@@ -6,26 +6,16 @@
 // externa já inventariada (Módulo 2).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchViewportResources, type GeoTreeNode } from '../services/geoTreeApi';
-import { resourceTypeCode } from '../utils/resourceIcon';
-import {
-  bboxAround,
-  computeWalkRouteMatrix,
-  haversineMeters,
-  type LngLat,
-} from '../utils/googleRoutes';
+import { fetchNearbyCdos, type GeoTreeNode } from '../services/geoTreeApi';
+import { computeWalkRouteMatrix, type LngLat } from '../utils/googleRoutes';
 
-// Raio de busca pedido pela operação: 300 m lineares em volta do endereço.
-export const VIABILITY_RADIUS_METERS = 300;
+// Raio de busca pedido pela operação: 200 m lineares em volta do endereço.
+export const VIABILITY_RADIUS_METERS = 200;
 
 // Teto de candidatos mandados à Routes API. O raio já limita o volume, mas um trecho
 // muito denso pode ter dezenas de caixas — e cada destino da matriz é um elemento
 // cobrado. 25 é folgado para a decisão (quem instala olha as primeiras) e barato.
 export const VIABILITY_MAX_CANDIDATES = 25;
-
-// Teto do bbox mandado ao servidor. Uma caixa de 600 m tem ordem de dezenas de
-// recursos; o limite é só válvula contra coordenada anômala.
-const VIEWPORT_LIMIT = 2000;
 
 export type ViabilityCandidate = {
   // A CDO em si — carrega status, tipo e coordenada, então a lista desenha o mesmo
@@ -36,8 +26,11 @@ export type ViabilityCandidate = {
   // linha reta quando não (ver `mode`).
   distanceMeters: number;
   durationSeconds?: number;
-  // Distância em linha reta, sempre presente — é o que qualifica o raio de 300 m.
+  // Distância em linha reta, sempre presente — é o que qualifica o raio de 200 m.
   straightMeters: number;
+  // Portas internas livres / total da CDO; o servidor só devolve CDO com ao menos uma livre.
+  portsFree: number;
+  portsTotal: number;
   mode: 'walk' | 'straight';
 };
 
@@ -49,18 +42,6 @@ export type UseAddressViabilityResult = {
   error: string | null;
 };
 
-// Só caixa de distribuição serve de origem de drop. No inventário todas as caixas
-// entram como `resourceType` CTO (ver glossário: CDOE é cadastrada com tipo CTO), então
-// o tipo sozinho traria também CEO/CEOS — que são caixas de emenda, onde não se puxa
-// drop. O nome é o que separa as duas famílias.
-const CDO_NAME = /^\s*CDO/i;
-
-const isEligibleCdo = (node: GeoTreeNode): boolean =>
-  node.kind === 'resource' &&
-  node.geometry?.type === 'Point' &&
-  resourceTypeCode({ resourceType: node.resourceType, name: node.label }) === 'CTO' &&
-  CDO_NAME.test(node.label);
-
 // Requisições em voo por endereço. O React.StrictMode monta o componente duas vezes e o
 // backend de dev atende em série — sem deduplicar, abrir a aba custa o dobro (mesmo
 // padrão de useGeoDirectory/useGeoTree).
@@ -69,24 +50,34 @@ const inFlight = new Map<string, Promise<ViabilityCandidate[]>>();
 const addressKey = ([lng, lat]: LngLat): string => `${lng.toFixed(6)},${lat.toFixed(6)}`;
 
 async function fetchViability(origin: LngLat): Promise<ViabilityCandidate[]> {
-  const bounds = bboxAround(origin, VIABILITY_RADIUS_METERS);
-  // Só CDO (Recurso pontual) é candidato (ver isEligibleCdo) — pedir só 'resource-points' poupa
-  // os blocos de cabo e a consulta de Sites em toda abertura da aba Viabilidade.
-  const nodes = await fetchViewportResources(bounds, {
-    limit: VIEWPORT_LIMIT,
-    include: ['resource-points'],
+  // A consulta especializada já filtra CDO no banco e recorta o círculo antes do
+  // limite; o viewport genérico trazia milhares de recursos e só então os descartava.
+  const rows = await fetchNearbyCdos(
+    { lng: origin[0], lat: origin[1] },
+    { radiusMeters: VIABILITY_RADIUS_METERS, limit: VIABILITY_MAX_CANDIDATES },
+  );
+  const nearby = rows.map((row) => {
+    const point: LngLat = [row.lng, row.lat];
+    const node: GeoTreeNode = {
+      id: `resource:${row.id}`,
+      kind: 'resource',
+      label: row.name,
+      refId: row.id,
+      referredType: 'PhysicalResource',
+      resourceType: row.resourceType,
+      ...(row.status ? { status: row.status } : {}),
+      hasChildren: false,
+      geometry: { type: 'Point', coordinates: point },
+      ...(row.substatus ? { detail: { substatus: row.substatus } } : {}),
+    };
+    return {
+      node,
+      point,
+      straightMeters: row.straightMeters,
+      portsFree: row.portsFree,
+      portsTotal: row.portsTotal,
+    };
   });
-
-  // O bbox é o quadrado que circunscreve o círculo; o corte redondo é aqui.
-  const nearby = nodes
-    .filter(isEligibleCdo)
-    .map((node) => {
-      const point = (node.geometry as { coordinates: LngLat }).coordinates;
-      return { node, point, straightMeters: haversineMeters(origin, point) };
-    })
-    .filter((candidate) => candidate.straightMeters <= VIABILITY_RADIUS_METERS)
-    .sort((left, right) => left.straightMeters - right.straightMeters)
-    .slice(0, VIABILITY_MAX_CANDIDATES);
 
   if (!nearby.length) return [];
 
@@ -107,9 +98,9 @@ async function fetchViability(origin: LngLat): Promise<ViabilityCandidate[]> {
           }
         : { ...candidate, distanceMeters: candidate.straightMeters, mode: 'straight' as const };
     })
-    // O raio de 300 m vale para a distância exibida: a rota a pé pode ser bem maior que a
-    // linha reta (contorna quadra, atravessa rua), então uma CDO com linha reta < 300 m
-    // mas caminhada > 300 m não é viável. O fallback de linha reta já passou pelo corte
+    // O raio de 200 m vale para a distância exibida: a rota a pé pode ser bem maior que a
+    // linha reta (contorna quadra, atravessa rua), então uma CDO com linha reta < 200 m
+    // mas caminhada > 200 m não é viável. O fallback de linha reta já passou pelo corte
     // redondo acima, então esse filtro só descarta rotas a pé longas demais.
     .filter((candidate) => candidate.distanceMeters <= VIABILITY_RADIUS_METERS);
 

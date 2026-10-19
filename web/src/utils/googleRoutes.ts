@@ -20,6 +20,10 @@ const COMPUTE_ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeR
 const MATRIX_FIELD_MASK = 'originIndex,destinationIndex,distanceMeters,duration,condition';
 const ROUTE_FIELD_MASK = 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline';
 
+// A resposta do Google é complementar à consulta local de viabilidade. Sem teto,
+// uma conexão pendurada mantém a aba inteira em loading indefinidamente.
+export const ROUTES_TIMEOUT_MS = 3_000;
+
 // Raio médio da Terra, em metros (WGS-84).
 const EARTH_RADIUS_M = 6_371_008.8;
 
@@ -50,6 +54,8 @@ const parseDuration = (raw: string | undefined): number => {
 
 async function postRoutes<T>(url: string, fieldMask: string, body: unknown): Promise<T | null> {
   if (!GOOGLE_MAPS_KEY) return null;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), ROUTES_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -59,13 +65,16 @@ async function postRoutes<T>(url: string, fieldMask: string, body: unknown): Pro
         'X-Goog-FieldMask': fieldMask,
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {
-    // Chave sem a API habilitada, cota estourada ou rede fora do ar: quem chama cai
-    // no fallback de linha reta em vez de perder o candidato (ver useAddressViability).
+    // Chave sem a API habilitada, cota estourada, timeout ou rede fora do ar: quem
+    // chama cai no fallback de linha reta em vez de perder o candidato.
     return null;
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -96,9 +105,11 @@ export async function computeWalkRouteMatrix(
   for (const element of elements) {
     const index = element.destinationIndex;
     if (index === undefined || index < 0 || index >= destinations.length) continue;
-    if (element.condition !== 'ROUTE_EXISTS' || element.distanceMeters === undefined) continue;
+    if (element.condition !== 'ROUTE_EXISTS') continue;
+    // JSON proto3 omite campos com valor 0: uma CDO no próprio endereço (ex.: CDOI dentro do
+    // prédio) chega sem `distanceMeters`. Com ROUTE_EXISTS isso é distância zero, não ausência.
     legs[index] = {
-      distanceMeters: element.distanceMeters,
+      distanceMeters: element.distanceMeters ?? 0,
       durationSeconds: parseDuration(element.duration),
     };
   }

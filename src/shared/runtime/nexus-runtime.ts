@@ -8,6 +8,7 @@ import { GeoMapSiteService } from '../../modules/geo/map-site-service.js';
 import { GeoMapDensityService } from '../../modules/geo/map-density-service.js';
 import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
 import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
+import { GeoViabilityService } from '../../modules/geo/viability-service.js';
 import { createStructuredCompletionPort } from '../../modules/search/structured-completion.js';
 import { OrderService } from '../../modules/order/service.js';
 import { OracleOrderRepository } from '../../modules/order/oracle-repository.js';
@@ -125,6 +126,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const geoMapLineService = new GeoMapLineService(db);
   const geoMapDensityService = new GeoMapDensityService(db);
   const geoCoverageService = new GeoCoverageService(db);
+  const geoViabilityService = new GeoViabilityService(db);
   const geonetAddressGateway = options.geonet ? new GeonetAddressGateway(options.geonet) : null;
   const eventRepository = new OracleEventRepository(db);
   const eventService = new EventService(eventRepository);
@@ -392,6 +394,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoMapLineService,
     geoMapDensityService,
     geoCoverageService,
+    geoViabilityService,
     geonetAddressGateway,
     eventRepository,
     eventService,

@@ -210,6 +210,8 @@ export type GeoSite = {
   href: string;
   name: string;
   status: GeoSiteStatus;
+  /** Data da última mudança de status (ISO). */
+  statusDate?: string;
   siteSpecificationId: string;
   siteSpecification: { id: string; '@referredType': 'GeographicSiteSpecification' };
   place?: { id: string; '@referredType': 'GeographicLocation' };

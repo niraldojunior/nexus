@@ -6,11 +6,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import EmptyState from '../components/EmptyState';
+import { RemoveSiteDialog } from '../components/inventory/RemoveSiteDialog';
+import { TerminateResourceDialog } from '../components/inventory/TerminateResourceDialog';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 import { ResourceIcon } from '../components/ResourceIcon';
 import Button from '../components/ui/Button';
 import DataTable, { DataTablePagination, type DataTableColumn } from '../components/ui/DataTable';
-import Modal from '../components/ui/Modal';
 import PageHead from '../components/ui/PageHead';
 import { describeStatus } from '../components/ui/StatusPill';
 import {
@@ -25,14 +26,7 @@ import {
 } from '../utils/studioGeoDefaults';
 import { useSession } from '../hooks/useSession';
 import {
-  fetchSiteReferences,
-  retireSite,
-  SiteEditorApiError,
-  type SiteReferences,
-} from '../services/siteEditorApi';
-import {
   fetchInternalPlantSiteContext,
-  terminateInternalPlantResource,
   type InternalPlantLocationNode,
   type InternalPlantSiteContext,
   InternalPlantResourceFilter,
@@ -117,17 +111,6 @@ function ContextTitleIcon({
   }
   const Icon = icon.kind === 'search' ? Search : Layers;
   return <Icon size={22} aria-hidden="true" className="shrink-0 text-app-muted" />;
-}
-
-function describeSiteReferences(refs: SiteReferences): string[] {
-  const items: Array<[number, string]> = [
-    [refs.activeChildSiteCount, 'locais internos ativos'],
-    [refs.activeRelationshipCount, 'relações ativas'],
-    [refs.activeResourceCount, 'recursos ativos'],
-    [refs.activeServiceCount, 'serviços ativos'],
-    [refs.activeOrderCount, 'ordens em andamento'],
-  ];
-  return items.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`);
 }
 
 const baseColumns: DataTableColumn<InternalPlantResourceRow>[] = [
@@ -216,16 +199,10 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     setTreeQuery('');
   }, [tab]);
   const [selectedCityId, setSelectedCityId] = useState<string | undefined>();
-  const [pendingSiteRemoval, setPendingSiteRemoval] = useState<{
-    id: string;
-    name: string;
-    blocking: string[];
-  } | null>(null);
-  const [removingSite, setRemovingSite] = useState(false);
-  const [siteRemovalError, setSiteRemovalError] = useState<string | null>(null);
+  const [pendingSiteRemoval, setPendingSiteRemoval] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [pendingDelete, setPendingDelete] = useState<InternalPlantResourceRow | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (context?.icon.kind !== 'site' || !context.key) {
@@ -265,7 +242,6 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                 className="rounded-md p-1 text-app-muted opacity-0 transition hover:text-status-red focus-visible:opacity-100 [@media(hover:none)]:opacity-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
                 onClick={(event) => {
                   event.stopPropagation();
-                  setDeleteError(null);
                   setPendingDelete(row);
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
@@ -278,22 +254,12 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       : []),
   ];
 
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await terminateInternalPlantResource(pendingDelete.id);
-      if (state.status === 'ready' && state.page.items.length === 1 && offset > 0) {
-        setOffset(Math.max(0, offset - INTERNAL_PLANT_PAGE_SIZE));
-      }
-      setPendingDelete(null);
-      setRetryToken((n) => n + 1);
-    } catch (cause) {
-      setDeleteError(cause instanceof Error ? cause.message : 'Falha ao excluir o recurso.');
-    } finally {
-      setDeleting(false);
+  const onResourceTerminated = () => {
+    if (state.status === 'ready' && state.page.items.length === 1 && offset > 0) {
+      setOffset(Math.max(0, offset - INTERNAL_PLANT_PAGE_SIZE));
     }
+    setPendingDelete(null);
+    setRetryToken((n) => n + 1);
   };
 
   const refreshTree = () => {
@@ -302,42 +268,18 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     setRetryToken((n) => n + 1);
   };
 
-  const askRemoveSite = async (target: { refId?: string; label: string }) => {
+  const askRemoveSite = (target: { refId?: string; label: string }) => {
     if (!target.refId) return;
-    setSiteRemovalError(null);
-    let blocking: string[] = [];
-    try {
-      const refs = await fetchSiteReferences(target.refId);
-      blocking = refs.blocking ? describeSiteReferences(refs) : [];
-    } catch {
-      // Sem o impacto, a confirmação segue e o servidor ainda bloqueia com 409.
-    }
-    setPendingSiteRemoval({ id: target.refId, name: target.label, blocking });
+    setPendingSiteRemoval({ id: target.refId, name: target.label });
   };
 
-  const confirmRemoveSite = async () => {
-    if (!pendingSiteRemoval) return;
-    setRemovingSite(true);
-    setSiteRemovalError(null);
-    try {
-      await retireSite(pendingSiteRemoval.id, 'Removido pela Planta Interna');
-      if (context?.filter.siteId === pendingSiteRemoval.id) {
-        setContext(null);
-        setOffset(0);
-      }
-      setPendingSiteRemoval(null);
-      refreshTree();
-    } catch (cause) {
-      setSiteRemovalError(
-        cause instanceof SiteEditorApiError && cause.status === 409
-          ? `${cause.message} O local foi mantido.`
-          : cause instanceof Error
-            ? cause.message
-            : 'Falha ao remover o local.',
-      );
-    } finally {
-      setRemovingSite(false);
+  const onSiteRemoved = () => {
+    if (context?.filter.siteId === pendingSiteRemoval?.id) {
+      setContext(null);
+      setOffset(0);
     }
+    setPendingSiteRemoval(null);
+    refreshTree();
   };
 
   const confirm = (next: Context) => {
@@ -754,80 +696,20 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
           onChanged={refreshTree}
         />
       ) : null}
-      {pendingSiteRemoval ? (
-        <Modal
-          title="Remover local"
-          onClose={() => (removingSite ? undefined : setPendingSiteRemoval(null))}
-          footer={
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => setPendingSiteRemoval(null)}
-                disabled={removingSite}
-              >
-                {pendingSiteRemoval.blocking.length > 0 ? 'Fechar' : 'Cancelar'}
-              </Button>
-              {pendingSiteRemoval.blocking.length === 0 ? (
-                <Button
-                  variant="danger"
-                  onClick={() => void confirmRemoveSite()}
-                  disabled={removingSite}
-                >
-                  {removingSite ? 'Removendo...' : 'Remover'}
-                </Button>
-              ) : null}
-            </>
-          }
-        >
-          {pendingSiteRemoval.blocking.length > 0 ? (
-            <>
-              <p className="text-[0.92rem] text-app-text">
-                &ldquo;{pendingSiteRemoval.name}&rdquo; não pode ser removido enquanto houver:
-              </p>
-              <ul className="mt-2 list-disc pl-5 text-[0.88rem] text-app-text">
-                {pendingSiteRemoval.blocking.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-[0.92rem] text-app-text">
-              Remover &ldquo;{pendingSiteRemoval.name}&rdquo;? O local será encerrado (não é
-              removido fisicamente).
-            </p>
-          )}
-          {siteRemovalError ? (
-            <p role="alert" className="mt-2 text-[0.85rem] text-status-red">
-              {siteRemovalError}
-            </p>
-          ) : null}
-        </Modal>
+      {canEdit && pendingSiteRemoval ? (
+        <RemoveSiteDialog
+          site={pendingSiteRemoval}
+          statusReason="Removido pela Planta Interna"
+          onClose={() => setPendingSiteRemoval(null)}
+          onRemoved={onSiteRemoved}
+        />
       ) : null}
-      {pendingDelete ? (
-        <Modal
-          title="Encerrar recurso"
-          onClose={() => (deleting ? undefined : setPendingDelete(null))}
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
-                Cancelar
-              </Button>
-              <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
-                {deleting ? 'Encerrando...' : 'Encerrar'}
-              </Button>
-            </>
-          }
-        >
-          <p className="text-[0.92rem] text-app-text">
-            Encerrar &ldquo;{pendingDelete.name}&rdquo;? O recurso fica bloqueado e deixa de
-            aparecer nas listas, mas o histórico é mantido (não é removido fisicamente).
-          </p>
-          {deleteError ? (
-            <p role="alert" className="mt-2 text-[0.85rem] text-status-red">
-              {deleteError}
-            </p>
-          ) : null}
-        </Modal>
+      {canEdit && pendingDelete ? (
+        <TerminateResourceDialog
+          resource={pendingDelete}
+          onClose={() => setPendingDelete(null)}
+          onTerminated={onResourceTerminated}
+        />
       ) : null}
 
       <InternalPlantSearchBar

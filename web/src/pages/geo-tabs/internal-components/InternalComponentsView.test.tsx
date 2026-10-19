@@ -108,8 +108,8 @@ describe('InternalComponentsView', () => {
 
     const diagramContent = screen.getByTestId('internal-components-diagram');
     const graphHost = screen.getByTestId('internal-components-graph-host');
-    expect(diagramContent).toHaveStyle({ minWidth: '100%' });
-    expect(graphHost).toHaveClass('min-w-full');
+    expect(diagramContent).toHaveClass('min-w-0', 'max-w-full');
+    expect(graphHost).toHaveClass('w-full', 'min-w-0');
 
     fireEvent.click(detalhada);
 

@@ -1678,6 +1678,10 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onClose={onDeselect}
               onCreated={() => undefined}
               onChanged={() => void loadGeo()}
+              onRemoved={() => {
+                onDeselect();
+                void loadGeo();
+              }}
               onOpenResource={handleOpenResourceById}
             />
           ) : detailOpen && detailTarget?.kind === 'resource' ? (
@@ -1696,6 +1700,18 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   onOpenPort={setStackedPortNode}
                   onBack={() => setDetailOpen(false)}
                   onClose={onDeselect}
+                  onChanged={() => {
+                    const nodeId = detailTarget.node.id;
+                    void fetchTreeNode(nodeId)
+                      .then((hydrated) =>
+                        setSelectedNode((current) => (current?.id === nodeId ? hydrated : current)),
+                      )
+                      .catch(() => undefined);
+                  }}
+                  onTerminated={() => {
+                    onDeselect();
+                    void loadGeo();
+                  }}
                   onDropSimulation={onDropSimulation}
                   onPreview={handleHover}
                   onPortDropPreview={onPortDropPreview}
@@ -1712,6 +1728,18 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                   onOpenResource={handleOpenResourceById}
                   onBack={() => setStackedPortNode(null)}
                   onClose={() => setStackedPortNode(null)}
+                  onChanged={() => {
+                    const nodeId = stackedPortNode.id;
+                    void fetchTreeNode(nodeId)
+                      .then((hydrated) =>
+                        setStackedPortNode((current) => (current?.id === nodeId ? hydrated : current)),
+                      )
+                      .catch(() => undefined);
+                  }}
+                  onTerminated={() => {
+                    setStackedPortNode(null);
+                    void loadGeo();
+                  }}
                   onDropSimulation={onDropSimulation}
                   onPreview={handleHover}
                   onPortDropPreview={onPortDropPreview}

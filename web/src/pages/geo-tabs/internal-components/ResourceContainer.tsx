@@ -72,7 +72,7 @@ export function ResourceContainer({
         </div>
       ) : null}
       {containers.length ? (
-        <div className={leaves.length ? 'mt-2 grid gap-2' : 'grid gap-2'}>
+        <div className={leaves.length ? 'mt-2 grid grid-cols-[minmax(0,1fr)] gap-2' : 'grid grid-cols-[minmax(0,1fr)] gap-2'}>
           {containers.map((child) => (
             <ResourceContainer key={child.id} node={child} interaction={interaction} viewMode={viewMode} />
           ))}

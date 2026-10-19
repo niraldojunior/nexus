@@ -34,7 +34,10 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
   // Filhos do Site cacheados/deduplicados em nível de módulo (useSiteChildren) — a mesma
   // chamada alimenta SiteSubSitesTab, cada aba filtrando por `kind` localmente.
   const { nodes: children, loading, reload } = useSiteChildren(siteId);
-  const nodes = useMemo(() => children.filter((node) => node.kind === 'resource'), [children]);
+  const nodes = useMemo(
+    () => children.filter((node) => node.kind === 'resource' && node.status !== 'terminated'),
+    [children],
+  );
   const [query, setQuery] = useState('');
   const [predictionsOpen, setPredictionsOpen] = useState(false);
   const [predictions, setPredictions] = useState<GeoTreeNode[]>([]);
@@ -128,7 +131,10 @@ export function SiteResourcesTab({ siteId, canEdit, onOpenResource }: SiteResour
             </div>
             {predictionsOpen && predictions.length > 0 ? (
               <>
-                <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setPredictionsOpen(false)} />
+                <div
+                  className="fixed inset-0 z-[var(--z-dropdown)]"
+                  onClick={() => setPredictionsOpen(false)}
+                />
                 <div className="absolute left-0 right-0 top-full z-[var(--z-overlay)] mt-1 max-h-64 overflow-auto rounded-[12px] border border-app-border bg-white py-1 shadow-soft">
                   {predictions.map((node) => {
                     const resourceLike = {

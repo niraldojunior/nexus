@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   listServices,
   type CustomerFacingService,
@@ -54,10 +54,13 @@ export function usePortService(
   hasActiveService: boolean;
   loading: boolean;
   error: string | null;
+  reload: () => void;
 } {
   const [service, setService] = useState<PortService | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const reload = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -83,7 +86,7 @@ export function usePortService(
     return () => {
       cancelled = true;
     };
-  }, [enabled, portId]);
+  }, [enabled, portId, revision]);
 
-  return { service, hasActiveService: Boolean(service), loading, error };
+  return { service, reload, hasActiveService: Boolean(service), loading, error };
 }

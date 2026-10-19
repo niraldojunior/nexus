@@ -41,6 +41,11 @@ export function invalidateSiteChildren(siteId: string): void {
   cached.delete(cacheKeyOf(siteId));
 }
 
+/** Descarta o cache de todos os Sites (ex.: após encerrar um recurso, que some de onde estava). */
+export function invalidateAllSiteChildren(): void {
+  cached.clear();
+}
+
 /**
  * Carrega os filhos diretos (`scope: 'all'`) de um Site, deduplicado e cacheado em nível de
  * módulo. O chamador filtra por `kind` ('resource' | 'site') — este hook devolve a lista

@@ -2359,9 +2359,10 @@ export class ResourceService {
   public async deletePhysicalResource(
     id: string,
     context?: RequestContext,
+    containedIds?: ReadonlySet<string>,
   ): Promise<PhysicalResource> {
     const current = await this.getPhysicalResourceOrThrow(id, context);
-    await this.assertResourceCanTerminate(current, context);
+    await this.assertResourceCanTerminate(current, context, containedIds);
     const terminated = await this.repository.upsertPhysicalResource(
       stampStateChanges(current, {
         ...current,
@@ -2633,9 +2634,10 @@ export class ResourceService {
   public async deleteLogicalResource(
     id: string,
     context?: RequestContext,
+    containedIds?: ReadonlySet<string>,
   ): Promise<LogicalResource> {
     const current = await this.getLogicalResourceOrThrow(id, context);
-    await this.assertResourceCanTerminate(current, context);
+    await this.assertResourceCanTerminate(current, context, containedIds);
     const terminated = await this.repository.upsertLogicalResource(
       stampStateChanges(current, {
         ...current,
@@ -3672,9 +3674,68 @@ export class ResourceService {
     return await this.repository.listResourceRelationships(resourceId);
   }
 
+  /**
+   * Encerra o recurso e todos os componentes internos (`containsAsChild`), dos mais fundos para o
+   * topo. Relações entre recursos do próprio conjunto deixam de bloquear; qualquer outra
+   * dependência ativa ainda devolve 409 (verificado para o conjunto todo antes de encerrar).
+   */
+  public async terminateResourceCascade(id: string, context?: RequestContext): Promise<Resource> {
+    const root = await this.getResourceOrThrow(id, context);
+    const order: string[] = [];
+    const seen = new Set<string>([id]);
+    const visit = async (resourceId: string): Promise<void> => {
+      const edges = await this.repository.listResourceRelationships(resourceId);
+      for (const edge of edges) {
+        if (edge.relationshipType !== 'containsAsChild' || !relationshipIsActive(edge)) continue;
+        if (seen.has(edge.id)) continue;
+        seen.add(edge.id);
+        await visit(edge.id);
+        order.push(edge.id);
+      }
+    };
+    await visit(id);
+    const contained = new Set<string>(seen);
+    for (const resourceId of [...order, root.id]) {
+      await this.assertResourceCanTerminate(
+        await this.getResourceOrThrow(resourceId, context),
+        context,
+        contained,
+      );
+    }
+    const terminate = async (resourceId: string): Promise<Resource> => {
+      const resource = await this.getResourceOrThrow(resourceId, context);
+      return resource['@type'] === 'PhysicalResource'
+        ? await this.deletePhysicalResource(resourceId, context, contained)
+        : await this.deleteLogicalResource(resourceId, context, contained);
+    };
+    // Demais relações (connectedTo etc.) com recursos de fora do conjunto: remove-se apenas a
+    // aresta; o recurso relacionado nunca é encerrado.
+    for (const resourceId of [...order, root.id]) {
+      for (const edge of (await this.repository.listResourceRelationships(resourceId)).filter(
+        relationshipIsActive,
+      )) {
+        if (contained.has(edge.id)) continue;
+        await this.repository.deleteResourceRelationship(resourceId, edge.id, edge.relationshipType);
+      }
+      for (const edge of (
+        await this.repository.listIncomingResourceRelationships(
+          resourceId,
+          undefined,
+          scopeOf(context),
+        )
+      ).filter(relationshipIsActive)) {
+        if (contained.has(edge.id)) continue;
+        await this.repository.deleteResourceRelationship(edge.id, resourceId, edge.relationshipType);
+      }
+    }
+    for (const childId of order) await terminate(childId);
+    return await terminate(root.id);
+  }
+
   private async assertResourceCanTerminate(
     resource: Resource,
     context?: RequestContext,
+    containedIds?: ReadonlySet<string>,
   ): Promise<void> {
     if (resource.status === 'terminated') return;
     const [outgoing, incoming, siteRelationships, logicalDependents] = await Promise.all([
@@ -3688,8 +3749,10 @@ export class ResourceService {
           })
         : Promise.resolve([]),
     ]);
-    const activeOutgoing = outgoing.filter(relationshipIsActive);
-    const activeIncoming = incoming.filter(relationshipIsActive);
+    // Em cascata, as arestas entre recursos não bloqueiam: as que saem do conjunto são apagadas
+    // (só a relação) por `terminateResourceCascade`; sítios e dependentes lógicos seguem bloqueando.
+    const activeOutgoing = containedIds ? [] : outgoing.filter(relationshipIsActive);
+    const activeIncoming = containedIds ? [] : incoming.filter(relationshipIsActive);
     const hasLogicalDependent = logicalDependents.some(
       (candidate) =>
         candidate.status !== 'terminated' && candidate.supportingPhysicalResourceId === resource.id,

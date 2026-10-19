@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Boxes,
   ChevronLeft,
@@ -8,6 +9,8 @@ import {
   Layers3,
   Loader2,
   Network,
+  Pencil,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useResourceDetail } from '../../hooks/useResourceDetail';
@@ -19,7 +22,8 @@ import {
 } from '../../hooks/useResourceComponents';
 import { useResourceConnections } from '../../hooks/useResourceConnections';
 import { fetchTreeNode, treeNodeRoute, type GeoTreeNode } from '../../services/geoTreeApi';
-import { updateResource, type PhysicalResourcePayload } from '../../services/resourceApi';
+import { ResourceEditorModal } from '../internal-plant/ResourceEditorModal';
+import { TerminateResourceDialog } from '../../components/inventory/TerminateResourceDialog';
 import type { PortDropPreview } from '../../utils/dropSimulation';
 import { resourceIconFor } from '../../utils/resourceIcon';
 import { dedupeResourceConnections } from '../../utils/resourceConnections';
@@ -50,8 +54,8 @@ import type { DropSimulation } from './ViabilityTab';
 
 export type ResourcePanelProps = {
   isMobile: boolean;
-  // Gate de UI (inventory.editor/platform.admin) — repassado à aba Visão geral
-  // (ResourceOverviewTab); sem ele, os campos ficam estáticos.
+  // Gate de UI (inventory.editor/platform.admin) — mostra os botões Editar/Remover da barra;
+  // o painel em si é somente leitura (edição no ResourceEditorModal da Planta Interna).
   canEdit: boolean;
   node: GeoTreeNode;
   onOpenResource: (resourceId: string) => void;
@@ -67,6 +71,10 @@ export type ResourcePanelProps = {
   // Trajeto do drop físico da Porta, desenhado a partir da CTO até o site do cliente
   // (homologação CDOE-02-ICARAI). Canal isolado de `onDropSimulation` — ver dropSimulation.ts.
   onPortDropPreview: (preview: PortDropPreview | null) => void;
+  // Chamado após salvar no modal de edição (o pai re-hidrata o nó da árvore).
+  onChanged?: () => void;
+  // Chamado após encerrar o recurso (o pai fecha o painel).
+  onTerminated?: () => void;
 };
 
 export function ResourcePanel({
@@ -82,6 +90,8 @@ export function ResourcePanel({
   onDropSimulation,
   onPreview,
   onPortDropPreview,
+  onChanged,
+  onTerminated,
 }: ResourcePanelProps) {
   const { snapCommand } = useSheetSnapCommand(minimizeSignal);
   const { isClosing, requestExit } = usePanelExit(isMobile);
@@ -92,31 +102,21 @@ export function ResourcePanel({
     error: detailError,
     reload,
   } = useResourceDetail(resourceId);
-  // Diferente do Site (SitePanel.tsx patchCurrentSite), o backend recusa conflitos como
-  // RESOURCE_PORT_DROP_OCCUPIED (409) — em vez de reverter em silêncio, o erro fica visível
-  // acima da aba Visão geral até a próxima tentativa.
-  const [patchError, setPatchError] = useState<string | null>(null);
-  const patchResource = async (patch: PhysicalResourcePayload) => {
-    setPatchError(null);
-    try {
-      await updateResource(resourceId, { '@type': 'PhysicalResource', ...patch });
-      invalidateResourceComponents(resourceId);
-      await reload();
-    } catch (err) {
-      setPatchError(err instanceof Error ? err.message : 'Não foi possível salvar a alteração.');
-    }
-  };
+  const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const isPort = node.resourceType === 'Port';
   const {
     detail: portDetail,
     loading: portDetailLoading,
     error: portDetailError,
+    reload: reloadPortDetail,
   } = usePortDetail(resourceId, isPort);
   const {
     service: portService,
     hasActiveService,
     loading: portServiceLoading,
     error: portServiceError,
+    reload: reloadPortService,
   } = usePortService(resourceId, isPort);
   const [tab, setTab] = useState<
     'overview' | 'about' | 'components' | 'connections' | 'service' | 'history'
@@ -198,7 +198,7 @@ export function ResourcePanel({
       name: node.label,
       sublabel: node.sublabel,
     }).label;
-  const title = node.label;
+  const title = detail?.resource?.name || node.label;
 
   const resourcePoint = streetViewTargetsForGeometry(node.geometry)[0]?.point;
   const heroMarker: StreetViewMarker | null = resourcePoint
@@ -236,77 +236,131 @@ export function ResourcePanel({
 
   const streetViewTargets = streetViewTargetsForGeometry(node.geometry);
 
+  const reloadAfterEdit = () => {
+    invalidateResourceComponents(resourceId);
+    void reload();
+    reloadComponents();
+    reloadConnections();
+    if (isPort) {
+      reloadPortDetail();
+      reloadPortService();
+    }
+    onChanged?.();
+  };
+
   const body = (
-    <div className="grid gap-4">
-      <PanelTabBar
-        activeTab={tab}
-        role="tablist"
-        ariaLabel="Seções do recurso"
-        className="border-b border-app-border"
-      >
-        <PanelBarButton
-          asTab
-          icon={InfoIcon}
-          label="Geral"
-          active={tab === 'overview'}
-          onClick={() => setTab('overview')}
-        />
-        {/* "Sobre" concentra as características do recurso (spec + instância, issue #273) — sem
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
+      <div className="flex items-end border-b border-app-border">
+        <PanelTabBar
+          activeTab={tab}
+          role="tablist"
+          ariaLabel="Seções do recurso"
+          className="min-w-0 flex-1"
+        >
+          <PanelBarButton
+            asTab
+            icon={InfoIcon}
+            label="Geral"
+            active={tab === 'overview'}
+            onClick={() => setTab('overview')}
+          />
+          {/* "Sobre" concentra as características do recurso (spec + instância, issue #273) — sem
             sentido para Porta hoje, que não tem especificação/definições de instância no seu
             detalhe (ResourcePortDetail). Mesmo gate de !isPort do StreetViewHero abaixo. */}
-        {!isPort ? (
+          {!isPort ? (
+            <PanelBarButton
+              asTab
+              icon={FileText}
+              label="Sobre"
+              active={tab === 'about'}
+              onClick={() => setTab('about')}
+            />
+          ) : null}
+          {isPort ? (
+            <PanelBarButton
+              asTab
+              icon={Boxes}
+              label="Recursos atendidos"
+              badge={(portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0)}
+              active={tab === 'components'}
+              onClick={() => setTab('components')}
+            />
+          ) : (
+            <PanelBarButton
+              asTab
+              icon={Boxes}
+              label="Componentes"
+              badge={components.length}
+              active={tab === 'components'}
+              onClick={() => setTab('components')}
+            />
+          )}
           <PanelBarButton
             asTab
-            icon={FileText}
-            label="Sobre"
-            active={tab === 'about'}
-            onClick={() => setTab('about')}
+            icon={Network}
+            label="Conexões"
+            badge={connectionsCount}
+            active={tab === 'connections'}
+            onClick={() => setTab('connections')}
           />
+          {isPort && hasActiveService ? (
+            <PanelBarButton
+              asTab
+              icon={Layers3}
+              label="Serviço"
+              active={tab === 'service'}
+              onClick={() => setTab('service')}
+            />
+          ) : null}
+          <PanelBarButton
+            asTab
+            icon={HistoryIcon}
+            label="Histórico"
+            active={tab === 'history'}
+            onClick={() => setTab('history')}
+          />
+        </PanelTabBar>
+        {canEdit ? (
+          <div className="flex shrink-0 items-end">
+            <PanelBarButton icon={Pencil} label="Editar" onClick={() => setEditing(true)} />
+            <PanelBarButton
+              icon={Trash2}
+              label="Remover"
+              danger
+              onClick={() => setRemoving(true)}
+            />
+          </div>
         ) : null}
-        {isPort ? (
-          <PanelBarButton
-            asTab
-            icon={Boxes}
-            label="Recursos atendidos"
-            badge={(portDetail?.drops.length ?? 0) + (activeDropOnt ? 1 : 0)}
-            active={tab === 'components'}
-            onClick={() => setTab('components')}
-          />
-        ) : (
-          <PanelBarButton
-            asTab
-            icon={Boxes}
-            label="Componentes"
-            badge={components.length}
-            active={tab === 'components'}
-            onClick={() => setTab('components')}
-          />
-        )}
-        <PanelBarButton
-          asTab
-          icon={Network}
-          label="Conexões"
-          badge={connectionsCount}
-          active={tab === 'connections'}
-          onClick={() => setTab('connections')}
-        />
-        {isPort && hasActiveService ? (
-          <PanelBarButton
-            asTab
-            icon={Layers3}
-            label="Serviço"
-            active={tab === 'service'}
-            onClick={() => setTab('service')}
-          />
-        ) : null}
-        <PanelBarButton
-          asTab
-          icon={HistoryIcon}
-          label="Histórico"
-          active={tab === 'history'}
-          onClick={() => setTab('history')}
-        />
-      </PanelTabBar>
+      </div>
+
+      {editing && canEdit
+        ? createPortal(
+            <ResourceEditorModal
+              resourceId={resourceId}
+              onClose={() => setEditing(false)}
+              onSaved={() => {
+                setEditing(false);
+                reloadAfterEdit();
+              }}
+            />,
+            document.body,
+          )
+        : null}
+
+      {removing && canEdit
+        ? createPortal(
+            <TerminateResourceDialog
+              resource={{ id: resourceId, name: title }}
+              onClose={() => setRemoving(false)}
+              onTerminated={() => {
+                setRemoving(false);
+                invalidateResourceComponents(resourceId);
+                onTerminated?.();
+              }}
+            />,
+            document.body,
+          )
+        : null}
 
       {tab === 'overview' ? (
         isPort ? (
@@ -324,12 +378,7 @@ export function ResourcePanel({
           ) : null
         ) : detail ? (
           <div className="grid gap-2">
-            {patchError ? (
-              <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
-                {patchError}
-              </div>
-            ) : null}
-            <ResourceOverviewTab detail={detail} canEdit={canEdit} onPatch={patchResource} />
+            <ResourceOverviewTab detail={detail} />
             {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"
                 em ResourceOverviewTab — este bloco só entra para geometria de linha
                 (cabos/dutos), com o par Início/Fim. */}
@@ -360,7 +409,7 @@ export function ResourcePanel({
 
       {tab === 'about' && !isPort ? (
         detail ? (
-          <ResourceAboutTab detail={detail} canEdit={canEdit} onPatch={patchResource} />
+          <ResourceAboutTab detail={detail} />
         ) : detailLoading ? (
           <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -507,7 +556,7 @@ export function ResourcePanel({
       <OverlayScrollArea className="overflow-x-hidden">
         {!isPort && tab === 'overview' ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
-        <div className="px-3 py-3">{body}</div>
+        <div className="min-w-0 px-3 py-3">{body}</div>
       </OverlayScrollArea>
     </div>
   );

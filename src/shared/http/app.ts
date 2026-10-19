@@ -3993,6 +3993,9 @@ const routeResourceRequest = async ({
     if (!resource) {
       throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
     }
+    if (url.searchParams.get('cascade') === 'true') {
+      return sendJson(response, 200, resourceService.terminateResourceCascade(id, context));
+    }
     return sendJson(
       response,
       200,

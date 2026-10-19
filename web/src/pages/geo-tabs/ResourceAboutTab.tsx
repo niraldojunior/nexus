@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   getResourceTypeCatalogContext,
   type PhysicalResourceDetail,
-  type PhysicalResourcePayload,
   type ResourceCharacteristic,
 } from '../../services/resourceApi';
 import { Info } from './InfoRow';
@@ -11,8 +10,6 @@ import { ResourceInstanceCharacteristics } from './ResourceInstanceCharacteristi
 
 export type ResourceAboutTabProps = {
   detail: PhysicalResourceDetail;
-  canEdit: boolean;
-  onPatch: (patch: PhysicalResourcePayload) => Promise<void>;
 };
 
 function valueToText(value: unknown): string {
@@ -29,7 +26,7 @@ function valueToText(value: unknown): string {
  * quando `canEdit`). Extraída de `ResourceOverviewTab`, que mantém só o modelPath/definição do
  * recurso — a aba Geral não exibe mais nenhuma característica.
  */
-export function ResourceAboutTab({ detail, canEdit, onPatch }: ResourceAboutTabProps) {
+export function ResourceAboutTab({ detail }: ResourceAboutTabProps) {
   const { specification, resource } = detail;
 
   // Definições de nível instância (issue #273) — o backend já devolve o `ResourceType` completo
@@ -115,8 +112,8 @@ export function ResourceAboutTab({ detail, canEdit, onPatch }: ResourceAboutTabP
           <ResourceInstanceCharacteristics
             definitions={instanceCharacteristicDefs}
             characteristic={resource.characteristic}
-            canEdit={canEdit}
-            onPatch={onPatch}
+            canEdit={false}
+            onPatch={async () => undefined}
           />
         </div>
       ) : null}

@@ -1,9 +1,11 @@
 import {
   Activity,
+  Boxes,
   Building2,
   FileText,
   Layers,
   Loader2,
+  MapPin,
   SlidersHorizontal,
   Trash2,
   X,
@@ -15,6 +17,7 @@ import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   listGeoSiteSpecifications,
+  type GeoAddress,
   type GeoSite,
   type GeoSiteStatus,
   type GeoSpec,
@@ -32,23 +35,40 @@ import {
   STUDIO_GEO_CUSTOM_ICON_COLOR,
   STUDIO_GEO_NEUTRAL_ICON_COLOR,
 } from '../../utils/studioGeoDefaults';
-import { SITE_STATUS_OPTIONS } from '../../utils/geoLabels';
+import { SITE_STATUS_OPTIONS, type StatusTone } from '../../utils/geoLabels';
+import { StateSelect, formatStateDate } from './ResourceEditorModal';
 import { locationCategoryIcon } from '../studio/location-model/locationCategoryPresentation';
 import { SiteInstanceCharacteristics } from '../geo-tabs/SiteInstanceCharacteristics';
 import { SiteSubSitesTab } from '../geo-tabs/SiteSubSitesTab';
+import { SiteResourcesTab } from '../geo-tabs/SiteResourcesTab';
+import { SiteAddressModal } from '../geo-tabs/SiteAddressModal';
 
-type TabId = 'general' | 'characteristics' | 'states' | 'organization' | 'subsites';
+type TabId = 'general' | 'characteristics' | 'states' | 'organization' | 'subsites' | 'resources';
 const TABS: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
   { id: 'general', label: 'Geral', icon: FileText },
   { id: 'characteristics', label: 'Características', icon: SlidersHorizontal },
   { id: 'states', label: 'Estado', icon: Activity },
   { id: 'organization', label: 'Organização', icon: Building2 },
   { id: 'subsites', label: 'Locais Internos', icon: Layers },
+  { id: 'resources', label: 'Recursos', icon: Boxes },
 ];
 
 const inputClass =
   'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent aria-[invalid=true]:border-status-red disabled:opacity-60';
-const labelClass = 'grid gap-1 text-[0.78rem] font-semibold text-app-muted';
+// Campo "<nome> <valor>" lado a lado (abas Geral e Características).
+const rowLabelClass =
+  'grid grid-cols-[96px_minmax(0,1fr)] items-center gap-2 text-[0.78rem] font-semibold text-app-muted';
+const stateHeadClass =
+  'border-b border-app-border pb-1 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text';
+const SITE_STATUS_TONE: Record<string, StatusTone> = {
+  Planned: 'amber',
+  InConstruction: 'amber',
+  Active: 'green',
+  InDeactivation: 'red',
+  Retired: 'neutral',
+};
+const compactLabelClass =
+  'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 text-[0.78rem] font-semibold text-app-muted';
 
 type Characteristic = { group?: string; name: string; value: unknown; valueType?: string };
 type PartyRef = { id: string; role?: string | undefined };
@@ -109,6 +129,8 @@ export function SiteEditorModal({
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [site, setSite] = useState<GeoSite | null>(null);
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [subAddress, setSubAddress] = useState<GeoAddress['subAddress']>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +187,7 @@ export function SiteEditorModal({
           snapshot?.administrativeCity ??
           cityList.find((candidate) => candidate.id === initialAdministrativeCityId);
         setSite(snapshot?.site ?? null);
+        setSubAddress(snapshot?.address?.subAddress);
         setDraft({
           name: snapshot?.site.name ?? '',
           specId: snapshot?.site.siteSpecificationId ?? '',
@@ -196,9 +219,15 @@ export function SiteEditorModal({
     };
   }, [initialSiteId, initialAdministrativeCityId]);
 
+  // Em edição, o tipo atual aparece mesmo sendo SubSite (o select fica desabilitado).
   const rootSpecs = useMemo(
-    () => specs.filter((spec) => spec.category !== 'SubSite' && spec.lifecycleStatus === 'Active'),
-    [specs],
+    () =>
+      specs.filter(
+        (spec) =>
+          (spec.category !== 'SubSite' && spec.lifecycleStatus === 'Active') ||
+          (Boolean(initialSiteId) && spec.id === site?.siteSpecificationId),
+      ),
+    [specs, initialSiteId, site?.siteSpecificationId],
   );
   const specById = useMemo(() => new Map(specs.map((spec) => [spec.id, spec])), [specs]);
 
@@ -238,12 +267,15 @@ export function SiteEditorModal({
   }, [rootSpecs, draft?.specId]);
 
   const currentSpec = draft ? specById.get(draft.specId) : undefined;
+  // Sub-local herda o endereço do pai: município/logradouro deixam de ser obrigatórios.
+  const isSubSite = Boolean(site?.parentSite) || currentSpec?.category === 'SubSite';
 
   const save = async () => {
     if (!draft) return;
-    if (!draft.name.trim() || !draft.specId || !draft.cityId || !draft.street.trim()) {
+    const missingAddress = !isSubSite && (!draft.cityId || !draft.street.trim());
+    if (!draft.name.trim() || !draft.specId || missingAddress) {
       setAttempted(true);
-      setError('Informe nome, tipo, município e logradouro.');
+      setError(isSubSite ? 'Informe nome e tipo.' : 'Informe nome, tipo, município e logradouro.');
       setTab('general');
       const firstInvalid = !draft.name.trim()
         ? 'site-field-name'
@@ -273,8 +305,8 @@ export function SiteEditorModal({
           ...(draft.statusReason.trim() ? { statusReason: draft.statusReason.trim() } : {}),
           ...(draft.statusDate ? { statusDate: draft.statusDate } : {}),
         },
-        administrativeCityId: draft.cityId,
-        street: draft.street.trim(),
+        ...(draft.cityId ? { administrativeCityId: draft.cityId } : {}),
+        ...(draft.street.trim() ? { street: draft.street.trim() } : {}),
         ...(draft.streetNr.trim() ? { streetNr: draft.streetNr.trim() } : {}),
         ...(draft.postcode.trim() ? { postcode: draft.postcode.trim() } : {}),
       };
@@ -296,6 +328,23 @@ export function SiteEditorModal({
   return (
     <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--scrim)] p-4">
       {confirmDialog}
+      {addressModalOpen && siteId && site ? (
+        <SiteAddressModal
+          siteId={siteId}
+          currentAddressId={site.address?.id}
+          currentLocationId={site.place?.id}
+          currentSubAddress={subAddress}
+          onClose={() => setAddressModalOpen(false)}
+          onSaved={() => {
+            setAddressModalOpen(false);
+            void fetchSiteEditor(siteId).then((snapshot) => {
+              setSite(snapshot.site);
+              setSubAddress(snapshot.address?.subAddress);
+              onChanged(siteId);
+            });
+          }}
+        />
+      ) : null}
       <div
         ref={panelRef}
         tabIndex={-1}
@@ -381,186 +430,192 @@ export function SiteEditorModal({
                 <Loader2 className="animate-spin text-app-muted" aria-label="Carregando" />
               )
             ) : tab === 'general' ? (
-              <div className="grid gap-5">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className={labelClass}>
-                    Nome
-                    <input
-                      id="site-field-name"
-                      aria-required="true"
-                      aria-invalid={attempted && !draft.name.trim()}
-                      aria-describedby={
-                        attempted && !draft.name.trim() ? 'site-editor-error' : undefined
-                      }
-                      className={inputClass}
-                      value={draft.name}
-                      onChange={(e) => patch({ name: e.target.value })}
-                    />
-                  </label>
-                  <label className={labelClass}>
-                    Tipo de local
-                    <select
-                      id="site-field-spec"
-                      aria-required="true"
-                      aria-invalid={attempted && !draft.specId}
-                      aria-describedby={
-                        attempted && !draft.specId ? 'site-editor-error' : undefined
-                      }
-                      className={inputClass}
-                      value={draft.specId}
-                      disabled={Boolean(siteId)}
-                      onChange={(e) => patch({ specId: e.target.value, characteristic: [] })}
-                    >
-                      <option value="">Selecione…</option>
-                      {rootSpecs.map((spec) => (
-                        <option key={spec.id} value={spec.id}>
-                          {spec.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <label className={labelClass}>
-                    País
-                    <select
-                      className={inputClass}
-                      value={draft.countryCode}
-                      onChange={(e) =>
-                        patch({ countryCode: e.target.value, stateCode: '', cityId: '' })
-                      }
-                    >
-                      <option value="">Selecione…</option>
-                      {countries.map(([code, name]) => (
-                        <option key={code} value={code}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={labelClass}>
-                    UF
-                    <select
-                      className={inputClass}
-                      value={draft.stateCode}
-                      disabled={!draft.countryCode}
-                      onChange={(e) => patch({ stateCode: e.target.value, cityId: '' })}
-                    >
-                      <option value="">Selecione…</option>
-                      {states.map((code) => (
-                        <option key={code} value={code}>
-                          {code}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={labelClass}>
-                    Município
-                    <select
-                      id="site-field-city"
-                      aria-required="true"
-                      aria-invalid={attempted && !draft.cityId}
-                      aria-describedby={
-                        attempted && !draft.cityId ? 'site-editor-error' : undefined
-                      }
-                      className={inputClass}
-                      value={draft.cityId}
-                      disabled={!draft.stateCode}
-                      onChange={(e) => patch({ cityId: e.target.value })}
-                    >
-                      <option value="">Selecione…</option>
-                      {cityOptions.map((city) => (
-                        <option key={city.id} value={city.id}>
-                          {city.cityName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-[1fr_120px_160px]">
-                  <label className={labelClass}>
-                    Logradouro
-                    <input
-                      id="site-field-street"
-                      aria-required="true"
-                      aria-invalid={attempted && !draft.street.trim()}
-                      aria-describedby={
-                        attempted && !draft.street.trim() ? 'site-editor-error' : undefined
-                      }
-                      className={inputClass}
-                      value={draft.street}
-                      onChange={(e) => patch({ street: e.target.value })}
-                    />
-                  </label>
-                  <label className={labelClass}>
-                    Número
-                    <input
-                      className={inputClass}
-                      value={draft.streetNr}
-                      onChange={(e) => patch({ streetNr: e.target.value })}
-                    />
-                  </label>
-                  <label className={labelClass}>
-                    CEP
+              <div className="grid items-start gap-x-6 gap-y-3 sm:grid-cols-6">
+                <label className={`${rowLabelClass} sm:col-span-3`}>
+                  Nome
+                  <input
+                    id="site-field-name"
+                    aria-required="true"
+                    aria-invalid={attempted && !draft.name.trim()}
+                    aria-describedby={
+                      attempted && !draft.name.trim() ? 'site-editor-error' : undefined
+                    }
+                    className={inputClass}
+                    value={draft.name}
+                    onChange={(e) => patch({ name: e.target.value })}
+                  />
+                </label>
+                <label className={`${rowLabelClass} sm:col-span-3`}>
+                  Tipo de local
+                  <select
+                    id="site-field-spec"
+                    aria-required="true"
+                    aria-invalid={attempted && !draft.specId}
+                    aria-describedby={attempted && !draft.specId ? 'site-editor-error' : undefined}
+                    className={inputClass}
+                    value={draft.specId}
+                    disabled={Boolean(siteId)}
+                    onChange={(e) => patch({ specId: e.target.value, characteristic: [] })}
+                  >
+                    <option value="">Selecione…</option>
+                    {rootSpecs.map((spec) => (
+                      <option key={spec.id} value={spec.id}>
+                        {spec.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`${compactLabelClass} sm:col-span-2`}>
+                  País
+                  <select
+                    className={inputClass}
+                    value={draft.countryCode}
+                    onChange={(e) =>
+                      patch({ countryCode: e.target.value, stateCode: '', cityId: '' })
+                    }
+                  >
+                    <option value="">Selecione…</option>
+                    {countries.map(([code, name]) => (
+                      <option key={code} value={code}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`${compactLabelClass} sm:col-span-1`}>
+                  UF
+                  <select
+                    className={inputClass}
+                    value={draft.stateCode}
+                    disabled={!draft.countryCode}
+                    onChange={(e) => patch({ stateCode: e.target.value, cityId: '' })}
+                  >
+                    <option value="">Selecione…</option>
+                    {states.map((code) => (
+                      <option key={code} value={code}>
+                        {code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`${compactLabelClass} sm:col-span-3`}>
+                  Município
+                  <select
+                    id="site-field-city"
+                    aria-required={!isSubSite}
+                    aria-invalid={attempted && !isSubSite && !draft.cityId}
+                    aria-describedby={
+                      attempted && !isSubSite && !draft.cityId ? 'site-editor-error' : undefined
+                    }
+                    className={inputClass}
+                    value={draft.cityId}
+                    disabled={!draft.stateCode}
+                    onChange={(e) => patch({ cityId: e.target.value })}
+                  >
+                    <option value="">Selecione…</option>
+                    {cityOptions.map((city) => (
+                      <option key={city.id} value={city.id}>
+                        {city.cityName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={`${compactLabelClass} sm:col-span-4`}>
+                  Logradouro
+                  <input
+                    id="site-field-street"
+                    aria-required={!isSubSite}
+                    aria-invalid={attempted && !isSubSite && !draft.street.trim()}
+                    aria-describedby={
+                      attempted && !isSubSite && !draft.street.trim()
+                        ? 'site-editor-error'
+                        : undefined
+                    }
+                    className={inputClass}
+                    value={draft.street}
+                    onChange={(e) => patch({ street: e.target.value })}
+                  />
+                </label>
+                <label className={`${compactLabelClass} sm:col-span-2`}>
+                  Número
+                  <input
+                    className={inputClass}
+                    value={draft.streetNr}
+                    onChange={(e) => patch({ streetNr: e.target.value })}
+                  />
+                </label>
+                <div className="grid items-start gap-x-6 sm:col-span-6 sm:grid-cols-[1.4fr_4.6fr]">
+                  <label className={`${compactLabelClass} !items-start`}>
+                    <span className="pt-2">CEP</span>
                     <input
                       className={inputClass}
                       value={draft.postcode}
                       onChange={(e) => patch({ postcode: e.target.value })}
                     />
                   </label>
+                  <label className={`${compactLabelClass} !items-start`}>
+                    <span className="pt-2">Observação</span>
+                    <textarea
+                      className={inputClass}
+                      rows={3}
+                      value={draft.note}
+                      onChange={(e) => patch({ note: e.target.value })}
+                    />
+                  </label>
                 </div>
-                <label className={labelClass}>
-                  Observação
-                  <textarea
-                    className={inputClass}
-                    rows={3}
-                    value={draft.note}
-                    onChange={(e) => patch({ note: e.target.value })}
-                  />
-                </label>
+                {siteId && site ? (
+                  <div className="sm:col-span-6">
+                    <Button variant="ghost" onClick={() => setAddressModalOpen(true)}>
+                      <MapPin size={15} aria-hidden="true" /> Localizar no mapa
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ) : tab === 'characteristics' ? (
               <CharacteristicsTab spec={currentSpec} draft={draft} patch={patch} />
             ) : tab === 'states' ? (
-              <div className="grid max-w-[480px] gap-4">
-                <label className={labelClass}>
-                  Status
-                  <select
-                    className={inputClass}
+              <div className="grid gap-3">
+                <div className="grid grid-cols-[minmax(130px,0.8fr)_minmax(200px,1.4fr)_minmax(150px,1fr)] items-center gap-x-4 gap-y-3 max-sm:grid-cols-1">
+                  <span className={stateHeadClass}>Estado</span>
+                  <span className={stateHeadClass}>Valor</span>
+                  <span className={stateHeadClass}>Última alteração</span>
+                  <span className="text-[0.85rem] font-medium text-app-text">Status</span>
+                  <StateSelect
                     value={draft.status}
-                    onChange={(e) => patch({ status: e.target.value as GeoSiteStatus })}
-                  >
-                    {SITE_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className={labelClass}>
-                  Data da mudança
-                  <input
-                    type="date"
-                    className={inputClass}
-                    value={draft.statusDate}
-                    onChange={(e) => patch({ statusDate: e.target.value })}
+                    options={SITE_STATUS_OPTIONS.map((o) => [o.value, o.label] as const)}
+                    tones={SITE_STATUS_TONE}
+                    ariaLabel="Status"
+                    onChange={(value) => patch({ status: value as GeoSiteStatus })}
                   />
-                </label>
-                <label className={labelClass}>
-                  Motivo
+                  <span className="text-[0.82rem] text-app-muted">
+                    {formatStateDate(site?.statusDate)}
+                  </span>
+                  <span className="self-start pt-2 text-[0.85rem] font-medium text-app-text">
+                    Motivo do status
+                  </span>
                   <textarea
+                    aria-label="Motivo do status"
                     className={inputClass}
                     rows={3}
                     value={draft.statusReason}
                     onChange={(e) => patch({ statusReason: e.target.value })}
                   />
-                </label>
+                  <span />
+                </div>
                 <p className="text-[0.75rem] text-app-muted">
                   O motivo é obrigatório para desativar, aposentar ou reativar o local.
                 </p>
               </div>
             ) : tab === 'organization' ? (
               <OrganizationTab draft={draft} patch={patch} />
+            ) : tab === 'resources' ? (
+              siteId ? (
+                <SiteResourcesTab siteId={siteId} canEdit onOpenResource={() => undefined} />
+              ) : (
+                <p className="text-[0.85rem] text-app-muted">
+                  Salve o local para gerenciar seus recursos.
+                </p>
+              )
             ) : siteId && site ? (
               <SiteSubSitesTab
                 siteId={siteId}
@@ -628,12 +683,14 @@ function CharacteristicsTab({
     );
   }
   return (
-    <SiteInstanceCharacteristics
-      definitions={definitions}
-      characteristic={draft.characteristic}
-      canEdit
-      onPatch={async ({ characteristic }) => patch({ characteristic })}
-    />
+    <div className="grid gap-x-6 sm:grid-cols-2">
+      <SiteInstanceCharacteristics
+        definitions={definitions}
+        characteristic={draft.characteristic}
+        canEdit
+        onPatch={async ({ characteristic }) => patch({ characteristic })}
+      />
+    </div>
   );
 }
 

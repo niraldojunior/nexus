@@ -14,7 +14,6 @@ import type {
 import { MODEL_CHARACTERISTIC } from '../resource/canonical-characteristics.js';
 import type { CreateServiceInput, ServiceQuery } from '../service/index.js';
 import type { AddressInput } from '../geo/index.js';
-import { haversineMeters } from '../geo/coverage-grid.js';
 import type { GeographicAddress, GeographicLocation } from '../geo/domain.js';
 import type {
   CreateResourceOrderInput,
@@ -22,6 +21,7 @@ import type {
   CreateServiceQualificationInput,
 } from '../order/index.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
+import { findNearbyCdos, portAvailabilityByCdo } from '../geo/nearby-cdo.js';
 import {
   OracleMcpConfirmationRepository,
   type PendingMcpConfirmation,
@@ -585,7 +585,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   registry.register({
     name: 'geo.find_nearby_cdos',
     description:
-      'Localiza CDOs proximas de um endereco em uma unica consulta. Resolve o GeographicAddress com normalizacao, usa sua GeographicLocation e retorna PhysicalResources CTO cujo nome comeca por CDO, ordenados pela distancia real em metros. Use para perguntas como "ha CDO proxima deste endereco?", "ha rede da V.tal perto daqui?", "existe recurso neste endereco?" ou viabilidade. Funciona mesmo que o endereco nao esteja cadastrado (geocodifica no Google Maps).',
+      'Localiza CDOs proximas de um endereco em uma unica consulta. Resolve o GeographicAddress com normalizacao, usa sua GeographicLocation e retorna PhysicalResources CTO cujo nome comeca por CDO, ordenados pela distancia real em metros, cada um com ports {total, free, busy, unavailable} (portas contidas na CDO, direto ou via splitter; free = ativa, desbloqueada, habilitada e usageState idle). Use para perguntas como "tem porta livre/disponivel na CDO mais proxima?" (responda com ports.free),  perguntas como "ha CDO proxima deste endereco?", "ha rede da V.tal perto daqui?", "existe recurso neste endereco?" ou viabilidade. Funciona mesmo que o endereco nao esteja cadastrado (geocodifica no Google Maps).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -666,42 +666,49 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
             addressId: address.id,
           }));
 
-      const bounds = boundsAroundPoints(points, radiusMeters);
-      const resources = await runtime.geoTreeService.resourcesInViewport(bounds);
-      const nearby = resources
-        .filter(
-          (resource) =>
-            resource.referredType === 'PhysicalResource' &&
-            resource.resourceType === 'CTO' &&
-            /^CDO/i.test(resource.label) &&
-            resource.geometry?.type === 'Point',
+      // Consulta enxuta (nearby-cdo.ts): resourcesInViewport estourava o TEMP do Oracle em bases grandes.
+      const perPoint = await Promise.all(
+        points.map(async (point) => ({
+          point,
+          cdos: await findNearbyCdos(runtime.db, point, { radiusMeters, limit }),
+        })),
+      );
+      const seen = new Set<string>();
+      const nearby = perPoint
+        .flatMap(({ point, cdos }) =>
+          cdos.map((cdo) => ({
+            id: cdo.id,
+            name: cdo.name,
+            resourceType: 'CDO',
+            status: 'active',
+            distanceMeters: Math.round(cdo.straightMeters),
+            geometry: { type: 'Point' as const, coordinates: [cdo.lng, cdo.lat] },
+            ...(point.addressId ? { matchedAddressId: point.addressId } : {}),
+          })),
         )
-        .map((resource) => {
-          const coordinates = resource.geometry!.coordinates as [number, number];
-          const nearestAddress = points
-            .map((point) => ({
-              point,
-              distanceMeters: haversineMeters(coordinates[0], coordinates[1], point.lng, point.lat),
-            }))
-            .sort((left, right) => left.distanceMeters - right.distanceMeters)[0]!;
-          return {
-            id: resource.refId ?? resource.id.replace(/^resource:/, ''),
-            name: resource.label,
-            resourceType: resource.resourceType,
-            status: resource.status,
-            distanceMeters: Math.round(nearestAddress.distanceMeters),
-            geometry: resource.geometry,
-            ...(nearestAddress.point.addressId
-              ? { matchedAddressId: nearestAddress.point.addressId }
-              : {}),
-          };
-        })
-        .filter((resource) => resource.distanceMeters <= radiusMeters)
         .sort(
           (left, right) =>
             left.distanceMeters - right.distanceMeters || left.name.localeCompare(right.name),
         )
+        .filter((cdo) => (seen.has(cdo.id) ? false : (seen.add(cdo.id), true)))
         .slice(0, limit);
+
+      const availability = await portAvailabilityByCdo(
+        runtime.db,
+        nearby.map((cdo) => cdo.id),
+      );
+      const items = nearby.map((cdo) => {
+        const ports = availability.get(cdo.id);
+        return {
+          ...cdo,
+          ports,
+          ...(ports
+            ? {
+                portsSummary: `${ports.free} livres (ativas e sem uso) de ${ports.total} portas; ${ports.busy} ocupadas; ${ports.unavailable} indisponiveis (inativas/bloqueadas/desabilitadas)`,
+              }
+            : {}),
+        };
+      });
 
       return registry.successResult('geo', 'find_nearby_cdos', context, {
         addressMatches: resolvedAddresses.map(({ address, location }) => ({
@@ -713,10 +720,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           postcode: address.postcode,
           geographicLocationId: location.id,
         })),
-        items: nearby,
-        count: nearby.length,
+        items,
+        count: items.length,
         radiusMeters,
         addressResolved: true,
+        portsNote:
+          'ports.free = portas contidas na CDO (direto ou via splitter) ativas, desbloqueadas, habilitadas e com usageState idle. Para "tem porta livre/disponivel?" responda com ports.free por CDO; se free for 0 na mais proxima, cite a proxima com free > 0.',
         ...(geocoded ? { geocoded: { ...geocoded, source: 'google-geocoding' } } : {}),
       });
     },
@@ -2624,26 +2633,6 @@ const geocodeAddressText = async (
   } catch {
     return undefined;
   }
-};
-
-const boundsAroundPoints = (
-  points: Array<{ lng: number; lat: number }>,
-  radiusMeters: number,
-): { minLng: number; minLat: number; maxLng: number; maxLat: number } => {
-  let minLng = Number.POSITIVE_INFINITY;
-  let minLat = Number.POSITIVE_INFINITY;
-  let maxLng = Number.NEGATIVE_INFINITY;
-  let maxLat = Number.NEGATIVE_INFINITY;
-  for (const point of points) {
-    const latitudeDelta = radiusMeters / 111_320;
-    const longitudeScale = Math.max(Math.cos((point.lat * Math.PI) / 180), 0.01);
-    const longitudeDelta = radiusMeters / (111_320 * longitudeScale);
-    minLng = Math.min(minLng, point.lng - longitudeDelta);
-    maxLng = Math.max(maxLng, point.lng + longitudeDelta);
-    minLat = Math.min(minLat, point.lat - latitudeDelta);
-    maxLat = Math.max(maxLat, point.lat + latitudeDelta);
-  }
-  return { minLng, minLat, maxLng, maxLat };
 };
 
 const paginate = <T>(items: T[], input: Record<string, unknown>): T[] => {

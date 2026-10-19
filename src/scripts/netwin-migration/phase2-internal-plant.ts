@@ -17,6 +17,7 @@ import {
   netwinInternalCardId,
   netwinInternalPhysicalPortId,
   NEXUS_NETWIN_NAMESPACE,
+  netwinRelationshipId,
 } from './identity.js';
 import {
   bulkMergeRows,
@@ -408,7 +409,8 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
       'related_party',
       'characteristics',
     ];
-    const relationshipColumns = ['resource_from_id', 'resource_to_id', 'relationship_type'];
+    const relationshipKeys = ['resource_from_id', 'resource_to_id', 'relationship_type'];
+    const relationshipColumns = ['id', ...relationshipKeys];
     const batches = <T>(items: T[]): T[][] => {
       const result: T[][] = [];
       for (let offset = 0; offset < items.length; offset += ctx.options.batchSize) {
@@ -703,9 +705,16 @@ export async function runPhase2InternalPlant(ctx: MigrationContext): Promise<Pha
             target,
             ctx.t,
             'resource_relationship',
+            relationshipKeys,
             relationshipColumns,
-            relationshipColumns,
-            relationshipBatch,
+            relationshipBatch.map((row) => ({
+              ...row,
+              id: netwinRelationshipId(
+                String(row.resource_from_id),
+                String(row.resource_to_id),
+                String(row.relationship_type),
+              ),
+            })),
             ctx.options.batchSize,
           );
           timing.executeManyCalls++;

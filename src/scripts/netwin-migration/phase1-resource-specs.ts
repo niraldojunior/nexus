@@ -1400,6 +1400,19 @@ export async function runPhase1ResourceSpecs(ctx: MigrationContext): Promise<Pha
           is_symmetric: 1,
         },
         { code: 'supportedBy', name: 'Suportado por', inverse_code: 'supports', is_symmetric: 0 },
+        // As regras containsAsChild abaixo têm FK para o tipo; ambiente novo ainda não o tem.
+        {
+          code: 'containsAsChild',
+          name: 'Contém como filho',
+          inverse_code: 'containedBy',
+          is_symmetric: 0,
+        },
+        {
+          code: 'containedBy',
+          name: 'É contido por',
+          inverse_code: 'containsAsChild',
+          is_symmetric: 0,
+        },
       ];
       for (const def of relTypeDefaults) {
         if (knownRelTypes.has(def.code)) continue;

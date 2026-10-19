@@ -1,6 +1,12 @@
 import oracledb from 'oracledb';
 import { sourceHydrationConcurrency, type MigrationContext } from './context.js';
-import { deterministicUuid, netwinLocationId, NEXUS_NETWIN_NAMESPACE } from './identity.js';
+import {
+  deterministicUuid,
+  netwinAddressId,
+  netwinCondominiumId,
+  netwinLocationId,
+  NEXUS_NETWIN_NAMESPACE,
+} from './identity.js';
 import {
   bulkMergeRows,
   netwinOriginCharacteristics,
@@ -26,6 +32,20 @@ import {
   selectFullTableIds,
   structuredInfranodePredicates,
 } from './source-batches.js';
+import {
+  buildingSubAddress,
+  complementsToSubAddress,
+  condominiumKey,
+  surveySpecCode,
+} from './mdu-mapping.js';
+import {
+  countSurveysByCondominiumKey,
+  countSurveyUnits,
+  hydratePrumadas,
+  hydrateSurveys,
+  hydrateUnits,
+  loadComplementCatalog,
+} from './mdu-source.js';
 import type { PhaseStats } from './types.js';
 
 /**
@@ -84,6 +104,8 @@ type BatchTiming = {
   addressMergeMs: number;
   siteMergeMs: number;
   hierarchyUpdateMs: number;
+  mduHydrationMs: number;
+  unitMergeMs: number;
   commitMs: number;
 };
 
@@ -298,6 +320,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       auxSources.push(await ctx.getSourceConnection());
     }
     const categoryCatalog = await loadCategoryCatalog(source);
+    const complementCatalog = await loadComplementCatalog(source);
     const structuredScope = Boolean(
       ctx.options.scope.bairro || ctx.options.scope.municipio || ctx.options.scope.uf,
     );
@@ -355,6 +378,8 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
         addressMergeMs: 0,
         siteMergeMs: 0,
         hierarchyUpdateMs: 0,
+        mduHydrationMs: 0,
+        unitMergeMs: 0,
         commitMs: 0,
       };
       let startedAt = Date.now();
@@ -416,11 +441,42 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
       const municipalityByLocation = await hydrateMunicipalities(source, ids);
 
       trace('hidratou municípios');
+
+      // MDU (issue #310): survey = prédio/casa; UCs = unidades (endereço + subAddress, nunca Site).
+      startedAt = Date.now();
+      const surveys = await hydrateSurveys(source, ids);
+      const surveyIds = [...surveys.keys()];
+      const unitCounts = await countSurveyUnits(source, surveyIds);
+      const condominiumCounts = await countSurveysByCondominiumKey(source, surveys.values());
+      const prumadaRows = await hydratePrumadas(source, surveyIds);
+      const unitRows = await hydrateUnits(source, surveyIds);
+      timing.mduHydrationMs = elapsed(startedAt);
+      trace(`hidratou MDU surveys=${surveys.size} ucs=${unitRows.length}`);
+
       startedAt = Date.now();
       const locations: Array<Record<string, unknown>> = [];
       const addresses: Array<Record<string, unknown>> = [];
       const addressCityTuples = new Map<string, AdministrativeCityTuple>();
       const sites: Array<Record<string, unknown>> = [];
+      const prumadasBySurvey = new Map<number, Array<Record<string, unknown>>>();
+      const prumadaIdsBySurvey = new Map<number, Set<number>>();
+      for (const prumada of prumadaRows) {
+        const list = prumadasBySurvey.get(prumada.ID_SURVEY) ?? [];
+        list.push({
+          numCe: prumada.NUM_CE,
+          cePiso: prumada.CE_PISO,
+          numPrum: prumada.NUM_PRUM,
+          totalUcs: prumada.PRUM_TOTAL_UCS,
+          totalPisos: prumada.TOTAL_PISOS,
+          atendimento: prumada.ATENDIMENTO,
+        });
+        prumadasBySurvey.set(prumada.ID_SURVEY, list);
+        if (prumada.PRUM_ID !== null) {
+          const prumadaIds = prumadaIdsBySurvey.get(prumada.ID_SURVEY) ?? new Set<number>();
+          prumadaIds.add(prumada.PRUM_ID);
+          prumadaIdsBySurvey.set(prumada.ID_SURVEY, prumadaIds);
+        }
+      }
       for (const row of rows) {
         const lat = row.LATITUDE === null ? null : Number(row.LATITUDE);
         const lng = row.LONGITUDE === null ? null : Number(row.LONGITUDE);
@@ -466,6 +522,20 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             characteristics: '[]',
           });
         }
+        const survey = surveys.get(row.ID);
+        const surveyCondominiumKey = survey
+          ? condominiumKey(survey.ID_BASE_ADDRESS, survey.ATTR28)
+          : null;
+        const hasCondominium =
+          surveyCondominiumKey !== null && (condominiumCounts.get(surveyCondominiumKey) ?? 0) >= 2;
+        const surveyUnitCount = unitCounts.get(row.ID) ?? 0;
+        if (survey && addressId) {
+          const building = buildingSubAddress(complementsToSubAddress(survey, complementCatalog));
+          const last = addresses[addresses.length - 1];
+          if (last && last.id === addressId && building.length > 0) {
+            last.sub_address = JSON.stringify(building);
+          }
+        }
         const catName = (row.CAT_NAME ?? '').toUpperCase();
         const catDesc = (row.CAT_DESC ?? '').toUpperCase();
         let specCode = 'BUILDING';
@@ -487,6 +557,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           specCode = 'CUSTOMER_SITE';
         else if (catName.includes('REMOTE_UNIT.UR') || catDesc.includes('UNIDADE REMOTA'))
           specCode = 'REMOTE_UNIT';
+        if (survey) specCode = surveySpecCode(surveyUnitCount, hasCondominium);
         sites.push({
           id: siteId,
           tenant_id: ctx.options.tenantId,
@@ -501,6 +572,32 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           ]),
           characteristics: JSON.stringify([
             ...netwinOriginCharacteristics('LOCATION', row.ID),
+            ...(survey
+              ? [
+                  { name: 'mdu.unitCount', value: surveyUnitCount, valueType: 'number' },
+                  ...(survey.NUM_PISOS !== null
+                    ? [{ name: 'mdu.floorCount', value: survey.NUM_PISOS, valueType: 'number' }]
+                    : []),
+                  ...(prumadasBySurvey.get(row.ID)
+                    ? [
+                        {
+                          name: 'mdu.prumada',
+                          value: prumadasBySurvey.get(row.ID),
+                          valueType: 'json',
+                        },
+                      ]
+                    : []),
+                  ...(surveyCondominiumKey && hasCondominium
+                    ? [
+                        {
+                          name: 'mdu.condominiumKey',
+                          value: surveyCondominiumKey,
+                          valueType: 'string',
+                        },
+                      ]
+                    : []),
+                ]
+              : []),
             ...(row.STATE_LIFECYCLE
               ? [{ name: 'stateLifecycle', value: row.STATE_LIFECYCLE, valueType: 'string' }]
               : []),
@@ -543,6 +640,122 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           floorHierarchy.push({ parentId: buildingId, childId: floorId });
         }
         floorHierarchy.push({ parentId: floorId, childId: netwinLocationId(floorRow.PI_ID) });
+      }
+      // Condomínio: agrupamento por (ID_BASE_ADDRESS, numFachada) com 2+ surveys no DR inteiro
+      // (decisão D-MDU-001). A regra fica gravada no Site para auditoria.
+      const condominiumHierarchy: Array<{ parentId: string; childId: string }> = [];
+      const condominiumMembers = new Map<string, number>();
+      for (const row of rows) {
+        const survey = surveys.get(row.ID);
+        const key = survey ? condominiumKey(survey.ID_BASE_ADDRESS, survey.ATTR28) : null;
+        if (!survey || !key || (condominiumCounts.get(key) ?? 0) < 2) continue;
+        const condominiumId = netwinCondominiumId(
+          survey.ID_BASE_ADDRESS as number,
+          survey.ATTR28 ?? '',
+        );
+        condominiumHierarchy.push({ parentId: condominiumId, childId: netwinLocationId(row.ID) });
+        if (condominiumMembers.has(condominiumId)) continue;
+        condominiumMembers.set(condominiumId, row.ID);
+        const parsed = parseAddressString(addressByLocation.get(row.ID));
+        const street = parsed
+          ? `${parsed.street}${parsed.streetNr ? `, ${parsed.streetNr}` : ''}`
+          : key;
+        sites.push({
+          id: condominiumId,
+          tenant_id: ctx.options.tenantId,
+          name: `Condomínio ${street}`.slice(0, 255),
+          site_specification_id: deterministicUuid(NEXUS_NETWIN_NAMESPACE, 'SITE_SPEC:CONDOMINIUM'),
+          status: 'Active',
+          geographic_location_id: null,
+          geographic_address_id: null,
+          parent_site_id: null,
+          related_party: JSON.stringify([
+            { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
+          ]),
+          characteristics: JSON.stringify([
+            ...netwinOriginCharacteristics('ADDRESS.BASE_ADDRESS', key),
+            { name: 'mdu.groupingRule', value: 'baseAddress+numFachada', valueType: 'string' },
+          ]),
+        });
+      }
+      // Pai do condomínio = pai (localidade) do primeiro survey do grupo neste lote.
+      for (const [condominiumId, memberSource] of condominiumMembers) {
+        const parentSource = associations.find((a) => a.ID_CHILD === memberSource)?.ID_PARENT;
+        if (parentSource !== undefined) {
+          condominiumHierarchy.push({
+            parentId: netwinLocationId(parentSource),
+            childId: condominiumId,
+          });
+        }
+      }
+      // O condomínio só nasce depois dos surveys: a ordem garante localidade → condomínio → survey.
+      condominiumHierarchy.sort(
+        (a, b) =>
+          Number(condominiumMembers.has(b.childId)) - Number(condominiumMembers.has(a.childId)),
+      );
+
+      // Unidades: GeographicAddress + subAddress (HP não é Service — C4).
+      const surveyLocationIds = new Map<number, string | null>();
+      for (const row of rows) {
+        const lat = row.LATITUDE === null ? null : Number(row.LATITUDE);
+        const lng = row.LONGITUDE === null ? null : Number(row.LONGITUDE);
+        const hasPoint =
+          lat !== null && lng !== null && lng >= -75 && lng <= -32 && lat >= -35 && lat <= 6;
+        surveyLocationIds.set(
+          row.ID,
+          hasPoint ? deterministicUuid(NEXUS_NETWIN_NAMESPACE, `LOCATION:GEO:${row.ID}`) : null,
+        );
+      }
+      const unitAddresses: Array<Record<string, unknown>> = [];
+      for (const unit of unitRows) {
+        // Portão de qualidade: prumada de outro survey é rejeitada, nunca corrigida.
+        if (unit.ID_PRUM !== null && !prumadaIdsBySurvey.get(unit.ID_SURVEY)?.has(unit.ID_PRUM)) {
+          stats.rejected += 1;
+          continue;
+        }
+        const parsed = parseAddressString(unit.ADDRESS_NAME);
+        if (!parsed) {
+          stats.rejected += 1;
+          continue;
+        }
+        const complement = complementsToSubAddress(unit, complementCatalog);
+        unitAddresses.push({
+          id: netwinAddressId(unit.ID_ENDERECO),
+          tenant_id: ctx.options.tenantId,
+          street_name: parsed.street.slice(0, 255),
+          street_nr: parsed.streetNr?.slice(0, 50) ?? null,
+          locality: parsed.locality?.slice(0, 100) ?? null,
+          city: parsed.city?.slice(0, 100) ?? null,
+          state_or_province: parsed.stateOrProvince?.slice(0, 50) ?? null,
+          country: 'BR',
+          postcode: parsed.postcode,
+          geographic_location_id: surveyLocationIds.get(unit.ID_SURVEY) ?? null,
+          sub_address:
+            complement.subAddress.length > 0 ? JSON.stringify(complement.subAddress) : null,
+          characteristics: JSON.stringify([
+            ...netwinOriginCharacteristics('OSP_SURVEYS_UCS', unit.ID),
+            { name: 'mdu.siteId', value: netwinLocationId(unit.ID_SURVEY), valueType: 'string' },
+            ...(unit.PISO ? [{ name: 'mdu.piso', value: unit.PISO, valueType: 'string' }] : []),
+            ...(unit.ID_PRUM !== null
+              ? [{ name: 'mdu.prumadaId', value: String(unit.ID_PRUM), valueType: 'string' }]
+              : []),
+            ...(unit.DESTINACAO
+              ? [{ name: 'mdu.destinacao', value: unit.DESTINACAO, valueType: 'string' }]
+              : []),
+            ...(unit.OBSTRUIDA
+              ? [{ name: 'mdu.obstruida', value: unit.OBSTRUIDA, valueType: 'string' }]
+              : []),
+            ...(complement.unmapped.length > 0
+              ? [
+                  {
+                    name: 'mdu.complementoNaoMapeado',
+                    value: complement.unmapped,
+                    valueType: 'json',
+                  },
+                ]
+              : []),
+          ]),
+        });
       }
       timing.transformMs = elapsed(startedAt);
 
@@ -593,6 +806,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
               'country',
               'postcode',
               'geographic_location_id',
+              'sub_address',
               'characteristics',
             ],
             addresses,
@@ -644,6 +858,10 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             const cityId = tuple ? cityIds.get(administrativeCityNaturalKey(tuple)) : undefined;
             if (cityId) siteCities.set(String(site.id), cityId);
           }
+          for (const [condominiumId, memberSource] of condominiumMembers) {
+            const memberCity = siteCities.get(netwinLocationId(memberSource));
+            if (memberCity) siteCities.set(condominiumId, memberCity);
+          }
           if (unresolvedMunicipalities > 0) {
             console.warn(
               `[Município] ${unresolvedMunicipalities} Site(s) com município não resolvido no diretório; ficam sem município.`,
@@ -677,6 +895,30 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           trace('city_tenant/update city ok');
           timing.siteMergeMs = elapsed(startedAt);
           startedAt = Date.now();
+          await bulkMergeRows(
+            target,
+            ctx.t,
+            'geographic_address',
+            ['id'],
+            [
+              'id',
+              'tenant_id',
+              'street_name',
+              'street_nr',
+              'locality',
+              'city',
+              'state_or_province',
+              'country',
+              'postcode',
+              'geographic_location_id',
+              'sub_address',
+              'characteristics',
+            ],
+            unitAddresses,
+            ctx.options.batchSize,
+          );
+          timing.unitMergeMs = elapsed(startedAt);
+          startedAt = Date.now();
           // Binds nomeados, não posicionais: node-oracledb liga binds por ordem de aparição e
           // ignora o número em `:n`, então `:1` repetido consumia um terceiro valor inexistente
           // no array de dois elementos. Com nome, a repetição de :parentId resolve corretamente.
@@ -700,6 +942,19 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             await target.executeMany(
               `UPDATE ${ctx.t('geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('geographic_site')} parent WHERE parent.id=:parentId)`,
               floorHierarchy,
+              {
+                autoCommit: false,
+                bindDefs: {
+                  parentId: { type: oracledb.STRING, maxSize: 36 },
+                  childId: { type: oracledb.STRING, maxSize: 36 },
+                },
+              },
+            );
+          // Por último: survey → condomínio sobrescreve survey → localidade.
+          if (condominiumHierarchy.length > 0)
+            await target.executeMany(
+              `UPDATE ${ctx.t('geographic_site')} child SET child.parent_site_id=:parentId WHERE child.id=:childId AND EXISTS (SELECT 1 FROM ${ctx.t('geographic_site')} parent WHERE parent.id=:parentId)`,
+              condominiumHierarchy,
               {
                 autoCommit: false,
                 bindDefs: {

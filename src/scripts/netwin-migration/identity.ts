@@ -81,8 +81,20 @@ export function netwinAddressId(sourceId: number | string): string {
   return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:ADDRESS:${sourceId}`);
 }
 
+export function netwinCondominiumId(baseAddressId: number | string, fachada: string): string {
+  return deterministicUuid(
+    NEXUS_NETWIN_NAMESPACE,
+    `NETWIN:CONDOMINIUM:${baseAddressId}:${fachada}`,
+  );
+}
+
 export function sha256Hex(payload: unknown): string {
   return createHash('sha256')
     .update(typeof payload === 'string' ? payload : JSON.stringify(payload))
     .digest('hex');
+}
+
+/** Identidade estável da aresta de inventário; `resource_relationship.id` é NOT NULL em ambientes novos. */
+export function netwinRelationshipId(fromId: string, toId: string, type: string): string {
+  return deterministicUuid(NEXUS_NETWIN_NAMESPACE, `NETWIN:RELATIONSHIP:${fromId}:${toId}:${type}`);
 }

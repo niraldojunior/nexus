@@ -201,7 +201,7 @@ test('GeoService bloqueia remoção de containment quando há sites impactados',
   const service = new GeoService(new GeoRepository());
   const bootstrap = await service.ensureBootstrapSpecifications();
 
-  assert.equal(bootstrap.specs.length, 11);
+  assert.equal(bootstrap.specs.length, 12);
 
   const regionSpec = bootstrap.specs.find((item) => item.code === 'REGION');
   const centralSpec = bootstrap.specs.find((item) => item.code === 'CO');

@@ -29,7 +29,7 @@ describe('CANONICAL_SITE_SPECS', () => {
     const byCode = new Map(CANONICAL_SITE_SPECS.map((s) => [s.code, s.name]));
     expect(byCode.get('BUILDING')).toBe('Edifício');
     expect(byCode.get('CENTRAL_OFFICE')).toBe('Estação Predial');
-    expect(byCode.size).toBe(12);
+    expect(byCode.size).toBe(14);
   });
 });
 

@@ -29,6 +29,7 @@ import {
   saveNativeCheckpoint,
   type NativeRelationship,
 } from './checkpoint.js';
+import { hydrateDatasheets } from './mdu-source.js';
 import { MigrationProgress } from './progress.js';
 import { CANONICAL_RESOURCE_TYPES } from './phase1-resource-specs.js';
 import {
@@ -175,10 +176,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
       );
       for (const row of targetTypes.rows ?? []) targetTypeCodes.add(row.CODE);
     }
-    const existingTypeIndex = buildExistingTypeIndex(
-      CANONICAL_RESOURCE_TYPES,
-      targetTypeCodes,
-    );
+    const existingTypeIndex = buildExistingTypeIndex(CANONICAL_RESOURCE_TYPES, targetTypeCodes);
     const typeCodeByTipoNe = new Map<number, string>();
     for (const row of resourceTypes.rows ?? []) {
       typeCodeByTipoNe.set(
@@ -572,15 +570,47 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
 
       // Canon: o `place` do recurso é o GeographicSite (o poste/CO onde ele está pendurado),
       // derivado de INFRANODE_ID; sem site migrado, mantém a Location própria do equipamento.
+      // MDU (#310): CDOI sem INFRANODE migrado herda o prédio quando o DATASHEET aponta um
+      // único survey; com 2+ surveys nada é inferido.
+      const datasheets = await hydrateDatasheets(
+        source,
+        rows.map((eq) => eq.ID),
+      );
       const siteIdByEquipment = new Map<string, string>();
+      const datasheetSiteByEquipment = new Map<string, string>();
+      const prumadaByEquipment = new Map<string, number>();
       for (const eq of rows) {
-        if (eq.INFRANODE_ID) {
-          siteIdByEquipment.set(netwinEquipmentId(eq.ID), netwinLocationId(eq.INFRANODE_ID));
+        const resourceId = netwinEquipmentId(eq.ID);
+        const isCdoi = eq.CAT_SUBTYPE_ID === 517;
+        const sheets = isCdoi ? (datasheets.get(eq.ID) ?? []) : [];
+        const surveyIds = [...new Set(sheets.map((sheet) => sheet.surveyId))];
+        if (surveyIds.length === 1) {
+          datasheetSiteByEquipment.set(resourceId, netwinLocationId(surveyIds[0]!));
         }
+        const prumadaIds = [
+          ...new Set(sheets.map((sheet) => sheet.prumadaId).filter(Number.isInteger)),
+        ];
+        if (prumadaIds.length === 1) prumadaByEquipment.set(resourceId, prumadaIds[0]!);
+        if (eq.INFRANODE_ID) {
+          siteIdByEquipment.set(resourceId, netwinLocationId(eq.INFRANODE_ID));
+        }
+      }
+      // A prumada precisa entrar em baseCharacteristics: o enriquecimento reescreve o JSON inteiro.
+      for (const input of enrichmentInputs) {
+        const prumadaId = prumadaByEquipment.get(input.resourceId);
+        if (prumadaId === undefined) continue;
+        input.baseCharacteristics = [
+          ...input.baseCharacteristics,
+          { name: 'mdu.prumadaId', value: String(prumadaId), valueType: 'string' },
+        ];
       }
       const existingSites = new Set<string>();
       if (target) {
-        for (const chunk of chunksOf([...new Set(siteIdByEquipment.values())])) {
+        const candidateSites = new Set([
+          ...siteIdByEquipment.values(),
+          ...datasheetSiteByEquipment.values(),
+        ]);
+        for (const chunk of chunksOf([...candidateSites])) {
           const binds: Record<string, string> = {};
           const clause = chunk
             .map((id, i) => {
@@ -597,10 +627,17 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         }
       }
       for (const resource of resources) {
-        const siteId = siteIdByEquipment.get(String(resource.id));
+        const resourceId = String(resource.id);
+        const siteId = siteIdByEquipment.get(resourceId);
+        const fallbackSiteId = datasheetSiteByEquipment.get(resourceId);
         if (siteId && (!target || existingSites.has(siteId))) {
           resource.place_id = siteId;
           resource.place_type = 'GeographicSite';
+          resource.serving_site_id = siteId;
+        } else if (fallbackSiteId && (!target || existingSites.has(fallbackSiteId))) {
+          resource.place_id = fallbackSiteId;
+          resource.place_type = 'GeographicSite';
+          resource.serving_site_id = fallbackSiteId;
         }
       }
 

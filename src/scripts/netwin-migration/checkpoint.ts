@@ -3,7 +3,7 @@ import oracledb, { type Connection } from 'oracledb';
 import type { MigrationContext } from './context.js';
 import { normalizeScopeName } from './scope.js';
 
-export const NATIVE_MAPPING_VERSION = 'netwin-native-phase2-v4';
+export const NATIVE_MAPPING_VERSION = 'netwin-native-phase2-v5';
 
 export type NativeCheckpoint = {
   lastSourceId: number;
@@ -301,8 +301,8 @@ export async function reconcileNativeRelationships(
         ON (target.resource_from_id = source.resource_from_id
             AND target.resource_to_id = source.resource_to_id
             AND target.relationship_type = source.relationship_type)
-     WHEN NOT MATCHED THEN INSERT (resource_from_id, resource_to_id, relationship_type)
-     VALUES (source.resource_from_id, source.resource_to_id, source.relationship_type)`,
+     WHEN NOT MATCHED THEN INSERT (id, resource_from_id, resource_to_id, relationship_type)
+     VALUES (LOWER(RAWTOHEX(SYS_GUID())), source.resource_from_id, source.resource_to_id, source.relationship_type)`,
     { jobId: ctx.options.jobId, tenantId: ctx.options.tenantId },
   );
   return result.rowsAffected ?? 0;

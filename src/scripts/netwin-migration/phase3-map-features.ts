@@ -10,6 +10,13 @@ import {
   tileSegmentsForLineLods,
   type LineLodProfile,
 } from '../../modules/geo/map-tile.js';
+import {
+  emptyPhase3Timings,
+  formatPhase3Timings,
+  runBoundedPipeline,
+  timed,
+  type Phase3Timings,
+} from './phase3-pipeline.js';
 import { loadPublishedLineTiling } from './line-tiling.js';
 import type { GeoJSONLineString } from '../../modules/geo/domain.js';
 import { excludeInternalResourceTypesSql } from '../../modules/geo/map-visibility.js';
@@ -89,6 +96,8 @@ const FEATURE_COLUMNS = [
 // comentário da função para o motivo de ser literal. Independente de `--batch-size`, que continua
 // controlando só o tamanho do lote de INSERT em `insertFeatures`.
 const PHASE3_MAP_PAGE_SIZE = 5000;
+// Blocos de leitura que o leitor pode adiantar ao escritor (contrapressão).
+const PHASE3_PIPELINE_DEPTH = 4;
 
 const PHYSICAL_RESOURCE_INDEX_COLUMNS = ['TENANT_ID', 'RESOURCE_SPECIFICATION_ID', 'ID'];
 const INCREMENTAL_INDEXES = [
@@ -522,20 +531,13 @@ function addDensityTile(
   for (const zoom of MAP_DENSITY_ZOOMS) {
     if (tileZ < zoom) continue;
     const factor = 2 ** (tileZ - zoom);
-    densityTiles.add(
-      `${zoom}:${Math.floor(tileX / factor)}:${Math.floor(tileY / factor)}`,
-    );
+    densityTiles.add(`${zoom}:${Math.floor(tileX / factor)}:${Math.floor(tileY / factor)}`);
   }
 }
 
 function addDensityTiles(densityTiles: Set<string>, rows: FeatureRow[]): void {
   for (const row of rows) {
-    addDensityTile(
-      densityTiles,
-      Number(row.tile_z),
-      Number(row.tile_x),
-      Number(row.tile_y),
-    );
+    addDensityTile(densityTiles, Number(row.tile_z), Number(row.tile_x), Number(row.tile_y));
   }
 }
 
@@ -549,18 +551,37 @@ type CandidateScan = Omit<Phase3MapStats, 'densityCells'> & {
   densityTiles: Set<string>;
   resources: number;
   sites: number;
+  timings: Phase3Timings;
 };
 
 async function tableIndexColumns(conn: Connection, tableName: string): Promise<IndexColumn[]> {
-  const result = await conn.execute<IndexColumn>(
-    `SELECT index_name AS "INDEX_NAME", column_name AS "COLUMN_NAME", column_position AS "COLUMN_POSITION"
-       FROM user_ind_columns
-      WHERE table_name = :tableName
-      ORDER BY index_name, column_position`,
+  const result = await conn.execute<RawIndexColumn>(
+    `SELECT c.index_name AS "INDEX_NAME", c.column_name AS "COLUMN_NAME",
+            c.column_position AS "COLUMN_POSITION", e.column_expression AS "COLUMN_EXPRESSION"
+       FROM user_ind_columns c
+       LEFT JOIN user_ind_expressions e
+         ON e.index_name = c.index_name AND e.column_position = c.column_position
+      WHERE c.table_name = :tableName
+      ORDER BY c.index_name, c.column_position`,
     { tableName },
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
-  return result.rows ?? [];
+  return (result.rows ?? []).map(resolveVirtualIndexColumn);
+}
+
+type RawIndexColumn = IndexColumn & { COLUMN_EXPRESSION?: string | null };
+
+// TIMESTAMP WITH TIME ZONE é indexado por coluna virtual (SYS_NC…$ = SYS_EXTRACT_UTC("COL")).
+export function resolveVirtualIndexColumn(row: RawIndexColumn): IndexColumn {
+  const base = {
+    INDEX_NAME: row.INDEX_NAME,
+    COLUMN_NAME: row.COLUMN_NAME,
+    COLUMN_POSITION: row.COLUMN_POSITION,
+  };
+  const wrapped = /^SYS_EXTRACT_UTC\(\s*"([^"]+)"\s*\)$/iu.exec(
+    row.COLUMN_EXPRESSION?.trim() ?? '',
+  );
+  return wrapped?.[1] ? { ...base, COLUMN_NAME: wrapped[1] } : base;
 }
 
 async function ensureResourceScanIndex(conn: Connection, ctx: MigrationContext): Promise<void> {
@@ -891,25 +912,29 @@ async function scanResourceSpecification(
   let lastId: string | null = null;
   const pageSql = phase3MapResourcePageSql(ctx.t);
   while (true) {
-    const queryResult: oracledb.Result<Candidate> = await conn.execute<Candidate>(
-      pageSql,
-      {
-        tenantId: ctx.options.tenantId,
-        specificationId: specification.ID,
-        typeCode: specification.TYPE_CODE,
-        lastId,
-      },
-      {
-        // A SQL agora pagina em PHASE3_MAP_PAGE_SIZE (literal, não :batchSize — ver o comentário
-        // de phase3MapResourcePageSql), então o fetch array precisa seguir o mesmo valor em vez
-        // de --batch-size: ctx.options.batchSize continua governando só o lote de GRAVAÇÃO.
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-        fetchArraySize: PHASE3_MAP_PAGE_SIZE,
-        prefetchRows: PHASE3_MAP_PAGE_SIZE,
-      },
+    const queryResult: oracledb.Result<Candidate> = await timed(scan.timings, 'fetchMs', () =>
+      conn.execute<Candidate>(
+        pageSql,
+        {
+          tenantId: ctx.options.tenantId,
+          specificationId: specification.ID,
+          typeCode: specification.TYPE_CODE,
+          lastId,
+        },
+        {
+          // A SQL agora pagina em PHASE3_MAP_PAGE_SIZE (literal, não :batchSize — ver o comentário
+          // de phase3MapResourcePageSql), então o fetch array precisa seguir o mesmo valor em vez
+          // de --batch-size: ctx.options.batchSize continua governando só o lote de GRAVAÇÃO.
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+          fetchArraySize: PHASE3_MAP_PAGE_SIZE,
+          prefetchRows: PHASE3_MAP_PAGE_SIZE,
+        },
+      ),
     );
     const candidatePage = queryResult.rows ?? [];
     if (candidatePage.length === 0) return;
+    scan.timings.pages += 1;
+    const transformStartedAt = Date.now();
     const rows: FeatureRow[] = [];
     for (const candidate of candidatePage) {
       scan.candidates += 1;
@@ -920,6 +945,7 @@ async function scanResourceSpecification(
     }
     scan.features += rows.length;
     addDensityTiles(scan.densityTiles, rows);
+    scan.timings.transformMs += Date.now() - transformStartedAt;
     if (onFeatures) await onFeatures(rows);
     progress.advance(candidatePage.length);
     lastId = candidatePage[candidatePage.length - 1]!.ID;
@@ -936,17 +962,21 @@ async function scanSites(
   let lastId: string | null = null;
   const pageSql = phase3MapSitePageSql(ctx.t);
   while (true) {
-    const queryResult: oracledb.Result<Candidate> = await conn.execute<Candidate>(
-      pageSql,
-      { tenantId: ctx.options.tenantId, lastId, batchSize: ctx.options.batchSize },
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-        fetchArraySize: ctx.options.batchSize,
-        prefetchRows: ctx.options.batchSize,
-      },
+    const queryResult: oracledb.Result<Candidate> = await timed(scan.timings, 'fetchMs', () =>
+      conn.execute<Candidate>(
+        pageSql,
+        { tenantId: ctx.options.tenantId, lastId, batchSize: ctx.options.batchSize },
+        {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+          fetchArraySize: ctx.options.batchSize,
+          prefetchRows: ctx.options.batchSize,
+        },
+      ),
     );
     const candidatePage = queryResult.rows ?? [];
     if (candidatePage.length === 0) return;
+    scan.timings.pages += 1;
+    const transformStartedAt = Date.now();
     const rows: FeatureRow[] = [];
     for (const candidate of candidatePage) {
       scan.candidates += 1;
@@ -957,6 +987,7 @@ async function scanSites(
     }
     scan.features += rows.length;
     addDensityTiles(scan.densityTiles, rows);
+    scan.timings.transformMs += Date.now() - transformStartedAt;
     if (onFeatures) await onFeatures(rows);
     progress.advance(candidatePage.length);
     lastId = candidatePage[candidatePage.length - 1]!.ID;
@@ -1000,6 +1031,7 @@ async function scanCandidates(
   specifications: VisibleSpecification[],
   onFeatures?: (rows: FeatureRow[]) => Promise<void>,
   total?: number,
+  timings: Phase3Timings = emptyPhase3Timings(),
 ): Promise<CandidateScan> {
   const scan: CandidateScan = {
     candidates: 0,
@@ -1008,6 +1040,7 @@ async function scanCandidates(
     densityTiles: new Set<string>(),
     resources: 0,
     sites: 0,
+    timings,
   };
   const progress = new MigrationProgress({
     label: `Fase 3.A — ${stage}`,
@@ -1204,6 +1237,7 @@ async function runIncrementalMapFeatures(
     densityTiles: new Set<string>(),
     resources: 0,
     sites: 0,
+    timings: emptyPhase3Timings(),
   };
   const progress = new MigrationProgress({
     label: `Fase 3.A — ${ctx.options.apply ? 'gravação incremental' : 'validação incremental'}`,
@@ -1315,6 +1349,7 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         undefined,
         expectedCandidates,
       );
+      console.log(formatPhase3Timings(scan.timings, scan.candidates));
       densityCells = scan.densityTiles.size;
     } else {
       // Commit por página: uma queda de conexão no meio do rebuild deixa de descartar horas de
@@ -1322,30 +1357,60 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
       // antigo) — aceitável porque o mapa é o único consumidor destas projeções.
       await conn.execute(`ALTER SESSION SET SKIP_UNUSABLE_INDEXES = TRUE`);
       let pendingSinceCommit = 0;
+      let writeConn: Connection | null = null;
       try {
         // disableMapIndexes e o DELETE entram no try: se qualquer um falhar (ex.: ORA-01502 por
         // um índice de constraint que não foi desabilitado corretamente), o catch ainda tenta o
         // rebuild de emergência antes de propagar — sem isso, um erro aqui deixava o índice
         // UNUSABLE sem nenhuma tentativa de reparo até a próxima execução.
         await disableMapIndexes(conn, ctx, 'geographic_map_feature');
-        await conn.execute(`DELETE FROM ${ctx.t('geographic_map_feature')} WHERE tenant_id=:tenantId`, {
-          tenantId: ctx.options.tenantId,
-        });
-        scan = await scanCandidates(
-          conn,
-          ctx,
-          'gravação',
-          specifications,
+        await conn.execute(
+          `DELETE FROM ${ctx.t('geographic_map_feature')} WHERE tenant_id=:tenantId`,
+          {
+            tenantId: ctx.options.tenantId,
+          },
+        );
+        await conn.execute('COMMIT');
+        // Leitor (conn) e escritor (writeConn) em sessões distintas: o DELETE e o DDL acima já
+        // foram confirmados, então o escritor não herda locks pendentes do leitor.
+        writeConn = await ctx.getTargetConnection();
+        if (!writeConn) throw new Error('Conexão de escrita indisponível para --apply.');
+        const writer = writeConn;
+        await writer.execute(`ALTER SESSION SET SKIP_UNUSABLE_INDEXES = TRUE`);
+        const timings = emptyPhase3Timings();
+        let scanned: CandidateScan | undefined;
+        await runBoundedPipeline<FeatureRow[]>(
+          PHASE3_PIPELINE_DEPTH,
+          async (emit) => {
+            scanned = await scanCandidates(
+              conn,
+              ctx,
+              'gravação',
+              specifications,
+              async (rows) => {
+                if (rows.length > 0) await emit(rows);
+              },
+              expectedCandidates,
+              timings,
+            );
+          },
           async (rows) => {
-            await insertFeatures(conn, ctx, rows);
+            await timed(timings, 'insertMs', () => insertFeatures(writer, ctx, rows));
             pendingSinceCommit += rows.length;
             if (shouldCommitMigrationBatch(pendingSinceCommit, ctx.options.batchSize)) {
-              await conn.execute('COMMIT');
+              await timed(timings, 'commitMs', () => writer.execute('COMMIT'));
               pendingSinceCommit = 0;
             }
           },
-          expectedCandidates,
+          async () => {
+            if (pendingSinceCommit > 0) {
+              await timed(timings, 'commitMs', () => writer.execute('COMMIT'));
+              pendingSinceCommit = 0;
+            }
+          },
         );
+        scan = scanned!;
+        console.log(formatPhase3Timings(timings, scan.candidates));
         if (scan.features === 0) {
           throw new Error('Rebuild de mapa abortado: candidatos elegíveis sem features válidas.');
         }
@@ -1353,9 +1418,12 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         // A densidade agrega a tabela inteira, então só pode ser reconstruída depois que todas as
         // features existem — permanece um passo final único, junto do commit que o fecha.
         await disableMapIndexes(conn, ctx, 'geographic_map_density');
-        await conn.execute(`DELETE FROM ${ctx.t('geographic_map_density')} WHERE tenant_id=:tenantId`, {
-          tenantId: ctx.options.tenantId,
-        });
+        await conn.execute(
+          `DELETE FROM ${ctx.t('geographic_map_density')} WHERE tenant_id=:tenantId`,
+          {
+            tenantId: ctx.options.tenantId,
+          },
+        );
         densityCells = await rebuildDensity(conn, ctx);
         await rebuildMapIndexes(conn, ctx, 'geographic_map_density');
         await conn.execute('COMMIT');
@@ -1372,6 +1440,9 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         }
         await conn.execute('ROLLBACK');
         throw error;
+      } finally {
+        // close() descarta qualquer transação do escritor ainda não confirmada.
+        await writeConn?.close();
       }
     }
 

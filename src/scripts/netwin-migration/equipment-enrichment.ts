@@ -122,6 +122,8 @@ export const OWNED_CHARACTERISTIC_NAMES: ReadonlySet<string> = new Set([
   ...ENRICHMENT_CHARACTERISTICS.map((def) => def.name),
   'servingSite',
   'substatus',
+  // MDU (#310): prumada do DATASHEET que atende a CDOI.
+  'mdu.prumadaId',
   // Legado: datas de estado já foram characteristics; hoje são colunas `*_state_changed_at`.
   'lifecycleStateDate',
   'operationalStateDate',

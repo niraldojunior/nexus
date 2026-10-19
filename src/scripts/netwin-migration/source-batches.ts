@@ -115,12 +115,12 @@ export const resourceIdsByStructuredInfranodeQuery = (
 ): string => `
   SELECT ${idColumn} AS ID
   FROM (
-    SELECT resource.${idColumn}
-    FROM ${table} resource
-    JOIN NETWINOI.DL_INFRANODE infranode ON infranode.PI_ID = resource.${foreignKey}
-    WHERE resource.${idColumn} > :lastId
+    SELECT source_resource.${idColumn}
+    FROM ${table} source_resource
+    JOIN NETWINOI.DL_INFRANODE infranode ON infranode.PI_ID = source_resource.${foreignKey}
+    WHERE source_resource.${idColumn} > :lastId
       AND ${predicates.join(' AND ')}
-    ORDER BY resource.${idColumn}
+    ORDER BY source_resource.${idColumn}
   )
   WHERE ROWNUM <= :batchSize
 `;

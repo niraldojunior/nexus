@@ -14,6 +14,7 @@ import {
   netwinInternalSubrackId,
   netwinLocationId,
   NEXUS_NETWIN_NAMESPACE,
+  netwinRelationshipId,
 } from './identity.js';
 import {
   bulkMergeRows,
@@ -275,7 +276,8 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
       'related_party',
       'characteristics',
     ];
-    const relationshipColumns = ['resource_from_id', 'resource_to_id', 'relationship_type'];
+    const relationshipKeys = ['resource_from_id', 'resource_to_id', 'relationship_type'];
+    const relationshipColumns = ['id', ...relationshipKeys];
     const owner = JSON.stringify([
       { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
     ]);
@@ -427,9 +429,16 @@ export async function runPhase2StationRacks(ctx: MigrationContext): Promise<Stat
               target,
               ctx.t,
               'resource_relationship',
+              relationshipKeys,
               relationshipColumns,
-              relationshipColumns,
-              relationships,
+              relationships.map((row) => ({
+                ...row,
+                id: netwinRelationshipId(
+                  String(row.resource_from_id),
+                  String(row.resource_to_id),
+                  String(row.relationship_type),
+                ),
+              })),
               ctx.options.batchSize,
             );
           }

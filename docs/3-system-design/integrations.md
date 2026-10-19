@@ -66,7 +66,28 @@ O Netwin é a fonte de verdade **até o cutover**.
 | **3. Reversa**       | Nexus → Netwin | Nexus vira autoritativo; legado recebe atualização até desligar        |
 | **4. Cutover**       | —              | Netwin desligado                                                       |
 
-### 3.2 Rastreabilidade — `_origin` (C5)
+### 3.2 Netwin — contrato MDU
+
+A migração nativa lê o DR Netwin em transação somente-leitura e materializa apenas relações provadas pela origem:
+
+```text
+LOCATION (survey) ── OSP_SURVEYS.ID ── ID_ENDERECO → ADDRESS (ATTR50='E')
+  ├─ OSP_SURVEYS_CAIXA_ENT.ID_SURVEY ── OSP_SURVEYS_PRUMADA.ID_CE
+  ├─ OSP_SURVEYS_UCS (ID_SURVEY, ID_PRUM, PISO, ID_ENDERECO → ADDRESS ATTR50='C')
+  └─ OSP_SURVEYS_DATASHEET (SURVEY_ID, PRUM_ID, PDO_ID → OSP_EQUIPMENT CDOI)
+```
+
+| Origem Netwin                                     | Destino Nexus                                   | Regra de qualidade                                                                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Survey com até uma UC                             | `CUSTOMER_SITE`                                 | Mantém a unidade atendida como Site de serviço.                                                                                                                    |
+| Survey com duas ou mais UCs                       | `BUILDING`, ou `BLOCK` se pertence a condomínio | `CONDOMINIUM` só existe para a chave nacional `(ID_BASE_ADDRESS, numFachada)` com dois ou mais surveys; a inferência fica auditada em `mdu.groupingRule`.          |
+| `OSP_SURVEYS_UCS`                                 | `GeographicAddress` com `subAddress`            | Uma UC é HP (C4), nunca Service nem Site próprio. UC com prumada de outro survey é rejeitada.                                                                      |
+| `ADDRESS.ATTR31/32`, `39/40`, `43/44/45`, `48/49` | `GeographicSubAddress`                          | Códigos do catálogo `OSP_TP_ADDR_COMPLEMENTOS`: bloco/torre/edifício, andar e unidade são ordenados em cascata; código sem equivalente TMF fica em characteristic. |
+| CDOI + `OSP_SURVEYS_DATASHEET`                    | `place`/`servingSiteId` do survey               | Só é aplicado quando o DATASHEET aponta exatamente um survey; dois ou mais não produzem inferência. `PRUM_ID` é preservado em characteristic.                      |
+
+A origem não prova vínculo entre UC e porta CDOI: há somente UC → CDOIA de projeto. Esse vínculo permanece fora do mapeamento até haver contrato de origem verificável.
+
+### 3.3 Rastreabilidade — `_origin` (C5)
 
 Todo registro migrado carrega o grupo `_origin` como `characteristic` somente-leitura:
 
@@ -89,7 +110,7 @@ Isso permite **reconciliar** Nexus e Netwin durante o dual-running sem acoplar a
 
 > 📐 `_origin` está definido no cânone mas **ainda não existe no código**. É pré-requisito da fase 1.
 
-### 3.3 Lições da carga de laboratório
+### 3.4 Lições da carga de laboratório
 
 Cargas reais já executadas (estações e recursos) expuseram armadilhas que a integração definitiva
 precisa tratar:

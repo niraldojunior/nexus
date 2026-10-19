@@ -291,7 +291,16 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     siteRole: 'property',
     description: 'Condominio residencial ou comercial que agrupa blocos fisicos no mesmo endereco.',
     allowedParentCodes: ['REGION'],
-    allowedChildCodes: ['BLOCK'],
+    allowedChildCodes: ['BLOCK', 'BUILDING'],
+  },
+  {
+    name: 'Edifício',
+    code: 'BUILDING',
+    category: 'Site',
+    siteRole: 'property',
+    description: 'Edificação autônoma com infraestrutura de rede.',
+    allowedParentCodes: ['REGION', 'CONDOMINIUM'],
+    allowedChildCodes: ['CUSTOMER_SITE', 'FLOOR'],
   },
   {
     name: 'Building Block',
@@ -300,7 +309,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     siteRole: 'property',
     description: 'Bloco fisico subordinado a um condominio.',
     allowedParentCodes: ['CONDOMINIUM'],
-    allowedChildCodes: [],
+    allowedChildCodes: ['CUSTOMER_SITE', 'FLOOR'],
   },
   {
     name: 'Pavimento',
@@ -308,7 +317,7 @@ const BOOTSTRAP_SPECIFICATIONS: BootstrapDefinition[] = [
     category: 'SubSite',
     siteRole: 'network',
     description: 'Pavimento interno subordinado a CO ou POP.',
-    allowedParentCodes: ['CO', 'POP'],
+    allowedParentCodes: ['CO', 'POP', 'BLOCK', 'BUILDING'],
     allowedChildCodes: ['ROOM'],
   },
   {

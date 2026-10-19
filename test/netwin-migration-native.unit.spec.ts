@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   deterministicUuid,
   netwinCableId,
+  netwinCondominiumId,
+  netwinRelationshipId,
   netwinInternalCardId,
   netwinInternalEquipmentId,
   netwinInternalPhysicalPortId,
@@ -15,6 +17,14 @@ import {
   netwinRouteId,
   NEXUS_NETWIN_NAMESPACE,
 } from '../src/scripts/netwin-migration/identity.js';
+import {
+  buildingSubAddress,
+  complementsToSubAddress,
+  condominiumKey,
+  surveySpecCode,
+  type ComplementAttrs,
+  type ComplementCatalog,
+} from '../src/scripts/netwin-migration/mdu-mapping.js';
 import {
   neighborhoodLocationIdQuery,
   parseAddressString,
@@ -282,8 +292,8 @@ describe('netwin-migration: seleção e hidratação em lote', () => {
       'NETWIN.LIMPASTRING(infranode.BAIRRO) = :bairro',
     ]);
     expect(query).toContain('JOIN NETWINOI.DL_INFRANODE infranode');
-    expect(query).toContain('resource.INFRANODE_ID');
-    expect(query).toContain('SELECT resource.ID');
+    expect(query).toContain('source_resource.INFRANODE_ID');
+    expect(query).toContain('SELECT source_resource.ID');
     expect(query).not.toMatch(/WKT|ADDRESS|GROUP BY|LIKE/i);
   });
 
@@ -440,15 +450,15 @@ describe('netwin-migration: CLI', () => {
 
   it('valida o corte temporal obrigatório e exclusivo da Fase 3.A', () => {
     expect(() => parseCliArgs(['--phase', '3a'])).toThrow(/updated-since/i);
-    expect(() =>
-      parseCliArgs(['--phase', '3a', '--updated-since', '2026-10-14T00:00:00']),
-    ).toThrow(/timezone/i);
-    expect(() =>
-      parseCliArgs(['--phase', '3a', '--updated-since', 'data-inválidaZ']),
-    ).toThrow(/inválido/i);
-    expect(() =>
-      parseCliArgs(['--phase', '3', '--updated-since', '2026-10-14T00:00:00Z']),
-    ).toThrow(/só pode/i);
+    expect(() => parseCliArgs(['--phase', '3a', '--updated-since', '2026-10-14T00:00:00'])).toThrow(
+      /timezone/i,
+    );
+    expect(() => parseCliArgs(['--phase', '3a', '--updated-since', 'data-inválidaZ'])).toThrow(
+      /inválido/i,
+    );
+    expect(() => parseCliArgs(['--phase', '3', '--updated-since', '2026-10-14T00:00:00Z'])).toThrow(
+      /só pode/i,
+    );
     expect(() =>
       parseCliArgs(['--phase', '3a', '--updated-since', '2026-10-14T00:00:00Z', '--uf', 'RJ']),
     ).toThrow(/tenant inteiro/i);
@@ -631,9 +641,7 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(batch?.version).toBe(40);
     expect(batch?.sql).toContain('resource_physical(tenant_id, updated_at, id)');
     expect(batch?.sql).toContain('geographic_site(tenant_id, updated_at, id)');
-    expect(batch?.sql).toContain(
-      'geographic_map_feature(tenant_id, feature_kind, entity_id)',
-    );
+    expect(batch?.sql).toContain('geographic_map_feature(tenant_id, feature_kind, entity_id)');
     expect(
       hasPhase3IncrementalIndex(
         [
@@ -1277,5 +1285,75 @@ describe('netwin-migration: phase 1 canonical catalogs', () => {
         resourceSpecificationCount: 42,
       }),
     ).toContain('mesmo tenant');
+  });
+});
+
+describe('MDU do Netwin (#310)', () => {
+  const catalog: ComplementCatalog = new Map([
+    [16, { id: 16, name: 'Bloco', abbreviation: 'BL' }],
+    [7, { id: 7, name: 'Andar', abbreviation: 'AN' }],
+    [9, { id: 9, name: 'Apartamento', abbreviation: 'AP' }],
+    [96, { id: 96, name: 'Sala', abbreviation: 'SL' }],
+    [117, { id: 117, name: 'Não se aplica', abbreviation: 'NA' }],
+    [50, { id: 50, name: 'Acampamento', abbreviation: 'AC' }],
+  ]);
+  const empty: ComplementAttrs = {
+    ATTR31: null,
+    ATTR32: null,
+    ATTR39: null,
+    ATTR40: null,
+    ATTR43: null,
+    ATTR44: null,
+    ATTR45: null,
+    ATTR48: null,
+    ATTR49: null,
+  };
+
+  it('converte bloco + andar + apartamento em subAddress ordenado', () => {
+    const result = complementsToSubAddress(
+      { ...empty, ATTR31: '9', ATTR32: '401', ATTR39: '16', ATTR40: '2', ATTR43: '7', ATTR44: '4' },
+      catalog,
+    );
+    expect(result.subAddress.map((item) => item.type)).toEqual(['block', 'floor', 'unit']);
+    expect(result.subAddress[1]?.levelNumber).toBe('4');
+    expect(result.subAddress[2]).toMatchObject({ subUnitNumber: '401', name: 'Apartamento 401' });
+    expect(buildingSubAddress(result).map((item) => item.type)).toEqual(['block']);
+  });
+
+  it('ignora NA e registra códigos sem tipo TMF', () => {
+    const result = complementsToSubAddress(
+      {
+        ...empty,
+        ATTR31: '117',
+        ATTR32: 'x',
+        ATTR39: '50',
+        ATTR40: '1',
+        ATTR48: '999',
+        ATTR49: '1',
+      },
+      catalog,
+    );
+    expect(result.subAddress).toEqual([]);
+    expect(result.unmapped).toEqual(['Acampamento', 'código 999']);
+  });
+
+  it('escolhe a spec do survey e a chave de condomínio', () => {
+    expect(surveySpecCode(1, true)).toBe('CUSTOMER_SITE');
+    expect(surveySpecCode(5, false)).toBe('BUILDING');
+    expect(surveySpecCode(5, true)).toBe('BLOCK');
+    expect(condominiumKey(10, ' 134 ')).toBe('10:134');
+    expect(condominiumKey(null, '134')).toBeNull();
+    expect(condominiumKey(10, ' ')).toBeNull();
+    expect(netwinCondominiumId(10, '134')).toBe(netwinCondominiumId('10', '134'));
+    expect(netwinCondominiumId(10, '134')).not.toBe(netwinCondominiumId(10, '135'));
+  });
+});
+
+describe('netwinRelationshipId (#310)', () => {
+  it('é determinístico e distingue direção e tipo', () => {
+    const a = netwinRelationshipId('a', 'b', 'containsAsChild');
+    expect(netwinRelationshipId('a', 'b', 'containsAsChild')).toBe(a);
+    expect(netwinRelationshipId('b', 'a', 'containsAsChild')).not.toBe(a);
+    expect(netwinRelationshipId('a', 'b', 'connectedTo')).not.toBe(a);
   });
 });

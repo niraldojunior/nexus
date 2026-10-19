@@ -40,6 +40,20 @@ export const CANONICAL_SITE_SPECS: SiteSpecDef[] = [
     description: 'Edifício ou condomínio com infraestrutura de rede.',
   },
   {
+    code: 'CONDOMINIUM',
+    name: 'Condomínio',
+    category: 'Site',
+    siteRole: 'property',
+    description: 'Condomínio que agrupa blocos/edifícios no mesmo endereço base (MDU).',
+  },
+  {
+    code: 'BLOCK',
+    name: 'Bloco',
+    category: 'SubSite',
+    siteRole: 'property',
+    description: 'Bloco físico de um condomínio (MDU).',
+  },
+  {
     code: 'ROOM',
     name: 'Sala',
     category: 'SubSite',
@@ -50,7 +64,7 @@ export const CANONICAL_SITE_SPECS: SiteSpecDef[] = [
     code: 'FLOOR',
     name: 'Pavimento',
     category: 'SubSite',
-    siteRole: 'property',
+    siteRole: 'network',
     description: 'Andar ou pavimento de uma edificação.',
   },
   {

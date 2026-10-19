@@ -185,7 +185,7 @@ O cenário que atravessa as três camadas e demonstra por que **Home Passed não
 | **Tríade — base**               | Geographic, Resource e Service com Open APIs TMF                                         | ✅ Concluída                    |
 | **Tríade — aderência aos HLDs** | Fechar gaps dos 57 requisitos e decisões pendentes                                       | ⚠️ Em andamento (GitHub Issues) |
 | **Order & Party**               | Viabilidade, ordens e multi-tenant                                                       | ✅ Concluída                    |
-| **Carga de dados**              | Estações e recursos reais do Netwin                                                      | ⚠️ Em andamento                 |
+| **Carga de dados**              | Estações, recursos e MDU reais do Netwin — condomínio/bloco e UCs como endereço TMF, sem transformar HP em Service | ⚠️ Em andamento ([#310](https://github.com/niraldojunior/nexus/issues/310)) |
 | **Convergência ao cânone**      | UUID v7, `_origin`, outbox TMF688                                                        | 📐 Pendente                     |
 | **Escala**                      | Otimizações Oracle-native (`RAW(16)`, Spatial), benchmark de path computation em 22M HPs | 📐 Pendente                     |
 

@@ -534,6 +534,28 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         query.geographicLocationId = input.geographicLocationId;
       if (typeof input.offset === 'number') query.offset = input.offset;
       const items = await runtime.geoService.listAddresses(query);
+      if (items.length === 0 && typeof input.street === 'string') {
+        // Não cadastrado não é "não existe": geocodifica para o modelo não encerrar a conversa aqui.
+        const geocoded = await geocodeAddressText([
+          input.street,
+          input.streetNr,
+          input.city,
+          input.stateOrProvince,
+          input.postcode,
+          input.country ?? 'BR',
+        ]);
+        return registry.successResult('geo', 'list_addresses', context, {
+          items,
+          count: 0,
+          normalized: true,
+          ...(geocoded
+            ? {
+                geocoded: { ...geocoded, source: 'google-geocoding' },
+                note: 'Endereco nao cadastrado no Nexus, mas localizado no Google Maps. Para saber se ha rede/recursos/CDO ali, chame geo.find_nearby_cdos com os mesmos dados (ele usa essa coordenada). Nao diga que o endereco nao existe.',
+              }
+            : {}),
+        });
+      }
       return registry.successResult('geo', 'list_addresses', context, {
         items,
         count: items.length,
@@ -563,7 +585,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   registry.register({
     name: 'geo.find_nearby_cdos',
     description:
-      'Localiza CDOs proximas de um endereco em uma unica consulta. Resolve o GeographicAddress com normalizacao, usa sua GeographicLocation e retorna PhysicalResources CTO cujo nome comeca por CDO, ordenados pela distancia real em metros. Use para perguntas como "ha CDO proxima deste endereco?".',
+      'Localiza CDOs proximas de um endereco em uma unica consulta. Resolve o GeographicAddress com normalizacao, usa sua GeographicLocation e retorna PhysicalResources CTO cujo nome comeca por CDO, ordenados pela distancia real em metros. Use para perguntas como "ha CDO proxima deste endereco?", "ha rede da V.tal perto daqui?", "existe recurso neste endereco?" ou viabilidade. Funciona mesmo que o endereco nao esteja cadastrado (geocodifica no Google Maps).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -613,22 +635,38 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           item !== undefined,
       );
 
+      // Endereço fora do cadastro (ou sem coordenada): geocodifica no Google. Sem isso, "não achei
+      // o endereço" virava count 0 e o Copilot afirmava que não havia CDO próxima.
+      let geocoded: { lng: number; lat: number; formattedAddress: string } | undefined;
       if (resolvedAddresses.length === 0) {
-        return registry.successResult('geo', 'find_nearby_cdos', context, {
-          addressMatches: [],
-          items: [],
-          count: 0,
-          radiusMeters,
-        });
+        geocoded = await geocodeAddressText([
+          input.street,
+          input.streetNr,
+          input.city,
+          input.stateOrProvince,
+          input.postcode,
+          input.country ?? 'BR',
+        ]);
+        if (!geocoded) {
+          return registry.successResult('geo', 'find_nearby_cdos', context, {
+            addressMatches: [],
+            items: [],
+            count: 0,
+            radiusMeters,
+            addressResolved: false,
+            note: 'Nao foi possivel obter a coordenada do endereco (nao cadastrado e geocodificacao indisponivel). Nao conclua que nao ha CDO proxima; informe que a localizacao nao foi resolvida.',
+          });
+        }
       }
+      const points: Array<{ lng: number; lat: number; addressId?: string }> = geocoded
+        ? [{ lng: geocoded.lng, lat: geocoded.lat }]
+        : resolvedAddresses.map(({ address, location }) => ({
+            lng: location.geometry.coordinates[0],
+            lat: location.geometry.coordinates[1],
+            addressId: address.id,
+          }));
 
-      const bounds = boundsAroundPoints(
-        resolvedAddresses.map(({ location }) => ({
-          lng: location.geometry.coordinates[0],
-          lat: location.geometry.coordinates[1],
-        })),
-        radiusMeters,
-      );
+      const bounds = boundsAroundPoints(points, radiusMeters);
       const resources = await runtime.geoTreeService.resourcesInViewport(bounds);
       const nearby = resources
         .filter(
@@ -640,16 +678,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         )
         .map((resource) => {
           const coordinates = resource.geometry!.coordinates as [number, number];
-          const nearestAddress = resolvedAddresses
-            .map(({ address, location }) => ({
-              address,
-              location,
-              distanceMeters: haversineMeters(
-                coordinates[0],
-                coordinates[1],
-                location.geometry.coordinates[0],
-                location.geometry.coordinates[1],
-              ),
+          const nearestAddress = points
+            .map((point) => ({
+              point,
+              distanceMeters: haversineMeters(coordinates[0], coordinates[1], point.lng, point.lat),
             }))
             .sort((left, right) => left.distanceMeters - right.distanceMeters)[0]!;
           return {
@@ -659,7 +691,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
             status: resource.status,
             distanceMeters: Math.round(nearestAddress.distanceMeters),
             geometry: resource.geometry,
-            matchedAddressId: nearestAddress.address.id,
+            ...(nearestAddress.point.addressId
+              ? { matchedAddressId: nearestAddress.point.addressId }
+              : {}),
           };
         })
         .filter((resource) => resource.distanceMeters <= radiusMeters)
@@ -682,6 +716,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         items: nearby,
         count: nearby.length,
         radiusMeters,
+        addressResolved: true,
+        ...(geocoded ? { geocoded: { ...geocoded, source: 'google-geocoding' } } : {}),
       });
     },
   });
@@ -2555,6 +2591,39 @@ const resolveSiteSpecificationReference = async (
     code: 'GEO_SPEC_NOT_FOUND',
     statusCode: 404,
   });
+};
+
+const geocodeAddressText = async (
+  parts: unknown[],
+): Promise<{ lng: number; lat: number; formattedAddress: string } | undefined> => {
+  const key = process.env.GOOGLE_MAPS_API_KEY ?? process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!key) return undefined;
+  const address = parts
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .join(', ');
+  if (!address) return undefined;
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    url.searchParams.set('address', address);
+    url.searchParams.set('region', 'br');
+    url.searchParams.set('key', key);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as {
+      status?: string;
+      results?: Array<{
+        formatted_address?: string;
+        geometry?: { location?: { lat?: number; lng?: number } };
+      }>;
+    };
+    const first = body.status === 'OK' ? body.results?.[0] : undefined;
+    const lat = first?.geometry?.location?.lat;
+    const lng = first?.geometry?.location?.lng;
+    if (typeof lat !== 'number' || typeof lng !== 'number') return undefined;
+    return { lng, lat, formattedAddress: first?.formatted_address ?? address };
+  } catch {
+    return undefined;
+  }
 };
 
 const boundsAroundPoints = (

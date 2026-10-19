@@ -58,8 +58,12 @@ import {
 import { MIGRATION_BATCHES } from '../src/shared/persistence/schema.js';
 import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
 import {
+  densityTileCoordinates,
+  hasPhase3IncrementalIndex,
   hasPhase3ResourceScanIndex,
   oracleDictionaryObjectName,
+  phase3IncrementalResourcePageSql,
+  phase3IncrementalSitePageSql,
   phase3MapCandidatePageSql,
   phase3MapCandidatesSql,
   phase3MapFeaturesForCandidate,
@@ -390,13 +394,28 @@ describe('netwin-migration: address parsing', () => {
 });
 
 describe('netwin-migration: CLI', () => {
-  it('aceita a execução independente das Fases 2.C, 2.D, 3 e 3.B', () => {
+  it('aceita a execução independente das Fases 2.C, 2.D, 3, 3.A e 3.B', () => {
     expect(parseCliArgs(['--phase', '2c', '--municipio', 'Niterói']).phase).toBe('2c');
     expect(parseCliArgs(['--phase', '2d', '--municipio', 'Niterói']).phase).toBe('2d');
     expect(parseCliArgs(['--phase', '3', '--tenant-id', 'vtal'])).toMatchObject({
       phase: '3',
       tenantId: 'vtal',
       scope: { full: false },
+    });
+    expect(
+      parseCliArgs([
+        '--phase',
+        '3a',
+        '--updated-since',
+        '2026-10-14T00:00:00-03:00',
+        '--tenant-id',
+        'vtal',
+      ]),
+    ).toMatchObject({
+      phase: '3a',
+      tenantId: 'vtal',
+      scope: { full: false },
+      updatedSince: new Date('2026-10-14T03:00:00.000Z'),
     });
     expect(parseCliArgs(['--phase', '3b', '--tenant-id', 'vtal'])).toMatchObject({
       phase: '3b',
@@ -417,6 +436,22 @@ describe('netwin-migration: CLI', () => {
     expect(() =>
       parseCliArgs(['--phase', phase, '--apply', '--resume', '--job-id', 'job-1']),
     ).toThrow(/não aceita/i);
+  });
+
+  it('valida o corte temporal obrigatório e exclusivo da Fase 3.A', () => {
+    expect(() => parseCliArgs(['--phase', '3a'])).toThrow(/updated-since/i);
+    expect(() =>
+      parseCliArgs(['--phase', '3a', '--updated-since', '2026-10-14T00:00:00']),
+    ).toThrow(/timezone/i);
+    expect(() =>
+      parseCliArgs(['--phase', '3a', '--updated-since', 'data-inválidaZ']),
+    ).toThrow(/inválido/i);
+    expect(() =>
+      parseCliArgs(['--phase', '3', '--updated-since', '2026-10-14T00:00:00Z']),
+    ).toThrow(/só pode/i);
+    expect(() =>
+      parseCliArgs(['--phase', '3a', '--updated-since', '2026-10-14T00:00:00Z', '--uf', 'RJ']),
+    ).toThrow(/tenant inteiro/i);
   });
 
   it('aceita bairro somente quando associado a município ou UF', () => {
@@ -507,6 +542,30 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(siteCount).not.toContain(':lastId');
   });
 
+  it('pagina Resources e Sites incrementais por updated_at + id antes da régua de visibilidade', () => {
+    const resourcePage = phase3IncrementalResourcePageSql(t);
+    const sitePage = phase3IncrementalSitePageSql(t);
+    for (const source of [resourcePage, sitePage]) {
+      expect(source).toContain('updated_at >= :updatedSince');
+      expect(source).toContain('updated_at < :updatedBefore');
+      expect(source).toMatch(/[rs]\.updated_at > :lastUpdatedAt/);
+      expect(source).toContain('updated_at = :lastUpdatedAt');
+      expect(source).toMatch(/ORDER BY [rs]\.updated_at, [rs]\.id/);
+      expect(source).toMatch(/FETCH FIRST \d+ ROWS ONLY/);
+    }
+    expect(resourcePage.indexOf('FROM NX_TEST_RESOURCE_PHYSICAL')).toBeLessThan(
+      resourcePage.indexOf("r.status <> 'terminated'"),
+    );
+    expect(sitePage.indexOf('FROM NX_TEST_GEOGRAPHIC_SITE')).toBeLessThan(
+      sitePage.indexOf("spec.category = 'Site'"),
+    );
+  });
+
+  it('converte a chave materializada de densidade em coordenadas', () => {
+    expect(densityTileCoordinates('13:123:456')).toEqual({ zoom: 13, x: 123, y: 456 });
+    expect(() => densityTileCoordinates('inválida')).toThrow(/inválida/i);
+  });
+
   it('dimensiona o bind de geographic_map_feature pelo lote e isola a geometria larga', () => {
     const columns = ['entity_id', 'tile_x', 'geometry'];
     // Feature de ponto: geometry null. É a maioria esmagadora das linhas e não deve pagar CLOB.
@@ -563,6 +622,28 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
         },
       ]),
     ).toEqual(['NX_TEST_RESOURCE_PHYSICAL', 'NX_TEST_RESOURCE_SPECIFICATION']);
+  });
+
+  it('declara e reconhece os índices da Fase 3.A incremental', () => {
+    const batch = MIGRATION_BATCHES.find(
+      (candidate) => candidate.name === 'phase3-map-incremental-indexes',
+    );
+    expect(batch?.version).toBe(40);
+    expect(batch?.sql).toContain('resource_physical(tenant_id, updated_at, id)');
+    expect(batch?.sql).toContain('geographic_site(tenant_id, updated_at, id)');
+    expect(batch?.sql).toContain(
+      'geographic_map_feature(tenant_id, feature_kind, entity_id)',
+    );
+    expect(
+      hasPhase3IncrementalIndex(
+        [
+          { INDEX_NAME: 'IDX_INCREMENTAL', COLUMN_NAME: 'TENANT_ID', COLUMN_POSITION: 1 },
+          { INDEX_NAME: 'IDX_INCREMENTAL', COLUMN_NAME: 'UPDATED_AT', COLUMN_POSITION: 2 },
+          { INDEX_NAME: 'IDX_INCREMENTAL', COLUMN_NAME: 'ID', COLUMN_POSITION: 3 },
+        ],
+        ['TENANT_ID', 'UPDATED_AT', 'ID'],
+      ),
+    ).toBe('IDX_INCREMENTAL');
   });
 
   it('consulta as views USER_* pelo nome físico, sem as aspas do identificador', () => {
@@ -929,6 +1010,16 @@ describe('netwin-migration: reparo target-only da Fase 2.C', () => {
 
 describe('netwin-migration: Oracle MERGE em lote', () => {
   const t = (table: string) => `NX_TEST_${table.toUpperCase()}`;
+
+  it('atualiza updated_at com SYSTIMESTAMP somente quando o touch é solicitado', () => {
+    const defaultSql = mergeSql(t, 'resource_physical', ['id'], ['id', 'name']);
+    const touchedSql = mergeSql(t, 'resource_physical', ['id'], ['id', 'name'], {
+      touchUpdatedAt: true,
+    });
+    expect(defaultSql).not.toContain('SYSTIMESTAMP');
+    expect(touchedSql).toContain('target."UPDATED_AT"=SYSTIMESTAMP');
+    expect(touchedSql).not.toContain('source."UPDATED_AT"');
+  });
 
   it('gera MERGE sem UPDATE quando todas as colunas compõem a chave', () => {
     const sql = mergeSql(

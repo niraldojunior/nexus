@@ -14,13 +14,15 @@
  *   --municipio <NOME>    (ex: --municipio "Niterói")
  *   --bairro <NOME>       (ex: --municipio "Niterói" --bairro "Icaraí")
  *   --full                (varredura nacional)
- *   --phase 1|2|2c|2d|3|all (default: all)
+ *   --phase 1|2|2c|2d|3|3a|3b|all (default: all)
+ *   --updated-since <ISO> (somente Fase 3.A; exige Z ou offset explícito)
  *   --target-prefix       (default: NX_DEV1_ ou variável de ambiente)
  *   --tenant-id <ID>      (obrigatório em APPLY; NX_DEV1_ aceita apenas vtal)
  *   --batch-size <N>      (default: 2000; regula lotes e cadência-base dos relatórios)
  *   --max-records <N>     (limite de registros para teste)
  *
  * A Fase 2.C mostra progresso separado de Splitters, Portas e Conexões.
+ * Exemplo incremental: --phase 3a --updated-since 2026-10-14T00:00:00-03:00
  *   --apply               (executa gravação; sem esta flag roda em modo DRY-RUN)
  */
 
@@ -66,8 +68,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const has = (flag: string) => argv.includes(flag);
 
   const phaseRaw = get('--phase') ?? 'all';
-  if (!['1', '2', '2c', '2d', '3', '3b', 'all'].includes(phaseRaw)) {
-    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3, 3b ou all.`);
+  if (!['1', '2', '2c', '2d', '3', '3a', '3b', 'all'].includes(phaseRaw)) {
+    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3, 3a, 3b ou all.`);
   }
   const phase = phaseRaw as MigrationPhase;
 
@@ -75,6 +77,22 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const municipio = get('--municipio');
   const bairro = get('--bairro');
   const full = has('--full');
+  const updatedSinceRaw = get('--updated-since');
+  let updatedSince: Date | undefined;
+  if (updatedSinceRaw) {
+    if (phase !== '3a') {
+      throw new Error('--updated-since só pode ser usado com --phase 3a.');
+    }
+    if (!/(?:Z|[+-]\d{2}:\d{2})$/u.test(updatedSinceRaw)) {
+      throw new Error('--updated-since exige data/hora ISO-8601 com timezone explícito (Z ou ±HH:MM).');
+    }
+    updatedSince = new Date(updatedSinceRaw);
+    if (Number.isNaN(updatedSince.getTime())) {
+      throw new Error(`--updated-since inválido: "${updatedSinceRaw}".`);
+    }
+  } else if (phase === '3a') {
+    throw new Error('--phase 3a exige --updated-since <ISO-8601-com-fuso>.');
+  }
 
   if (full && (uf || municipio || bairro)) {
     throw new Error('--full não pode ser combinado com --uf, --municipio ou --bairro.');
@@ -84,12 +102,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
       '--bairro exige --municipio <NOME> ou --uf <UF> para evitar escopo nacional ambíguo.',
     );
   }
-  if ((phase === '3' || phase === '3b') && (uf || municipio || bairro)) {
+  if (['3', '3a', '3b'].includes(phase) && (uf || municipio || bairro || full)) {
     throw new Error(
-      'A Fase 3 reconstrói o tenant inteiro; não combine com --uf, --municipio ou --bairro.',
+      'A Fase 3 opera pelo tenant inteiro; não combine com --full, --uf, --municipio ou --bairro.',
     );
   }
-  if (!full && !uf && !municipio && phase !== '1' && phase !== '3' && phase !== '3b') {
+  if (!full && !uf && !municipio && phase !== '1' && !['3', '3a', '3b'].includes(phase)) {
     throw new Error(
       'Para as Fases 2, 2c, 2d ou All, informe um escopo: --uf <UF>, --municipio <NOME> ou --full.',
     );
@@ -118,9 +136,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
   if (jobId && !resume) {
     throw new Error('--job-id só pode ser usado com --resume.');
   }
-  if ((phase === '3' || phase === '3b') && (resume || jobId || maxRecords)) {
+  if (['3', '3a', '3b'].includes(phase) && (resume || jobId || maxRecords)) {
     throw new Error(
-      'As Fases 3 e 3b não aceitam --resume, --job-id ou --max-records; elas reconstruem o tenant integralmente.',
+      'As Fases 3, 3a e 3b não aceitam --resume, --job-id ou --max-records.',
     );
   }
 
@@ -140,6 +158,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     apply,
     resume,
     ...(jobId ? { jobId } : {}),
+    ...(updatedSince ? { updatedSince } : {}),
   };
 }
 
@@ -164,12 +183,13 @@ async function main() {
       ]
         .filter(Boolean)
         .join(' | ') ||
-      (options.phase === '3' || options.phase === '3b'
-        ? 'TENANT INTEGRAL (Fase 3)'
+      (['3', '3a', '3b'].includes(options.phase)
+        ? `TENANT ${options.phase === '3a' ? 'INCREMENTAL' : 'INTEGRAL'} (Fase 3)`
         : 'NÃO INFORMADO');
   console.log(`Escopo           : ${scopeLabel}`);
   console.log(`Lote (batchSize) : ${options.batchSize}`);
   console.log(`Tenant Destino  : ${options.tenantId}`);
+  if (options.updatedSince) console.log(`Atualizados desde: ${options.updatedSince.toISOString()}`);
   if (options.maxRecords) console.log(`Limite Registros : ${options.maxRecords}`);
 
   const ctx = await createMigrationContext(options);
@@ -216,6 +236,8 @@ async function main() {
       }
     } else if (options.phase === '3b') {
       await runPhase3Coverage(ctx);
+    } else if (options.phase === '3a') {
+      await runPhase3MapFeatures(ctx);
     } else if (options.phase === '3') {
       await runPhase3(ctx);
     } else if (options.phase === '2c') {

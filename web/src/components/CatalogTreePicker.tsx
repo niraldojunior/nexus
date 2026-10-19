@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Boxes, ChevronDown, ChevronRight, Folder, Search } from 'lucide-react';
 import type { ResourceCatalogTreeNode } from '../services/resourceCatalogApi';
+import { ResourceIcon } from './ResourceIcon';
 
 export type CatalogResourceTypeRef = {
   id: string;
@@ -142,6 +143,15 @@ export function CatalogTreePicker({
 
             {isGroup ? (
               <Folder className="h-3.5 w-3.5 shrink-0 text-app-muted" />
+            ) : node.resourceType ? (
+              <span aria-hidden="true" className="flex shrink-0 items-center text-app-text">
+                <ResourceIcon
+                  resource={node.resourceType.code}
+                  visualIdentity={node.resourceType.visualIdentity}
+                  variant="glyph"
+                  size={16}
+                />
+              </span>
             ) : (
               <Boxes className="h-3.5 w-3.5 shrink-0 text-app-muted" />
             )}
@@ -185,11 +195,14 @@ export function CatalogTreeCombobox({
   selectedLabel,
   onOpen,
   loading = false,
+  selectedIcon,
 }: {
   nodes: ResourceCatalogTreeNode[];
   selectedTypeId: string | null;
   onSelectType: (type: CatalogResourceTypeRef, pathLabel: string) => void;
   placeholder?: string;
+  /** Ícone do tipo selecionado, exibido antes do nome. */
+  selectedIcon?: React.ReactNode;
   /** Nome do tipo selecionado quando a árvore ainda não foi carregada. */
   selectedLabel?: string | undefined;
   /** Chamado quando o popover abre (carga preguiçosa da árvore). */
@@ -223,6 +236,11 @@ export function CatalogTreeCombobox({
         style={{ borderWidth: 1, borderStyle: 'solid' }}
         className="flex w-full items-center justify-between gap-2 rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-left text-[0.85rem] text-app-text outline-none transition focus:border-app-accent"
       >
+        {selectedIcon ? (
+          <span aria-hidden="true" className="flex shrink-0 items-center text-app-text">
+            {selectedIcon}
+          </span>
+        ) : null}
         <span className={`min-w-0 flex-1 truncate ${selectedNode ? '' : 'text-app-muted'}`}>
           {selectedNode?.name ?? selectedLabel ?? placeholder}
         </span>
@@ -232,7 +250,7 @@ export function CatalogTreeCombobox({
         />
       </button>
       {open ? (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[var(--z-dropdown)] overflow-hidden rounded-[16px] border border-app-border bg-app-panel shadow-modal">
+        <div className="absolute left-0 top-[calc(100%+4px)] w-[130%] z-[var(--z-dropdown)] overflow-hidden rounded-[16px] border border-app-border bg-app-panel shadow-modal">
           {loading && nodes.length === 0 ? (
             <p className="p-3 text-[0.82rem] text-app-muted">Carregando…</p>
           ) : (

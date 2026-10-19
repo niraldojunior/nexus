@@ -638,6 +638,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             ],
             resources,
             batchSize,
+            { touchUpdatedAt: true },
           );
           resourceMergeMs = Date.now() - startedAt;
           await saveNativeCheckpoint(target, ctx, '2B-equipment', {
@@ -856,6 +857,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             ],
             resources,
             batchSize,
+            { touchUpdatedAt: true },
           );
           resourceMergeMs = Date.now() - startedAt;
           await saveNativeCheckpoint(target, ctx, '2B-route', {
@@ -1105,6 +1107,7 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
             ],
             resources,
             batchSize,
+            { touchUpdatedAt: true },
           );
           resourceMergeMs = Date.now() - startedAt;
           startedAt = Date.now();

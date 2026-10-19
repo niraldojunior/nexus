@@ -5988,6 +5988,94 @@ const parseSaveResourceAggregateInput = (
           statusCode: 400,
         });
       }
+      if (
+        child.status !== undefined &&
+        child.status !== 'active' &&
+        child.status !== 'inactive' &&
+        child.status !== 'suspended' &&
+        child.status !== 'terminated'
+      ) {
+        throw new AppError(`${path}[${index}].status is invalid`, {
+          code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+          statusCode: 400,
+        });
+      }
+      if (child.statusCode !== undefined && typeof child.statusCode !== 'string') {
+        throw new AppError(`${path}[${index}].statusCode must be a string`, {
+          code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+          statusCode: 400,
+        });
+      }
+      if (
+        child.administrativeState !== undefined &&
+        child.administrativeState !== 'unlocked' &&
+        child.administrativeState !== 'locked' &&
+        child.administrativeState !== 'shuttingDown'
+      ) {
+        throw new AppError(`${path}[${index}].administrativeState is invalid`, {
+          code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+          statusCode: 400,
+        });
+      }
+      if (
+        child.operationalState !== undefined &&
+        child.operationalState !== 'enabled' &&
+        child.operationalState !== 'disabled'
+      ) {
+        throw new AppError(`${path}[${index}].operationalState is invalid`, {
+          code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+          statusCode: 400,
+        });
+      }
+      if (
+        child.usageState !== undefined &&
+        child.usageState !== 'idle' &&
+        child.usageState !== 'active' &&
+        child.usageState !== 'busy' &&
+        child.usageState !== 'unknown'
+      ) {
+        throw new AppError(`${path}[${index}].usageState is invalid`, {
+          code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+          statusCode: 400,
+        });
+      }
+      for (const field of ['id', 'relationshipId', 'relationshipDefinitionId'] as const) {
+        if (child[field] !== undefined && typeof child[field] !== 'string') {
+          throw new AppError(`${path}[${index}].${field} must be a string`, {
+            code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+            statusCode: 400,
+          });
+        }
+      }
+      if (child.placement !== undefined) {
+        if (!child.placement || typeof child.placement !== 'object' || Array.isArray(child.placement)) {
+          throw new AppError(`${path}[${index}].placement must be an object`, {
+            code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+            statusCode: 400,
+          });
+        }
+        const placement = child.placement as Record<string, unknown>;
+        if (
+          placement.placementPolicy === 'LINEAR' &&
+          Number.isInteger(placement.position) &&
+          (placement.span === undefined || Number.isInteger(placement.span))
+        ) {
+          // Os limites da definição são validados no domínio, dentro da transação.
+        } else if (
+          placement.placementPolicy === 'GRID' &&
+          Number.isInteger(placement.row) &&
+          Number.isInteger(placement.column) &&
+          (placement.rowSpan === undefined || Number.isInteger(placement.rowSpan)) &&
+          (placement.columnSpan === undefined || Number.isInteger(placement.columnSpan))
+        ) {
+          // Os limites da definição são validados no domínio, dentro da transação.
+        } else {
+          throw new AppError(`${path}[${index}].placement is invalid`, {
+            code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
+            statusCode: 400,
+          });
+        }
+      }
       if (child.children !== undefined && !Array.isArray(child.children)) {
         throw new AppError(`${path}[${index}].children must be an array`, {
           code: 'RESOURCE_AGGREGATE_COLLECTION_INVALID',

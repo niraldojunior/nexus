@@ -619,6 +619,7 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
             ],
             sites,
             ctx.options.batchSize,
+            { touchUpdatedAt: true },
           );
           // Município direto do Site (issue #339): endereço postal tem precedência; sem endereço,
           // a Location com município estruturado. Só preenche município nulo — edições da modal

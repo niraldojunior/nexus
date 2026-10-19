@@ -28,6 +28,7 @@ import type { IResourceRepository, ResourceTenantScope } from './resource-reposi
 import { RESOURCE_TYPES } from './catalog.js';
 import { RESOURCE_STATUS_DEFAULTS } from './status-catalog.js';
 import { MODEL_CHARACTERISTIC } from './canonical-characteristics.js';
+import { createCanonicalId } from '../../shared/utils/canonical-id.js';
 
 export class ResourceRepository implements IResourceRepository {
   private readonly resourceTypes = new Map<string, ResourceType>();
@@ -692,7 +693,12 @@ export class ResourceRepository implements IResourceRepository {
     const maxDepth = options?.maxDepth ?? 8;
     const components: ResourceComponentNode[] = [];
     const visited = new Set<string>([resourceId]);
-    const queue: Array<{ id: string; parentId: string | null; depth: number }> = [];
+    const queue: Array<{
+      id: string;
+      parentId: string | null;
+      depth: number;
+      relationship?: ResourceRelationship;
+    }> = [];
 
     // Initialize with direct children
     const directChildRels = this.listResourceRelationships(resourceId).filter(
@@ -701,7 +707,7 @@ export class ResourceRepository implements IResourceRepository {
     for (const rel of directChildRels) {
       if (!visited.has(rel.id)) {
         visited.add(rel.id);
-        queue.push({ id: rel.id, parentId: resourceId, depth: 1 });
+        queue.push({ id: rel.id, parentId: resourceId, depth: 1, relationship: rel });
       }
     }
 
@@ -754,9 +760,17 @@ export class ResourceRepository implements IResourceRepository {
         name: res.name,
         ...(res.resourceType ? { resourceType: res.resourceType } : {}),
         status: res.status,
+        ...(res.statusCode ? { statusCode: res.statusCode } : {}),
         kind,
         parentId: item.parentId,
         depth: item.depth,
+        ...(item.relationship?.relationshipId
+          ? { relationshipId: item.relationship.relationshipId }
+          : {}),
+        ...(item.relationship?.relationshipDefinitionId
+          ? { relationshipDefinitionId: item.relationship.relationshipDefinitionId }
+          : {}),
+        ...(item.relationship?.placement ? { placement: item.relationship.placement } : {}),
         ...(res.administrativeState ? { administrativeState: res.administrativeState } : {}),
         ...(res.operationalState ? { operationalState: res.operationalState } : {}),
         ...(res.usageState ? { usageState: res.usageState } : {}),
@@ -797,7 +811,12 @@ export class ResourceRepository implements IResourceRepository {
         for (const nextRel of nextRels) {
           if (!visited.has(nextRel.id)) {
             visited.add(nextRel.id);
-            queue.push({ id: nextRel.id, parentId: item.id, depth: item.depth + 1 });
+            queue.push({
+              id: nextRel.id,
+              parentId: item.id,
+              depth: item.depth + 1,
+              relationship: nextRel,
+            });
           }
         }
       }
@@ -907,13 +926,17 @@ export class ResourceRepository implements IResourceRepository {
     resourceId: string,
     relationship: ResourceRelationship,
   ): ResourceRelationship {
+    const stored = {
+      ...relationship,
+      ...(relationship.relationshipId ? {} : { relationshipId: createCanonicalId() }),
+    };
     const current = this.relationships.get(resourceId) ?? [];
     const next = [
       ...current.filter(
         (item) =>
-          !(item.id === relationship.id && item.relationshipType === relationship.relationshipType),
+          !(item.id === stored.id && item.relationshipType === stored.relationshipType),
       ),
-      cloneRelationship(relationship),
+      cloneRelationship(stored),
     ];
     this.relationships.set(resourceId, next);
 
@@ -929,7 +952,7 @@ export class ResourceRepository implements IResourceRepository {
       this.logicalResources.set(resourceId, cloneLogicalResource(logical));
     }
 
-    return cloneRelationship(relationship);
+    return cloneRelationship(stored);
   }
 
   public deleteResourceRelationship(
@@ -1163,6 +1186,8 @@ const cloneResourceTypeRelationshipRule = (
 ): ResourceTypeRelationshipRule => ({
   ...rule,
   ...(rule.cardinality ? { cardinality: { ...rule.cardinality } } : {}),
+  ...(rule.configuration ? { configuration: { ...rule.configuration } } : {}),
+  ...(rule.validationRules ? { validationRules: { ...rule.validationRules } } : {}),
   ...(rule.validFor ? { validFor: { ...rule.validFor } } : {}),
 });
 
@@ -1186,6 +1211,8 @@ const cloneLogicalResource = (resource: LogicalResource): LogicalResource => ({
 
 const cloneRelationship = (relationship: ResourceRelationship): ResourceRelationship => ({
   ...relationship,
+  ...(relationship.placement ? { placement: { ...relationship.placement } } : {}),
+  ...(relationship.attributes ? { attributes: { ...relationship.attributes } } : {}),
   ...(relationship.validFor ? { validFor: { ...relationship.validFor } } : {}),
 });
 

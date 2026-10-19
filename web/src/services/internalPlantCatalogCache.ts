@@ -63,6 +63,10 @@ export const loadSpecificationsCached = (resourceTypeId?: string) => {
   );
 };
 
+export function invalidateRelationshipTypesCache() {
+  relTypesEntry = undefined;
+}
+
 export function invalidateInternalPlantCatalogCache() {
   treeEntry = typesEntry = relTypesEntry = siteSpecsEntry = undefined;
   specsByType.clear();

@@ -180,24 +180,49 @@ const comparePortDetails = (a: ResourcePortDetail, b: ResourcePortDetail): numbe
   return (a.index ?? 0) - (b.index ?? 0);
 };
 
+const parseRelationshipJson = <T>(raw?: string | null): T | undefined => {
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
+};
+
 const relationshipFromRow = (row: {
+  id?: string | null;
+  relationship_id?: string | null;
   resource_to_id: string;
   relationship_type: string;
+  relationship_definition_id?: string | null;
+  placement?: string | null;
+  attributes?: string | null;
   valid_for_start?: string | null;
   valid_for_end?: string | null;
-}): ResourceRelationship => ({
-  id: row.resource_to_id,
-  relationshipType: row.relationship_type,
-  '@referredType': 'Resource',
-  ...(row.valid_for_start || row.valid_for_end
-    ? {
-        validFor: {
-          ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
-          ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
-        },
-      }
-    : {}),
-});
+}): ResourceRelationship => {
+  const relationshipId = row.relationship_id ?? row.id ?? undefined;
+  const placement = parseRelationshipJson<NonNullable<ResourceRelationship['placement']>>(row.placement);
+  const attributes = parseRelationshipJson<Record<string, unknown>>(row.attributes);
+  return {
+    id: row.resource_to_id,
+    relationshipType: row.relationship_type,
+    '@referredType': 'Resource',
+    ...(relationshipId ? { relationshipId } : {}),
+    ...(row.relationship_definition_id
+      ? { relationshipDefinitionId: row.relationship_definition_id }
+      : {}),
+    ...(placement ? { placement } : {}),
+    ...(attributes ? { attributes } : {}),
+    ...(row.valid_for_start || row.valid_for_end
+      ? {
+          validFor: {
+            ...(row.valid_for_start ? { startDateTime: row.valid_for_start } : {}),
+            ...(row.valid_for_end ? { endDateTime: row.valid_for_end } : {}),
+          },
+        }
+      : {}),
+  };
+};
 
 const servingSiteIdOf = (resource: {
   characteristic?: Array<{ name: string; value: unknown }>;
@@ -844,12 +869,14 @@ export class OracleResourceRepository implements IResourceRepository {
       target_kind: ResourceTypeRelationshipRule['targetKind'];
       target_id: string;
       cardinality?: string | null;
+      configuration?: string | null;
+      validation_rules?: string | null;
       lifecycle_status: 'Active' | 'Retired';
       valid_for_start?: string | null;
       valid_for_end?: string | null;
     }>(
       `SELECT id, tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id,
-              cardinality, lifecycle_status, valid_for_start, valid_for_end
+              cardinality, configuration, validation_rules, lifecycle_status, valid_for_start, valid_for_end
          FROM resource_type_relationship_rule
         WHERE tenant_id = ?
           AND source_resource_type_id IN (${uniqueSourceIds.map(() => '?').join(', ')})${scope?.includeRetired ? '' : " AND lifecycle_status = 'Active'"}
@@ -871,12 +898,14 @@ export class OracleResourceRepository implements IResourceRepository {
       target_kind: ResourceTypeRelationshipRule['targetKind'];
       target_id: string;
       cardinality?: string | null;
+      configuration?: string | null;
+      validation_rules?: string | null;
       lifecycle_status: 'Active' | 'Retired';
       valid_for_start?: string | null;
       valid_for_end?: string | null;
     }>(
       `SELECT id, tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id,
-              cardinality, lifecycle_status, valid_for_start, valid_for_end
+              cardinality, configuration, validation_rules, lifecycle_status, valid_for_start, valid_for_end
          FROM resource_type_relationship_rule WHERE id = ? AND tenant_id = ?`,
       [id, scope?.tenantId ?? 'default'],
     );
@@ -890,9 +919,11 @@ export class OracleResourceRepository implements IResourceRepository {
     await this.db.run(
       `INSERT INTO resource_type_relationship_rule
        (id, tenant_id, source_resource_type_id, relationship_type_code, target_kind, target_id,
-        cardinality, lifecycle_status, valid_for_start, valid_for_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cardinality, configuration, validation_rules, lifecycle_status, valid_for_start, valid_for_end,
+        created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET cardinality = excluded.cardinality,
+         configuration = excluded.configuration, validation_rules = excluded.validation_rules,
          lifecycle_status = excluded.lifecycle_status, valid_for_start = excluded.valid_for_start,
          valid_for_end = excluded.valid_for_end, updated_at = excluded.updated_at`,
       [
@@ -903,6 +934,8 @@ export class OracleResourceRepository implements IResourceRepository {
         rule.targetKind,
         rule.targetId,
         rule.cardinality ? JSON.stringify(rule.cardinality) : null,
+        rule.configuration ? JSON.stringify(rule.configuration) : null,
+        rule.validationRules ? JSON.stringify(rule.validationRules) : null,
         rule.lifecycleStatus,
         rule.validFor?.startDateTime ?? null,
         rule.validFor?.endDateTime ?? null,
@@ -1829,7 +1862,11 @@ export class OracleResourceRepository implements IResourceRepository {
       entity_type: 'PhysicalResource' | 'LogicalResource';
       resource_type: string | null;
       status: string | null;
+      status_code: string | null;
       parent_id: string | null;
+      relationship_id: string | null;
+      relationship_definition_id: string | null;
+      placement: string | null;
       depth: number;
       specification_id: string | null;
       model: string | null;
@@ -1840,7 +1877,8 @@ export class OracleResourceRepository implements IResourceRepository {
       characteristics: string | null;
     }>(
       `WITH tree AS (
-         SELECT /*+ MATERIALIZE */ e.resource_to_id AS id, e.resource_from_id AS parent_id, LEVEL AS depth
+         SELECT /*+ MATERIALIZE */ e.resource_to_id AS id, e.resource_from_id AS parent_id,
+                e.id AS relationship_id, e.relationship_definition_id, e.placement, LEVEL AS depth
            FROM resource_relationship e
           WHERE e.relationship_type = 'containsAsChild'
         START WITH e.resource_from_id = ?
@@ -1849,8 +1887,8 @@ export class OracleResourceRepository implements IResourceRepository {
            AND e.relationship_type = 'containsAsChild'
            AND LEVEL <= ?
        )
-       SELECT t.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status,
-              t.parent_id, t.depth,
+       SELECT t.id, r.name, 'PhysicalResource' AS entity_type, rt.code AS resource_type, r.status, r.status_code,
+              t.parent_id, t.relationship_id, t.relationship_definition_id, t.placement, t.depth,
               r.resource_specification_id AS specification_id,
               NULL AS model,
               r.serial_number,
@@ -1863,7 +1901,8 @@ export class OracleResourceRepository implements IResourceRepository {
         WHERE r.tenant_id = ?
        UNION ALL
        SELECT t.id, r.name, 'LogicalResource' AS entity_type, rt.code AS resource_type, r.status,
-              t.parent_id, t.depth,
+              NULL AS status_code,
+              t.parent_id, t.relationship_id, t.relationship_definition_id, t.placement, t.depth,
               r.resource_specification_id AS specification_id,
               NULL AS model,
               NULL AS serial_number,
@@ -1930,15 +1969,24 @@ export class OracleResourceRepository implements IResourceRepository {
         ? specificationInfoById.get(row.specification_id)
         : undefined;
       const characteristics = characteristicsFromJson(row.characteristics);
+      const placement = parseRelationshipJson<NonNullable<ResourceComponentNode['placement']>>(
+        row.placement,
+      );
       return {
         '@type': 'ResourceComponentNode',
         id: row.id,
         name: row.name,
         ...(row.resource_type ? { resourceType: row.resource_type } : {}),
         ...(row.status ? { status: row.status } : {}),
+        ...(row.status_code ? { statusCode: row.status_code } : {}),
         kind: row.entity_type,
         parentId: row.parent_id,
         depth: row.depth,
+        ...(row.relationship_id ? { relationshipId: row.relationship_id } : {}),
+        ...(row.relationship_definition_id
+          ? { relationshipDefinitionId: row.relationship_definition_id }
+          : {}),
+        ...(placement ? { placement } : {}),
         ...(row.administrative_state
           ? {
               administrativeState: row.administrative_state as NonNullable<
@@ -2819,23 +2867,33 @@ export class OracleResourceRepository implements IResourceRepository {
     resourceId: string,
     relationship: ResourceRelationship,
   ): Promise<ResourceRelationship> {
+    const relationshipId = relationship.relationshipId ?? createCanonicalId();
     await this.db.run(
       `INSERT INTO resource_relationship
-       (resource_from_id, resource_to_id, relationship_type, valid_for_start, valid_for_end)
-       VALUES (?, ?, ?, ?, ?)
+       (id, resource_from_id, resource_to_id, relationship_type, relationship_definition_id, placement,
+        attributes, valid_for_start, valid_for_end, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        ON CONFLICT(resource_from_id, resource_to_id, relationship_type) DO UPDATE SET
+       relationship_definition_id = excluded.relationship_definition_id,
+       placement = excluded.placement,
+       attributes = excluded.attributes,
        valid_for_start = excluded.valid_for_start,
-       valid_for_end = excluded.valid_for_end`,
+       valid_for_end = excluded.valid_for_end,
+       updated_at = CURRENT_TIMESTAMP`,
       [
+        relationshipId,
         resourceId,
         relationship.id,
         relationship.relationshipType,
+        relationship.relationshipDefinitionId ?? null,
+        relationship.placement ? JSON.stringify(relationship.placement) : null,
+        relationship.attributes ? JSON.stringify(relationship.attributes) : null,
         relationship.validFor?.startDateTime ?? null,
         relationship.validFor?.endDateTime ?? null,
       ],
     );
 
-    return relationship;
+    return { ...relationship, relationshipId };
   }
 
   public async deleteResourceRelationship(
@@ -2853,12 +2911,17 @@ export class OracleResourceRepository implements IResourceRepository {
 
   public async listResourceRelationships(resourceId: string): Promise<ResourceRelationship[]> {
     const rows = await this.db.all<{
+      id?: string | null;
       resource_to_id: string;
       relationship_type: string;
+      relationship_definition_id?: string | null;
+      placement?: string | null;
+      attributes?: string | null;
       valid_for_start?: string | null;
       valid_for_end?: string | null;
     }>(
-      `SELECT resource_to_id, relationship_type, valid_for_start, valid_for_end
+      `SELECT id, resource_to_id, relationship_type, relationship_definition_id, placement, attributes,
+              valid_for_start, valid_for_end
        FROM resource_relationship
        WHERE resource_from_id = ?
        ORDER BY relationship_type, resource_to_id`,
@@ -3207,6 +3270,8 @@ export class OracleResourceRepository implements IResourceRepository {
     target_kind: ResourceTypeRelationshipRule['targetKind'];
     target_id: string;
     cardinality?: string | null;
+    configuration?: string | null;
+    validation_rules?: string | null;
     lifecycle_status: 'Active' | 'Retired';
     valid_for_start?: string | null;
     valid_for_end?: string | null;
@@ -3220,6 +3285,8 @@ export class OracleResourceRepository implements IResourceRepository {
       targetKind: row.target_kind,
       targetId: row.target_id,
       ...(row.cardinality ? { cardinality: JSON.parse(row.cardinality) } : {}),
+      ...(row.configuration ? { configuration: JSON.parse(row.configuration) } : {}),
+      ...(row.validation_rules ? { validationRules: JSON.parse(row.validation_rules) } : {}),
       lifecycleStatus: row.lifecycle_status,
       tenantId: row.tenant_id,
       ...(row.valid_for_start || row.valid_for_end

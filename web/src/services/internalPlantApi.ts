@@ -186,7 +186,18 @@ export type EditorComponentNode = {
   kind: EditorResourceKind;
   parentId: string | null;
   depth: number;
+  relationshipId?: string;
+  relationshipDefinitionId?: string;
+  placement?:
+    | { placementPolicy: 'LINEAR'; position: number; span?: number }
+    | { placementPolicy: 'GRID'; row: number; column: number; rowSpan?: number; columnSpan?: number };
   resourceType?: string;
+  status?: string;
+  statusCode?: string;
+  administrativeState?: string;
+  operationalState?: string;
+  usageState?: string;
+  characteristics?: EditorCharacteristic[];
   specification?: { id: string; name?: string };
 };
 
@@ -226,8 +237,18 @@ export type ResourceEditorSnapshot = {
 
 export type AggregateChildDraft = {
   id?: string;
+  relationshipId?: string;
+  relationshipDefinitionId?: string;
+  placement?:
+    | { placementPolicy: 'LINEAR'; position: number; span?: number }
+    | { placementPolicy: 'GRID'; row: number; column: number; rowSpan?: number; columnSpan?: number };
   name: string;
   resourceSpecificationId: string;
+  status?: string;
+  statusCode?: string;
+  administrativeState?: string;
+  operationalState?: string;
+  usageState?: string;
   characteristic?: EditorCharacteristic[];
   children?: AggregateChildDraft[];
 };

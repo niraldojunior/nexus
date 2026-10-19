@@ -399,6 +399,10 @@ export class OracleDatabase implements DatabaseClient {
     }
   }
 
+  /**
+   * V39: toda relação histórica recebe UUID v7 próprio sem alterar sua chave natural, destino,
+   * `place_id` ou sem inferir definição ambígua. O hook é idempotente e só toca linhas sem ID.
+   */
   private async contractLegacyAdministrativeCity(connection: Connection): Promise<void> {
     const prefix = this.config.objectPrefix;
     const site = prefixed('geographic_site', prefix);

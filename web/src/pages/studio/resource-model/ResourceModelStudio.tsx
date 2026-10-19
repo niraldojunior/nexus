@@ -359,6 +359,8 @@ export function ResourceModelStudio({
                     targetKind: r.targetKind,
                     targetId: r.targetId,
                     cardinality: r.cardinality,
+                    configuration: r.configuration,
+                    validationRules: r.validationRules,
                     validFor: r.validFor,
                   })),
               }

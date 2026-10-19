@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Boxes,
   ChevronDown,
   Activity,
@@ -13,7 +14,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   CatalogTreeCombobox,
   type CatalogResourceTypeRef,
@@ -30,6 +31,7 @@ import {
   type EditorCharacteristic,
   type EditorResource,
   type EditorResourceKind,
+  type EditorComponentNode,
   type ResourceEditorSnapshot,
   type SaveResourceAggregatePayload,
 } from '../../services/internalPlantApi';
@@ -41,6 +43,7 @@ import {
   type GeoSite,
 } from '../../services/geoApi';
 import { SitePinMap } from './SitePinMap';
+import { ResourceEditorComponentsTab } from './ResourceEditorComponentsTab';
 import {
   persistPendingGeoPlace,
   type GeoPlaceDraft,
@@ -84,12 +87,21 @@ const TABS: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
 
 const CONTAINMENT = new Set(['containsAsChild', 'containedBy']);
 
-type ChildNode = {
+export type ChildNode = {
   key: string;
   id?: string;
+  relationshipId?: string;
+  relationshipDefinitionId?: string;
+  placement?: EditorComponentNode['placement'];
   name: string;
   specId: string;
   typeId: string;
+  status: string;
+  statusCode: string;
+  administrativeState: string;
+  operationalState: string;
+  usageState: string;
+  characteristics: EditorCharacteristic[];
   children: ChildNode[];
 };
 type RelationDraft = {
@@ -129,6 +141,11 @@ const nextKey = () => `n${(seq += 1)}`;
 const inputClass =
   'w-full rounded-[8px] border border-app-border bg-app-panel px-2.5 py-1.5 text-[0.85rem] text-app-text outline-none focus:border-app-accent aria-[invalid=true]:border-status-red';
 const labelClass = 'grid gap-1 text-[0.78rem] font-semibold text-app-muted';
+// Formato em linha: [campo] [valor], três por linha em telas largas.
+const inlineLabelClass =
+  'grid min-w-0 grid-cols-[minmax(0,1.6fr)_minmax(0,3.6fr)] items-start gap-2 text-[0.78rem] font-semibold text-app-muted';
+// Altura mínima = altura do input, para o nome ficar centralizado nele e todos os campos alinharem pelo topo.
+const inlineNameClass = 'flex min-h-[2.125rem] min-w-0 items-center break-words leading-tight';
 
 const activeRule = (r: ResourceTypeRelationshipRule) => r.lifecycleStatus === 'Active';
 
@@ -176,9 +193,20 @@ function toTree(snapshot: ResourceEditorSnapshot, typeOfSpec: Map<string, string
     (byParent.get(parentId) ?? []).map((c) => ({
       key: nextKey(),
       id: c.id,
+      ...(c.relationshipId ? { relationshipId: c.relationshipId } : {}),
+      ...(c.relationshipDefinitionId
+        ? { relationshipDefinitionId: c.relationshipDefinitionId }
+        : {}),
+      ...(c.placement ? { placement: c.placement } : {}),
       name: c.name,
       specId: c.specification?.id ?? '',
       typeId: typeOfSpec.get(c.specification?.id ?? '') ?? '',
+      status: c.status ?? 'active',
+      statusCode: c.statusCode ?? '',
+      administrativeState: c.administrativeState ?? 'unlocked',
+      operationalState: c.operationalState ?? 'enabled',
+      usageState: c.usageState ?? 'idle',
+      characteristics: c.characteristics ?? [],
       children: build(c.id),
     }));
   return build(snapshot.resource.id);
@@ -187,8 +215,17 @@ function toTree(snapshot: ResourceEditorSnapshot, typeOfSpec: Map<string, string
 function toDraftChildren(nodes: ChildNode[]): AggregateChildDraft[] {
   return nodes.map((n) => ({
     ...(n.id ? { id: n.id } : {}),
+    ...(n.relationshipId ? { relationshipId: n.relationshipId } : {}),
+    ...(n.relationshipDefinitionId ? { relationshipDefinitionId: n.relationshipDefinitionId } : {}),
+    ...(n.placement ? { placement: n.placement } : {}),
     name: n.name.trim(),
     resourceSpecificationId: n.specId,
+    status: n.status,
+    ...(n.statusCode ? { statusCode: n.statusCode } : {}),
+    administrativeState: n.administrativeState,
+    operationalState: n.operationalState,
+    usageState: n.usageState,
+    ...(n.characteristics.length > 0 ? { characteristic: n.characteristics } : {}),
     children: toDraftChildren(n.children),
   }));
 }
@@ -232,6 +269,11 @@ export function ResourceEditorModal({
   // Depois de tentar salvar, os obrigatórios vazios passam a ser sinalizados nos campos.
   const [attempted, setAttempted] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const baselineRef = useRef<{
+    components: string;
+    relationships: string;
+    siteRelationships: string;
+  } | null>(null);
   const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalDialog(panelRef, !confirmOpen);
@@ -364,6 +406,23 @@ export function ResourceEditorModal({
             });
           }
           setSnapshot(snap);
+          const loadedChildren = toTree(snap, typeOfSpec);
+          const loadedSiteRels = snap.siteRelationships.map((s) => ({
+            siteId: s.site.id,
+            relationshipType: s.relationshipType,
+          }));
+          // Foto das seções pesadas: só são reenviadas (e revalidadas no backend) se mudarem.
+          baselineRef.current = {
+            components: JSON.stringify(toDraftChildren(loadedChildren)),
+            relationships: JSON.stringify(
+              relations.map((r) => ({
+                targetId: r.targetId,
+                relationshipType: r.relationshipType,
+                direction: r.direction,
+              })),
+            ),
+            siteRelationships: JSON.stringify(loadedSiteRels),
+          };
           setDraft({
             name: snap.resource.name,
             typeId,
@@ -497,6 +556,34 @@ export function ResourceEditorModal({
   );
   const siteRules = rules.filter((r) => r.targetKind === 'GEOGRAPHIC_SITE_SPECIFICATION');
 
+  const rulesLoaded = draft ? rulesByType[draft.typeId] !== undefined : false;
+  const hasContainmentRule = rules.some(
+    (r) => r.relationshipTypeCode === 'containsAsChild' && r.targetKind === 'RESOURCE_TYPE',
+  );
+  const pendingRules = !rulesLoaded && Boolean(resourceId);
+  const showComponents = pendingRules || hasContainmentRule || (draft?.children.length ?? 0) > 0;
+  const showRelations = pendingRules || relRules.length > 0 || (draft?.relations.length ?? 0) > 0;
+  const showCharacteristics = (type?.resourceTypeCharacteristic ?? []).length > 0;
+  const tabVisible = (id: TabId) =>
+    id === 'components'
+      ? showComponents
+      : id === 'relations'
+        ? showRelations
+        : id === 'characteristics'
+          ? showCharacteristics
+          : true;
+  const countNodes = (nodes: ChildNode[]): number =>
+    nodes.reduce((total, node) => total + 1 + countNodes(node.children), 0);
+  const tabCount = (id: TabId): number | undefined =>
+    !draft
+      ? undefined
+      : id === 'components'
+        ? countNodes(draft.children)
+        : id === 'relations'
+          ? draft.relations.length
+          : undefined;
+  const visibleTabs = TABS.filter((t) => t.id === tab || tabVisible(t.id));
+
   const specsOfDraftType = specs.filter((s) => s.resourceTypeId === draft?.typeId);
   const spec = draft ? specById.get(draft.specId) : undefined;
 
@@ -600,17 +687,28 @@ export function ResourceEditorModal({
         ...notesCharacteristic,
         ...edited,
       ],
-      components: toDraftChildren(draft.children),
-      relationships: draft.relations.map((r) => ({
-        targetId: r.targetId,
-        relationshipType: r.relationshipType,
-        direction: r.direction,
-      })),
-      siteRelationships: draft.siteRels.map((s) => ({
-        siteId: s.siteId,
-        relationshipType: s.relationshipType,
-      })),
     };
+    const components = toDraftChildren(draft.children);
+    const relationships = draft.relations.map((r) => ({
+      targetId: r.targetId,
+      relationshipType: r.relationshipType,
+      direction: r.direction,
+    }));
+    const siteRelationships = draft.siteRels.map((s) => ({
+      siteId: s.siteId,
+      relationshipType: s.relationshipType,
+    }));
+    const baseline = resourceId ? baselineRef.current : null;
+    // Seção omitida = intacta no backend (sem validar nem regravar a árvore inteira).
+    if (!baseline || JSON.stringify(components) !== baseline.components) {
+      payload.components = components;
+    }
+    if (!baseline || JSON.stringify(relationships) !== baseline.relationships) {
+      payload.relationships = relationships;
+    }
+    if (!baseline || JSON.stringify(siteRelationships) !== baseline.siteRelationships) {
+      payload.siteRelationships = siteRelationships;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -643,7 +741,7 @@ export function ResourceEditorModal({
         role="dialog"
         aria-modal="true"
         aria-label={resourceId ? 'Editar recurso' : 'Novo recurso'}
-        className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[960px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal outline-none"
+        className="flex h-[min(720px,calc(100vh-32px))] w-full max-w-[1180px] overflow-hidden rounded-[24px] border border-app-border bg-app-panel shadow-modal outline-none"
       >
         <nav
           aria-label="Recurso"
@@ -669,7 +767,7 @@ export function ResourceEditorModal({
               {type?.name ?? 'Sem tipo'}
             </span>
           </div>
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -684,20 +782,30 @@ export function ResourceEditorModal({
             >
               <t.icon size={16} aria-hidden="true" className="shrink-0" />
               {t.label}
+              {tabCount(t.id) !== undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="ml-auto text-[0.75rem] font-normal text-app-muted"
+                >
+                  {tabCount(t.id)}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between gap-3 border-b border-app-border px-6 py-4">
+          <header className="box-border flex h-[65px] shrink-0 items-center justify-between gap-3 border-b border-app-border px-6">
             <div className="min-w-0 flex-1">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
-                {resourceId ? 'Editar recurso' : 'Novo recurso'}
-              </p>
-              <h2
-                className="truncate text-[1.15rem] font-semibold text-app-text"
-                title={draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
-              >
-                {draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
+              <h2 className="flex min-w-0 items-baseline gap-2 text-[1.15rem] font-semibold text-app-text">
+                <span className="shrink-0 text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted">
+                  {resourceId ? 'Editar recurso' : 'Novo recurso'}
+                </span>
+                <span
+                  className="truncate"
+                  title={draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
+                >
+                  {draft?.name || (resourceId ? 'Recurso' : 'Sem nome')}
+                </span>
               </h2>
             </div>
             <button
@@ -710,7 +818,7 @@ export function ResourceEditorModal({
             </button>
           </header>
           <div className="flex gap-1 overflow-x-auto border-b border-app-border px-3 py-1.5 sm:hidden">
-            {TABS.map((t) => (
+            {visibleTabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -719,10 +827,17 @@ export function ResourceEditorModal({
                 className={`shrink-0 rounded-lg px-2.5 py-1 text-[0.8rem] ${tab === t.id ? 'bg-app-accent-soft font-semibold' : 'text-app-muted'}`}
               >
                 {t.label}
+                {tabCount(t.id) !== undefined ? (
+                  <span aria-hidden="true" className="ml-1.5 text-[0.75rem] font-normal">
+                    {tabCount(t.id)}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div
+            className={`min-h-0 flex-1 ${tab === 'components' ? 'flex flex-col overflow-hidden p-3' : 'overflow-y-auto px-6 py-5'}`}
+          >
             {loading || !draft ? (
               error ? (
                 <p role="alert" className="text-[0.9rem] text-status-red">
@@ -738,6 +853,16 @@ export function ResourceEditorModal({
                 treeLoading={treeLoading}
                 onOpenTree={ensureTree}
                 typeName={type?.name}
+                typeIcon={
+                  type ? (
+                    <ResourceIcon
+                      resource={type.code}
+                      visualIdentity={type.visualIdentity}
+                      variant="glyph"
+                      size={18}
+                    />
+                  ) : undefined
+                }
                 nature={nature}
                 manufacturerName={manufacturerName}
                 specs={specsOfDraftType}
@@ -762,8 +887,9 @@ export function ResourceEditorModal({
                 patch={patch}
               />
             ) : tab === 'components' ? (
-              <ComponentsTab
-                draft={draft}
+              <ResourceEditorComponentsTab
+                rootName={draft.name || type?.name || 'Recurso'}
+                draft={draft.children}
                 typeById={typeById}
                 specs={specs}
                 rootTypeId={draft.typeId}
@@ -819,7 +945,8 @@ export function ResourceEditorModal({
                 variant="primary"
                 onClick={() => void save()}
                 loading={saving}
-                disabled={loading || !draft}
+                disabled={loading || !draft || (Boolean(resourceId) && !dirty)}
+                title={resourceId && !dirty ? 'Nenhuma alteração para salvar' : undefined}
               >
                 {saving ? 'Salvando...' : 'Salvar'}
               </Button>
@@ -837,6 +964,7 @@ function GeneralTab({
   treeLoading,
   onOpenTree,
   typeName,
+  typeIcon,
   nature,
   manufacturerName,
   specs,
@@ -844,6 +972,7 @@ function GeneralTab({
   patch,
   attempted,
 }: {
+  typeIcon?: ReactNode;
   draft: Draft;
   tree: ResourceCatalogTreeNode[];
   treeLoading: boolean;
@@ -866,9 +995,9 @@ function GeneralTab({
       <h3 className="border-b border-app-border pb-1 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text">
         Identificação
       </h3>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className={labelClass}>
-          Nome
+      <div className="grid items-start gap-x-4 gap-y-2 sm:grid-cols-3">
+        <label className={inlineLabelClass}>
+          <span className={inlineNameClass}>Nome</span>
           <input
             id="resource-field-name"
             {...invalid(!draft.name.trim())}
@@ -877,8 +1006,8 @@ function GeneralTab({
             onChange={(e) => patch({ name: e.target.value })}
           />
         </label>
-        <label className={labelClass}>
-          Rótulo
+        <label className={inlineLabelClass}>
+          <span className={inlineNameClass}>Rótulo</span>
           <input
             className={inputClass}
             value={draft.label}
@@ -886,8 +1015,8 @@ function GeneralTab({
           />
         </label>
         {nature === 'PhysicalResource' ? (
-          <label className={labelClass}>
-            Número de série
+          <label className={inlineLabelClass}>
+            <span className={inlineNameClass}>Número de série</span>
             <input
               className={inputClass}
               value={draft.serialNumber}
@@ -895,21 +1024,20 @@ function GeneralTab({
             />
           </label>
         ) : null}
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className={labelClass}>
-          <span>Tipo</span>
+        <div className={inlineLabelClass}>
+          <span className={inlineNameClass}>Tipo</span>
           <CatalogTreeCombobox
             nodes={tree}
             selectedTypeId={draft.typeId || null}
             selectedLabel={typeName}
+            selectedIcon={typeIcon}
             onOpen={onOpenTree}
             loading={treeLoading}
             onSelectType={onType}
           />
         </div>
-        <label className={labelClass}>
-          Especificação
+        <label className={inlineLabelClass}>
+          <span className={inlineNameClass}>Especificação</span>
           <select
             id="resource-field-spec"
             {...invalid(Boolean(draft.typeId) && !draft.specId)}
@@ -927,33 +1055,33 @@ function GeneralTab({
           </select>
         </label>
         {nature === 'PhysicalResource' ? (
-          <div className={labelClass}>
-            <span>Fabricante</span>
+          <div className={inlineLabelClass}>
+            <span className={inlineNameClass}>Fabricante</span>
             <output className={`${inputClass} flex items-center bg-app-hover text-app-muted`}>
               {manufacturerName}
             </output>
           </div>
         ) : null}
-      </div>
-      {nature === 'PhysicalResource' ? (
-        <label className={labelClass}>
-          Código ERP
-          <input
-            className={inputClass}
-            value={draft.assetReference}
-            onChange={(e) => patch({ assetReference: e.target.value })}
+        {nature === 'PhysicalResource' ? (
+          <label className={inlineLabelClass}>
+            <span className={inlineNameClass}>Código ERP</span>
+            <input
+              className={inputClass}
+              value={draft.assetReference}
+              onChange={(e) => patch({ assetReference: e.target.value })}
+            />
+          </label>
+        ) : null}
+        <label className="grid min-w-0 grid-cols-[minmax(0,1.6fr)_minmax(0,3.6fr)] items-start gap-2 text-[0.78rem] font-semibold text-app-muted sm:col-span-2 sm:grid-cols-[calc(15.385%-4.92px)_minmax(0,1fr)]">
+          <span className={inlineNameClass}>Observação</span>
+          <textarea
+            className={`${inputClass} min-h-[60px] resize-y`}
+            rows={2}
+            value={draft.notes}
+            onChange={(e) => patch({ notes: e.target.value })}
           />
         </label>
-      ) : null}
-      <label className={labelClass}>
-        Observação
-        <textarea
-          className={`${inputClass} min-h-[88px] resize-y`}
-          rows={4}
-          value={draft.notes}
-          onChange={(e) => patch({ notes: e.target.value })}
-        />
-      </label>
+      </div>
     </div>
   );
 }
@@ -1028,12 +1156,10 @@ function StatesTab({
     { key: 'operationalState', label: 'Estado operacional', at: changedAt?.operational },
     { key: 'usageState', label: 'Estado de uso', at: changedAt?.usage },
   ];
-  const headClass = 'text-[0.72rem] font-semibold uppercase tracking-wide text-app-muted';
+  const headClass =
+    'border-b border-app-border pb-1 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text';
   return (
     <div className="grid gap-3">
-      <p className="text-[0.82rem] text-app-muted">
-        A data de cada estado é registrada automaticamente quando o valor muda.
-      </p>
       <div className="grid grid-cols-[minmax(130px,0.8fr)_minmax(200px,1.4fr)_minmax(150px,1fr)] items-center gap-x-4 gap-y-3 max-sm:grid-cols-1">
         <span className={headClass}>Estado</span>
         <span className={headClass}>Valor</span>
@@ -1172,26 +1298,27 @@ function CharacteristicsTab({
 }) {
   return (
     <div className="grid gap-4">
-      <section aria-label="Nível de especificação" className="grid gap-1.5">
-        <h3 className="text-[0.85rem] font-semibold text-app-text">Nível de especificação</h3>
+      <section aria-label="Nível de especificação" className="grid gap-x-4 gap-y-2 sm:grid-cols-3">
+        <h3 className="border-b border-app-border pb-1 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text sm:col-span-3">
+          Nível de especificação
+        </h3>
         {specLevel.length === 0 ? (
-          <p className="text-[0.82rem] text-app-muted">Nenhuma característica de especificação.</p>
+          <p className="text-[0.82rem] text-app-muted sm:col-span-3">
+            Nenhuma característica de especificação.
+          </p>
         ) : (
           specLevel.map((c) => (
-            <div
-              key={c.name}
-              className="flex justify-between gap-4 border-b border-app-border py-1.5 text-[0.85rem]"
-            >
-              <span className="text-app-muted">{c.name}</span>
-              <span className="text-app-text">
+            <div key={c.name} className={inlineLabelClass}>
+              <span className={inlineNameClass}>{c.name}</span>
+              <output className={`${inputClass} min-h-[2.125rem] truncate`}>
                 {c.value === undefined || c.value === null ? '—' : String(c.value)}
-              </span>
+              </output>
             </div>
           ))
         )}
       </section>
-      <section aria-label="Nível de instância" className="grid gap-2 sm:grid-cols-3">
-        <h3 className="text-[0.85rem] font-semibold text-app-text sm:col-span-3">
+      <section aria-label="Nível de instância" className="grid gap-x-4 gap-y-2 sm:grid-cols-3">
+        <h3 className="border-b border-app-border pb-1 text-[0.8rem] font-semibold uppercase tracking-wide text-app-text sm:col-span-3">
           Nível de instância
         </h3>
         {instanceDefs.length === 0 ? (
@@ -1202,8 +1329,8 @@ function CharacteristicsTab({
           instanceDefs.map((d) => {
             const value = values[d.name] ?? '';
             return (
-              <label key={d.name} className={`${labelClass} min-w-0 grid-cols-[minmax(0,1fr)]`}>
-                {d.name}
+              <label key={d.name} className={inlineLabelClass}>
+                <span className={inlineNameClass}>{d.name}</span>
                 {d.valueType === 'boolean' ? (
                   <select
                     className={inputClass}
@@ -1250,7 +1377,7 @@ function CharacteristicsTab({
   );
 }
 
-function ComponentsTab({
+export function ComponentsTab({
   draft,
   typeById,
   specs,
@@ -1267,6 +1394,13 @@ function ComponentsTab({
   ensureRules: (typeId: string) => Promise<void>;
   onChange: (children: ChildNode[]) => void;
 }) {
+  const containmentRule = (parentTypeId: string, childTypeId: string) =>
+    (rulesByType[parentTypeId] ?? []).find(
+      (rule) =>
+        rule.relationshipTypeCode === 'containsAsChild' &&
+        rule.targetKind === 'RESOURCE_TYPE' &&
+        rule.targetId === childTypeId,
+    );
   const allowedChildTypes = (typeId: string): ResourceType[] =>
     (rulesByType[typeId] ?? [])
       .filter(
@@ -1287,11 +1421,25 @@ function ComponentsTab({
 
   const add = (parentKey: string | null, parentTypeId: string, typeId: string) => {
     const firstSpec = specs.find((s) => s.resourceTypeId === typeId);
+    const rule = containmentRule(parentTypeId, typeId);
+    const configuration = rule?.configuration;
     const child: ChildNode = {
       key: nextKey(),
+      ...(rule ? { relationshipDefinitionId: rule.id } : {}),
+      ...(configuration?.placementPolicy === 'LINEAR'
+        ? { placement: { placementPolicy: 'LINEAR', position: 1 } as const }
+        : configuration?.placementPolicy === 'GRID'
+          ? { placement: { placementPolicy: 'GRID', row: 1, column: 1 } as const }
+          : {}),
       name: '',
       specId: firstSpec?.id ?? '',
       typeId,
+      status: 'active',
+      statusCode: '',
+      administrativeState: 'unlocked',
+      operationalState: 'enabled',
+      usageState: 'idle',
+      characteristics: [],
       children: [],
     };
     void ensureRules(typeId);
@@ -1323,7 +1471,90 @@ function ComponentsTab({
     );
   };
 
-  const render = (nodes: ChildNode[], depth: number): React.ReactNode =>
+  const placementEditor = (node: ChildNode, parentTypeId: string): React.ReactNode => {
+    const rule = containmentRule(parentTypeId, node.typeId);
+    const configuration = rule?.configuration;
+    if (!configuration || configuration.placementPolicy === 'NONE') return null;
+    if (configuration.placementPolicy === 'LINEAR') {
+      const placement = node.placement?.placementPolicy === 'LINEAR' ? node.placement : undefined;
+      return (
+        <label className="flex items-center gap-1 text-[0.75rem] text-app-muted">
+          {configuration.unitLabel}
+          <input
+            type="number"
+            min="1"
+            max={configuration.capacity}
+            aria-label="Posição estrutural"
+            value={placement?.position ?? ''}
+            onChange={(event) => {
+              const position = Number.parseInt(event.target.value, 10);
+              onChange(
+                updateNode(draft.children, node.key, (current) => ({
+                  ...current,
+                  relationshipDefinitionId: rule.id,
+                  placement: {
+                    placementPolicy: 'LINEAR',
+                    position: Number.isInteger(position) ? position : 1,
+                    ...(placement?.span && placement.span > 1 ? { span: placement.span } : {}),
+                  },
+                })),
+              );
+            }}
+            className="w-16 rounded-[8px] border border-app-border bg-app-panel px-2 py-1 font-mono text-[0.8rem] text-app-text"
+          />
+        </label>
+      );
+    }
+    const placement = node.placement?.placementPolicy === 'GRID' ? node.placement : undefined;
+    const updateGrid = (field: 'row' | 'column', value: string) => {
+      const parsed = Number.parseInt(value, 10);
+      onChange(
+        updateNode(draft.children, node.key, (current) => ({
+          ...current,
+          relationshipDefinitionId: rule.id,
+          placement: {
+            placementPolicy: 'GRID',
+            row: field === 'row' ? (Number.isInteger(parsed) ? parsed : 1) : (placement?.row ?? 1),
+            column:
+              field === 'column'
+                ? Number.isInteger(parsed)
+                  ? parsed
+                  : 1
+                : (placement?.column ?? 1),
+            ...(placement?.rowSpan && placement.rowSpan > 1 ? { rowSpan: placement.rowSpan } : {}),
+            ...(placement?.columnSpan && placement.columnSpan > 1
+              ? { columnSpan: placement.columnSpan }
+              : {}),
+          },
+        })),
+      );
+    };
+    return (
+      <span className="flex items-center gap-1 text-[0.75rem] text-app-muted">
+        <input
+          type="number"
+          min="1"
+          max={configuration.rows}
+          aria-label="Linha estrutural"
+          value={placement?.row ?? ''}
+          onChange={(event) => updateGrid('row', event.target.value)}
+          className="w-14 rounded-[8px] border border-app-border bg-app-panel px-2 py-1 font-mono text-[0.8rem] text-app-text"
+        />
+        <span>×</span>
+        <input
+          type="number"
+          min="1"
+          max={configuration.columns}
+          aria-label="Coluna estrutural"
+          value={placement?.column ?? ''}
+          onChange={(event) => updateGrid('column', event.target.value)}
+          className="w-14 rounded-[8px] border border-app-border bg-app-panel px-2 py-1 font-mono text-[0.8rem] text-app-text"
+        />
+      </span>
+    );
+  };
+
+  const render = (nodes: ChildNode[], depth: number, parentTypeId: string): React.ReactNode =>
     nodes.map((n) => (
       <li key={n.key} className="grid gap-1.5" style={{ marginLeft: depth * 16 }}>
         <div className="flex flex-wrap items-center gap-2 rounded-[10px] border border-app-border p-2">
@@ -1338,6 +1569,7 @@ function ComponentsTab({
           <span className="text-[0.75rem] text-app-muted">
             {typeById.get(n.typeId)?.name ?? '—'}
           </span>
+          {placementEditor(n, parentTypeId)}
           <select
             aria-label="Especificação do componente"
             className="rounded-[8px] border border-app-border bg-app-panel px-2 py-1 text-[0.8rem]"
@@ -1365,7 +1597,7 @@ function ComponentsTab({
           </button>
         </div>
         {n.children.length > 0 ? (
-          <ul className="grid gap-1.5">{render(n.children, depth + 1)}</ul>
+          <ul className="grid gap-1.5">{render(n.children, depth + 1, n.typeId)}</ul>
         ) : null}
       </li>
     ));
@@ -1382,7 +1614,7 @@ function ComponentsTab({
         <AddControl parentKey={null} typeId={rootTypeId} />
       </div>
       {draft.children.length > 0 ? (
-        <ul className="grid gap-1.5">{render(draft.children, 0)}</ul>
+        <ul className="grid gap-1.5">{render(draft.children, 0, rootTypeId)}</ul>
       ) : null}
     </div>
   );
@@ -1468,14 +1700,53 @@ function RelationsTab({
     };
   }, [q, selected, selfId, allowedTypeNames, draft.relations]);
 
+  const nameOf = (c: string) => relTypes.find((r) => r.code === c)?.name ?? c;
+  const orphans = draft.relations.filter((r) => !codes.includes(r.relationshipType));
+  const orphanSection =
+    orphans.length > 0 ? (
+      <section aria-label="Relações fora da modelagem" className="grid gap-2">
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[10px] border border-status-amber/50 bg-status-amber/10 px-3 py-2 text-[0.82rem] text-app-text"
+        >
+          <AlertTriangle
+            size={16}
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-status-amber"
+          />
+          <span>
+            {orphans.length === 1
+              ? 'Há 1 relação inconsistente com a modelagem do tipo de recurso no Studio.'
+              : `Há ${orphans.length} relações inconsistentes com a modelagem do tipo de recurso no Studio.`}{' '}
+            Elas são exibidas somente para leitura; configure a regra no Studio para editá-las.
+          </span>
+        </p>
+        <ul className="grid gap-1.5">
+          {orphans.map((r) => (
+            <li
+              key={r.key}
+              className="flex items-center gap-2 rounded-[10px] border border-app-border bg-[var(--surface-muted)] px-3 py-1.5 text-[0.85rem]"
+            >
+              <span className="text-app-muted">
+                {nameOf(r.relationshipType)}
+                {r.direction === 'incoming' ? ' (entrada)' : ''}:
+              </span>
+              <span className="min-w-0 flex-1 truncate">{r.targetName}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
   if (codes.length === 0) {
     return (
-      <p className="text-[0.85rem] text-app-muted">
-        O tipo não define regras de relação entre recursos.
-      </p>
+      <div className="grid gap-4">
+        <p className="text-[0.85rem] text-app-muted">
+          O tipo não define regras de relação entre recursos.
+        </p>
+        {orphanSection}
+      </div>
     );
   }
-  const nameOf = (c: string) => relTypes.find((r) => r.code === c)?.name ?? c;
   return (
     <div className="grid gap-4">
       <div className="grid gap-2 sm:grid-cols-[200px_1fr]">
@@ -1528,29 +1799,32 @@ function RelationsTab({
         </ul>
       ) : null}
       <ul className="grid gap-1.5">
-        {draft.relations.map((r) => (
-          <li
-            key={r.key}
-            className="flex items-center justify-between rounded-[10px] border border-app-border px-3 py-1.5 text-[0.85rem]"
-          >
-            <span>
-              <span className="text-app-muted">
-                {nameOf(r.relationshipType)}
-                {r.direction === 'incoming' ? ' (entrada)' : ''}:
-              </span>{' '}
-              {r.targetName}
-            </span>
-            <button
-              type="button"
-              aria-label={`Remover relação com ${r.targetName}`}
-              className="text-app-muted hover:text-status-red"
-              onClick={() => onChange(draft.relations.filter((x) => x.key !== r.key))}
+        {draft.relations
+          .filter((r) => codes.includes(r.relationshipType))
+          .map((r) => (
+            <li
+              key={r.key}
+              className="flex items-center justify-between rounded-[10px] border border-app-border px-3 py-1.5 text-[0.85rem]"
             >
-              <Trash2 size={15} />
-            </button>
-          </li>
-        ))}
+              <span>
+                <span className="text-app-muted">
+                  {nameOf(r.relationshipType)}
+                  {r.direction === 'incoming' ? ' (entrada)' : ''}:
+                </span>{' '}
+                {r.targetName}
+              </span>
+              <button
+                type="button"
+                aria-label={`Remover relação com ${r.targetName}`}
+                className="text-app-muted hover:text-status-red"
+                onClick={() => onChange(draft.relations.filter((x) => x.key !== r.key))}
+              >
+                <Trash2 size={15} />
+              </button>
+            </li>
+          ))}
       </ul>
+      {orphanSection}
     </div>
   );
 }

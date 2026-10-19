@@ -185,8 +185,34 @@ export type UpdateResourceTypeInput = {
 };
 
 export type ResourceRelationshipCardinality = {
+  minSourcePerTarget?: number;
   maxSourcePerTarget?: number;
+  minTargetPerSource?: number;
   maxTargetPerSource?: number;
+};
+
+export type ResourceRelationshipDefinitionConfiguration =
+  | { version: 1; placementPolicy: 'NONE' }
+  | {
+      version: 1;
+      placementPolicy: 'LINEAR';
+      axis: 'vertical' | 'horizontal';
+      unitLabel: string;
+      capacity: number;
+      numberingDirection: 'ascending' | 'descending';
+    }
+  | {
+      version: 1;
+      placementPolicy: 'GRID';
+      rows: number;
+      columns: number;
+      fillOrder: 'row-major' | 'column-major';
+    };
+
+export type ResourceRelationshipDefinitionValidationRules = {
+  required?: boolean;
+  ordered?: boolean;
+  exclusive?: boolean;
 };
 
 export type ResourceRelationshipTargetKind = 'RESOURCE_TYPE' | 'GEOGRAPHIC_SITE_SPECIFICATION';
@@ -213,6 +239,8 @@ export type ResourceTypeRelationshipRule = {
   targetKind: ResourceRelationshipTargetKind;
   targetId: string;
   cardinality?: ResourceRelationshipCardinality;
+  configuration?: ResourceRelationshipDefinitionConfiguration;
+  validationRules?: ResourceRelationshipDefinitionValidationRules;
   lifecycleStatus: 'Active' | 'Retired';
   validFor?: TimePeriod;
 };
@@ -231,6 +259,9 @@ export type ResourceTypeRelationshipRuleInput = {
   targetKind?: ResourceRelationshipTargetKind;
   targetId?: string;
   cardinality?: ResourceRelationshipCardinality | null;
+  /** `null` remove a configuração estrutural ao trocar containment por outra semântica. */
+  configuration?: ResourceRelationshipDefinitionConfiguration | null;
+  validationRules?: ResourceRelationshipDefinitionValidationRules;
   validFor?: TimePeriod;
 };
 

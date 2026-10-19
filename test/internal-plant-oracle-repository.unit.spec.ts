@@ -131,6 +131,9 @@ test('getSiteContext devolve a cadeia raiz→site e o endereço do site selecion
         city: null,
         state_or_province: null,
         postcode: null,
+        administrative_city_id: 'c1',
+        country_code: 'BR',
+        state_code: 'RJ',
         lvl: 3,
       },
       {
@@ -161,6 +164,97 @@ test('getSiteContext devolve a cadeia raiz→site e o endereço do site selecion
   assert.equal(result?.address?.city, 'Niterói');
   assert.match(calls[0]!.sql, /CONNECT BY NOCYCLE/);
   assert.deepEqual(calls[0]!.params, ['site-1', 'tenant-a']);
+  assert.deepEqual(result?.treePath, [
+    'country:BR',
+    'uf:BR|RJ',
+    'city:c1',
+    'site-type:c1|building-spec',
+    'site:building-1',
+    'site:site-1',
+  ]);
+});
+
+test('getSiteContext usa o ramo "none" quando a raiz não tem município', async () => {
+  const { db } = fakeDb([
+    [
+      {
+        id: 'site-1',
+        name: 'Central',
+        specification_name: 'Central',
+        site_specification_id: 'co-spec',
+        geographic_address_id: null,
+        administrative_city_id: null,
+        country_code: null,
+        state_code: null,
+        lvl: 1,
+      },
+    ],
+    [],
+  ]);
+  const result = await new OracleInternalPlantRepository(db).getSiteContext('site-1', 'tenant-a');
+  assert.deepEqual(result?.treePath, [
+    'country:BR',
+    'uf:none',
+    'city:none',
+    'site-type:none|co-spec',
+    'site:site-1',
+  ]);
+});
+
+test('listSites busca por prefixo escapado, exclui Retired e enriquece em lote', async () => {
+  const { db, calls } = fakeDb([
+    [
+      {
+        id: 'sub-1',
+        name: 'Sala 10%',
+        status: 'Active',
+        spec_id: 'room-spec',
+        spec_name: 'Sala',
+        street_type: 'Rua',
+        street_name: 'Cinco de Julho',
+        street_nr: '237',
+        city: 'Niterói',
+        state_or_province: 'RJ',
+        postcode: '24220110',
+        total: 1,
+      },
+    ],
+    [{ site_specification_id: 'room-spec', icon_code: 'Room', icon_asset_id: null }],
+    [{ site_id: 'sub-1', state_code: 'RJ', city_name: 'Niterói' }],
+  ]);
+  const result = await new OracleInternalPlantRepository(db).listSites({
+    q: 'Sala 10%',
+    tenantId: 'tenant-a',
+    limit: 25,
+    offset: 0,
+  });
+  assert.equal(calls[0]!.params[1], 'sala 10!%%');
+  assert.match(calls[0]!.sql, /status <> 'Retired'/);
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.items[0], {
+    id: 'sub-1',
+    name: 'Sala 10%',
+    status: 'Active',
+    siteSpecification: { id: 'room-spec', name: 'Sala' },
+    visualIdentity: { kind: 'system', iconCode: 'Room' },
+    address: 'Rua Cinco de Julho, nº 237, Niterói, RJ, 24220110',
+    stateOrProvince: 'RJ',
+    city: 'Niterói',
+  });
+  assert.match(calls[2]!.sql, /CONNECT BY NOCYCLE/);
+});
+
+test('listSites cai para substring quando o prefixo não encontra nada', async () => {
+  const { db, calls } = fakeDb([[], [{ n: 0 }], []]);
+  const result = await new OracleInternalPlantRepository(db).listSites({
+    q: 'cari',
+    tenantId: 'tenant-a',
+    limit: 25,
+    offset: 0,
+  });
+  assert.equal(result.total, 0);
+  assert.equal(calls[0]!.params[1], 'cari%');
+  assert.ok(calls.some((call) => call.params[1] === '%cari%'));
 });
 
 test('listResources herda o fabricante da ResourceSpecification e a localização administrativa do Site', async () => {

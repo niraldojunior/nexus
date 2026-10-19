@@ -4,6 +4,7 @@ import type {
   InternalPlantLocationChildrenPage,
   InternalPlantLocationRootNode,
   InternalPlantResourcePage,
+  InternalPlantSitePage,
 } from './internal-plant-domain.js';
 import type { IInternalPlantRepository } from './internal-plant-repository-interface.js';
 
@@ -61,6 +62,30 @@ export class InternalPlantService {
       });
     }
     return result;
+  }
+
+  public async searchSites(
+    options: { q?: string; limit?: number; offset?: number },
+    context: RequestContext,
+  ): Promise<InternalPlantSitePage> {
+    const q = options.q?.trim();
+    if (!q) {
+      throw new AppError('q is required', {
+        code: 'INTERNAL_PLANT_FILTER_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    if (q.length < INTERNAL_PLANT_MIN_SEARCH_LENGTH) {
+      throw new AppError(`q must have at least ${INTERNAL_PLANT_MIN_SEARCH_LENGTH} characters`, {
+        code: 'INTERNAL_PLANT_QUERY_TOO_SHORT',
+        statusCode: 400,
+      });
+    }
+    return await this.repository.listSites({
+      q,
+      ...normalizePage(options),
+      tenantId: context.tenantId,
+    });
   }
 
   public async listResources(

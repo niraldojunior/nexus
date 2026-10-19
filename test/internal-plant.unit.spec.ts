@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { RequestContext } from '../src/shared/http/request-context.js';
 import type { IInternalPlantRepository } from '../src/modules/resource/internal-plant-repository-interface.js';
-import type { InternalPlantResourceQuery } from '../src/modules/resource/internal-plant-domain.js';
+import type {
+  InternalPlantResourceQuery,
+  InternalPlantSiteQuery,
+} from '../src/modules/resource/internal-plant-domain.js';
 import { InternalPlantService } from '../src/modules/resource/internal-plant-service.js';
 import { escapeLike } from '../src/modules/resource/internal-plant-oracle-repository.js';
 
@@ -15,6 +18,7 @@ const context: RequestContext = {
 
 const build = () => {
   const queries: InternalPlantResourceQuery[] = [];
+  const siteQueries: InternalPlantSiteQuery[] = [];
   const childCalls: Array<{ nodeId: string; limit: number; offset: number; tenantId: string }> = [];
   const repository: IInternalPlantRepository = {
     roots: async () => [],
@@ -25,13 +29,18 @@ const build = () => {
     getSiteContext: async (siteId) => ({
       site: { id: siteId, name: 'Sala Técnica', specificationName: 'Sala' },
       hierarchy: [{ id: siteId, name: 'Sala Técnica', specificationName: 'Sala' }],
+      treePath: ['country:BR', 'uf:none', 'city:none', 'site-type:none|spec', `site:${siteId}`],
     }),
+    listSites: async (query) => {
+      siteQueries.push(query);
+      return { items: [], total: 0, limit: query.limit, offset: query.offset };
+    },
     listResources: async (query) => {
       queries.push(query);
       return { items: [], total: 0, limit: query.limit, offset: query.offset };
     },
   };
-  return { service: new InternalPlantService(repository), queries, childCalls };
+  return { service: new InternalPlantService(repository), queries, siteQueries, childCalls };
 };
 
 test('listResources exige contexto de consulta', async () => {
@@ -57,6 +66,27 @@ test('listResources normaliza paginação, deduplica tipos e usa o tenant do con
   assert.deepEqual(queries[0], {
     siteId: 's1',
     resourceTypeIdIn: ['t1', 't2'],
+    limit: 200,
+    offset: 0,
+    tenantId: 'tenant-a',
+  });
+});
+
+test('searchSites exige termo com ao menos 3 caracteres', async () => {
+  const { service } = build();
+  await assert.rejects(() => service.searchSites({}, context), {
+    code: 'INTERNAL_PLANT_FILTER_REQUIRED',
+  });
+  await assert.rejects(() => service.searchSites({ q: ' ab ' }, context), {
+    code: 'INTERNAL_PLANT_QUERY_TOO_SHORT',
+  });
+});
+
+test('searchSites normaliza paginação e usa o tenant do contexto', async () => {
+  const { service, siteQueries } = build();
+  await service.searchSites({ q: ' Icaraí ', limit: 9999, offset: -4 }, context);
+  assert.deepEqual(siteQueries[0], {
+    q: 'Icaraí',
     limit: 200,
     offset: 0,
     tenantId: 'tenant-a',

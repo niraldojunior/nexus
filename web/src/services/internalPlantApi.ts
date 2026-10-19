@@ -45,6 +45,26 @@ export type InternalPlantSiteContext = {
     stateOrProvince?: string;
     postcode?: string;
   };
+  /** Ids dos nós da árvore de Locais, do país ao Site. */
+  treePath: string[];
+};
+
+export type InternalPlantSiteRow = {
+  id: string;
+  name: string;
+  status: string;
+  siteSpecification: { id: string; name: string };
+  visualIdentity?: VisualIdentity;
+  address?: string;
+  stateOrProvince?: string;
+  city?: string;
+};
+
+export type InternalPlantSitePage = {
+  items: InternalPlantSiteRow[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type InternalPlantResourceRow = {
@@ -190,7 +210,13 @@ export type EditorComponentNode = {
   relationshipDefinitionId?: string;
   placement?:
     | { placementPolicy: 'LINEAR'; position: number; span?: number }
-    | { placementPolicy: 'GRID'; row: number; column: number; rowSpan?: number; columnSpan?: number };
+    | {
+        placementPolicy: 'GRID';
+        row: number;
+        column: number;
+        rowSpan?: number;
+        columnSpan?: number;
+      };
   resourceType?: string;
   status?: string;
   statusCode?: string;
@@ -241,7 +267,13 @@ export type AggregateChildDraft = {
   relationshipDefinitionId?: string;
   placement?:
     | { placementPolicy: 'LINEAR'; position: number; span?: number }
-    | { placementPolicy: 'GRID'; row: number; column: number; rowSpan?: number; columnSpan?: number };
+    | {
+        placementPolicy: 'GRID';
+        row: number;
+        column: number;
+        rowSpan?: number;
+        columnSpan?: number;
+      };
   name: string;
   resourceSpecificationId: string;
   status?: string;
@@ -318,6 +350,17 @@ export const fetchInternalPlantChildren = (
 
 export const fetchInternalPlantSiteContext = (siteId: string, signal?: AbortSignal) =>
   getJson<InternalPlantSiteContext>(`${BASE}/sites/${encodeURIComponent(siteId)}/context`, signal);
+
+export const fetchInternalPlantSites = (
+  q: string,
+  page: { limit: number; offset: number },
+  signal?: AbortSignal,
+) => {
+  const params = new URLSearchParams({ q });
+  params.set('limit', String(page.limit));
+  params.set('offset', String(page.offset));
+  return getJson<InternalPlantSitePage>(`${BASE}/sites?${params}`, signal);
+};
 
 export const fetchInternalPlantResources = (
   filter: InternalPlantResourceFilter,

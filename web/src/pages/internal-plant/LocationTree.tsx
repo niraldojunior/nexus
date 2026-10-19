@@ -115,6 +115,8 @@ type Props = {
   refreshToken?: number;
   /** Filtro rápido por município/UF (só diretório; não consulta Sites). */
   query?: string;
+  /** Pedido para expandir a árvore até o último nó de `path`; `token` distingue pedidos repetidos. */
+  reveal?: { path: string[]; token: number } | null;
 };
 
 const normalize = (value: string) =>
@@ -134,6 +136,7 @@ export function LocationTree({
   onRemoveSite,
   refreshToken = 0,
   query = '',
+  reveal = null,
 }: Props) {
   const [directory, setDirectory] = useState<InternalPlantLocationRootNode[]>([]);
   const [rootsError, setRootsError] = useState<string | null>(null);
@@ -268,6 +271,73 @@ export function LocationTree({
     return { roots: top, byParent: grouped };
   }, [visibleDirectory]);
 
+  // Revelar um Site: percorre o caminho da árvore carregando cada ramo (inclusive "Carregar mais")
+  // até o próximo nó aparecer, expande os ancestrais e depois rola até o alvo.
+  const branchesRef = useRef(branches);
+  branchesRef.current = branches;
+  const revealRun = useRef(0);
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  const treeRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (!reveal || reveal.path.length === 0) return;
+    const run = ++revealRun.current;
+    const { path } = reveal;
+    void (async () => {
+      try {
+        let parentNodes: InternalPlantLocationNode[] = [];
+        for (let i = 0; i < path.length - 1; i += 1) {
+          const id = path[i]!;
+          const next = path[i + 1]!;
+          if (!id.startsWith('country:') && !id.startsWith('uf:')) {
+            let nodes = branchesRef.current[id]?.nodes ?? [];
+            let total = branchesRef.current[id]?.total ?? -1;
+            while (!nodes.some((node) => node.id === next) && (total < 0 || nodes.length < total)) {
+              const page = await fetchInternalPlantChildren(id, {
+                limit: PAGE,
+                offset: nodes.length,
+              });
+              if (run !== revealRun.current) return;
+              nodes = [...nodes, ...page.nodes];
+              total = page.total;
+              if (page.nodes.length === 0) break;
+            }
+            setBranches((current) => ({
+              ...current,
+              [id]: { nodes, total: Math.max(total, 0), loading: false },
+            }));
+            parentNodes = nodes;
+          }
+          setExpanded((current) => new Set(current).add(id));
+        }
+        const targetId = path[path.length - 1]!;
+        // Se o local encontrado tem filhos, abre o ramo dele também.
+        if (parentNodes.find((node) => node.id === targetId)?.hasChildren) {
+          const page = await fetchInternalPlantChildren(targetId, { limit: PAGE, offset: 0 });
+          if (run !== revealRun.current) return;
+          setBranches((current) => ({
+            ...current,
+            [targetId]: { nodes: page.nodes, total: page.total, loading: false },
+          }));
+          setExpanded((current) => new Set(current).add(targetId));
+        }
+        if (run === revealRun.current) setScrollTarget(targetId);
+      } catch {
+        // Falha ao carregar um ramo: o Site segue selecionado, só não é revelado na árvore.
+      }
+    })();
+  }, [reveal?.token]);
+
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const element = Array.from(
+      treeRef.current?.querySelectorAll<HTMLElement>('[data-node-id]') ?? [],
+    ).find((item) => item.dataset.nodeId === scrollTarget);
+    if (!element) return;
+    // O local encontrado vira a primeira linha visível da árvore.
+    element.scrollIntoView({ block: 'start' });
+    setScrollTarget(null);
+  }, [scrollTarget, branches, expanded]);
+
   const toggle = (node: InternalPlantLocationNode) => {
     const next = new Set(expanded);
     if (next.has(node.id)) {
@@ -299,6 +369,7 @@ export function LocationTree({
       <li key={node.id} role="none">
         <div
           role="treeitem"
+          data-node-id={node.id}
           aria-expanded={node.hasChildren ? isOpen : undefined}
           aria-selected={selected}
           className={`group/row flex items-center gap-1 rounded-[8px] border py-[2px] pr-1.5 text-[0.8125rem] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:text-[0.958rem] text-app-text ${
@@ -433,7 +504,7 @@ export function LocationTree({
   }
 
   return (
-    <ul role="tree" aria-label="Locais" className="px-3 pb-2 pt-1">
+    <ul ref={treeRef} role="tree" aria-label="Locais" className="px-3 pb-2 pt-1">
       {roots.map((node) => renderNode(node, 0))}
     </ul>
   );

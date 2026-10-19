@@ -13,6 +13,9 @@ type Props = {
   width?: number | undefined;
   isMobile?: boolean | undefined;
   onOpenMainMenu?: (() => void) | undefined;
+  /** Texto interno do campo; muda conforme o alvo da busca (locais ou recursos). */
+  placeholder?: string | undefined;
+  ariaLabel?: string | undefined;
 };
 
 /** Barra de pesquisa de inventário: mesma moldura da barra do mapa, sem Places/geocoding. */
@@ -24,6 +27,8 @@ export function InternalPlantSearchBar({
   width,
   isMobile,
   onOpenMainMenu,
+  placeholder = 'Pesquise um recurso',
+  ariaLabel = 'Pesquisar recursos',
 }: Props) {
   const [touched, setTouched] = useState(false);
   const term = value.trim();
@@ -65,8 +70,8 @@ export function InternalPlantSearchBar({
             setTouched(false);
             onChange(event.target.value);
           }}
-          placeholder="Pesquise um recurso"
-          aria-label="Pesquisar recursos"
+          placeholder={placeholder}
+          aria-label={ariaLabel}
           autoComplete="off"
           className="h-full min-w-0 flex-1 rounded-l-full bg-transparent pl-5 pr-2 text-[16px] text-app-text placeholder:text-app-muted [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none focus:outline-none focus-visible:shadow-none"
         />

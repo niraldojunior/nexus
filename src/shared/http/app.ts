@@ -4038,6 +4038,23 @@ const routeResourceRequest = async ({
         ),
       );
     }
+    if (url.pathname === '/v1/resource/internal-plant/sites') {
+      const limit = intParam('limit');
+      const offset = intParam('offset');
+      const q = url.searchParams.get('q') ?? undefined;
+      return sendJson(
+        response,
+        200,
+        await internalPlantService.searchSites(
+          {
+            ...(q ? { q } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+            ...(offset !== undefined ? { offset } : {}),
+          },
+          context,
+        ),
+      );
+    }
     if (url.pathname === '/v1/resource/internal-plant/resources') {
       const limit = intParam('limit');
       const offset = intParam('offset');

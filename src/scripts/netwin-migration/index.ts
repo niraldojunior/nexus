@@ -58,7 +58,7 @@ async function runPhase3(ctx: Awaited<ReturnType<typeof createMigrationContext>>
   await runPhase3Coverage(ctx);
 }
 
-loadEnv({ override: true });
+loadEnv({ path: process.env.NEXUS_ENV_FILE ?? '.env', override: true });
 
 export function parseCliArgs(argv: string[]): CliOptions {
   const get = (flag: string) => {

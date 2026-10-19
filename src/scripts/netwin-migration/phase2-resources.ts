@@ -30,12 +30,20 @@ import {
   type NativeRelationship,
 } from './checkpoint.js';
 import { MigrationProgress } from './progress.js';
+import { CANONICAL_RESOURCE_TYPES } from './phase1-resource-specs.js';
 import {
-  equipmentModelSpecId,
   equipmentTypeSpecId,
   pickSpecification,
+  resolveEquipmentTypeCode,
   SpecCoverage,
 } from './concrete-specs.js';
+import {
+  buildEquipmentSpecIndex,
+  buildExistingTypeIndex,
+  canonicalEquipmentSpecId,
+  loadEquipmentCatalogRows,
+  loadManufacturerResolver,
+} from './concrete-spec-sources.js';
 import {
   chunksOf,
   hydrateByIds,
@@ -140,6 +148,54 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         validSpecs.add(defaultCableSpecId);
       }
     }
+
+    // O mesmo índice semântico da Fase 1 resolve aliases de catálogo da instância para a
+    // ResourceSpecification V2 canônica. Recomputá-lo da origem é determinístico e evita
+    // depender de characteristics do destino para encontrar aliases.
+    const [equipmentCatalogRows, resolveManufacturer] = await Promise.all([
+      loadEquipmentCatalogRows(source),
+      loadManufacturerResolver(source),
+    ]);
+    const resourceTypes = await source.execute<{
+      ID_BD_TIPO_EQUIPAMENTO: number;
+      NOME: string | null;
+      SIGLA: string | null;
+    }>(
+      `SELECT ID_BD_TIPO_EQUIPAMENTO, NOME, SIGLA
+         FROM NETWIN.ISP_CAT_TIPO_EQUIPAMENTO`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    const targetTypeCodes = new Set<string>();
+    if (target) {
+      const targetTypes = await target.execute<{ CODE: string }>(
+        `SELECT code FROM ${ctx.t('resource_type')} WHERE tenant_id IN (:1, 'default')`,
+        [ctx.options.tenantId],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      for (const row of targetTypes.rows ?? []) targetTypeCodes.add(row.CODE);
+    }
+    const existingTypeIndex = buildExistingTypeIndex(
+      CANONICAL_RESOURCE_TYPES,
+      targetTypeCodes,
+    );
+    const typeCodeByTipoNe = new Map<number, string>();
+    for (const row of resourceTypes.rows ?? []) {
+      typeCodeByTipoNe.set(
+        row.ID_BD_TIPO_EQUIPAMENTO,
+        resolveEquipmentTypeCode(
+          row.ID_BD_TIPO_EQUIPAMENTO,
+          row.NOME?.trim() || null,
+          row.SIGLA?.trim() || null,
+          existingTypeIndex,
+        ).code,
+      );
+    }
+    const equipmentSpecIndex = buildEquipmentSpecIndex(
+      equipmentCatalogRows,
+      (row) => typeCodeByTipoNe.get(row.ID_BD_TIPO_NE) ?? `netwin-equipment-${row.ID_BD_TIPO_NE}`,
+      resolveManufacturer,
+    );
 
     const batchSize = ctx.options.batchSize;
     const maxRecords = ctx.options.maxRecords ?? Infinity;
@@ -463,7 +519,11 @@ export async function runPhase2Resources(ctx: MigrationContext): Promise<Resourc
         // concreta vale mesmo quando o subtipo OSP não está no mapa (modem, bateria, antena...).
         const concreteId =
           ispDetail?.ID_BD_TIPO_NE && ispDetail.ID_BD_TIPO_EQUIP
-            ? equipmentModelSpecId(ispDetail.ID_BD_TIPO_NE, ispDetail.ID_BD_TIPO_EQUIP)
+            ? canonicalEquipmentSpecId(
+                equipmentSpecIndex,
+                ispDetail.ID_BD_TIPO_NE,
+                ispDetail.ID_BD_TIPO_EQUIP,
+              )
             : null;
         // Tipo interno sem modelo (Célula 2G, antena...): a spec "de tipo" vem antes do fallback
         // genérico, para o recurso não ser classificado como CDOE por omissão.

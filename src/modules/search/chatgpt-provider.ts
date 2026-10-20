@@ -78,6 +78,7 @@ export class ChatGPTProvider {
     tools?: LLMToolDefinition[],
     onDelta?: (textChunk: string) => void,
     signal?: AbortSignal,
+    reasoningEffort?: 'low' | 'medium' | 'high',
   ): Promise<LLMResponse> {
     const streaming = typeof onDelta === 'function';
     try {
@@ -92,6 +93,7 @@ export class ChatGPTProvider {
           messages: messages.map((message) => toOpenAiMessage(message)),
           temperature,
           max_tokens: maxTokens,
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
           ...(streaming ? { stream: true } : {}),
           ...(tools && tools.length > 0
             ? {
@@ -147,7 +149,10 @@ export class ChatGPTProvider {
       }
       return result;
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      let errorMsg = error instanceof Error ? error.message : String(error);
+      const cause =
+        error instanceof Error ? (error.cause as { code?: string } | undefined) : undefined;
+      if (cause?.code) errorMsg += ` (${cause.code})`;
       throw new Error(`Failed to call ChatGPT: ${errorMsg}`);
     }
   }
@@ -216,13 +221,12 @@ export class ChatGPTProvider {
       }
     }
 
-    const toolCalls: LLMToolCall[] = [...toolCallsByIndex.values()]
-      .filter((call): call is { id: string; name: string; arguments: string } =>
-        Boolean(call.id && call.name),
-      )
-      .map((call) => ({
-        id: call.id,
-        name: call.name,
+    // O Gemini (surface OpenAI-compat) emite a tool call sem `id`; gera um para não descartá-la.
+    const toolCalls: LLMToolCall[] = [...toolCallsByIndex.entries()]
+      .filter(([, call]) => Boolean(call.name))
+      .map(([index, call]) => ({
+        id: call.id || `call_${index}`,
+        name: call.name as string,
         arguments: call.arguments ? (JSON.parse(call.arguments) as Record<string, unknown>) : {},
       }));
 

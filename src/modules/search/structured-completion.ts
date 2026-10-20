@@ -21,7 +21,29 @@ export const createStructuredCompletionPort = (
   const provider = resolveResearchProvider(model, { chatGptProvider, geminiProvider });
   if (!provider) return undefined;
 
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 4;
+  const BACKOFF_MS = [2000, 5000, 10000];
+
+  // O Gemini às vezes gera a chamada da ferramenta com JSON inválido; é intermitente.
+  // Picos de demanda do provider (429/5xx, "UNAVAILABLE") também são temporários.
+  const isTransient = (error: unknown): boolean =>
+    error instanceof Error &&
+    /MALFORMED_FUNCTION_CALL|fetch failed|ECONNRESET|ETIMEDOUT|UND_ERR|API error: (429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand/i.test(
+      error.message,
+    );
+
+  const wait = (ms: number, signal?: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
 
   return {
     completeWithTool: async (request) => {
@@ -29,9 +51,11 @@ export const createStructuredCompletionPort = (
         try {
           return await attemptOnce(request);
         } catch (error) {
-          // O Gemini às vezes gera a chamada da ferramenta com JSON inválido; é intermitente.
-          const transient = error instanceof Error && /MALFORMED_FUNCTION_CALL/.test(error.message);
-          if (!transient || attempt >= MAX_ATTEMPTS || request.signal?.aborted) throw error;
+          if (!isTransient(error) || attempt >= MAX_ATTEMPTS || request.signal?.aborted) {
+            throw error;
+          }
+          await wait(BACKOFF_MS[attempt - 1] ?? 10000, request.signal);
+          if (request.signal?.aborted) throw error;
         }
       }
     },
@@ -56,8 +80,12 @@ export const createStructuredCompletionPort = (
           inputSchema: request.inputSchema,
         },
       ],
-      undefined,
+      // Streaming (delta descartado) mantém a conexão ativa durante o raciocínio longo; sem ele
+      // a resposta única passa ~60s muda e a conexão cai com "fetch failed".
+      () => undefined,
       request.signal,
+      // Só o Gemini: limita o raciocínio para responder antes da conexão ociosa cair (~60s).
+      model.startsWith('gemini') ? 'low' : undefined,
     );
     const call = response.toolCalls?.[0];
     return call ? { toolName: call.name, arguments: call.arguments } : undefined;

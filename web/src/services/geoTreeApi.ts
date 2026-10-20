@@ -86,6 +86,32 @@ export const fetchTreeChildren = (
 
 export type MapBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
+export type NearbyCdo = {
+  id: string;
+  name: string;
+  resourceType: string;
+  status?: string;
+  substatus?: string;
+  lng: number;
+  lat: number;
+  straightMeters: number;
+  portsFree: number;
+  portsTotal: number;
+};
+
+export const fetchNearbyCdos = (
+  origin: { lng: number; lat: number },
+  options: { radiusMeters: number; limit: number },
+): Promise<NearbyCdo[]> => {
+  const params = new URLSearchParams({
+    lng: String(origin.lng),
+    lat: String(origin.lat),
+    radiusMeters: String(options.radiusMeters),
+    limit: String(options.limit),
+  });
+  return getJson<NearbyCdo[]>(`/v1/geo/nearby-cdos?${params.toString()}`);
+};
+
 // Infra passiva (recursos + cabos) dentro da região visível do mapa — usada em escala de
 // detalhe (≤ 50 m), no lugar da expansão da árvore de Hierarquia. `include` restringe o que o
 // servidor busca (RF-011, controle de camadas do mapa — ver utils/mapLayers.viewportInclude);

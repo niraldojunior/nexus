@@ -1651,6 +1651,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
               onDropSimulation={onDropSimulation}
               geonetEnabled={addressLookup.source === 'search'}
               onLocationResolved={onAddressLocationResolved}
+              onSelectSite={(site) => selectNode(site, 'search')}
             />
           ) : detailOpen && detailTarget?.kind === 'site' ? (
             // Painel unificado de Local (REQ-MOD01-016), aberto pela Hierarquia, busca ou

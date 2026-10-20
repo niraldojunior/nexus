@@ -206,8 +206,9 @@ export class OracleGeoRepository implements IGeoRepository {
       `INSERT INTO geographic_address
        (id, tenant_id, street_type, street_name, street_nr, city, state_or_province, postcode,
         country, geographic_location_id, sub_address, source_system, source_ref,
+        street_search, street_nr_search, city_search, postcode_search,
         valid_for_start, valid_for_end, characteristics, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
        street_type = excluded.street_type,
        street_name = excluded.street_name,
@@ -216,6 +217,10 @@ export class OracleGeoRepository implements IGeoRepository {
        state_or_province = excluded.state_or_province,
        postcode = excluded.postcode,
        country = excluded.country,
+       street_search = excluded.street_search,
+       street_nr_search = excluded.street_nr_search,
+       city_search = excluded.city_search,
+       postcode_search = excluded.postcode_search,
        geographic_location_id = excluded.geographic_location_id,
        sub_address = excluded.sub_address,
        source_system = excluded.source_system,
@@ -238,6 +243,10 @@ export class OracleGeoRepository implements IGeoRepository {
         address.subAddress ? JSON.stringify(address.subAddress) : null,
         address.sourceSystem || null,
         address.sourceRef || null,
+        normalizeStreetSearch(address.street) || null,
+        normalizeStreetNumberSearch(address.streetNr) || null,
+        normalizeAddressText(tuple?.cityName ?? address.city) || null,
+        normalizePostcodeSearch(address.postcode) || null,
         address.validFor?.startDateTime || null,
         address.validFor?.endDateTime || null,
         JSON.stringify(address.characteristic),

@@ -66,6 +66,78 @@ test.skipIf(!oracleConfigured)(
 );
 
 test.skipIf(!oracleConfigured)(
+  'Geo tree sites-by-address lists only the sites linked to the consulted address',
+  async () => {
+    const server = createApp({
+      config: createTestConfig(0),
+      logger: createTestLogger(),
+    });
+    const port = await server.start();
+    try {
+      const address = await requestJson(port, 'POST', '/v1/geo/addresses', {
+        street: 'Rua Doutor Paulo Cesar',
+        streetNr: '179',
+        city: 'Niterói',
+        stateOrProvince: 'RJ',
+        postcode: '24220-401',
+        country: 'BR',
+      });
+      assert.equal(address.statusCode, 201);
+      const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
+        name: 'Site Cliente',
+        category: 'Site',
+      });
+      const location = await requestJson(port, 'POST', '/v1/geo/locations', {
+        geometryType: 'Point',
+        geometry: { type: 'Point', coordinates: [-43.107, -22.899] },
+      });
+      const site = await requestJson(port, 'POST', '/v1/geo/sites', {
+        name: 'R31302 - 37091',
+        siteSpecificationId: (spec.body as { id: string }).id,
+        status: 'Active',
+        placeId: (location.body as { id: string }).id,
+        addressId: (address.body as { id: string }).id,
+      });
+      assert.equal(site.statusCode, 201);
+
+      const lookup = (query: string) =>
+        requestJson(port, 'GET', `/v1/geo/tree/sites-by-address?${query}`);
+
+      // Acento, abreviação ("Dr."/"Doutor") e máscara do CEP não impedem a correspondência.
+      for (const query of [
+        'street=Rua+Doutor+Paulo+Cesar&streetNr=179&city=Niter%C3%B3i&stateOrProvince=RJ&postcode=24220-401',
+        'street=RUA+DOUTOR+PAULO+CESAR&streetNr=179&postcode=24220401',
+      ]) {
+        const found = await lookup(query);
+        assert.equal(found.statusCode, 200);
+        assert.deepEqual(
+          (found.body as GeoTreeResponseNode[]).map((node) => node.label),
+          ['R31302 - 37091'],
+        );
+      }
+
+      // Número diferente, e CEP de outra localidade, não devolvem o Local.
+      const otherNumber = await lookup(
+        'street=Rua+Doutor+Paulo+Cesar&streetNr=155&postcode=24220-401',
+      );
+      assert.deepEqual(otherNumber.body, []);
+      const otherPostcode = await lookup(
+        'street=Rua+Doutor+Paulo+Cesar&streetNr=179&postcode=20000-000',
+      );
+      assert.deepEqual(otherPostcode.body, []);
+
+      // Sem número não há identificação suficiente: a rota recusa em vez de listar a rua.
+      const missingNumber = await lookup('street=Rua+Doutor+Paulo+Cesar');
+      assert.equal(missingNumber.statusCode, 400);
+    } finally {
+      await server.stop();
+      const client = await getOracleTestClient();
+      await cleanupOracleTables(client);
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
   'Geo specification instance count returns only sites of the selected specification',
   async () => {
     const server = createApp({

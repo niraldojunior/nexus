@@ -21,17 +21,17 @@ A V.tal é uma **infraestrutura de fibra neutra (wholesale)** — o cliente prim
 
 Node **22+**. Instale com `npm install`, copie `.env.example` para `.env` e ajuste.
 
-| Comando                         | O que faz                                                                                                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm run dev`                   | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:db` + `web:dev`. |
-| `npm run dev:db`                | Só o backend, contra o Oracle configurado no `.env`                                                                                                          |
-| `npm run web:dev`               | Só o frontend Vite                                                                                                                                           |
-| `npm run build`                 | Compila TypeScript para `dist/`                                                                                                                              |
-| `npm run typecheck`             | `tsc --noEmit` na raiz **e** em `web/`                                                                                                                       |
-| `npm run lint` / `lint:fix`     | ESLint                                                                                                                                                       |
-| `npm run format` / `format:fix` | Prettier                                                                                                                                                     |
-| `npm run docs:check`            | Valida anatomia, JSON, links e rastreabilidade das functional specs                                                                                          |
-| `npm test`                      | Suíte completa: unit → integration → regression                                                                                                              |
+| Comando                         | O que faz                                                                                                                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                   | Stack local completa — backend em `127.0.0.1:4001`, Vite em `127.0.0.1:5200`. **Usa PowerShell** (`start-dev.ps1`); em shell POSIX use `dev:db` + `web:dev`. Várias instâncias em paralelo: `npm run dev -- <PREFIXO> <N>` soma `N` às portas (README). |
+| `npm run dev:db`                | Só o backend, contra o Oracle configurado no `.env`                                                                                                                                                                                                     |
+| `npm run web:dev`               | Só o frontend Vite                                                                                                                                                                                                                                      |
+| `npm run build`                 | Compila TypeScript para `dist/`                                                                                                                                                                                                                         |
+| `npm run typecheck`             | `tsc --noEmit` na raiz **e** em `web/`                                                                                                                                                                                                                  |
+| `npm run lint` / `lint:fix`     | ESLint                                                                                                                                                                                                                                                  |
+| `npm run format` / `format:fix` | Prettier                                                                                                                                                                                                                                                |
+| `npm run docs:check`            | Valida anatomia, JSON, links e rastreabilidade das functional specs                                                                                                                                                                                     |
+| `npm test`                      | Suíte completa: unit → integration → regression                                                                                                                                                                                                         |
 
 **Sem CI/CD nesta etapa** — o repositório não roda pipelines automatizados; os gates são comandos manuais. Rode ao menos `docs:check`, `lint` e `typecheck` antes de considerar uma mudança pronta; `docs:check` → `lint` → `typecheck` → `build` → `test` é a ordem recomendada.
 

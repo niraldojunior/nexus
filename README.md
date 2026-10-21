@@ -54,6 +54,28 @@ npm run dev
 > portas, faz o build e aguarda o `/health` antes de subir o Vite. Em shell POSIX (Linux, macOS, WSL),
 > use os dois comandos separados: `npm run dev:db` e, em outro terminal, `npm run web:dev`.
 
+### Várias instâncias ao mesmo tempo
+
+`start-dev.ps1` aceita o prefixo Oracle e, opcionalmente, um **numerador de instância** `N`
+(0–99) que é somado às portas — backend `4001 + N`, frontend `5200 + N`. Sem o numerador,
+o comportamento é o padrão (`4001`/`5200`).
+
+```powershell
+.\start-dev.ps1 NX_DEV16_        # backend 4001, frontend 5200
+.\start-dev.ps1 NX_DEV16_ 1      # backend 4002, frontend 5201
+.\start-dev.ps1 NX_DEMO_ 2       # backend 4003, frontend 5202
+npm run dev -- NX_DEMO_ 2        # o mesmo, via npm
+```
+
+Cada execução só encerra a sessão anterior **da mesma instância** (PIDs em `.tmp-dev-<N>.pids`),
+então ambientes com numeradores diferentes convivem. Os logs de `N > 0` ganham sufixo
+(`.tmp-dev-backend-<N>.log`, `.tmp-dev-web-<N>.log`). Observações:
+
+- A instância `1` usa `5201`, a mesma porta do frontend da regressão Playwright (que também usa o
+  backend em `4001`) — não rode `npm run test:regression` com as instâncias 0 ou 1 no ar.
+- Cada porta é uma origem distinta no browser: login e preferências locais são separados por instância.
+- Scripts que falam com a API usam `NEXUS_API`; aponte para a porta da instância (ex.: `http://127.0.0.1:4003`).
+
 ### Rodando as partes isoladamente
 
 ```bash

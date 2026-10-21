@@ -3,6 +3,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { stripApiPrefix } from './proxy-rewrite.mjs';
 
+// Backend alvo do proxy. start-dev.ps1 define NEXUS_BACKEND_PORT por instância (4001 + N) para
+// permitir vários ambientes no ar ao mesmo tempo; sem ela, a porta padrão do backend.
+const backendTarget = `http://127.0.0.1:${process.env.NEXUS_BACKEND_PORT || 4001}`;
+
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [react()],
@@ -21,21 +25,21 @@ export default defineConfig({
       : { hmr: { overlay: true, timeout: 60_000 } }),
     proxy: {
       '/api/v1': {
-        target: 'http://127.0.0.1:4001',
+        target: backendTarget,
         changeOrigin: true,
         rewrite: stripApiPrefix,
       },
       '/api/tmf-api': {
-        target: 'http://127.0.0.1:4001',
+        target: backendTarget,
         changeOrigin: true,
         rewrite: stripApiPrefix,
       },
       '/v1': {
-        target: 'http://127.0.0.1:4001',
+        target: backendTarget,
         changeOrigin: true,
       },
       '/tmf-api': {
-        target: 'http://127.0.0.1:4001',
+        target: backendTarget,
         changeOrigin: true,
       },
     },

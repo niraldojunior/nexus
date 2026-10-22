@@ -260,7 +260,7 @@ export function RolesPage({
             />
           </div>
 
-          <OverlayScrollArea hostClassName="mt-2" className="space-y-1 overflow-x-hidden px-1 py-1">
+          <OverlayScrollArea hostClassName="-mr-4 mt-2" className="space-y-1 overflow-x-hidden py-1 pl-1 pr-4">
             {loading ? (
               <div className="flex h-32 items-center justify-center text-[0.82rem] text-app-muted">
                 Carregando papéis...

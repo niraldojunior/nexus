@@ -266,7 +266,7 @@ export function LocationModelStudio({
               className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
             />
           </div>
-          <OverlayScrollArea className="space-y-0.5 p-1">
+          <OverlayScrollArea hostClassName="-mr-4" className="space-y-0.5 py-1 pl-1 pr-4">
             {visibleSpecs.length === 0 ? (
               <div className="p-8 text-center text-[0.84rem] text-app-muted">
                 Nenhum tipo de local encontrado.

@@ -480,7 +480,7 @@ export function ResourceCatalogTree({
         </div>
       )}
 
-      <OverlayScrollArea>
+      <OverlayScrollArea hostClassName="-mr-4" className="pr-4">
         {tree.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-center text-app-muted">
             <AlertCircle className="h-8 w-8 mb-2 stroke-1" />

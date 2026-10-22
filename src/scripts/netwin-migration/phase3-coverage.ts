@@ -1,7 +1,13 @@
 import oracledb from 'oracledb';
 import type { Connection } from 'oracledb';
 import type { MigrationContext } from './context.js';
-import { bulkMergeRows } from '../netwin-migration-kit.js';
+import { bulkMergeRows, resolveAdministrativeCityIds } from '../netwin-migration-kit.js';
+import {
+  administrativeCityNaturalKey,
+  normalizeAdministrativeCity,
+  type AdministrativeCityTuple,
+} from '../../modules/geo/administrative-city.js';
+import { reconcileAdministrativeCitySiteCounts } from './administrative-city-site-count.js';
 import { deterministicUuid, NEXUS_NETWIN_NAMESPACE } from './identity.js';
 import {
   aggregateCells,
@@ -59,6 +65,21 @@ function levelLabel(level: Level): string {
   if (level === 'neighborhood') return 'Bairro';
   if (level === 'city') return 'Município';
   return 'UF';
+}
+
+const NO_CITY_LABEL = 'Sem município';
+
+/**
+ * Município canônico (diretório #329) de um polígono de cobertura. Só os níveis bairro e município
+ * pertencem a uma cidade; o nível UF atravessa vários municípios, e CDO sem município ou com UF
+ * inválida ("ZZ") não tem como entrar no diretório — esses ficam sem `administrative_city_id`.
+ */
+export function coverageCityTuple(
+  level: Level,
+  stat: Pick<NeighborhoodStat, 'uf' | 'city'>,
+): AdministrativeCityTuple | null {
+  if (level === 'uf' || stat.city === NO_CITY_LABEL) return null;
+  return normalizeAdministrativeCity({ stateOrProvince: stat.uf, city: stat.city });
 }
 
 function coverageChars(stat: NeighborhoodStat, level: Level): string {
@@ -351,6 +372,8 @@ function generateCoverage(
           { id: ctx.options.ownerPartyId, '@referredType': 'Organization' },
         ]),
         characteristics: chars,
+        // Resolvido para `administrative_city_id` antes do MERGE; não é coluna do Site.
+        cityTuple: coverageCityTuple(level, stat),
       });
       areas.push({
         tenant_id: ctx.options.tenantId,
@@ -388,6 +411,39 @@ function generateCoverage(
     }
   }
   return { locations, sites, areas, cells: deduplicateCells(cells) };
+}
+
+/**
+ * Preenche `administrative_city_id` dos Sites de cobertura e garante antes a linha tenant–município
+ * (FK composta do Site). Sem COMMIT: participa da transação da fase.
+ */
+async function assignAdministrativeCities(
+  conn: Connection,
+  ctx: MigrationContext,
+  sites: Array<Record<string, unknown>>,
+): Promise<void> {
+  const tuples = sites.flatMap((site) =>
+    site.cityTuple ? [site.cityTuple as AdministrativeCityTuple] : [],
+  );
+  const cityIds = await resolveAdministrativeCityIds(conn, ctx.t, tuples);
+  const linked = new Set<string>();
+  for (const site of sites) {
+    const tuple = site.cityTuple as AdministrativeCityTuple | null;
+    const cityId = tuple ? cityIds.get(administrativeCityNaturalKey(tuple)) : undefined;
+    site.administrative_city_id = cityId ?? null;
+    if (cityId) linked.add(cityId);
+  }
+  for (const cityId of linked) {
+    await conn.execute(
+      `MERGE INTO ${ctx.t('geographic_administrative_city_tenant')} k
+       USING (SELECT :tenantId AS tenant_id, :cityId AS city_id FROM dual) c
+          ON (k.tenant_id = c.tenant_id AND k.administrative_city_id = c.city_id)
+        WHEN NOT MATCHED THEN INSERT (tenant_id, administrative_city_id, active_site_count, updated_at)
+             VALUES (c.tenant_id, c.city_id, 0, SYSTIMESTAMP)`,
+      { tenantId: ctx.options.tenantId, cityId },
+      { autoCommit: false },
+    );
+  }
 }
 
 export async function runPhase3Coverage(ctx: MigrationContext): Promise<CoverageStats> {
@@ -480,6 +536,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
         generated.locations,
         ctx.options.batchSize,
       );
+      await assignAdministrativeCities(conn, ctx, generated.sites);
       await bulkMergeRows(
         conn,
         ctx.t,
@@ -492,6 +549,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
           'site_specification_id',
           'status',
           'geographic_location_id',
+          'administrative_city_id',
           'related_party',
           'characteristics',
         ],
@@ -543,6 +601,7 @@ export async function runPhase3Coverage(ctx: MigrationContext): Promise<Coverage
         generated.cells,
         ctx.options.batchSize,
       );
+      await reconcileAdministrativeCitySiteCounts(ctx, conn);
       await conn.execute('COMMIT');
     } catch (error) {
       await conn.execute('ROLLBACK');

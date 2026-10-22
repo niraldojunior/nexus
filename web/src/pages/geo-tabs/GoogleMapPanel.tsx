@@ -396,7 +396,7 @@ export function GoogleMapPanel({
   projectSiteFeatures?: ProjectSite[];
   // Infra passiva (recursos + Sites não-CO + cabos) da região visível, desenhada por
   // InfraOverlay (canvas, Fase 3 da issue #69) — nunca vira Marker/Polyline. Já vem filtrada
-  // por camada/escala pelo chamador (ver useMapTiles em GeoPage). Opcional com default vazio,
+  // por camada/escala pelo chamador (ver useMapResources/useMapSites/useMapLines em GeoPage). Opcional com default vazio,
   // para os testes existentes que montam GoogleMapPanel sem o InfraOverlay em jogo.
   infraFeatures?: MapTileFeature[];
   // Clique/hover resolvido pelo hit-test do InfraOverlay — o chamador decide seleção e
@@ -486,7 +486,7 @@ export function GoogleMapPanel({
   busy?: boolean;
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011) — o painel só renderiza o botão/lista
   // (MapLayerControl); fetch e render condicionais são decididos pelo chamador (mapNodes,
-  // coverage, useMapTiles em GeoPage). O catálogo publicado vem do Studio; os testes seguem
+  // coverage, useMapResources em GeoPage). O catálogo publicado vem do Studio; os testes seguem
   // usando o fallback canônico para montar o painel isoladamente.
   mapLayerCatalog?: import('../../services/studioGeoApi').StudioGeoCatalog;
   mapLayers?: MapLayerVisibility;

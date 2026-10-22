@@ -163,7 +163,15 @@ Todo escritor (`build-map-features.mjs`, migradores Netwin) lê a mesma configur
 `studioGeoLineLodIndex` / `tileSegmentsForLineLods` (`src/modules/geo/map-tile.ts`). A geometria
 canônica em `geographic_location` não é alterada — o LOD é só read-model derivado.
 
-**Leitura.** `GET /v1/geo/map/tile` devolve somente pontos. As linhas vêm de
+**Leitura.** O mapa nunca enumera tiles técnicos no cliente: o custo de cada leitura acompanha o
+número de features das camadas ligadas, não a área da viewport. Sites pontuais vêm de
+`GET /v1/geo/map/sites` e recursos pontuais de `GET /v1/geo/map/resources` (#416) — ambos por bbox,
+com `sourceModelId` repetível (as camadas POINT visíveis na faixa, até 200), teto de 5.000 linhas e
+`truncated: true` acima dele; no cliente, `visibleMapSiteSourceIds` /
+`visibleMapResourcePointSourceIds` montam a lista e `useMapSites` / `useMapResources` (debounce, bbox
+expandida, promise em voo) fazem a chamada. O antigo fan-out por tile z16 (um `GET /v1/geo/map/tile`
+por tile de ~570 m, sem filtro de camada) travava o browser em escala nacional sempre que uma camada
+pontual ficava visível "Acima de 1 km"; o endpoint permanece só para inspeção do índice. As linhas vêm de
 `GET /v1/geo/map/lines` (`line=<sourceModelId>:<lodKey>`, repetível, até 50 seleções, bbox): uma
 requisição por viewport, que converte a bbox em intervalo de tiles no `tile_z` do perfil e devolve
 só os fragmentos ocupados (sem enumerar tiles vazios). Há teto de 20.000 fragmentos — acima dele a

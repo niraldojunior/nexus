@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  phase3MapResourceGroupPageSql,
+  planPhase3ScanUnits,
+} from '../src/scripts/netwin-migration/phase3-map-features.js';
+import {
   BoundedQueue,
   emptyPhase3Timings,
   formatPhase3Timings,
@@ -104,5 +108,45 @@ describe('phase3 pipeline', () => {
     expect(timings.insertMs).toBeGreaterThanOrEqual(0);
     timings.pages = 3;
     expect(formatPhase3Timings(timings, 15000)).toContain('páginas=3 candidatos=15000');
+  });
+});
+
+describe('netwin-migration: agrupamento de specifications da Fase 3.A', () => {
+  const specs = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ ID: `s${i}`, TYPE_CODE: 'T' }));
+
+  it('inclui vazias, isola as grandes e agrupa as pequenas (grupo fecha no fim)', () => {
+    const counts = new Map([
+      ['s0', 0],
+      ['s1', 30],
+      ['s2', 40],
+      ['s3', 9000],
+      ['s4', 10],
+    ]);
+    expect(planPhase3ScanUnits(specs(5), counts)).toEqual([
+      { kind: 'single', specification: { ID: 's3', TYPE_CODE: 'T' } },
+      { kind: 'group', specificationIds: ['s0', 's1', 's2', 's4'] },
+    ]);
+  });
+
+  it('fecha o grupo ao passar do teto de candidatos e cobre cada specification uma vez', () => {
+    const counts = new Map(specs(10).map((s) => [s.ID, 4000] as const));
+    const units = planPhase3ScanUnits(specs(10), counts);
+    const covered = units.flatMap((u) =>
+      u.kind === 'single' ? [u.specification.ID] : u.specificationIds,
+    );
+    expect([...covered].sort()).toEqual(
+      specs(10)
+        .map((s) => s.ID)
+        .sort(),
+    );
+    expect(units.every((u) => u.kind === 'single' || u.specificationIds.length <= 5)).toBe(true);
+  });
+
+  it('gera o SQL do grupo com um bind por specification e paginação por id', () => {
+    const sql = phase3MapResourceGroupPageSql((t) => `X_${t}`, 3);
+    expect(sql).toContain('IN (:spec0, :spec1, :spec2)');
+    expect(sql).toContain('(:lastId IS NULL OR r.id > :lastId)');
+    expect(sql).toContain('rt.code AS "TYPE_CODE"');
   });
 });

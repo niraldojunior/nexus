@@ -98,6 +98,8 @@ const FEATURE_COLUMNS = [
 const PHASE3_MAP_PAGE_SIZE = 5000;
 // Blocos de leitura que o leitor pode adiantar ao escritor (contrapressão).
 const PHASE3_PIPELINE_DEPTH = 4;
+const PHASE3_GROUP_MAX_SPECIFICATIONS = 200;
+const PHASE3_GROUP_MAX_CANDIDATES = 4 * PHASE3_MAP_PAGE_SIZE;
 
 const PHYSICAL_RESOURCE_INDEX_COLUMNS = ['TENANT_ID', 'RESOURCE_SPECIFICATION_ID', 'ID'];
 const INCREMENTAL_INDEXES = [
@@ -197,6 +199,102 @@ export function phase3MapResourcePageSql(t: (table: string) => string): string {
             LEFT JOIN ${t('geographic_location')} l
               ON l.id = r.location_id AND l.tenant_id = r.tenant_id
            ORDER BY r.id`;
+}
+
+// Specifications pequenas (poucas dezenas de recursos) pagavam uma consulta inteira cada: com 4.890
+// specifications e ~94 candidatos por uma, o custo fixo por consulta (~190ms) dominava — 80% do
+// tempo era leitura, e o pipeline não tinha o que sobrepor (487 cand/s contra 470/s da linha de
+// base). Esta variante lê várias specifications na mesma consulta: o índice (tenant, specification,
+// id) atende cada valor do IN e o ORDER BY r.id mantém a paginação por chave única (`lastId` vale
+// entre specifications porque `id` é único). O código do tipo vem do join com o catálogo, depois
+// da página, por chave primária.
+export function phase3MapResourceGroupPageSql(
+  t: (table: string) => string,
+  specificationCount: number,
+): string {
+  const binds = Array.from({ length: specificationCount }, (_, i) => `:spec${i}`).join(', ');
+  return `WITH resource_page AS (
+            SELECT r.id, r.name, r.status, r.place_id, r.tenant_id, r.resource_specification_id
+              FROM ${t('resource_physical')} r
+             WHERE r.tenant_id = :tenantId
+               AND r.resource_specification_id IN (${binds})
+               AND (:lastId IS NULL OR r.id > :lastId)
+               AND r.status <> 'terminated'
+             ORDER BY r.id
+             FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
+          ), resolved AS (
+            SELECT /*+ USE_NL(place_site) USE_NL(place_address) */
+                   r.id, r.name, r.status, r.tenant_id, r.resource_specification_id,
+                   COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id) AS location_id
+              FROM resource_page r
+              LEFT JOIN ${t('geographic_site')} place_site
+                ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
+              LEFT JOIN ${t('geographic_address')} place_address
+                ON place_address.id = r.place_id AND place_address.tenant_id = r.tenant_id
+          )
+          SELECT /*+ USE_NL(l) */
+                 r.id AS "ID", r.name AS "NAME", 'resource' AS "FEATURE_KIND",
+                 'PhysicalResource' AS "ENTITY_TYPE", rt.code AS "TYPE_CODE", NULL AS "SITE_CATEGORY",
+                 'RESOURCE_TYPE' AS "SOURCE_MODEL_TYPE", rt.code AS "SOURCE_MODEL_ID", r.status AS "STATUS",
+                 NULL AS "SUBLABEL", l.geometry_type AS "GEOMETRY_TYPE", l.geometry AS "GEOMETRY"
+            FROM resolved r
+            JOIN ${t('resource_specification')} rs ON rs.id = r.resource_specification_id
+            JOIN ${t('resource_type')} rt ON rt.id = rs.resource_type_id
+            LEFT JOIN ${t('geographic_location')} l
+              ON l.id = r.location_id AND l.tenant_id = r.tenant_id
+           ORDER BY r.id`;
+}
+
+// Uma só agregação sobre o índice devolve a contagem de todas as specifications; serve ao total do
+// progresso e ao planejamento dos grupos (quais specifications são pequenas).
+export function phase3MapResourceCountsBySpecificationSql(t: (table: string) => string): string {
+  return `SELECT r.resource_specification_id AS "SPECIFICATION_ID", COUNT(*) AS "TOTAL"
+            FROM ${t('resource_physical')} r
+           WHERE r.tenant_id = :tenantId
+             AND r.status <> 'terminated'
+           GROUP BY r.resource_specification_id`;
+}
+
+// Specifications com ao menos uma página cheia ficam sozinhas (já amortizam o custo fixo e mantêm o
+// plano de consulta medido); as menores são agrupadas até PHASE3_GROUP_MAX_CANDIDATES candidatos ou
+// PHASE3_GROUP_MAX_SPECIFICATIONS binds. Specifications vazias também são percorridas, pois podem
+// receber recursos entre a contagem e a leitura.
+export type Phase3ScanUnit =
+  | { kind: 'single'; specification: { ID: string; TYPE_CODE: string } }
+  | { kind: 'group'; specificationIds: string[] };
+
+export function planPhase3ScanUnits(
+  specifications: { ID: string; TYPE_CODE: string }[],
+  countBySpecification: ReadonlyMap<string, number>,
+): Phase3ScanUnit[] {
+  const units: Phase3ScanUnit[] = [];
+  let group: { ID: string; TYPE_CODE: string }[] = [];
+  let groupCandidates = 0;
+  const flush = () => {
+    if (group.length === 1) units.push({ kind: 'single', specification: group[0]! });
+    else if (group.length > 1) {
+      units.push({ kind: 'group', specificationIds: group.map((s) => s.ID) });
+    }
+    group = [];
+    groupCandidates = 0;
+  };
+  for (const specification of specifications) {
+    const count = countBySpecification.get(specification.ID) ?? 0;
+    if (count >= PHASE3_MAP_PAGE_SIZE) {
+      units.push({ kind: 'single', specification });
+      continue;
+    }
+    if (
+      group.length >= PHASE3_GROUP_MAX_SPECIFICATIONS ||
+      groupCandidates + count > PHASE3_GROUP_MAX_CANDIDATES
+    ) {
+      flush();
+    }
+    group.push(specification);
+    groupCandidates += count;
+  }
+  flush();
+  return units;
 }
 
 export function phase3MapSitePageSql(t: (table: string) => string): string {
@@ -901,24 +999,30 @@ async function visibleSpecifications(
   return result.rows ?? [];
 }
 
-async function scanResourceSpecification(
+async function scanResourceUnit(
   conn: Connection,
   ctx: MigrationContext,
-  specification: VisibleSpecification,
+  unit: Phase3ScanUnit,
   scan: CandidateScan,
   progress: MigrationProgress,
   onFeatures?: (rows: FeatureRow[]) => Promise<void>,
 ): Promise<void> {
   let lastId: string | null = null;
-  const pageSql = phase3MapResourcePageSql(ctx.t);
+  const pageSql =
+    unit.kind === 'single'
+      ? phase3MapResourcePageSql(ctx.t)
+      : phase3MapResourceGroupPageSql(ctx.t, unit.specificationIds.length);
+  const unitBinds: Record<string, string> =
+    unit.kind === 'single'
+      ? { specificationId: unit.specification.ID, typeCode: unit.specification.TYPE_CODE }
+      : Object.fromEntries(unit.specificationIds.map((id, i) => [`spec${i}`, id]));
   while (true) {
     const queryResult: oracledb.Result<Candidate> = await timed(scan.timings, 'fetchMs', () =>
       conn.execute<Candidate>(
         pageSql,
         {
           tenantId: ctx.options.tenantId,
-          specificationId: specification.ID,
-          typeCode: specification.TYPE_CODE,
+          ...unitBinds,
           lastId,
         },
         {
@@ -1001,16 +1105,20 @@ async function countCandidates(
   conn: Connection,
   ctx: MigrationContext,
   specifications: VisibleSpecification[],
-): Promise<number> {
+): Promise<{ total: number; countBySpecification: Map<string, number> }> {
   let total = 0;
-  const resourceCountSql = phase3MapResourceCountSql(ctx.t);
+  const countBySpecification = new Map<string, number>();
+  const counts = await conn.execute<{ SPECIFICATION_ID: string; TOTAL: number }>(
+    phase3MapResourceCountsBySpecificationSql(ctx.t),
+    { tenantId: ctx.options.tenantId },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT, fetchArraySize: 5000 },
+  );
+  for (const row of counts.rows ?? []) {
+    countBySpecification.set(row.SPECIFICATION_ID, Number(row.TOTAL));
+  }
+  // Só as specifications visíveis entram: Port, Splitter e map_presence=0 não são percorridos.
   for (const specification of specifications) {
-    const result = await conn.execute<{ TOTAL: number }>(
-      resourceCountSql,
-      { tenantId: ctx.options.tenantId, specificationId: specification.ID },
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
-    );
-    total += Number(result.rows?.[0]?.TOTAL ?? 0);
+    total += countBySpecification.get(specification.ID) ?? 0;
   }
   const siteResult = await conn.execute<{ TOTAL: number }>(
     phase3MapSiteCountSql(ctx.t),
@@ -1018,7 +1126,7 @@ async function countCandidates(
     { outFormat: oracledb.OUT_FORMAT_OBJECT },
   );
   total += Number(siteResult.rows?.[0]?.TOTAL ?? 0);
-  return total;
+  return { total, countBySpecification };
 }
 
 // Carregado uma vez por execução em runPhase3MapFeatures (catálogo publicado do Studio GEO).
@@ -1028,7 +1136,7 @@ async function scanCandidates(
   conn: Connection,
   ctx: MigrationContext,
   stage: 'validação' | 'gravação',
-  specifications: VisibleSpecification[],
+  units: Phase3ScanUnit[],
   onFeatures?: (rows: FeatureRow[]) => Promise<void>,
   total?: number,
   timings: Phase3Timings = emptyPhase3Timings(),
@@ -1049,8 +1157,8 @@ async function scanCandidates(
     ...(total === undefined ? {} : { total }),
   });
   progress.start();
-  for (const specification of specifications) {
-    await scanResourceSpecification(conn, ctx, specification, scan, progress, onFeatures);
+  for (const unit of units) {
+    await scanResourceUnit(conn, ctx, unit, scan, progress, onFeatures);
   }
   await scanSites(conn, ctx, scan, progress, onFeatures);
   progress.finish();
@@ -1342,7 +1450,15 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
     console.log(
       `[Mapa] ${specifications.length} ResourceSpecification(s) visíveis; Port, Splitter e tipos map_presence=0 não são consultados.`,
     );
-    const expectedCandidates = await countCandidates(conn, ctx, specifications);
+    const { total: expectedCandidates, countBySpecification } = await countCandidates(
+      conn,
+      ctx,
+      specifications,
+    );
+    const scanUnits = planPhase3ScanUnits(specifications, countBySpecification);
+    console.log(
+      `[Mapa] ${scanUnits.length} unidade(s) de leitura (specifications pequenas agrupadas).`,
+    );
     console.log(
       `[Mapa] ${expectedCandidates.toLocaleString('pt-BR')} candidato(s) a percorrer (contagem direta; a varredura de validação foi eliminada).`,
     );
@@ -1356,14 +1472,7 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
     let scan: CandidateScan;
     let densityCells: number;
     if (!ctx.options.apply) {
-      scan = await scanCandidates(
-        conn,
-        ctx,
-        'validação',
-        specifications,
-        undefined,
-        expectedCandidates,
-      );
+      scan = await scanCandidates(conn, ctx, 'validação', scanUnits, undefined, expectedCandidates);
       console.log(formatPhase3Timings(scan.timings, scan.candidates));
       densityCells = scan.densityTiles.size;
     } else {
@@ -1401,7 +1510,7 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
               conn,
               ctx,
               'gravação',
-              specifications,
+              scanUnits,
               async (rows) => {
                 if (rows.length > 0) await emit(rows);
               },
@@ -1446,6 +1555,9 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         // Paliativo de disponibilidade: tenta deixar os índices VALID mesmo no caminho de erro,
         // sem mascarar o erro original. Se isto também falhar, o backstop real é
         // recoverUnusableMapIndexes na próxima execução.
+        // O erro original é registrado antes: se a conexão do leitor caiu, o rebuild e o ROLLBACK
+        // abaixo também falham e, sem este log, a causa real ficava escondida.
+        console.error('[Mapa] Falha na reconstrução; erro original:', error);
         for (const table of MAP_INDEX_TABLES) {
           try {
             await rebuildMapIndexes(conn, ctx, table);
@@ -1453,7 +1565,11 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
             console.error('[Mapa] Rebuild de emergência falhou:', rebuildError);
           }
         }
-        await conn.execute('ROLLBACK');
+        try {
+          await conn.execute('ROLLBACK');
+        } catch (rollbackError) {
+          console.error('[Mapa] ROLLBACK falhou (conexão já encerrada):', rollbackError);
+        }
         throw error;
       } finally {
         // close() descarta qualquer transação do escritor ainda não confirmada.

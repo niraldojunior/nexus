@@ -35,7 +35,7 @@ export function RoleDetail({
   const RoleIcon = partyRoleTypeIcon(item.roleName);
 
   return (
-    <div className="vt-card flex h-full min-h-[580px] flex-col overflow-hidden p-0">
+    <div className="vt-card flex h-full min-h-[420px] flex-col overflow-hidden p-0">
       {/* Header do detalhe */}
       <div className="border-b border-app-border px-5 py-4">
         <div className="flex items-center justify-between gap-4">

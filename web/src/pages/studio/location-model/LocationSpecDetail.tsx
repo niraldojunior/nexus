@@ -209,7 +209,7 @@ export function LocationSpecDetail({
                 </Button>
               ) : (
                 <>
-                  {!spec.bootstrapProtected && spec.lifecycleStatus === 'Active' && (
+                  {spec.lifecycleStatus === 'Active' && (
                     <Button
                       variant="danger"
                       size="sm"

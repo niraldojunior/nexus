@@ -1,3 +1,4 @@
+import oracledb from 'oracledb';
 import type { MigrationContext } from './context.js';
 import {
   merge,
@@ -136,6 +137,16 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
       const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${spec.code}`);
 
       if (target) {
+        // Tipo já existente e aposentado no Studio não é recriado nem reativado pela carga.
+        const existing = await target.execute<{ STATUS: string }>(
+          `SELECT lifecycle_status AS "STATUS" FROM ${ctx.t('geographic_site_specification')} WHERE code=:code`,
+          { code: spec.code },
+          { outFormat: oracledb.OUT_FORMAT_OBJECT },
+        );
+        if (existing.rows?.[0]?.STATUS === 'Retired') {
+          stats.skipped++;
+          continue;
+        }
         await merge(target, ctx.t, 'geographic_site_specification', ['code'], {
           id: specId,
           name: spec.name,
@@ -143,7 +154,7 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
           category: spec.category,
           site_role: spec.siteRole,
           lifecycle_status: 'Active',
-          is_bootstrap: 1,
+          is_bootstrap: 0,
         });
         await reconcileCatalogCharacteristics(
           target,

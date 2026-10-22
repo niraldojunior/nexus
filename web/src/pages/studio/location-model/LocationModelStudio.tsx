@@ -1,5 +1,6 @@
+import { OverlayScrollArea } from '../../../components/OverlayScrollArea';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Plus, Search, Shield } from 'lucide-react';
+import { AlertCircle, Plus, Search } from 'lucide-react';
 import { listGeoSiteSpecifications, type GeoSpecCategory } from '../../../services/geoApi';
 import { LOCATION_CATEGORY_LABELS, locationCategoryIcon } from './locationCategoryPresentation';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
@@ -198,15 +199,15 @@ export function LocationModelStudio({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       {error && (
         <div className="flex items-center gap-2 rounded-[10px] bg-status-red-soft p-3 text-[0.84rem] text-status-red">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
-      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
-        <div className="vt-card flex min-h-[580px] flex-col p-4">
+      <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)] lg:grid-rows-[minmax(0,1fr)]">
+        <div className="vt-card flex min-h-[420px] flex-col p-4 lg:min-h-0">
           <StudioCollectionHeader
             title="Tipos"
             showSearch
@@ -265,7 +266,7 @@ export function LocationModelStudio({
               className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
             />
           </div>
-          <div className="max-h-[640px] flex-1 space-y-0.5 overflow-y-auto p-1 pr-2">
+          <OverlayScrollArea hostClassName="-mr-4" className="space-y-0.5 py-1 pl-1 pr-4">
             {visibleSpecs.length === 0 ? (
               <div className="p-8 text-center text-[0.84rem] text-app-muted">
                 Nenhum tipo de local encontrado.
@@ -287,18 +288,13 @@ export function LocationModelStudio({
                         {spec.name}
                       </span>
                     </span>
-                    {spec.bootstrapProtected && (
-                      <span title="Protegido pelo bootstrap">
-                        <Shield className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                      </span>
-                    )}
                   </button>
                 );
               })
             )}
-          </div>
+          </OverlayScrollArea>
         </div>
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col lg:min-h-0">
           {selectedSpec ? (
             <LocationSpecDetail
               spec={selectedSpec}
@@ -312,7 +308,7 @@ export function LocationModelStudio({
               onReactivate={() => patchSpec(selectedSpec.localId, { lifecycleStatus: 'Active' })}
             />
           ) : (
-            <div className="flex min-h-[580px] flex-col items-center justify-center rounded-[10px] border border-dashed border-app-border p-12 text-center text-app-muted">
+            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[10px] lg:h-full border border-dashed border-app-border p-12 text-center text-app-muted">
               <img
                 src="/assets/studio/studio-empty-state.svg"
                 alt=""

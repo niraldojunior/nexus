@@ -44,6 +44,15 @@ type StudioNavItem = {
 };
 
 // Áreas ainda sem implementação: aparecem no menu, mas sinalizadas (ver fallback "em construção").
+// Seções com painel de lista + painel de detalhe: ocupam a altura da janela, sem rolar a página.
+const SPLIT_PANE_SECTIONS: ReadonlySet<StudioSection> = new Set([
+  'resource-model',
+  'location-model',
+  'studio-geo',
+  'organizations',
+  'party-roles',
+]);
+
 const PLACEHOLDER_SECTIONS: ReadonlySet<StudioSection> = new Set(['service-model', 'copilot']);
 
 type StudioNavGroup = {
@@ -195,6 +204,10 @@ export function StudioPage({
 
   if (!activeItem) return null;
 
+  // Telas master/detail: no desktop a altura é a da janela e cada painel rola por conta própria.
+  const splitPanes = SPLIT_PANE_SECTIONS.has(section);
+  const paneClass = splitPanes ? ' lg:flex lg:min-h-0 lg:flex-1 lg:flex-col' : '';
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-app-bg lg:flex-row">
       <aside className="vt-studio-control shrink-0 overflow-y-auto bg-app-ink-soft p-3 text-app-on-ink lg:h-full lg:w-[224px]">
@@ -243,9 +256,15 @@ export function StudioPage({
         </nav>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-[11px] pb-4 pt-3 sm:px-[17px] sm:pb-6 lg:px-6">
+      <div
+        className={`min-h-0 min-w-0 flex-1 overflow-y-auto px-[11px] pb-4 pt-3 sm:px-[17px] sm:pb-6 lg:px-6${
+          splitPanes ? ' lg:flex lg:flex-col lg:overflow-hidden lg:pb-4' : ''
+        }`}
+      >
         <section
-          className="vt-studio-scope mx-auto min-w-0"
+          className={`vt-studio-scope mx-auto w-full min-w-0${
+            splitPanes ? ' lg:flex lg:min-h-0 lg:flex-1 lg:flex-col' : ''
+          }`}
           style={{ maxWidth: 'var(--content-max)' }}
         >
           <PageHead
@@ -267,7 +286,7 @@ export function StudioPage({
           />
 
           {section === 'resource-model' ? (
-            <div>
+            <div className={paneClass.trim()}>
               <ResourceModelStudio
                 canEdit={canEdit}
                 canAdmin={canAdmin}
@@ -278,7 +297,7 @@ export function StudioPage({
               />
             </div>
           ) : section === 'location-model' ? (
-            <div>
+            <div className={paneClass.trim()}>
               <LocationModelStudio
                 canEdit={canEdit}
                 canAdmin={canAdmin}
@@ -288,7 +307,7 @@ export function StudioPage({
               />
             </div>
           ) : section === 'studio-geo' ? (
-            <div>
+            <div className={paneClass.trim()}>
               <StudioGeoExperience
                 canEdit={canEdit}
                 isEditing={isEditing}
@@ -297,7 +316,7 @@ export function StudioPage({
               />
             </div>
           ) : section === 'organizations' ? (
-            <div>
+            <div className={paneClass.trim()}>
               <OrganizationsPage
                 canEdit={canEdit}
                 canAdmin={canAdmin}
@@ -307,7 +326,7 @@ export function StudioPage({
               />
             </div>
           ) : section === 'party-roles' ? (
-            <div>
+            <div className={paneClass.trim()}>
               <RolesPage
                 canEdit={canEdit}
                 canAdmin={canAdmin}

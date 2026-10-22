@@ -1,4 +1,13 @@
-import { Check, Map as MapIcon, Network, Satellite, Square } from 'lucide-react';
+import {
+  Check,
+  Contrast,
+  Image as ImageIcon,
+  Map as MapIcon,
+  Mountain,
+  Network,
+  Satellite,
+  Square,
+} from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { GoogleMapStyle, GoogleMapTypeId } from '../../utils/googleMaps';
 
@@ -6,12 +15,12 @@ export type MapBaseLayer = {
   id: string;
   label: string;
   googleMapTypeId: GoogleMapTypeId;
-  previewTone: 'mapa' | 'satelite' | 'branco' | 'geonet';
+  previewTone: 'mapa' | 'neutro' | 'relevo' | 'satelite' | 'satelite-puro' | 'branco' | 'geonet';
   mapStyles: GoogleMapStyle[];
   // Item visível mas ainda não selecionável (ex.: Geonet, aguardando fonte de tiles).
   disabled?: boolean;
   hint?: string;
-  // Só usado pelo tom 'branco': troca a miniatura clara pela escura quando o MUB
+  // Usado pelos tons 'branco' e 'neutro': troca a miniatura clara pela escura quando o MUB
   // correspondente também está no tema escuro (ver DARK_BLANK_STYLES) — sem isso a
   // miniatura mentiria sobre a cor real do mapa.
   previewDark?: boolean;
@@ -87,6 +96,15 @@ const DARK_SATELLITE_LABEL_STYLES: GoogleMapStyle[] = [
   { elementType: 'labels.text.stroke', stylers: [{ color: '#181919' }, { weight: 2.5 }] },
 ];
 
+// MUB "Neutro": o roadmap sem cor — ruas e quadras em cinza para os pins e rotas coloridos
+// do inventário ganharem destaque, mas ainda com a malha viária (diferente do "Branco").
+const NEUTRAL_STYLES: GoogleMapStyle[] = [{ stylers: [{ saturation: -100 }] }, ...BASEMAP_STYLES];
+
+const DARK_NEUTRAL_STYLES: GoogleMapStyle[] = [
+  ...DARK_BASEMAP_STYLES,
+  { stylers: [{ saturation: -100 }] },
+];
+
 export const getBaseMapLayers = (theme?: 'light' | 'dark'): readonly MapBaseLayer[] => [
   {
     id: 'roadmap',
@@ -96,11 +114,36 @@ export const getBaseMapLayers = (theme?: 'light' | 'dark'): readonly MapBaseLaye
     mapStyles: theme === 'dark' ? DARK_BASEMAP_STYLES : BASEMAP_STYLES,
   },
   {
+    id: 'neutral',
+    label: 'Neutro',
+    googleMapTypeId: 'roadmap',
+    previewTone: 'neutro',
+    mapStyles: theme === 'dark' ? DARK_NEUTRAL_STYLES : NEUTRAL_STYLES,
+    previewDark: theme === 'dark',
+  },
+  {
+    id: 'terrain',
+    label: 'Relevo',
+    googleMapTypeId: 'terrain',
+    previewTone: 'relevo',
+    // Sem `geometry` escuro no tema escuro: achataria o sombreamento do relevo, que é o
+    // motivo de existir desta base. Só rótulo/POI são ajustados (como no Satélite).
+    mapStyles: theme === 'dark' ? DARK_SATELLITE_LABEL_STYLES : BASEMAP_STYLES,
+  },
+  {
     id: 'satellite',
     label: 'Satélite',
     googleMapTypeId: 'hybrid',
     previewTone: 'satelite',
     mapStyles: theme === 'dark' ? DARK_SATELLITE_LABEL_STYLES : BASEMAP_STYLES,
+  },
+  {
+    id: 'satellite-pure',
+    label: 'Satélite puro',
+    // O tile `satellite` é só a foto: sem rótulos e ignora `styles`.
+    googleMapTypeId: 'satellite',
+    previewTone: 'satelite-puro',
+    mapStyles: [],
   },
   {
     id: 'blank',
@@ -147,6 +190,52 @@ function MapPreviewArtwork({
         <div className="absolute left-[42%] -top-3 h-[calc(100%+24px)] w-2.5 rotate-[9deg] border-x border-[#d5d9dc] bg-white" />
         <div className="absolute bottom-1 left-1 h-2 w-3 rounded-[2px] bg-[#f2c98c]" />
         <div className="absolute bottom-1 right-1 h-3 w-4 rounded-[2px] bg-[#edb38f]" />
+      </>
+    );
+  }
+
+  if (tone === 'neutro') {
+    const base = dark ? 'bg-[#1B1C1F]' : 'bg-[#e9eaec]';
+    const road = dark ? 'border-[#33343A] bg-[#26272B]' : 'border-[#d0d3d6] bg-white';
+    const block = dark ? 'bg-[#242529]' : 'bg-[#d9dbde]';
+    return (
+      <>
+        <div className={`absolute inset-0 ${base}`} />
+        <div className={`absolute right-1 top-1 h-5 w-5 rounded-[4px] ${block}`} />
+        <div
+          className={`absolute -left-3 top-[45%] h-2.5 w-[calc(100%+24px)] -rotate-[12deg] border-y ${road}`}
+        />
+        <div
+          className={`absolute left-[42%] -top-3 h-[calc(100%+24px)] w-2.5 rotate-[9deg] border-x ${road}`}
+        />
+        <div className={`absolute bottom-1 left-1 h-2 w-3 rounded-[2px] ${block}`} />
+        <div className={`absolute bottom-1 right-1 h-3 w-4 rounded-[2px] ${block}`} />
+      </>
+    );
+  }
+
+  if (tone === 'relevo') {
+    return (
+      <>
+        <div className="absolute inset-0 bg-[#e3dcc4]" />
+        <div className="absolute -left-2 -top-2 h-9 w-12 rounded-full border border-[#b9ad86] bg-[#d6cba6]" />
+        <div className="absolute -left-0 top-0 h-5 w-7 rounded-full border border-[#a89b72] bg-[#c8bb92]" />
+        <div className="absolute -bottom-3 -right-2 h-10 w-14 rounded-full border border-[#9fb48a] bg-[#bccfa3]" />
+        <div className="absolute bottom-0 right-1 h-5 w-8 rounded-full border border-[#8aa275] bg-[#a6bf8d]" />
+        <div className="absolute -left-2 bottom-2 h-1.5 w-12 -rotate-[8deg] rounded-full bg-[#8cc8df]" />
+      </>
+    );
+  }
+
+  if (tone === 'satelite-puro') {
+    return (
+      <>
+        <div className="absolute inset-0 bg-[#476747]" />
+        <div className="absolute left-0 top-0 h-[48%] w-[46%] bg-[#78905d]" />
+        <div className="absolute right-0 top-0 h-[42%] w-[48%] bg-[#a69a68]" />
+        <div className="absolute bottom-0 left-0 h-[46%] w-[38%] bg-[#5a794f]" />
+        <div className="absolute bottom-0 right-0 h-[52%] w-[56%] bg-[#6f8250]" />
+        <div className="absolute bottom-1 left-1 h-2.5 w-2.5 rounded-full bg-[#284a34]" />
       </>
     );
   }
@@ -201,7 +290,10 @@ function MapPreviewArtwork({
 
 const PREVIEW_ICONS: Record<MapBaseLayer['previewTone'], typeof MapIcon> = {
   mapa: MapIcon,
+  neutro: Contrast,
+  relevo: Mountain,
   satelite: Satellite,
+  'satelite-puro': ImageIcon,
   branco: Square,
   geonet: Network,
 };
@@ -334,7 +426,7 @@ export function MapBaseLayerSelector({
           id={listboxId}
           role="listbox"
           aria-label="Opções de base cartográfica"
-          className="absolute bottom-[calc(100%+8px)] left-0 flex gap-1.5 rounded-[12px] border border-app-border bg-app-panel p-1.5 shadow-map-control-lg"
+          className="absolute bottom-[calc(100%+8px)] left-0 grid grid-cols-4 gap-1.5 rounded-[12px] border border-app-border bg-app-panel p-1.5 shadow-map-control-lg"
         >
           {options.map((option) => {
             const selected = option.id === selectedLayer?.id;

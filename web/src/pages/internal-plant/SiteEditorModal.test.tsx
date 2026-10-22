@@ -34,6 +34,7 @@ const mockSpecs: GeoSpec[] = [
 
 vi.mock('../../services/geoApi', () => ({
   listGeoSiteSpecifications: vi.fn(async () => mockSpecs),
+  getGeoSite: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../services/partyApi', () => ({
@@ -57,7 +58,9 @@ vi.mock('../../services/siteEditorApi', () => ({
       siteSpecificationId: 'spec-co',
       status: 'Planned',
       note: '',
-      characteristic: [],
+      characteristic: [
+        { group: '_origin', name: '_origin.system', value: 'Netwin', valueType: 'string' },
+      ],
       relatedParty: [],
     },
     address: {
@@ -126,5 +129,57 @@ describe('SiteEditorModal', () => {
 
     // O rótulo no nav deve atualizar imediatamente para "Data Center"
     expect(nav.querySelector('span.font-semibold.text-app-text')?.textContent).toBe('Data Center');
+  });
+
+  it('permite trocar o tipo de um local existente preservando as características _origin', async () => {
+    const user = userEvent.setup();
+    const { saveSiteEditor } = await import('../../services/siteEditorApi');
+    vi.mocked(saveSiteEditor).mockImplementation(async (payload, id) => ({
+      site: { ...payload.site, id: id ?? 'site-1' } as never,
+    }));
+    render(<SiteEditorModal siteId="site-1" onClose={vi.fn()} onChanged={vi.fn()} />);
+
+    const specSelect = await screen.findByLabelText(/Tipo de local/i);
+    await waitFor(() => expect(specSelect).toHaveValue('spec-co'));
+    expect(specSelect).toBeEnabled();
+
+    await user.selectOptions(specSelect, 'spec-dc');
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(saveSiteEditor).toHaveBeenCalled());
+    const [payload] = vi.mocked(saveSiteEditor).mock.calls[0]!;
+    expect(payload.site.siteSpecificationId).toBe('spec-dc');
+    expect(payload.site.characteristic).toEqual([
+      expect.objectContaining({ name: '_origin.system', value: 'Netwin' }),
+    ]);
+  });
+
+  it('salva local existente sem endereço informando só nome e tipo', async () => {
+    const user = userEvent.setup();
+    const { fetchSiteEditor, saveSiteEditor } = await import('../../services/siteEditorApi');
+    vi.mocked(fetchSiteEditor).mockResolvedValueOnce({
+      site: {
+        id: 'site-2',
+        name: 'Malbec Equalizador PTEQ',
+        siteSpecificationId: 'spec-co',
+        status: 'Active',
+        characteristic: [],
+        relatedParty: [],
+      } as never,
+    });
+    vi.mocked(saveSiteEditor).mockImplementation(async (payload, id) => ({
+      site: { ...payload.site, id: id ?? 'site-2' } as never,
+    }));
+    render(<SiteEditorModal siteId="site-2" onClose={vi.fn()} onChanged={vi.fn()} />);
+
+    const specSelect = await screen.findByLabelText(/Tipo de local/i);
+    await waitFor(() => expect(specSelect).toHaveValue('spec-co'));
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(saveSiteEditor).toHaveBeenCalled());
+    const [payload] = vi.mocked(saveSiteEditor).mock.calls[0]!;
+    expect(payload.site.name).toBe('Malbec Equalizador PTEQ');
+    expect(payload).not.toHaveProperty('street');
+    expect(payload).not.toHaveProperty('administrativeCityId');
   });
 });

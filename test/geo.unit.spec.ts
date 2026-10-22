@@ -132,6 +132,35 @@ test('GeoService persists Site.note and keeps it across an update that does not 
   assert.equal(cleared.note ?? null, null);
 });
 
+test('GeoService troca o tipo do local só se os locais internos continuarem permitidos', async () => {
+  const service = new GeoService(new GeoRepository());
+  const oldSpec = await service.createSpec({ name: 'Posição Submarina OLD', category: 'Site' });
+  const newSpec = await service.createSpec({ name: 'Posição Submarina', category: 'Site' });
+  const strictSpec = await service.createSpec({ name: 'Sem filhos', category: 'Site' });
+  const roomSpec = await service.createSpec({
+    name: 'Sala',
+    category: 'SubSite',
+    allowedParentSpecIds: [oldSpec.id, newSpec.id],
+  });
+  await service.updateSpec(oldSpec.id, { allowedChildSpecIds: [roomSpec.id] });
+  await service.updateSpec(newSpec.id, { allowedChildSpecIds: [roomSpec.id] });
+
+  const site = await service.createSite({ name: 'Malbec BU2', siteSpecificationId: oldSpec.id });
+  await service.createSite({
+    name: 'Sala 1',
+    siteSpecificationId: roomSpec.id,
+    parentSiteId: site.id,
+  });
+
+  await assert.rejects(
+    async () => await service.updateSite(site.id, { siteSpecificationId: strictSpec.id }),
+    (error: { code?: string }) => error.code === 'GEO_SITE_SPEC_CHANGE_CHILD_NOT_ALLOWED',
+  );
+
+  const updated = await service.updateSite(site.id, { siteSpecificationId: newSpec.id });
+  assert.equal(updated.siteSpecificationId, newSpec.id);
+});
+
 test('GeoService validates governed containment rules and stores relatedSite', async () => {
   const service = new GeoService(new GeoRepository());
   await service.ensureBootstrapRelationshipTypes();

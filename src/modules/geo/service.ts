@@ -466,6 +466,8 @@ export class GeoService {
 
       for (const definition of BOOTSTRAP_SPECIFICATIONS) {
         const existing = codeToSpec.get(definition.code);
+        // Tipo aposentado pelo usuário (C6) permanece aposentado: o bootstrap não o reativa.
+        if (existing?.lifecycleStatus === 'Retired') continue;
         if (!existing) {
           created += 1;
           const createdSpec = await this.repository.upsertSpec(
@@ -512,7 +514,7 @@ export class GeoService {
 
       for (const definition of BOOTSTRAP_SPECIFICATIONS) {
         const spec = codeToSpec.get(definition.code);
-        if (!spec) continue;
+        if (!spec || spec.lifecycleStatus === 'Retired') continue;
         const resolveSpecIds = (codes: readonly string[]): string[] =>
           codes
             .map((code) => codeToSpec.get(code)?.id)
@@ -1325,6 +1327,9 @@ export class GeoService {
     if (current.parentSite?.id !== parentSite?.id) {
       await this.assertSubSiteMoveAllowed(current, parentSite, ctx);
     }
+    if (spec.id !== current.siteSpecificationId) {
+      await this.assertChildrenAllowedUnderSpec(current, spec, ctx);
+    }
     await this.assertSiteNameAvailable(
       input.name ?? current.name,
       spec,
@@ -1602,12 +1607,13 @@ export class GeoService {
     const ctx = this.resolveContext(context);
     this.assertRole(ctx, WRITE_ROLE);
     const editorSpec = await this.getSpecOrThrow(input.site.siteSpecificationId);
-    const subSite =
-      editorSpec.category === 'SubSite' ||
-      Boolean(siteId && (await this.getSiteOrThrow(siteId, ctx)).parentSite?.id);
-    // Sub-local herda o endereço do pai: só os locais raiz exigem município e logradouro.
+    const existing = siteId ? await this.getSiteOrThrow(siteId, ctx) : undefined;
+    const subSite = editorSpec.category === 'SubSite' || Boolean(existing?.parentSite?.id);
+    // Sub-local herda o endereço do pai, e local já cadastrado sem endereço (ex.: importado só
+    // com coordenada) pode ser editado sem informar um: só a criação de local raiz exige endereço.
+    const addressOptional = subSite || Boolean(existing && !existing.address?.id);
     const hasAddress = Boolean(input.street?.trim() && input.administrativeCityId);
-    if (!subSite || input.street?.trim() || input.administrativeCityId) {
+    if (!addressOptional || input.street?.trim() || input.administrativeCityId) {
       assertRequiredString(input.street, 'street');
       assertRequiredString(input.administrativeCityId, 'administrativeCityId');
     }
@@ -3103,6 +3109,35 @@ export class GeoService {
         code: 'GEO_SUBSITE_MOVE_BETWEEN_ROOTS_BLOCKED',
         statusCode: 409,
       });
+    }
+  }
+
+  // Trocar o tipo de um local não pode deixar seus locais internos fora da regra de contenção.
+  private async assertChildrenAllowedUnderSpec(
+    site: GeographicSite,
+    nextSpec: GeographicSiteSpecification,
+    context: RequestContext,
+  ): Promise<void> {
+    const children = (
+      await this.repository.listSites({ parentSiteId: site.id, tenantId: context.tenantId })
+    ).filter((child) => child.status !== 'Retired');
+    const blocked = new Set<string>();
+    for (const childSpecId of new Set(children.map((child) => child.siteSpecificationId))) {
+      const childSpec = await this.getSpecOrThrow(childSpecId);
+      if (
+        !childSpec.allowedParentSpecIds.includes(nextSpec.id) ||
+        !nextSpec.allowedChildSpecIds.includes(childSpec.id)
+      ) {
+        blocked.add(childSpec.name);
+      }
+    }
+    if (blocked.size > 0) {
+      throw new AppError(
+        `o tipo "${nextSpec.name}" não admite locais internos do tipo ${[...blocked]
+          .map((name) => `"${name}"`)
+          .join(', ')}`,
+        { code: 'GEO_SITE_SPEC_CHANGE_CHILD_NOT_ALLOWED', statusCode: 409 },
+      );
     }
   }
 

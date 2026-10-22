@@ -204,6 +204,17 @@ export function OrganizationsPage({
     return () => onRegisterCaptureInitialSnapshot?.(null);
   }, [captureInitialSnapshot, onRegisterCaptureInitialSnapshot]);
 
+  const availableRoleNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const item of items) {
+      for (const role of item.roles) {
+        const roleType = availableRoleTypes.find((type) => type.id === role.roleTypeId);
+        names.add(roleType?.roleName ?? role.name);
+      }
+    }
+    return names;
+  }, [items, availableRoleTypes]);
+
   const visibleItems = useMemo(() => {
     const query = filterText.trim().toLowerCase();
     return items.filter((item) => {
@@ -351,7 +362,11 @@ export function OrganizationsPage({
             )}
           </StudioCollectionHeader>
 
-          <RoleTypeFilterChips value={roleFilter} onChange={setRoleFilter} />
+          <RoleTypeFilterChips
+            value={roleFilter}
+            onChange={setRoleFilter}
+            availableRoleNames={availableRoleNames}
+          />
 
           <div className="relative mb-3 mt-2">
             <Search

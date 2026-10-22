@@ -111,3 +111,6 @@ node scripts/build-map-features.mjs --environment NX_DEV21_ --apply --tenant vta
 `geographic_location.source_system = KML_CABOS_SUBMARINOS` são (re)indexadas, sem apagar o índice
 do tenant, regravar o manifesto de linhas ou recoletar estatísticas. Isso é seguro numa instância já
 povoada (ex.: `NX_DEV16_`, com 11 milhões de features).
+
+O indexador resolve a coordenada do recurso pelo Site em que ele está (`place_id` → Site → Location),
+então repetidores, derivações e equalizadores entram no índice junto com o cabo (#416).

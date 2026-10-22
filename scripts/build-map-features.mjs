@@ -215,6 +215,9 @@ async function ensureMapFeatureTable(client) {
 // não divergir do write-through (map-feature-synchronizer.ts) — foi essa divergência que deixou
 // Porta de Splitter vazar no mapa. O ResourceType vem da FK tenant-safe da
 // ResourceSpecification; map_presence é INTEGER (1/0, não BOOLEAN — ver schema.ts).
+// O place do recurso é um GeographicSite (C2): a coordenada vem da Location do Site, com o mesmo
+// COALESCE do write-through (map-feature-synchronizer.ts). Ligar direto em place_id deixava
+// de fora todo recurso posicionado por Site (ex.: repetidores submarinos, #416).
 function resourceSource(entity, scopeWhere) {
   const table = entity === 'PhysicalResource' ? 'resource_physical' : 'resource_logical';
   return `
@@ -224,8 +227,12 @@ function resourceSource(entity, scopeWhere) {
       JOIN resource_specification rs
         ON rs.id = r.resource_specification_id AND rs.tenant_id = r.tenant_id
       JOIN resource_type rt ON rt.id = rs.resource_type_id
-      JOIN geographic_location l ON l.id = r.place_id
-      LEFT JOIN geographic_address a ON a.geographic_location_id = r.place_id
+      LEFT JOIN geographic_site place_site
+        ON place_site.id = r.place_id AND place_site.tenant_id = r.tenant_id
+      LEFT JOIN geographic_address place_address ON place_address.id = r.place_id
+      JOIN geographic_location l
+        ON l.id = COALESCE(place_site.geographic_location_id, place_address.geographic_location_id, r.place_id)
+      LEFT JOIN geographic_address a ON a.geographic_location_id = l.id
      WHERE r.tenant_id = $1
        AND r.status <> 'terminated'
        AND ${excludeInternalResourceTypesSql('rt')}

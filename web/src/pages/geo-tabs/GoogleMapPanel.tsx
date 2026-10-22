@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CoverageLegend, FallbackMap, MapBalloonCard, type MapBalloon } from './MapOverlays';
+import { FallbackMap, MapBalloonCard, type MapBalloon } from './MapOverlays';
 import {
   treeNodePoint,
   treeNodeRoute,
@@ -364,7 +364,6 @@ export function GoogleMapPanel({
   onViewportChange,
   coverage,
   coverageStyle,
-  coverageLayerLabel,
   siteMarkerSize,
   stationMarkerSize = siteMarkerSize,
   resourceMarkerSize,
@@ -456,9 +455,6 @@ export function GoogleMapPanel({
   coverage: CoverageResponse | null;
   // Estilo da mancha já resolvido pelo catálogo publicado do Studio GEO para a escala atual.
   coverageStyle?: ResolvedStudioGeoPolygonStyle;
-  // Rótulo da camada publicada no Studio GEO (ex.: "Cobertura GPON") — vira o texto da legenda
-  // em vez de um nome de tecnologia fixo (ver CoverageLegend).
-  coverageLayerLabel?: string;
   // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts).
   siteMarkerSize: number;
   // Tamanho da Central Office publicado pelo Studio para a faixa de escala atual.
@@ -2199,7 +2195,6 @@ export function GoogleMapPanel({
         allVisible={mapLayersAllVisible}
         scaleMeters={mapLayersScaleMeters}
       />
-      {coverage ? <CoverageLegend layerLabel={coverageLayerLabel} /> : null}
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>
   );

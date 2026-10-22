@@ -1911,7 +1911,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 onViewportChange={handleViewportChange}
                 coverage={coverageVisible ? coverage : null}
                 coverageStyle={coverageStyle}
-                coverageLayerLabel={coverageLayer?.label}
                 siteMarkerSize={siteMarkerSize}
                 stationMarkerSize={stationMarkerSize}
                 resourceMarkerSize={resourceMarkerSize}

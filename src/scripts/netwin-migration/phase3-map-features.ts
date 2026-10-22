@@ -373,6 +373,13 @@ export function phase3IncrementalResourcePageSql(t: (table: string) => string): 
                  r.updated_at > :lastUpdatedAt OR
                  (r.updated_at = :lastUpdatedAt AND r.id > :lastId)
                )
+               AND (
+                 r.place_id IS NOT NULL OR EXISTS (
+                   SELECT 1 FROM ${t('geographic_map_feature')} f
+                    WHERE f.tenant_id = r.tenant_id AND f.feature_kind = 'resource'
+                      AND f.entity_id = r.id
+                 )
+               )
              ORDER BY r.updated_at, r.id
              FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
           ), resolved AS (
@@ -1274,6 +1281,13 @@ async function rebuildDensityCells(
   return rebuilt;
 }
 
+interface IncrementalPage {
+  featureKind: Candidate['FEATURE_KIND'];
+  entityIds: string[];
+  rows: FeatureRow[];
+  oldFeatureCount: number;
+}
+
 async function scanIncrementalKind(
   conn: Connection,
   ctx: MigrationContext,
@@ -1283,32 +1297,35 @@ async function scanIncrementalKind(
   updatedBefore: Date,
   scan: CandidateScan,
   progress: MigrationProgress,
-): Promise<{ removedFeatures: number }> {
+  emit: (page: IncrementalPage) => Promise<void>,
+): Promise<void> {
   // A primeira página usa cursor imediatamente anterior ao corte, preservando a semântica
   // inclusiva de `updated_at >= :updatedSince` sem introduzir OR/NULL no predicado indexável.
   const cursor: IncrementalCursor = {
     updatedAt: new Date(updatedSince.getTime() - 1),
     id: '',
   };
-  let removedFeatures = 0;
   while (true) {
-    const result = await conn.execute<IncrementalCandidate>(
-      pageSql,
-      {
-        tenantId: ctx.options.tenantId,
-        updatedSince,
-        updatedBefore,
-        lastUpdatedAt: cursor.updatedAt,
-        lastId: cursor.id,
-      },
-      {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-        fetchArraySize: PHASE3_MAP_PAGE_SIZE,
-        prefetchRows: PHASE3_MAP_PAGE_SIZE,
-      },
+    const result = await timed(scan.timings, 'fetchMs', () =>
+      conn.execute<IncrementalCandidate>(
+        pageSql,
+        {
+          tenantId: ctx.options.tenantId,
+          updatedSince,
+          updatedBefore,
+          lastUpdatedAt: cursor.updatedAt,
+          lastId: cursor.id,
+        },
+        {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+          fetchArraySize: PHASE3_MAP_PAGE_SIZE,
+          prefetchRows: PHASE3_MAP_PAGE_SIZE,
+        },
+      ),
     );
+    scan.timings.pages += 1;
     const candidates = result.rows ?? [];
-    if (candidates.length === 0) return { removedFeatures };
+    if (candidates.length === 0) return;
 
     const entityIds = candidates.map((candidate) => candidate.ID);
     const oldTiles = await existingFeatureTiles(conn, ctx, featureKind, entityIds);
@@ -1328,13 +1345,7 @@ async function scanIncrementalKind(
     scan.features += rows.length;
     addDensityTiles(scan.densityTiles, rows);
 
-    if (ctx.options.apply) {
-      removedFeatures += await deleteExistingFeatures(conn, ctx, featureKind, entityIds);
-      await insertFeatures(conn, ctx, rows);
-      await conn.execute('COMMIT');
-    } else {
-      removedFeatures += oldTiles.length;
-    }
+    await emit({ featureKind, entityIds, rows, oldFeatureCount: oldTiles.length });
 
     progress.advance(candidates.length);
     const last = candidates[candidates.length - 1]!;
@@ -1369,29 +1380,53 @@ async function runIncrementalMapFeatures(
   });
   progress.start();
   let removedFeatures = 0;
-  const resources = await scanIncrementalKind(
-    conn,
-    ctx,
-    'resource',
-    phase3IncrementalResourcePageSql(ctx.t),
-    updatedSince,
-    updatedBefore,
-    scan,
-    progress,
-  );
-  removedFeatures += resources.removedFeatures;
-  const sites = await scanIncrementalKind(
-    conn,
-    ctx,
-    'site',
-    phase3IncrementalSitePageSql(ctx.t),
-    updatedSince,
-    updatedBefore,
-    scan,
-    progress,
-  );
-  removedFeatures += sites.removedFeatures;
+  const kinds: Array<[Candidate['FEATURE_KIND'], string]> = [
+    ['resource', phase3IncrementalResourcePageSql(ctx.t)],
+    ['site', phase3IncrementalSitePageSql(ctx.t)],
+  ];
+  const readAll = async (emit: (page: IncrementalPage) => Promise<void>) => {
+    for (const [kind, sql] of kinds) {
+      await scanIncrementalKind(
+        conn,
+        ctx,
+        kind,
+        sql,
+        updatedSince,
+        updatedBefore,
+        scan,
+        progress,
+        emit,
+      );
+    }
+  };
+  if (!ctx.options.apply) {
+    await readAll(async (page) => {
+      removedFeatures += page.oldFeatureCount;
+    });
+  } else {
+    // Mesmo pipeline do rebuild completo: leitor (conn) e escritor (writeConn) em sessões
+    // distintas, com fila limitada. O leitor só consulta tiles antigos de ids da própria página.
+    const writeConn = await ctx.getTargetConnection();
+    if (!writeConn) throw new Error('Conexão de escrita indisponível para --apply.');
+    try {
+      await runBoundedPipeline<IncrementalPage>(PHASE3_PIPELINE_DEPTH, readAll, async (page) => {
+        await timed(scan.timings, 'insertMs', async () => {
+          removedFeatures += await deleteExistingFeatures(
+            writeConn,
+            ctx,
+            page.featureKind,
+            page.entityIds,
+          );
+          await insertFeatures(writeConn, ctx, page.rows);
+        });
+        await timed(scan.timings, 'commitMs', () => writeConn.execute('COMMIT'));
+      });
+    } finally {
+      await writeConn.close();
+    }
+  }
   progress.finish();
+  console.log(formatPhase3Timings(scan.timings, scan.candidates));
 
   if (scan.candidates === 0) {
     console.log('[Mapa] nenhuma entidade alterada na janela; projeções vigentes preservadas.');

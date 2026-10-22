@@ -16,6 +16,7 @@ import Button from '../../components/ui/Button';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { useModalDialog } from '../../hooks/useModalDialog';
 import {
+  getGeoSite,
   listGeoSiteSpecifications,
   type GeoAddress,
   type GeoSite,
@@ -129,6 +130,8 @@ export function SiteEditorModal({
   const [specs, setSpecs] = useState<GeoSpec[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [site, setSite] = useState<GeoSite | null>(null);
+  // Tipo do local pai: limita os tipos oferecidos a um local interno em edição.
+  const [parentSpecId, setParentSpecId] = useState<string | undefined>(undefined);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [subAddress, setSubAddress] = useState<GeoAddress['subAddress']>(undefined);
   const [loading, setLoading] = useState(true);
@@ -180,9 +183,13 @@ export function SiteEditorModal({
           listGeoSiteSpecifications(),
           initialSiteId ? fetchSiteEditor(initialSiteId) : Promise.resolve(undefined),
         ]);
+        const parentSite = snapshot?.site.parentSite?.id
+          ? await getGeoSite(snapshot.site.parentSite.id)
+          : undefined;
         if (cancelled) return;
         setCities(cityList);
         setSpecs(specList);
+        setParentSpecId(parentSite?.siteSpecificationId);
         const city =
           snapshot?.administrativeCity ??
           cityList.find((candidate) => candidate.id === initialAdministrativeCityId);
@@ -219,17 +226,50 @@ export function SiteEditorModal({
     };
   }, [initialSiteId, initialAdministrativeCityId]);
 
-  // Em edição, o tipo atual aparece mesmo sendo SubSite (o select fica desabilitado).
-  const rootSpecs = useMemo(
-    () =>
-      specs.filter(
-        (spec) =>
-          (spec.category !== 'SubSite' && spec.lifecycleStatus === 'Active') ||
-          (Boolean(initialSiteId) && spec.id === site?.siteSpecificationId),
-      ),
-    [specs, initialSiteId, site?.siteSpecificationId],
-  );
   const specById = useMemo(() => new Map(specs.map((spec) => [spec.id, spec])), [specs]);
+  // Local raiz: tipos ativos que não são SubSite. Local interno: tipos ativos que a regra de
+  // contenção admite sob o pai. Em edição, o tipo atual aparece mesmo que não se encaixe.
+  const rootSpecs = useMemo(() => {
+    const parentSpec = parentSpecId ? specById.get(parentSpecId) : undefined;
+    const fits = (spec: GeoSpec) =>
+      parentSpec
+        ? spec.allowedParentSpecIds.includes(parentSpec.id) &&
+          parentSpec.allowedChildSpecIds.includes(spec.id)
+        : spec.category !== 'SubSite';
+    return specs.filter(
+      (spec) =>
+        (spec.lifecycleStatus === 'Active' && fits(spec)) ||
+        (Boolean(initialSiteId) && spec.id === site?.siteSpecificationId),
+    );
+  }, [specs, specById, parentSpecId, initialSiteId, site?.siteSpecificationId]);
+
+  // Troca de tipo mantém `_origin.*` (C5) e as características que o novo tipo também define;
+  // descartar valores já preenchidos pede confirmação.
+  const changeSpec = async (nextSpecId: string) => {
+    if (!draft) return;
+    const nextNames = new Set(
+      (specById.get(nextSpecId)?.specCharacteristic ?? []).map((c) => c.name.trim().toLowerCase()),
+    );
+    const keep = (c: Characteristic) =>
+      c.name.startsWith('_origin.') || nextNames.has(c.name.trim().toLowerCase());
+    const dropped = draft.characteristic.filter(
+      (c) => !keep(c) && c.value !== undefined && c.value !== null && c.value !== '',
+    );
+    if (dropped.length > 0) {
+      const ok = await confirm({
+        title: 'Trocar o tipo de local?',
+        message: `O novo tipo não define ${dropped.length === 1 ? 'a característica' : 'as características'} ${dropped
+          .map((c) => `"${c.name}"`)
+          .join(
+            ', ',
+          )}. ${dropped.length === 1 ? 'O valor será descartado' : 'Os valores serão descartados'} ao salvar.`,
+        confirmLabel: 'Trocar tipo',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+    patch({ specId: nextSpecId, characteristic: draft.characteristic.filter(keep) });
+  };
 
   // País → UF → município; um único candidato é selecionado automaticamente.
   const countries = useMemo(
@@ -269,13 +309,25 @@ export function SiteEditorModal({
   const currentSpec = draft ? specById.get(draft.specId) : undefined;
   // Sub-local herda o endereço do pai: município/logradouro deixam de ser obrigatórios.
   const isSubSite = Boolean(site?.parentSite) || currentSpec?.category === 'SubSite';
+  // Local já cadastrado sem endereço (ex.: importado só com coordenada) também salva sem um;
+  // se o logradouro for informado, o município passa a ser exigido.
+  const addressOptional = isSubSite || Boolean(site && !site.address?.id);
+  const requireCity = !addressOptional || Boolean(draft?.street.trim());
+  const requireStreet = !addressOptional;
 
   const save = async () => {
     if (!draft) return;
-    const missingAddress = !isSubSite && (!draft.cityId || !draft.street.trim());
+    const missingAddress =
+      (requireCity && !draft.cityId) || (requireStreet && !draft.street.trim());
     if (!draft.name.trim() || !draft.specId || missingAddress) {
       setAttempted(true);
-      setError(isSubSite ? 'Informe nome e tipo.' : 'Informe nome, tipo, município e logradouro.');
+      setError(
+        !addressOptional
+          ? 'Informe nome, tipo, município e logradouro.'
+          : draft.street.trim()
+            ? 'Informe nome, tipo e município.'
+            : 'Informe nome e tipo.',
+      );
       setTab('general');
       const firstInvalid = !draft.name.trim()
         ? 'site-field-name'
@@ -305,7 +357,10 @@ export function SiteEditorModal({
           ...(draft.statusReason.trim() ? { statusReason: draft.statusReason.trim() } : {}),
           ...(draft.statusDate ? { statusDate: draft.statusDate } : {}),
         },
-        ...(draft.cityId ? { administrativeCityId: draft.cityId } : {}),
+        // Município sem logradouro não forma endereço; o backend rejeitaria o par incompleto.
+        ...(draft.cityId && (draft.street.trim() || !addressOptional)
+          ? { administrativeCityId: draft.cityId }
+          : {}),
         ...(draft.street.trim() ? { street: draft.street.trim() } : {}),
         ...(draft.streetNr.trim() ? { streetNr: draft.streetNr.trim() } : {}),
         ...(draft.postcode.trim() ? { postcode: draft.postcode.trim() } : {}),
@@ -454,8 +509,7 @@ export function SiteEditorModal({
                     aria-describedby={attempted && !draft.specId ? 'site-editor-error' : undefined}
                     className={inputClass}
                     value={draft.specId}
-                    disabled={Boolean(siteId)}
-                    onChange={(e) => patch({ specId: e.target.value, characteristic: [] })}
+                    onChange={(e) => void changeSpec(e.target.value)}
                   >
                     <option value="">Selecione…</option>
                     {rootSpecs.map((spec) => (
@@ -502,10 +556,10 @@ export function SiteEditorModal({
                   Município
                   <select
                     id="site-field-city"
-                    aria-required={!isSubSite}
-                    aria-invalid={attempted && !isSubSite && !draft.cityId}
+                    aria-required={requireCity}
+                    aria-invalid={attempted && requireCity && !draft.cityId}
                     aria-describedby={
-                      attempted && !isSubSite && !draft.cityId ? 'site-editor-error' : undefined
+                      attempted && requireCity && !draft.cityId ? 'site-editor-error' : undefined
                     }
                     className={inputClass}
                     value={draft.cityId}
@@ -524,10 +578,10 @@ export function SiteEditorModal({
                   Logradouro
                   <input
                     id="site-field-street"
-                    aria-required={!isSubSite}
-                    aria-invalid={attempted && !isSubSite && !draft.street.trim()}
+                    aria-required={requireStreet}
+                    aria-invalid={attempted && requireStreet && !draft.street.trim()}
                     aria-describedby={
-                      attempted && !isSubSite && !draft.street.trim()
+                      attempted && requireStreet && !draft.street.trim()
                         ? 'site-editor-error'
                         : undefined
                     }

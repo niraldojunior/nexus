@@ -1,3 +1,4 @@
+import { OverlayScrollArea } from '../../../components/OverlayScrollArea';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Search, Building2, Plus, Trash2 } from 'lucide-react';
 import {
@@ -291,7 +292,7 @@ export function OrganizationsPage({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       {error && (
         <div className="flex items-center gap-2 rounded-[12px] bg-status-red-soft p-3.5 text-[0.84rem] text-status-red">
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -299,9 +300,9 @@ export function OrganizationsPage({
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)]">
+      <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(320px,32fr)_minmax(0,68fr)] lg:grid-rows-[minmax(0,1fr)]">
         {/* Coluna Master */}
-        <div className="vt-card flex min-h-[580px] flex-col p-4">
+        <div className="vt-card flex min-h-[420px] flex-col p-4 lg:min-h-0">
           <StudioCollectionHeader
             title="Todas as Organizações"
             showSearch
@@ -345,7 +346,10 @@ export function OrganizationsPage({
             />
           </div>
 
-          <div className="-mx-1 mt-2 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-1 py-1">
+          <OverlayScrollArea
+            hostClassName="mt-2"
+            className="space-y-0.5 overflow-x-hidden px-1 py-1"
+          >
             {loading ? (
               <div className="flex h-32 items-center justify-center text-[0.82rem] text-app-muted">
                 Carregando organizações...
@@ -405,11 +409,11 @@ export function OrganizationsPage({
                 );
               })
             )}
-          </div>
+          </OverlayScrollArea>
         </div>
 
         {/* Coluna Detail */}
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col lg:min-h-0">
           {selectedItem ? (
             <OrganizationDetail
               item={selectedItem}
@@ -424,7 +428,7 @@ export function OrganizationsPage({
               onRemoveRole={handleRemoveRole}
             />
           ) : (
-            <div className="vt-card flex min-h-[580px] flex-col items-center justify-center border-dashed border-app-border p-8 text-center text-app-muted">
+            <div className="vt-card flex min-h-[420px] flex-col items-center lg:h-full justify-center border-dashed border-app-border p-8 text-center text-app-muted">
               <img
                 src="/assets/studio/studio-empty-state.svg"
                 alt=""

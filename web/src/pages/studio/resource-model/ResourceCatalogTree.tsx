@@ -1,3 +1,4 @@
+import { OverlayScrollArea } from '../../../components/OverlayScrollArea';
 import { useEffect, useState } from 'react';
 import {
   ChevronRight,
@@ -461,7 +462,7 @@ export function ResourceCatalogTree({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col">
       {showSearch && (
         <div className="relative mb-3">
           <Search
@@ -479,7 +480,7 @@ export function ResourceCatalogTree({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto pr-1 max-h-[680px]">
+      <OverlayScrollArea>
         {tree.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-center text-app-muted">
             <AlertCircle className="h-8 w-8 mb-2 stroke-1" />
@@ -531,7 +532,7 @@ export function ResourceCatalogTree({
             )}
           </>
         )}
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 }

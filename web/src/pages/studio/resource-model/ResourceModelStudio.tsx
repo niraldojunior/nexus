@@ -449,7 +449,7 @@ export function ResourceModelStudio({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       {error && (
         <div
           className="flex items-center gap-2 rounded-[10px] p-3 text-[0.84rem]"
@@ -461,9 +461,9 @@ export function ResourceModelStudio({
       )}
 
       {/* Main Master/Detail Layout */}
-      <div className="grid gap-5 lg:grid-cols-[minmax(300px,32fr)_minmax(0,68fr)]">
+      <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(300px,32fr)_minmax(0,68fr)] lg:grid-rows-[minmax(0,1fr)]">
         {/* Left: Árvore Hierárquica */}
-        <div className="vt-card flex min-h-[560px] flex-col p-4">
+        <div className="vt-card flex min-h-[420px] flex-col p-4 lg:min-h-0">
           <StudioCollectionHeader
             title="Tipos"
             showSearch
@@ -546,7 +546,7 @@ export function ResourceModelStudio({
             )}
           </StudioCollectionHeader>
 
-          <div className="flex-1">
+          <div className="flex min-h-0 flex-1 flex-col">
             <ResourceCatalogTree
               tree={tree}
               showSearch
@@ -567,7 +567,7 @@ export function ResourceModelStudio({
         </div>
 
         {/* Right: Painel de Detalhes */}
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col lg:min-h-0">
           {selectedNode && selectedCatalogId ? (
             <ResourceNodeDetail
               catalogId={selectedCatalogId}
@@ -585,7 +585,7 @@ export function ResourceModelStudio({
               onAutosaveStateChange={handleAutosaveStateChange}
             />
           ) : (
-            <div className="vt-card flex min-h-[560px] flex-col items-center justify-center p-12 text-center text-app-muted">
+            <div className="vt-card flex min-h-[420px] flex-col items-center justify-center p-12 lg:h-full text-center text-app-muted">
               <img
                 src="/assets/studio/studio-empty-state.svg"
                 alt=""

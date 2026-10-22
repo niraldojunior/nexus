@@ -60,7 +60,7 @@ Catálogo (cria se faltar, no tenant da instância)
 ├── ResourceType  SubmarineRepeater       Repetidor Submarino      POINT
 ├── ResourceType  SubmarineEqualizer      Equalizador Submarino    POINT
 │     (+ 1 ResourceSpecification por type; árvore "Cabos Submarinos" no catálogo de recursos)
-└── GeographicSiteSpecification  SUBMARINE_BMH · SUBMARINE_BU · SUBMARINE_REPEATER · SUBMARINE_EQUALIZER
+└── GeographicSiteSpecification  SUBMARINE_BMH · SUBMARINE_POSITION (BU, repetidor e equalizador)
       (category Site · siteRole network)
 ```
 

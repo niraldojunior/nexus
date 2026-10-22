@@ -57,6 +57,7 @@ import {
   REPEATER_RESOURCE_TYPE_CODE,
   REPEATER_SITE_SPEC_CODE,
   SUBMARINE_CABLE_RESOURCE_TYPE_CODE,
+  SUBMARINE_POSITION_SITE_SPEC_CODE,
   ORIGIN_SYSTEM,
   SUBMARINE_NAMESPACE,
   convertDocuments,
@@ -76,19 +77,10 @@ const SITE_SPECS: SiteSpecDef[] = [
       'Caixa de praia onde o cabo submarino chega à costa e encontra o trecho terrestre.',
   },
   {
-    code: BRANCHING_UNIT_SITE_SPEC_CODE,
-    name: 'Posição de Branching Unit',
-    description: 'Posição no leito marinho de uma Branching Unit (derivação de cabo submarino).',
-  },
-  {
-    code: REPEATER_SITE_SPEC_CODE,
-    name: 'Posição de Repetidor Submarino',
-    description: 'Posição no leito marinho de um repetidor óptico de cabo submarino.',
-  },
-  {
-    code: EQUALIZER_SITE_SPEC_CODE,
-    name: 'Posição de Equalizador Submarino',
-    description: 'Posição no leito marinho de um equalizador de ganho de cabo submarino.',
+    code: SUBMARINE_POSITION_SITE_SPEC_CODE,
+    name: 'Posição Submarina',
+    description:
+      'Posição no leito marinho de uma Branching Unit, repetidor ou equalizador de cabo submarino.',
   },
 ];
 

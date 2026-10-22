@@ -27,9 +27,12 @@ export const REPEATER_RESOURCE_TYPE_CODE = 'SubmarineRepeater';
 export const EQUALIZER_RESOURCE_TYPE_CODE = 'SubmarineEqualizer';
 
 export const BMH_SITE_SPEC_CODE = 'SUBMARINE_BMH';
-export const BRANCHING_UNIT_SITE_SPEC_CODE = 'SUBMARINE_BU';
-export const REPEATER_SITE_SPEC_CODE = 'SUBMARINE_REPEATER';
-export const EQUALIZER_SITE_SPEC_CODE = 'SUBMARINE_EQUALIZER';
+// BU, repetidor e equalizador compartilham uma única spec de posição no leito marinho (issue #406);
+// o tipo do ponto vive no ResourceType, não na spec do Local.
+export const SUBMARINE_POSITION_SITE_SPEC_CODE = 'SUBMARINE_POSITION';
+export const BRANCHING_UNIT_SITE_SPEC_CODE = SUBMARINE_POSITION_SITE_SPEC_CODE;
+export const REPEATER_SITE_SPEC_CODE = SUBMARINE_POSITION_SITE_SPEC_CODE;
+export const EQUALIZER_SITE_SPEC_CODE = SUBMARINE_POSITION_SITE_SPEC_CODE;
 
 export type CableSystem = 'Malbec' | 'GlobeNet';
 

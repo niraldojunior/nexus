@@ -16,6 +16,7 @@ import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
 import { StudioCollectionHeader } from '../../../components/studio/StudioCollectionHeader';
 import { OrganizationDetail } from './OrganizationDetail';
+import { RoleTypeFilterChips } from './RoleTypeFilterChips';
 import {
   buildOrganizationsSnapshot,
   createOrganizationDraftItem,
@@ -33,6 +34,18 @@ export type OrganizationsPageProps = {
   onRegisterCaptureInitialSnapshot?: (fn: (() => Promise<Record<string, unknown>>) | null) => void;
 };
 
+const PAGE_SIZE = 500;
+
+// A API pagina por offset/limit; um limite fixo cortava a lista (só apareciam as primeiras 200).
+async function listAllPages<T>(fetchPage: (offset: number, limit: number) => Promise<T[]>) {
+  const all: T[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const page = await fetchPage(offset, PAGE_SIZE);
+    all.push(...page);
+    if (page.length < PAGE_SIZE) return all;
+  }
+}
+
 export function OrganizationsPage({
   canEdit,
   isEditing,
@@ -43,6 +56,7 @@ export function OrganizationsPage({
   const [availableRoleTypes, setAvailableRoleTypes] = useState<PartyRoleType[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineActiveIds, setBaselineActiveIds] = useState<Set<string> | null>(null);
@@ -56,8 +70,8 @@ export function OrganizationsPage({
     setLoading(true);
     try {
       const [parties, roles, roleTypes, status] = await Promise.all([
-        listParties({ limit: 200, offset: 0, partyType: 'Organization' }),
-        listPartyRoles({ limit: 500, offset: 0, status: 'active' }),
+        listAllPages((offset, limit) => listParties({ limit, offset, partyType: 'Organization' })),
+        listAllPages((offset, limit) => listPartyRoles({ limit, offset, status: 'active' })),
         listPartyRoleTypes(),
         getStudioStatus('organizations').catch(() => ({ draftVersion: null })),
       ]);
@@ -195,15 +209,21 @@ export function OrganizationsPage({
     return items.filter((item) => {
       const visibleByLifecycle =
         item.status === 'active' || (isEditing && (baselineActiveIds?.has(item.localId) ?? false));
+      const visibleByRole =
+        !roleFilter ||
+        item.roles.some((role) => {
+          const roleType = availableRoleTypes.find((type) => type.id === role.roleTypeId);
+          return (roleType?.roleName ?? role.name) === roleFilter;
+        });
       const visibleBySearch =
         !query ||
         item.name.toLowerCase().includes(query) ||
         (item.legalName && item.legalName.toLowerCase().includes(query)) ||
         (item.tradingName && item.tradingName.toLowerCase().includes(query)) ||
         (item.description && item.description.toLowerCase().includes(query));
-      return visibleByLifecycle && visibleBySearch;
+      return visibleByLifecycle && visibleByRole && visibleBySearch;
     });
-  }, [items, filterText, isEditing, baselineActiveIds]);
+  }, [items, filterText, roleFilter, availableRoleTypes, isEditing, baselineActiveIds]);
 
   useEffect(() => {
     if (selectedId && !visibleItems.some((item) => item.localId === selectedId)) {
@@ -331,7 +351,9 @@ export function OrganizationsPage({
             )}
           </StudioCollectionHeader>
 
-          <div className="relative mb-3">
+          <RoleTypeFilterChips value={roleFilter} onChange={setRoleFilter} />
+
+          <div className="relative mb-3 mt-2">
             <Search
               className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
               aria-hidden="true"

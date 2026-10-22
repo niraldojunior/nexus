@@ -1,4 +1,4 @@
-import { PARTY_ROLE_TYPE_OPTIONS } from './partyRoleTypeOptions';
+import { PARTY_ROLE_TYPE_OPTIONS } from '../party-roles/partyRoleTypeOptions';
 
 export type RoleTypeFilterChipsProps = {
   value: string | null;
@@ -8,7 +8,7 @@ export type RoleTypeFilterChipsProps = {
 const ALL_VALUE = '__all__';
 
 /**
- * Chips de filtro rápido por tipo de papel, logo abaixo do título "Todos os Papéis". Lista todos os
+ * Chips de filtro rápido de organizações por papel, logo abaixo do título "Todas as Organizações". Lista todos os
  * tipos e quebra em múltiplas linhas o que não couber — sem scroll horizontal (rolagem de uma linha
  * só escondia tipos e não ficava claro que havia mais para ver).
  */

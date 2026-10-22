@@ -1,6 +1,6 @@
 import { OverlayScrollArea } from '../../../components/OverlayScrollArea';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Search, Plus } from 'lucide-react';
+import { AlertCircle, Plus } from 'lucide-react';
 import { listPartyRoleTypes } from '../../../services/partyRoleTypeApi';
 import {
   listPartyRoleTypeCharacteristics,
@@ -10,7 +10,6 @@ import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import { Button } from '../../../components/ui';
 import { StudioCollectionHeader } from '../../../components/studio/StudioCollectionHeader';
 import { RoleDetail } from './RoleDetail';
-import { RoleTypeFilterChips } from './RoleTypeFilterChips';
 import { partyRoleTypeIcon } from './partyRoleTypeOptions';
 import {
   buildRolesSnapshot,
@@ -37,8 +36,6 @@ export function RolesPage({
 }: RolesPageProps) {
   const [items, setItems] = useState<RoleDraftItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filterText, setFilterText] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [baselineActiveIds, setBaselineActiveIds] = useState<Set<string> | null>(null);
@@ -153,20 +150,12 @@ export function RolesPage({
   }, [captureInitialSnapshot, onRegisterCaptureInitialSnapshot]);
 
   const visibleItems = useMemo(() => {
-    const query = filterText.trim().toLowerCase();
     return items.filter((item) => {
       const visibleByLifecycle =
         item.active || (isEditing && (baselineActiveIds?.has(item.localId) ?? false));
-      const visibleByType = !typeFilter || item.roleName === typeFilter;
-      const visibleBySearch =
-        !query ||
-        item.label.toLowerCase().includes(query) ||
-        item.roleName.toLowerCase().includes(query) ||
-        item.key.toLowerCase().includes(query) ||
-        (item.description && item.description.toLowerCase().includes(query));
-      return visibleByLifecycle && visibleByType && visibleBySearch;
+      return visibleByLifecycle;
     });
-  }, [items, filterText, typeFilter, isEditing, baselineActiveIds]);
+  }, [items, isEditing, baselineActiveIds]);
 
   useEffect(() => {
     if (selectedId && !visibleItems.some((item) => item.localId === selectedId)) {
@@ -243,24 +232,10 @@ export function RolesPage({
             )}
           </StudioCollectionHeader>
 
-          <RoleTypeFilterChips value={typeFilter} onChange={setTypeFilter} />
-
-          <div className="relative mb-3 mt-2">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-app-muted"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              aria-label="Buscar na lista"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Buscar papel..."
-              className="w-full rounded-[14px] border border-app-border bg-app-panel py-1.5 pl-8 pr-3 text-[0.84rem] text-app-text outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
-            />
-          </div>
-
-          <OverlayScrollArea hostClassName="-mr-4 mt-2" className="space-y-1 overflow-x-hidden py-1 pl-1 pr-4">
+          <OverlayScrollArea
+            hostClassName="-mr-4"
+            className="space-y-1 overflow-x-hidden py-1 pl-1 pr-4"
+          >
             {loading ? (
               <div className="flex h-32 items-center justify-center text-[0.82rem] text-app-muted">
                 Carregando papéis...

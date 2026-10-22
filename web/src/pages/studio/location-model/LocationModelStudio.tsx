@@ -1,6 +1,6 @@
 import { OverlayScrollArea } from '../../../components/OverlayScrollArea';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Plus, Search, Shield } from 'lucide-react';
+import { AlertCircle, Plus, Search } from 'lucide-react';
 import { listGeoSiteSpecifications, type GeoSpecCategory } from '../../../services/geoApi';
 import { LOCATION_CATEGORY_LABELS, locationCategoryIcon } from './locationCategoryPresentation';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
@@ -288,11 +288,6 @@ export function LocationModelStudio({
                         {spec.name}
                       </span>
                     </span>
-                    {spec.bootstrapProtected && (
-                      <span title="Protegido pelo bootstrap">
-                        <Shield className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                      </span>
-                    )}
                   </button>
                 );
               })

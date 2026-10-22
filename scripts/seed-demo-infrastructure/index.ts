@@ -31,7 +31,6 @@ import {
   bulkMergeRows,
   configureOracleClient,
   makeTablePrefixer,
-  merge,
   type TablePrefixer,
 } from '../../src/scripts/netwin-migration-kit.js';
 import { loadConfig } from '../../src/shared/config/env.js';
@@ -95,7 +94,6 @@ import {
   GAS_PIPELINE_RESOURCE_TYPE_CODE,
   ISOLATED_SYSTEM_RESOURCE_TYPE_CODE,
   ISOLATED_SYSTEM_SITE_SPEC_CODE,
-  ORIGIN_SYSTEM,
   RAIL_SEGMENT_RESOURCE_TYPE_CODE,
   RAIL_STATION_RESOURCE_TYPE_CODE,
   RAIL_STATION_SITE_SPEC_CODE,
@@ -104,7 +102,6 @@ import {
   TRANSMISSION_LINE_RESOURCE_TYPE_CODE,
   bboxForStates,
   dedupeById,
-  deterministicUuid,
   mapGasPipeline,
   mapIsolatedSystem,
   mapRailSegment,
@@ -118,6 +115,23 @@ import {
   type MappedSubstation,
   type SigelFeature,
 } from './mapper.js';
+import {
+  LOCATION_COLUMNS,
+  RESOURCE_COLUMNS,
+  SITE_COLUMNS,
+  ensureCatalogGroup,
+  ensureResourceSpec,
+  ensureResourceTypeForMap,
+  ensureSiteSpec,
+  existingIds,
+  lineResourceRows,
+  pointSiteRows,
+  polygonResourceRows,
+  resolveTenant,
+  type LoadPlan,
+  type ResourceTypeDef as BaseResourceTypeDef,
+  type SiteSpecDef as BaseSiteSpecDef,
+} from './oracle-load.js';
 import { publishDomainLayers } from './studio-geo.js';
 
 loadEnv();
@@ -130,23 +144,9 @@ configureOracleClient();
 // Catálogo
 // ---------------------------------------------------------------------------
 
-const catalogId = (suffix: string): string =>
-  deterministicUuid(DEMO_INFRA_NAMESPACE, `CATALOG:${suffix}`);
+type ResourceTypeDef = BaseResourceTypeDef & { domain: Domain };
 
-type ResourceTypeDef = {
-  code: string;
-  name: string;
-  description: string;
-  geometryKind: 'POINT' | 'LINE' | 'POLYGON';
-  domain: Domain;
-};
-
-type SiteSpecDef = {
-  code: string;
-  name: string;
-  description: string;
-  domain: Domain;
-};
+type SiteSpecDef = BaseSiteSpecDef & { domain: Domain };
 
 const SITE_SPECS: SiteSpecDef[] = [
   {
@@ -308,159 +308,7 @@ const CATALOG_GROUPS: Record<Domain, { code: string; name: string; sortOrder: nu
   oil: { code: 'grp-oleo-gas', name: 'Óleo e Gás', sortOrder: 130 },
 };
 
-async function idByColumns(
-  conn: Connection,
-  t: TablePrefixer,
-  table: string,
-  where: Record<string, string>,
-): Promise<string | undefined> {
-  const keys = Object.keys(where);
-  const predicate = keys.map((key, index) => `${key}=:${index + 1}`).join(' AND ');
-  const result = await conn.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t(table)} WHERE ${predicate} FETCH FIRST 1 ROWS ONLY`,
-    Object.values(where),
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  return result.rows?.[0]?.ID;
-}
-
-/**
- * Reconcilia a `GeographicSiteSpecification` da subestação.
- *
- * Não usa `ensureSiteSpec` do kit, que grava `name = code` e devolve sem atualizar. O id existente
- * é resolvido antes do MERGE porque `mergeSql` atualiza toda coluna fora da chave: repontar o `id`
- * de uma spec já referenciada quebraria a FK de `geographic_site`.
- */
-async function ensureSiteSpec(
-  conn: Connection,
-  t: TablePrefixer,
-  definition: SiteSpecDef,
-): Promise<string> {
-  const existing = await idByColumns(conn, t, 'geographic_site_specification', {
-    code: definition.code,
-  });
-  const id = existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `SITE_SPEC:${definition.code}`);
-  await merge(conn, t, 'geographic_site_specification', ['code'], {
-    id,
-    name: definition.name,
-    code: definition.code,
-    // `category:'Site'` é o que o `SITE_SOURCE` do indexador exige para desenhar o ponto;
-    // `site_role:'network'` é o eixo funcional de infraestrutura de rede (C11), igual a CO/POP.
-    category: 'Site',
-    site_role: 'network',
-    lifecycle_status: 'Active',
-    description: definition.description,
-    is_bootstrap: 0,
-    // `characteristics` só no INSERT: o MERGE atualiza toda coluna listada, e incluí-la aqui
-    // zeraria, a cada reexecução, as definitions configuradas no Studio.
-    ...(existing ? {} : { characteristics: '[]' }),
-  });
-  return id;
-}
-
-/**
- * Reconcilia um `ResourceType` com os campos que o mapa exige.
- *
- * Não usa `ensureResourceType` do kit: ele grava só `{id,tenant_id,code,name,status}` e deixaria
- * `geometry_kind` nulo, o que reprova o `materialize` do Studio com
- * `STUDIO_GEO_RESOURCE_GEOMETRY_INVALID`. `map_presence` vai como inteiro `1`, nunca `'true'` —
- * a coluna é `INTEGER` e o JOIN do indexador compara com o literal 1 (ORA-00932 se for texto).
- */
-async function ensureResourceTypeForMap(
-  conn: Connection,
-  t: TablePrefixer,
-  definition: ResourceTypeDef,
-  tenantId: string,
-): Promise<string> {
-  const existing = await idByColumns(conn, t, 'resource_type', {
-    tenant_id: tenantId,
-    code: definition.code,
-  });
-  const id =
-    existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `RESOURCE_TYPE:${definition.code}`);
-  await merge(conn, t, 'resource_type', ['tenant_id', 'code'], {
-    id,
-    tenant_id: tenantId,
-    code: definition.code,
-    name: definition.name,
-    description: definition.description,
-    status: 'active',
-    map_presence: 1,
-    geometry_kind: definition.geometryKind,
-    nature: 'PhysicalResource',
-  });
-  return id;
-}
-
-/**
- * Uma `ResourceSpecification` por type — duas no total.
- *
- * As 11 tensões distintas do escopo **não** viram specification: `tensaoKv` é characteristic de
- * instância. É o que atende "não criar centenas de specifications desnecessariamente".
- */
-async function ensureResourceSpec(
-  conn: Connection,
-  t: TablePrefixer,
-  definition: ResourceTypeDef,
-  resourceTypeId: string,
-  tenantId: string,
-): Promise<string> {
-  const existing = await idByColumns(conn, t, 'resource_specification', {
-    tenant_id: tenantId,
-    name: definition.name,
-    resource_type_id: resourceTypeId,
-  });
-  const id =
-    existing ?? deterministicUuid(DEMO_INFRA_NAMESPACE, `RESOURCE_SPEC:${definition.code}`);
-  await merge(conn, t, 'resource_specification', ['id'], {
-    id,
-    tenant_id: tenantId,
-    name: definition.name,
-    resource_type_id: resourceTypeId,
-    description: definition.description,
-    ...(existing ? {} : { characteristics: '[]' }),
-  });
-  return id;
-}
-
-/** Resolve o catálogo de recursos padrão do tenant, criando-o se a DEMO ainda não tiver nenhum. */
-async function ensureResourceCatalog(
-  conn: Connection,
-  t: TablePrefixer,
-  tenantId: string,
-): Promise<string> {
-  const preferred = await conn.execute<{ ID: string }>(
-    `SELECT id AS "ID" FROM ${t('resource_catalog')}
-      WHERE tenant_id=:1
-      ORDER BY is_default DESC, sort_order ASC
-      FETCH FIRST 1 ROWS ONLY`,
-    [tenantId],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  const found = preferred.rows?.[0]?.ID;
-  if (found) return found;
-
-  const id = catalogId(tenantId);
-  await merge(conn, t, 'resource_catalog', ['id'], {
-    id,
-    tenant_id: tenantId,
-    code: 'default-catalog',
-    name: 'Catálogo de Recursos',
-    description: 'Catálogo principal de recursos de rede',
-    status: 'active',
-    is_default: 1,
-    sort_order: 0,
-  });
-  return id;
-}
-
-/**
- * Árvore ENERGIA no catálogo de recursos.
- *
- * Nós existentes são pré-mapeados por `code` e por `resource_type_id`: `UNIQUE(tenant_id,
- * catalog_id, code)` e a folha de um type que já tenha nó precisam reusar o id, senão o MERGE por
- * `['id']` tenta inserir um segundo nó para o mesmo código.
- */
+/** Uma árvore por domínio no catálogo de recursos — faz os grupos aparecerem no Inventário. */
 async function ensureCatalogNodes(
   conn: Connection,
   t: TablePrefixer,
@@ -468,260 +316,22 @@ async function ensureCatalogNodes(
   tenantId: string,
   domains: readonly Domain[],
 ): Promise<void> {
-  const catalog = await ensureResourceCatalog(conn, t, tenantId);
-
-  const existing = await conn.execute<{
-    ID: string;
-    CODE: string;
-    RESOURCE_TYPE_ID: string | null;
-  }>(
-    `SELECT id AS "ID", code AS "CODE", resource_type_id AS "RESOURCE_TYPE_ID"
-       FROM ${t('resource_catalog_node')} WHERE tenant_id=:1 AND catalog_id=:2`,
-    [tenantId, catalog],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  const idByCode = new Map<string, string>();
-  const idByTypeId = new Map<string, string>();
-  for (const row of existing.rows ?? []) {
-    if (row.CODE) idByCode.set(row.CODE, row.ID);
-    if (row.RESOURCE_TYPE_ID) idByTypeId.set(row.RESOURCE_TYPE_ID, row.ID);
-  }
-
-  const nodeId = (code: string): string =>
-    idByCode.get(code) ??
-    deterministicUuid(DEMO_INFRA_NAMESPACE, `CATALOG_NODE:${tenantId}:${catalog}:${code}`);
-
   for (const domain of domains) {
-    const group = CATALOG_GROUPS[domain];
-    const groupId = nodeId(group.code);
-    await merge(conn, t, 'resource_catalog_node', ['id'], {
-      id: groupId,
-      tenant_id: tenantId,
-      catalog_id: catalog,
-      parent_node_id: null,
-      code: group.code,
-      name: group.name,
-      kind: 'GROUP',
-      resource_type_id: null,
-      status: 'active',
-      sort_order: group.sortOrder,
-    });
-
-    let sortOrder = 10;
-    for (const definition of RESOURCE_TYPES.filter((type) => type.domain === domain)) {
+    const types = RESOURCE_TYPES.filter((type) => type.domain === domain).flatMap((definition) => {
       const resourceTypeId = resourceTypeIdByCode.get(definition.code);
-      if (!resourceTypeId) continue;
-      await merge(conn, t, 'resource_catalog_node', ['id'], {
-        id: idByTypeId.get(resourceTypeId) ?? nodeId(definition.code),
-        tenant_id: tenantId,
-        catalog_id: catalog,
-        parent_node_id: groupId,
-        code: definition.code,
-        name: definition.name,
-        kind: 'RESOURCE_TYPE',
-        resource_type_id: resourceTypeId,
-        status: 'active',
-        sort_order: sortOrder,
-      });
-      sortOrder += 10;
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Carga das instâncias
-// ---------------------------------------------------------------------------
-
-const LOCATION_COLUMNS = [
-  'id',
-  'tenant_id',
-  'geometry_type',
-  'geometry',
-  'spatial_ref',
-  'reference_point',
-  'characteristics',
-  'source_system',
-  'source_ref',
-];
-
-const SITE_COLUMNS = [
-  'id',
-  'tenant_id',
-  'name',
-  'site_specification_id',
-  'status',
-  'geographic_location_id',
-  'related_party',
-  'characteristics',
-];
-
-const RESOURCE_COLUMNS = [
-  'id',
-  'tenant_id',
-  'name',
-  'resource_specification_id',
-  'status',
-  'place_id',
-  'place_type',
-  'administrative_state',
-  'operational_state',
-  'usage_state',
-  'related_party',
-  'characteristics',
-];
-
-/** Quais dos ids já existem — só para separar "Imported" de "Updated" no log. */
-async function existingIds(
-  conn: Connection,
-  t: TablePrefixer,
-  table: string,
-  ids: readonly string[],
-): Promise<Set<string>> {
-  const found = new Set<string>();
-  for (let offset = 0; offset < ids.length; offset += 900) {
-    const chunk = ids.slice(offset, offset + 900);
-    const binds = chunk.map((_, index) => `:${index + 1}`).join(',');
-    const result = await conn.execute<{ ID: string }>(
-      `SELECT id AS "ID" FROM ${t(table)} WHERE id IN (${binds})`,
-      [...chunk],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      return resourceTypeId
+        ? [{ code: definition.code, name: definition.name, resourceTypeId }]
+        : [];
+    });
+    await ensureCatalogGroup(
+      conn,
+      t,
+      tenantId,
+      DEMO_INFRA_NAMESPACE,
+      CATALOG_GROUPS[domain],
+      types,
     );
-    for (const row of result.rows ?? []) found.add(row.ID);
   }
-  return found;
-}
-
-type LoadPlan = {
-  locations: Array<Record<string, unknown>>;
-  sites: Array<Record<string, unknown>>;
-  resources: Array<Record<string, unknown>>;
-};
-
-const relatedPartyJson = (ownerPartyId: string): string =>
-  JSON.stringify([{ id: ownerPartyId, '@referredType': 'Organization' }]);
-
-function pointSiteRows(
-  items: readonly MappedPointSite[],
-  context: { tenantId: string; ownerPartyId: string; siteSpecId: string; resourceSpecId: string },
-): LoadPlan {
-  const plan: LoadPlan = { locations: [], sites: [], resources: [] };
-  for (const item of items) {
-    const characteristics = JSON.stringify(item.characteristics);
-    plan.locations.push({
-      id: item.locationId,
-      tenant_id: context.tenantId,
-      geometry_type: 'Point',
-      geometry: JSON.stringify(item.point),
-      spatial_ref: 'EPSG:4326',
-      reference_point: item.name,
-      characteristics,
-      source_system: item.originSystem ?? ORIGIN_SYSTEM,
-      source_ref: item.sourceId,
-    });
-    plan.sites.push({
-      id: item.siteId,
-      tenant_id: context.tenantId,
-      name: item.name,
-      site_specification_id: context.siteSpecId,
-      status: 'Active',
-      geographic_location_id: item.locationId,
-      related_party: relatedPartyJson(context.ownerPartyId),
-      characteristics,
-    });
-    plan.resources.push({
-      id: item.resourceId,
-      tenant_id: context.tenantId,
-      name: item.name,
-      resource_specification_id: context.resourceSpecId,
-      status: 'active',
-      // `place` sempre aponta para um GeographicSite (C2): o sítio é Geo, o equipamento é Resource.
-      place_id: item.siteId,
-      place_type: 'GeographicSite',
-      administrative_state: 'unlocked',
-      operational_state: 'enabled',
-      usage_state: 'idle',
-      related_party: relatedPartyJson(context.ownerPartyId),
-      characteristics,
-      // `serial_number` fica nulo de propósito — é UNIQUE global e a fonte não tem número de série.
-    });
-  }
-  return plan;
-}
-
-/** Recurso linear (linha de transmissão, gasoduto, trecho ferroviário): Location → Resource. */
-function lineResourceRows(
-  items: readonly MappedLine[],
-  context: { tenantId: string; ownerPartyId: string; resourceSpecId: string },
-): LoadPlan {
-  const plan: LoadPlan = { locations: [], sites: [], resources: [] };
-  for (const item of items) {
-    const characteristics = JSON.stringify(item.characteristics);
-    plan.locations.push({
-      id: item.locationId,
-      tenant_id: context.tenantId,
-      geometry_type: 'LineString',
-      // Geometria original e completa — nunca reduzida aos extremos.
-      geometry: JSON.stringify(item.line),
-      spatial_ref: 'EPSG:4326',
-      reference_point: item.name,
-      characteristics,
-      source_system: item.originSystem ?? ORIGIN_SYSTEM,
-      source_ref: item.originId,
-    });
-    plan.resources.push({
-      id: item.resourceId,
-      tenant_id: context.tenantId,
-      name: item.name,
-      resource_specification_id: context.resourceSpecId,
-      status: 'active',
-      // A linha é um recurso linear: o `place` é a própria Location da rota.
-      place_id: item.locationId,
-      place_type: 'GeographicLocation',
-      administrative_state: 'unlocked',
-      operational_state: 'enabled',
-      usage_state: 'idle',
-      related_party: relatedPartyJson(context.ownerPartyId),
-      characteristics,
-    });
-  }
-  return plan;
-}
-
-/** Recurso em polígono (campo, bloco): Location → Resource, mesmo desenho do recurso linear. */
-function polygonResourceRows(
-  items: readonly MappedPolygon[],
-  context: { tenantId: string; ownerPartyId: string; resourceSpecId: string },
-): LoadPlan {
-  const plan: LoadPlan = { locations: [], sites: [], resources: [] };
-  for (const item of items) {
-    const characteristics = JSON.stringify(item.characteristics);
-    plan.locations.push({
-      id: item.locationId,
-      tenant_id: context.tenantId,
-      geometry_type: 'Polygon',
-      geometry: JSON.stringify(item.polygon),
-      spatial_ref: 'EPSG:4326',
-      reference_point: item.name,
-      characteristics,
-      source_system: item.originSystem ?? ORIGIN_SYSTEM,
-      source_ref: item.originId,
-    });
-    plan.resources.push({
-      id: item.resourceId,
-      tenant_id: context.tenantId,
-      name: item.name,
-      resource_specification_id: context.resourceSpecId,
-      status: 'active',
-      place_id: item.locationId,
-      place_type: 'GeographicLocation',
-      administrative_state: 'unlocked',
-      operational_state: 'enabled',
-      usage_state: 'idle',
-      related_party: relatedPartyJson(context.ownerPartyId),
-      characteristics,
-    });
-  }
-  return plan;
 }
 
 // ---------------------------------------------------------------------------
@@ -729,38 +339,6 @@ function polygonResourceRows(
 // ---------------------------------------------------------------------------
 
 const BATCH_SIZE = 500;
-
-/**
- * Resolve o tenant e a party dona a partir do próprio namespace.
- *
- * `environment.tenant_id` é o tenant que o provisionador gravou ao criar o ambiente — o mesmo
- * que o token da sessão carrega. Um default fixo `'default'` gravaria dados que nenhuma tela lê: a
- * DEMO provisionada registra `vtal`, e `resource_type` tem linhas em **ambos** os tenants, então
- * nem a presença de catálogo distingue um do outro. As flags só entram como override explícito.
- */
-async function resolveTenant(
-  conn: Connection,
-  t: TablePrefixer,
-  options: CliOptions,
-): Promise<{ tenantId: string; ownerPartyId: string }> {
-  if (options.tenantId) {
-    return { tenantId: options.tenantId, ownerPartyId: options.ownerPartyId ?? options.tenantId };
-  }
-  const environment = await conn.execute<{ TENANT_ID: string | null }>(
-    `SELECT tenant_id AS "TENANT_ID" FROM ${t('environment')}
-      WHERE tenant_id IS NOT NULL FETCH FIRST 1 ROWS ONLY`,
-    [],
-    { outFormat: oracledb.OUT_FORMAT_OBJECT },
-  );
-  const tenantId = environment.rows?.[0]?.TENANT_ID;
-  if (!tenantId) {
-    throw new Error(
-      `Não foi possível resolver o tenant: ${t('environment')} não tem linha com tenant_id. ` +
-        'Informe --tenant-id explicitamente.',
-    );
-  }
-  return { tenantId, ownerPartyId: options.ownerPartyId ?? tenantId };
-}
 
 async function runSeed(options: CliOptions): Promise<void> {
   const prefix = process.env.ORACLE_OBJECT_PREFIX;
@@ -793,25 +371,12 @@ async function runSeed(options: CliOptions): Promise<void> {
   try {
     conn = await pool.getConnection();
 
+    // Também falha cedo se a party dona não existir em `party`.
     const resolved = await resolveTenant(conn, t, options);
     tenantId = resolved.tenantId;
     const { ownerPartyId } = resolved;
     const source = options.tenantId ? '--tenant-id' : `${prefix}environment`;
     console.log(`    tenant: ${tenantId} · owner party: ${ownerPartyId} (de ${source})`);
-
-    const party = await conn.execute<{ ID: string }>(
-      `SELECT id AS "ID" FROM ${t('party')} WHERE id=:1`,
-      [ownerPartyId],
-      { outFormat: oracledb.OUT_FORMAT_OBJECT },
-    );
-    if (!party.rows?.[0]) {
-      // Falha cedo: sem a party, `related_party` referenciaria uma Organization inexistente e os
-      // painéis mostrariam o dono em branco em todo recurso carregado.
-      throw new Error(
-        `Party "${ownerPartyId}" não existe em ${prefix}party. ` +
-          'Informe --owner-party-id de uma Organization existente (normalmente o próprio tenant).',
-      );
-    }
 
     // --- [1] Catálogo -------------------------------------------------------
     console.log('[1] Catálogo');
@@ -820,16 +385,25 @@ async function runSeed(options: CliOptions): Promise<void> {
     const siteSpecs = SITE_SPECS.filter((definition) => wants(definition.domain));
     const resourceTypes = RESOURCE_TYPES.filter((definition) => wants(definition.domain));
     for (const definition of siteSpecs) {
-      siteSpecIdByCode.set(definition.code, await ensureSiteSpec(conn, t, definition));
+      siteSpecIdByCode.set(
+        definition.code,
+        await ensureSiteSpec(conn, t, definition, DEMO_INFRA_NAMESPACE),
+      );
     }
     const resourceTypeIdByCode = new Map<string, string>();
     const resourceSpecIdByCode = new Map<string, string>();
     for (const definition of resourceTypes) {
-      const typeId = await ensureResourceTypeForMap(conn, t, definition, tenantId);
+      const typeId = await ensureResourceTypeForMap(
+        conn,
+        t,
+        definition,
+        tenantId,
+        DEMO_INFRA_NAMESPACE,
+      );
       resourceTypeIdByCode.set(definition.code, typeId);
       resourceSpecIdByCode.set(
         definition.code,
-        await ensureResourceSpec(conn, t, definition, typeId, tenantId),
+        await ensureResourceSpec(conn, t, definition, typeId, tenantId, DEMO_INFRA_NAMESPACE),
       );
     }
     await ensureCatalogNodes(conn, t, resourceTypeIdByCode, tenantId, options.domains);

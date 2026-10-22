@@ -50,6 +50,8 @@ export type InternalPlantSiteContext = {
     stateOrProvince?: string;
     postcode?: string;
   };
+  /** Ponto do Site (ou do seu endereço), GeoJSON `[lng, lat]`. */
+  coordinates?: [number, number];
   /** Ids dos nós da árvore de Locais, do país ao Site (mesmos formatos de `roots`/`children`). */
   treePath: string[];
 };

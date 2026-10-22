@@ -20,10 +20,7 @@ vi.mock('../services/internalPlantApi', () => ({
   fetchInternalPlantSiteContext: async (id: string) => ({
     site: {
       id,
-      name:
-        id === 'site-long'
-          ? '014B - SMP-014B-R PRESIDENTE KENED-CENTRO-FJO'
-          : 'Sala Técnica',
+      name: id === 'site-long' ? '014B - SMP-014B-R PRESIDENTE KENED-CENTRO-FJO' : 'Sala Técnica',
       specificationName: id === 'site-long' ? 'Edifício' : 'Sala Técnica',
       visualIdentity: { kind: 'system', iconCode: 'ROOM' },
     },
@@ -39,6 +36,7 @@ vi.mock('../services/internalPlantApi', () => ({
       city: 'Niterói',
       stateOrProvince: 'RJ',
     },
+    coordinates: [-43.1035, -22.9035],
   }),
 }));
 
@@ -220,7 +218,7 @@ test('site selecionado mostra tipo no título, nomes na hierarquia e endereço',
     'Hierarquia: Prédio A → Pavimento 3 → Sala Técnica',
   );
   expect(screen.getByText(/^Endereço:/)).toHaveTextContent(
-    'Endereço: Rua, Cinco de Julho, nº 237, Niterói, RJ',
+    'Endereço: Rua, Cinco de Julho, nº 237, Niterói, RJ [-22.90350, -43.10350]',
   );
   await waitFor(() =>
     expect(fetchResources).toHaveBeenCalledWith(

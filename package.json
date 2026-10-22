@@ -30,6 +30,7 @@
     "addresses:enrich": "npm run build && node --use-system-ca dist/scripts/enrich-installation-addresses.js",
     "service-catalog:load": "npm run build && node --use-system-ca dist/scripts/load-service-catalog-netwin.js",
     "seed-demo-infra": "npm run build && node --use-system-ca dist/scripts/seed-demo-infrastructure/index.js",
+    "import-submarine-cables": "npm run build && node --use-system-ca dist/scripts/import-submarine-cables/index.js",
     "mcp:tmf": "npm run build && node dist/src/modules/mcp/stdio-server.js",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
@@ -53,10 +54,12 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.8.15",
     "axios": "^1.6.0",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "highlight.js": "^11.11.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.292.0",
     "oracledb": "^7.0.1",
     "react": "^18.2.0",

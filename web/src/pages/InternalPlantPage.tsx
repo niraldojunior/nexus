@@ -26,6 +26,7 @@ import {
   STUDIO_GEO_CUSTOM_ICON_COLOR,
   STUDIO_GEO_NEUTRAL_ICON_COLOR,
 } from '../utils/studioGeoDefaults';
+import { formatCoordinates } from '../utils/placeLabel';
 import { useSession } from '../hooks/useSession';
 import {
   fetchInternalPlantSiteContext,
@@ -165,7 +166,12 @@ function formatSiteAddress(address: InternalPlantSiteContext['address']): string
 
 function SiteContextSubtitle({ context }: { context: InternalPlantSiteContext }) {
   const hierarchy = context.hierarchy.map((item) => item.name).join(' → ');
-  const addressText = formatSiteAddress(context.address);
+  const addressText = [
+    formatSiteAddress(context.address),
+    context.coordinates ? `[${formatCoordinates(context.coordinates)}]` : undefined,
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <span className="block min-w-0 text-[0.8rem] leading-snug text-app-muted">
       {context.hierarchy.length > 1 ? (

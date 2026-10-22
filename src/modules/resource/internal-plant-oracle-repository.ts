@@ -195,16 +195,26 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       administrative_city_id: string | null;
       country_code: string | null;
       state_code: string | null;
+      lng: number | string | null;
+      lat: number | string | null;
     }>(
+      // Coordenada: a localização do próprio Site e, na falta dela, a do endereço — só Point
+      // (em LineString/Polygon `coordinates[0]` é um array e o JSON_VALUE devolve NULL).
       `SELECT x.id, x.name, sp.name AS specification_name,
               x.site_specification_id AS site_specification_id, x.geographic_address_id,
               a.street_type, a.street_name, a.street_nr, a.locality, a.city,
               a.state_or_province, a.postcode, LEVEL AS lvl,
               x.administrative_city_id AS administrative_city_id,
-              ac.country_code AS country_code, ac.state_code AS state_code
+              ac.country_code AS country_code, ac.state_code AS state_code,
+              CASE WHEN l.geometry_type = 'Point'
+                   THEN JSON_VALUE(l.geometry, '$.coordinates[0]' RETURNING NUMBER) END AS lng,
+              CASE WHEN l.geometry_type = 'Point'
+                   THEN JSON_VALUE(l.geometry, '$.coordinates[1]' RETURNING NUMBER) END AS lat
          FROM geographic_site x
          JOIN geographic_site_specification sp ON sp.id = x.site_specification_id
          LEFT JOIN geographic_address a ON a.id = x.geographic_address_id
+         LEFT JOIN geographic_location l
+           ON l.id = COALESCE(x.geographic_location_id, a.geographic_location_id)
          LEFT JOIN geographic_administrative_city ac ON ac.id = x.administrative_city_id
         START WITH x.id = ? AND x.tenant_id = ? AND x.status <> 'Retired'
       CONNECT BY NOCYCLE PRIOR x.parent_site_id = x.id
@@ -237,6 +247,10 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
           ...(selected.postcode ? { postcode: selected.postcode } : {}),
         }
       : undefined;
+    const lng = selected.lng === null || selected.lng === undefined ? NaN : Number(selected.lng);
+    const lat = selected.lat === null || selected.lat === undefined ? NaN : Number(selected.lat);
+    const coordinates: [number, number] | undefined =
+      Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : undefined;
     const visualIdentity = (await this.identityMap(tenantId, [selected.site_specification_id])).get(
       selected.site_specification_id,
     );
@@ -258,6 +272,7 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       },
       hierarchy,
       ...(address ? { address } : {}),
+      ...(coordinates ? { coordinates } : {}),
       treePath,
     };
   }

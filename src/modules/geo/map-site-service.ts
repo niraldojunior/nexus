@@ -30,7 +30,11 @@ export class GeoMapSiteService {
     const limit = Math.min(options.limit ?? MAP_SITE_MAX_RESULTS, MAP_SITE_MAX_RESULTS);
     const placeholders = sourceModelIds.map(() => '?').join(', ');
     const rows = await this.db.all<MapFeatureRow>(
-      `SELECT f.entity_id, f.feature_kind, f.entity_type, f.shape, f.type_code, f.site_category,
+      // O hint nomeia as colunas (não o índice) para valer em qualquer prefixo de tabela. Sem ele o
+      // CBO, que assume 25% de seletividade para faixas em BINARY_DOUBLE, pode abandonar o índice
+      // de bbox e varrer a tabela (7,7s contra 69ms medidos em Niterói, NX_DEV16_).
+      `SELECT /*+ INDEX(f (tenant_id, feature_kind, shape, source_model_type, source_model_id, lng, lat)) */
+              f.entity_id, f.feature_kind, f.entity_type, f.shape, f.type_code, f.site_category,
               f.source_model_type, f.source_model_id, f.status, f.label, f.sublabel, f.lng, f.lat,
               f.geometry
          FROM geographic_map_feature f

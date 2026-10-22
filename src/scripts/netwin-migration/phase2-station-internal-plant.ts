@@ -120,6 +120,10 @@ async function scopedLocationIds(ctx: MigrationContext): Promise<number[]> {
 /**
  * Fase 2.D ainda é uma descoberta, não uma carga. Ela só relata vínculos que
  * as tabelas ISP expõem diretamente e nunca grava no destino nem na origem.
+ *
+ * Pendente (issue #417): a planta interna ainda não é carregada por completo (rack → shelf → slot
+ * → placa → porta). Esta descoberta é o ponto de partida dessa carga e deve virar carga com
+ * checkpoint; até lá ela só informa contagens e não bloqueia a finalização do job.
  */
 export async function discoverStationInternalPlant(
   ctx: MigrationContext,

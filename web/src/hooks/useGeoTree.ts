@@ -6,7 +6,7 @@
 //
 // A saída que alimenta a tela é `rows` (as linhas visíveis, já achatadas e indentadas). A árvore é
 // somente navegação: nenhum Site, Recurso ou cabo do mapa vem daqui — GeoPage os busca pela região
-// visível (Sites: useMapSites; Recursos: useMapTiles), independente do que está aberto na árvore.
+// visível (Sites: useMapSites; Recursos: useMapResources), independente da árvore aberta.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -281,17 +281,6 @@ export function useGeoTree(): GeoTree {
       nodeById,
       revealNode,
     }),
-    [
-      rows,
-      loading,
-      busy,
-      error,
-      isExpanded,
-      toggle,
-      loadMore,
-      reload,
-      nodeById,
-      revealNode,
-    ],
+    [rows, loading, busy, error, isExpanded, toggle, loadMore, reload, nodeById, revealNode],
   );
 }

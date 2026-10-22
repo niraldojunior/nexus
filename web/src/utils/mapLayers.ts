@@ -385,6 +385,49 @@ export function visibleMapSiteSourceIds(
   return [...ids].sort();
 }
 
+// Inverso pontual de LEGACY_SOURCE_BY_FEATURE: no catálogo canônico de compatibilidade cada camada
+// `legacy-*` de recurso pontual é resolvida para os ResourceType codes reais (= `source_model_id`
+// do índice). Camadas de cabo são LINE e não entram aqui.
+const LEGACY_RESOURCE_POINT_TYPE_CODES: Readonly<Record<string, readonly string[]>> = {
+  'legacy-tower': ['Tower'],
+  'legacy-pole': ['Pole'],
+  'legacy-duct': ['Duct', 'RisingTube', 'CableTunnel', 'Pedestal', 'SupportBracket', 'IronPipe'],
+  'legacy-manhole': ['Manhole'],
+  'legacy-dio': ['DIO'],
+  'legacy-ceo': ['SpliceClosure'],
+  'legacy-cdoe': ['CTO'],
+  'legacy-cdoi': ['CTO'],
+};
+
+// ResourceTypes de camadas POINT visíveis (toggle + faixa de escala do Studio GEO), como lista
+// ordenada e deduplicada de `sourceId` para a leitura por bbox (`useMapResources`, issue #416).
+// O servidor filtra por esta lista — é ela que mantém o custo proporcional às camadas ligadas, e
+// não à área da viewport.
+export function visibleMapResourcePointSourceIds(
+  visibility: MapLayerVisibility,
+  catalog: StudioGeoCatalog = MAP_LAYER_CATALOG_FALLBACK,
+  scaleMeters?: number | null,
+): string[] {
+  const ids = new Set<string>();
+  for (const node of mapLayerEntities(catalog)) {
+    if (node.entity.category !== 'RESOURCE') continue;
+    if (node.entity.sourceType !== 'RESOURCE_TYPE') continue;
+    if (!isStudioGeoEntityVisible(node, visibility, scaleMeters)) continue;
+    const geometryKind =
+      node.visualConfig?.geometryKind ??
+      (catalog.fallback ? fallbackGeometryKind(node) : undefined);
+    if (geometryKind !== 'POINT') continue;
+    const sourceId = node.entity.sourceId;
+    if (!sourceId.startsWith('legacy-')) {
+      ids.add(sourceId);
+      continue;
+    }
+    if (!catalog.fallback) continue;
+    for (const code of LEGACY_RESOURCE_POINT_TYPE_CODES[sourceId] ?? []) ids.add(code);
+  }
+  return [...ids].sort();
+}
+
 // Camadas LINE visíveis na faixa atual, cada uma com EXATAMENTE o LOD que a faixa escolhe
 // (`lodProfileId`; ausente/desconhecido = primeiro perfil, ou `legacy` sem `lodProfiles`). Alimenta a
 // leitura agregada `useMapLines`. Ordenada para uma chave de requisição estável.

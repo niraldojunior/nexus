@@ -17,6 +17,7 @@ import {
   setGroupVisibility,
   viewportInclude,
   visibleMapLineSelections,
+  visibleMapResourcePointSourceIds,
   visibleMapSiteSourceIds,
   visibleCoverageLayer,
   writeStoredBaseMap,
@@ -307,6 +308,65 @@ describe('visibleMapSiteSourceIds', () => {
     ]);
     expect(ids).toEqual(['CO', 'SVC']);
     expect(ids.some((id) => id.startsWith('legacy-'))).toBe(false);
+  });
+});
+
+describe('visibleMapResourcePointSourceIds', () => {
+  const resourceEntity = (
+    id: string,
+    sourceId: string,
+    geometryKind: 'POINT' | 'LINE',
+    gt1kmVisible = true,
+  ): StudioGeoCatalog['nodes'][number] =>
+    ({
+      id,
+      kind: 'ENTITY',
+      parentNodeId: null,
+      label: id,
+      sortOrder: 1,
+      active: true,
+      defaultVisible: true,
+      entity: {
+        category: 'RESOURCE',
+        sourceDomain: 'resource-model',
+        sourceType: 'RESOURCE_TYPE',
+        sourceId,
+      },
+      visualConfig: { geometryKind, scaleBands: { gt1km: { visible: gt1kmVisible } } },
+    }) as never;
+  const catalog: StudioGeoCatalog = {
+    schemaVersion: 2,
+    configured: true,
+    environmentId: 'x',
+    fallback: false,
+    nodes: [
+      resourceEntity('rep', 'REPETIDOR', 'POINT'),
+      resourceEntity('der', 'DERIVACAO', 'POINT'),
+      resourceEntity('cto', 'CTO', 'POINT', false),
+      resourceEntity('cabo', 'SUBMARINE_CABLE', 'LINE'),
+    ],
+  };
+
+  it('devolve só camadas POINT visíveis na faixa atual, ordenadas', () => {
+    expect(visibleMapResourcePointSourceIds({}, catalog, 50_000)).toEqual([
+      'DERIVACAO',
+      'REPETIDOR',
+    ]);
+  });
+
+  it('respeita o toggle da pessoa usuária', () => {
+    expect(visibleMapResourcePointSourceIds({ rep: false }, catalog, 50_000)).toEqual([
+      'DERIVACAO',
+    ]);
+  });
+
+  it('no fallback resolve legacy-* para ResourceType codes reais, sem cabos', () => {
+    const ids = visibleMapResourcePointSourceIds(ALL_MAP_LAYERS_VISIBLE);
+    expect(ids.some((id) => id.startsWith('legacy-'))).toBe(false);
+    expect(ids).toContain('CTO');
+    expect(ids).toContain('Manhole');
+    expect(ids).not.toContain('Fiber');
+    expect(ids).not.toContain('DropCable');
   });
 });
 

@@ -5,6 +5,7 @@ import { GeoTreeService } from '../../modules/geo/tree-service.js';
 import { GeoMapTileService } from '../../modules/geo/map-tile-service.js';
 import { GeoMapLineService } from '../../modules/geo/map-line-service.js';
 import { GeoMapSiteService } from '../../modules/geo/map-site-service.js';
+import { GeoMapResourceService } from '../../modules/geo/map-resource-service.js';
 import { GeoMapDensityService } from '../../modules/geo/map-density-service.js';
 import { GeoMapFeatureSynchronizer } from '../../modules/geo/map-feature-synchronizer.js';
 import { GeoCoverageService } from '../../modules/geo/coverage-service.js';
@@ -123,6 +124,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
   const internalPlantService = new InternalPlantService(new OracleInternalPlantRepository(db));
   const geoMapTileService = new GeoMapTileService(db);
   const geoMapSiteService = new GeoMapSiteService(db);
+  const geoMapResourceService = new GeoMapResourceService(db);
   const geoMapLineService = new GeoMapLineService(db);
   const geoMapDensityService = new GeoMapDensityService(db);
   const geoCoverageService = new GeoCoverageService(db);
@@ -391,6 +393,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoTreeService,
     geoMapTileService,
     geoMapSiteService,
+    geoMapResourceService,
     geoMapLineService,
     geoMapDensityService,
     geoCoverageService,

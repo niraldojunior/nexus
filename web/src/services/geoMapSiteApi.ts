@@ -2,7 +2,7 @@
 //
 // Uma requisição por viewport estabilizada, independente do tipo de Site: o cliente envia apenas
 // as GeographicSiteSpecifications visíveis no Studio GEO e o servidor não conhece códigos
-// especiais. Resources seguem pelo índice por tile (geoMapTileApi).
+// especiais. Recursos pontuais têm leitura irmã por bbox (geoMapResourceApi, issue #416).
 
 import { getJson } from './geoApi';
 import type { MapBounds } from './geoTreeApi';

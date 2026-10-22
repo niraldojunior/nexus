@@ -15,7 +15,7 @@ import {
 import type { MapTileFeature } from '../services/geoMapTileApi';
 import type { MapBounds } from '../services/geoTreeApi';
 import { MAP_TILES_INVALIDATED_EVENT } from '../utils/mapTileCache';
-import { paddedSiteBounds } from './useMapSites';
+import { paddedSiteBounds } from './mapBboxFeatureHook';
 
 const inFlight = new Map<string, Promise<MapLineResponse>>();
 const EMPTY: MapTileFeature[] = [];

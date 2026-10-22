@@ -126,13 +126,17 @@ export const CANONICAL_SITE_SPECS: SiteSpecDef[] = [
   },
 ];
 
-export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseStats> {
-  const stats: PhaseStats = { loaded: 0, updated: 0, skipped: 0, rejected: 0, errors: 0 };
-  console.log('\n=== Fase 1.C: Tipos de Locais (Studio / GeographicSiteSpecification) ===');
-
-  const target = await ctx.getTargetConnection();
-
-  try {
+/**
+ * Garante os tipos canônicos no destino (idempotente). A Fase 2.A referencia tipos por id
+ * determinístico; um destino cuja Fase 1 rodou antes de um tipo entrar no catálogo (ex.: BLOCK,
+ * CONDOMINIUM) quebrava com ORA-02291 na FK `site_specification_id`.
+ */
+export async function ensureCanonicalSiteSpecs(
+  ctx: MigrationContext,
+  target: Awaited<ReturnType<MigrationContext['getTargetConnection']>>,
+  stats: PhaseStats = { loaded: 0, updated: 0, skipped: 0, rejected: 0, errors: 0 },
+): Promise<PhaseStats> {
+  {
     for (const spec of CANONICAL_SITE_SPECS) {
       const specId = deterministicUuid(NEXUS_NETWIN_NAMESPACE, `SITE_SPEC:${spec.code}`);
 
@@ -170,7 +174,17 @@ export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseSt
     if (target) {
       await target.execute('COMMIT');
     }
+    return stats;
+  }
+}
 
+export async function runPhase1SiteSpecs(ctx: MigrationContext): Promise<PhaseStats> {
+  console.log('\n=== Fase 1.C: Tipos de Locais (Studio / GeographicSiteSpecification) ===');
+
+  const target = await ctx.getTargetConnection();
+
+  try {
+    const stats = await ensureCanonicalSiteSpecs(ctx, target);
     console.log(`Fase 1.C concluída: ${stats.loaded} especificações de locais cadastradas.`);
     return stats;
   } finally {

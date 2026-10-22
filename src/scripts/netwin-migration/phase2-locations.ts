@@ -46,6 +46,7 @@ import {
   hydrateUnits,
   loadComplementCatalog,
 } from './mdu-source.js';
+import { ensureCanonicalSiteSpecs } from './phase1-site-specs.js';
 import type { PhaseStats } from './types.js';
 
 /**
@@ -315,6 +316,8 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
   const auxSources: SourceConnection[] = [];
   const target = await ctx.getTargetConnection();
   try {
+    // Destino cuja Fase 1 é anterior a BLOCK/CONDOMINIUM faria o merge de sites falhar na FK.
+    if (target) await ensureCanonicalSiteSpecs(ctx, target);
     // Conexões auxiliares para hidratação concorrente (default 3 no total, teto 4).
     for (let index = 1; index < Math.min(sourceHydrationConcurrency(), 3); index += 1) {
       auxSources.push(await ctx.getSourceConnection());
@@ -973,7 +976,8 @@ export async function runPhase2Locations(ctx: MigrationContext): Promise<PhaseRu
           await target.execute('COMMIT');
           timing.commitMs = elapsed(startedAt);
         } catch (error) {
-          await target.execute('ROLLBACK');
+          // Conexão já caída faria o ROLLBACK lançar NJS-003 e esconder o erro original do lote.
+          await target.execute('ROLLBACK').catch(() => undefined);
           throw error;
         }
       }

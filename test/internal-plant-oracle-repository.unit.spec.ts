@@ -149,12 +149,16 @@ test('getSiteContext devolve a cadeia raiz→site e o endereço do site selecion
         city: 'Niterói',
         state_or_province: 'RJ',
         postcode: '24220110',
+        lng: '-43.1035',
+        lat: -22.9035,
         lvl: 1,
       },
     ],
     [{ site_specification_id: 'room-spec', icon_code: 'Room', icon_asset_id: null }],
   ]);
   const result = await new OracleInternalPlantRepository(db).getSiteContext('site-1', 'tenant-a');
+  assert.deepEqual(result?.coordinates, [-43.1035, -22.9035]);
+  assert.match(calls[0]!.sql, /COALESCE\(x\.geographic_location_id, a\.geographic_location_id\)/);
   assert.deepEqual(
     result?.hierarchy.map((item) => item.name),
     ['Prédio A', 'Sala Técnica'],
@@ -192,6 +196,7 @@ test('getSiteContext usa o ramo "none" quando a raiz não tem município', async
     [],
   ]);
   const result = await new OracleInternalPlantRepository(db).getSiteContext('site-1', 'tenant-a');
+  assert.equal(result?.coordinates, undefined);
   assert.deepEqual(result?.treePath, [
     'country:BR',
     'uf:none',

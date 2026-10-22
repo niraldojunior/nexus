@@ -24,6 +24,13 @@ import type { DatabaseClient } from '../../shared/persistence/database-client.js
 import { dialectFor } from '../../shared/persistence/sql-dialect.js';
 import { haversineMeters } from './coverage-grid.js';
 import type { GeoJSONGeometry } from './domain.js';
+import {
+  normalizeAddressText,
+  normalizeCountrySearch,
+  normalizePostcodeSearch,
+  normalizeStreetNumberSearch,
+  normalizeStreetSearch,
+} from './address-normalization.js';
 import { INTERNAL_RESOURCE_TYPES, INTERNAL_RESOURCE_TYPES_SQL } from './map-visibility.js';
 
 export type GeoTreeNodeKind = 'uf' | 'city' | 'group' | 'site' | 'resource';
@@ -36,6 +43,15 @@ export type GeoTreeScope = 'tree' | 'all';
 // Estações; 'resource' busca Physical/LogicalResource, opcionalmente restrito por
 // `resourceTypes` (ver GeoTreeService.search).
 export type GeoSearchKind = 'site' | 'resource';
+
+export type GeoTreeAddressLookup = {
+  street: string;
+  streetNr?: string;
+  city?: string;
+  stateOrProvince?: string;
+  postcode?: string;
+  country?: string;
+};
 
 export type GeoTreeNode = {
   // Chave estável e auto-descritiva — é ela que a UI devolve em `nodeId` para
@@ -309,6 +325,60 @@ export class GeoTreeService {
     ]);
 
     return await this.toResourceNodes(rows, 'tree', { childCounts: false });
+  }
+
+  /**
+   * Locais do inventário vinculados exatamente a um endereço resolvido na busca. A consulta
+   * parte do Site (e, portanto, respeita seu tenant e elegibilidade de navegação), em vez de
+   * usar proximidade ou uma busca livre que poderia abrir o Local do vizinho.
+   */
+  public async sitesByAddress(address: GeoTreeAddressLookup): Promise<GeoTreeNode[]> {
+    const street = normalizeStreetSearch(address.street);
+    const streetNr = normalizeStreetNumberSearch(address.streetNr);
+    const city = normalizeAddressText(address.city);
+    const state = normalizeAddressText(address.stateOrProvince);
+    const postcode = normalizePostcodeSearch(address.postcode);
+    const country = normalizeCountrySearch(address.country);
+
+    // Logradouro e número, mais município/UF ou CEP completo, são a identidade mínima para
+    // redirecionar uma consulta de endereço ao Local. Nada de "melhor candidato" espacial.
+    if (!street || !streetNr || (!postcode && (!city || !state))) return [];
+
+    // Há dados históricos em que `street_search` preserva o tipo/título ("rua doutor") e
+    // cargas recentes que usam normalizeStreetSearch ("paulo cesar"). Consultamos ambas as
+    // chaves já normalizadas por igualdade; nunca aplicamos função na coluna, para preservar a
+    // seletividade de CEP+número e não bloquear o fallback do painel de Endereço.
+    const streets = [...new Set([street, normalizeAddressText(address.street)])];
+    const conditions = [
+      `a.street_search IN (${streets.map(() => '?').join(', ')})`,
+      'a.street_nr_search = ?',
+      "s.status NOT IN ('Retired', 'terminated')",
+      // A constante é usada nas consultas de viewport como trecho que já começa com AND.
+      // Aqui as condições são reunidas por `join(' AND ')`, portanto removemos o prefixo.
+      PROJECT_SITE_EXCLUSION_SQL.replace(/^AND\s+/, ''),
+    ];
+    const params: string[] = [...streets, streetNr];
+
+    if (postcode) {
+      conditions.push('a.postcode_search = ?');
+      params.push(postcode);
+    }
+    if (city) {
+      conditions.push('a.city_search = ?');
+      params.push(city);
+    }
+    // País e UF não são necessários depois de CEP ou cidade+UF na chave estruturada, mas
+    // permanecem no contrato para validação de entrada e futura expansão do índice composto.
+    void state;
+    void country;
+
+    const rows = await this.db.all<SiteRow>(
+      `${SITE_SELECT}
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY s.name, s.id`,
+      params,
+    );
+    return rows.map((row) => this.toSiteNode(row, { hasChildren: false }));
   }
 
   /**

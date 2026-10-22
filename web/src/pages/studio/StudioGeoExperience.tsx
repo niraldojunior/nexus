@@ -1,3 +1,4 @@
+import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import {
   AlertCircle,
   Box,
@@ -840,7 +841,7 @@ export function StudioGeoExperience({
     return <p className="text-[0.85rem] text-app-muted">Carregando a Hierarquia Visual…</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
       {error ? (
         <div className="flex items-center gap-2 rounded-[10px] bg-status-red-soft p-3 text-[0.84rem] text-status-red">
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -848,10 +849,10 @@ export function StudioGeoExperience({
         </div>
       ) : null}
 
-      <div className="grid min-h-[560px] gap-5 lg:grid-cols-[308px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[308px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
         {/* Painel Esquerdo: Hierarquia de Camadas Recursiva */}
         <section
-          className="vt-card flex min-h-[560px] flex-col p-4"
+          className="vt-card flex min-h-[420px] flex-col p-4 lg:min-h-0"
           role="tree"
           aria-label="Hierarquia de Camadas"
         >
@@ -906,7 +907,7 @@ export function StudioGeoExperience({
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-1 max-h-[680px]">
+          <OverlayScrollArea hostClassName="-mr-4" className="pr-4">
             {tree.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center text-app-muted">
                 <AlertCircle className="h-8 w-8 mb-2 stroke-1" />
@@ -948,11 +949,11 @@ export function StudioGeoExperience({
                 )}
               </>
             )}
-          </div>
+          </OverlayScrollArea>
         </section>
 
         {/* Painel Direito: Nó Selecionado com Abas e Botão de Remover no Topo Direito */}
-        <section className="vt-card flex h-full flex-col overflow-hidden p-0">
+        <section className="vt-card flex min-h-[420px] flex-col overflow-hidden p-0 lg:h-full lg:min-h-0">
           {selected ? (
             <>
               {/* Header do Nó Selecionado */}
@@ -1055,7 +1056,7 @@ export function StudioGeoExperience({
               </div>
 
               {/* Conteúdo das Abas */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-4">
                 {activeTab === 'icon-color' && selected.kind === 'ENTITY' && visualEditorConfig ? (
                   <GeoNodeColorTab
                     node={selected}

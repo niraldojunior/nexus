@@ -7,6 +7,7 @@ node_modules
 coverage
 .tmp*.log
 .tmp*.err
+.tmp-dev-*.pids
 backups
 
 # Output do Playwright (test:regression) — temporário, regenerado a cada run.

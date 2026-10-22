@@ -35,7 +35,9 @@ const UPDATE_SQL = `
            'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
            'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')),
          postcode_search = REPLACE(REPLACE(COALESCE(postcode, ''), ' ', ''), '-', '')
-   WHERE ${MISSING_WHERE}`;
+   WHERE (${MISSING_WHERE})`;
+
+const BATCH_SIZE = 20000;
 
 async function main() {
   const client = await openLoaderDb();
@@ -55,10 +57,30 @@ async function main() {
       return;
     }
 
+    // Faixas de chave primária com commit por faixa: um UPDATE único sobre milhões de linhas
+    // estoura undo e não é retomável. A condição de pendência mantém o script idempotente.
     const t0 = Date.now();
-    await client.query('BEGIN');
-    await client.query(UPDATE_SQL);
-    await client.query('COMMIT');
+    // Oracle trata '' como NULL; o espaço ordena antes de qualquer id real.
+    let last = ' ';
+    let done = 0;
+    for (;;) {
+      const { rows: bound } = await client.query(
+        `SELECT MAX(id) AS hi FROM (
+           SELECT id FROM geographic_address WHERE id > $1 ORDER BY id FETCH FIRST ${BATCH_SIZE} ROWS ONLY
+         )`,
+        [last],
+      );
+      const hi = bound[0]?.hi ?? bound[0]?.HI;
+      if (!hi) break;
+      const result = await client.query(
+        `${UPDATE_SQL} AND id > $1 AND id <= $2`,
+        [last, hi],
+      );
+      await client.query('COMMIT');
+      done += result.rowCount ?? 0;
+      last = hi;
+      console.log(`  ${done} linhas gravadas (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
+    }
     console.log(`Gravado em ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
 
     await client.gatherStats('geographic_address');

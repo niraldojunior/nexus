@@ -1347,6 +1347,15 @@ describe('GoogleMapPanel', () => {
     expect(window.localStorage.getItem('nexus.geo.baseMap::legacy')).toBe('satellite');
 
     await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
+    await user.click(screen.getByRole('option', { name: 'Relevo' }));
+    await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('terrain'));
+    expect(window.localStorage.getItem('nexus.geo.baseMap::legacy')).toBe('terrain');
+
+    await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
+    await user.click(screen.getByRole('option', { name: 'Satélite puro' }));
+    await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('satellite'));
+
+    await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
     await user.click(screen.getByRole('option', { name: 'Branco' }));
     await waitFor(() => expect(googleMocks.mapSetMapTypeId).toHaveBeenLastCalledWith('roadmap'));
     expect(googleMocks.mapSetOptions).toHaveBeenLastCalledWith(

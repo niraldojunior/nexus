@@ -46,6 +46,28 @@ export type InternalPlantSiteContext = {
     stateOrProvince?: string;
     postcode?: string;
   };
+  /** Ponto do Site (ou do seu endereço), GeoJSON `[lng, lat]`. */
+  coordinates?: [number, number];
+  /** Ids dos nós da árvore de Locais, do país ao Site. */
+  treePath: string[];
+};
+
+export type InternalPlantSiteRow = {
+  id: string;
+  name: string;
+  status: string;
+  siteSpecification: { id: string; name: string };
+  visualIdentity?: VisualIdentity;
+  address?: string;
+  stateOrProvince?: string;
+  city?: string;
+};
+
+export type InternalPlantSitePage = {
+  items: InternalPlantSiteRow[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type InternalPlantResourceRow = {
@@ -345,6 +367,17 @@ export const fetchInternalPlantChildren = (
 
 export const fetchInternalPlantSiteContext = (siteId: string, signal?: AbortSignal) =>
   getJson<InternalPlantSiteContext>(`${BASE}/sites/${encodeURIComponent(siteId)}/context`, signal);
+
+export const fetchInternalPlantSites = (
+  q: string,
+  page: { limit: number; offset: number },
+  signal?: AbortSignal,
+) => {
+  const params = new URLSearchParams({ q });
+  params.set('limit', String(page.limit));
+  params.set('offset', String(page.offset));
+  return getJson<InternalPlantSitePage>(`${BASE}/sites?${params}`, signal);
+};
 
 export const fetchInternalPlantResources = (
   filter: InternalPlantResourceFilter,

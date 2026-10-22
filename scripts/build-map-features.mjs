@@ -37,6 +37,7 @@
  *   node scripts/build-map-features.mjs --environment NX_DEMO_ --city "Niterói" --apply
  *   node scripts/build-map-features.mjs --environment NX_DEMO_ --uf RJ --apply
  *   node scripts/build-map-features.mjs --environment NX_DEMO_ --only-lines --apply   # só linhas + manifesto (iterar LOD)
+ *   node scripts/build-map-features.mjs --environment NX_DEMO_ --source-system KML_CABOS_SUBMARINOS --apply  # só uma carga (aditivo)
  *
  * Gravação em lotes commitados (--commit-every N, padrão 50000), em ordem da PK: o UNDO não acumula
  * a carga inteira (ORA-30036) e o progresso aparece no log. Sem transação única: se cair no meio, o
@@ -80,6 +81,11 @@ const TENANT = argOf('--tenant', 'default');
 // Só linhas (shape='line') e o manifesto: use ao iterar perfis de LOD — pontos (sites e recursos
 // pontuais, a maior parte do índice) ficam intocados.
 const ONLY_LINES = has('--only-lines');
+// Recorte aditivo por origem (`geographic_location.source_system`): indexa só as entidades de uma
+// carga, apaga só os entity_id delas e não regrava manifesto nem estatísticas — o resto do índice
+// fica intocado. Diferente de --uf/--city, não depende de endereço, então pega cabos.
+const SOURCE_SYSTEM = argOf('--source-system', null);
+const SCOPED = Boolean(CITY || UF || SOURCE_SYSTEM);
 // Linhas por COMMIT: limita o UNDO (ORA-30036) e dá progresso observável na carga.
 const COMMIT_EVERY = Number(argOf('--commit-every', '50000'));
 
@@ -255,6 +261,10 @@ function scopeFilter(params) {
   if (UF) {
     params.push(UF);
     filters.push(`a.state_or_province = $${params.length}`);
+  }
+  if (SOURCE_SYSTEM) {
+    params.push(SOURCE_SYSTEM);
+    filters.push(`l.source_system = $${params.length}`);
   }
   return filters.length ? ` AND ${filters.join(' AND ')}` : '';
 }
@@ -452,7 +462,9 @@ async function main() {
     const params = [TENANT];
     const scopeWhere = scopeFilter(params);
     const scopeLabel =
-      [CITY && `city=${CITY}`, UF && `uf=${UF}`].filter(Boolean).join(' · ') || 'base inteira';
+      [CITY && `city=${CITY}`, UF && `uf=${UF}`, SOURCE_SYSTEM && `source_system=${SOURCE_SYSTEM}`]
+        .filter(Boolean)
+        .join(' · ') || 'base inteira';
     console.log(`Ambiente : ${ENVIRONMENT}`);
     console.log(`Escopo   : ${scopeLabel} (tenant=${TENANT})`);
 
@@ -599,7 +611,7 @@ async function main() {
     // (ORA-30036). O índice é derivado e regenerável — se cair no meio, basta rodar de novo.
     try {
       let removed;
-      if (!CITY && !UF) {
+      if (!SCOPED) {
         const shapeFilter = ONLY_LINES ? ` AND shape IN ('line', 'polygon')` : '';
         let total = 0;
         let batch;
@@ -636,8 +648,8 @@ async function main() {
         await client.query('COMMIT');
         console.log(`  inseridas ${inserted}/${features.length}`);
       }
-      // Manifesto só em rebuild do tenant inteiro: recorte por UF/cidade não representa a camada toda.
-      if (!CITY && !UF) {
+      // Manifesto só em rebuild do tenant inteiro: recorte por UF/cidade/origem não representa a camada toda.
+      if (!SCOPED) {
         await client.query('DELETE FROM geographic_map_line_index WHERE tenant_id = $1', [TENANT]);
         await client.bulkInsert(
           'geographic_map_line_index',
@@ -673,7 +685,9 @@ async function main() {
       throw error;
     }
 
-    await client.gatherStats('geographic_map_feature');
+    // Recorte por origem acrescenta poucas linhas: recoletar estatísticas de uma tabela de milhões
+    // não ganha nada e pode trocar plano (histogramas de LNG/LAT ajustados à mão).
+    if (!SOURCE_SYSTEM) await client.gatherStats('geographic_map_feature');
   } finally {
     await client.close();
   }

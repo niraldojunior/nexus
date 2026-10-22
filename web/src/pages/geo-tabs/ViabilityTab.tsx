@@ -6,6 +6,17 @@ import {
   VIABILITY_RADIUS_METERS,
   type ViabilityCandidate,
 } from '../../hooks/useAddressViability';
+import { useMapLayerCatalog } from '../../hooks/useMapLayerCatalog';
+import type { GeoTreeNode } from '../../services/geoTreeApi';
+import type { StudioGeoCatalog } from '../../services/studioGeoApi';
+import { getStudioSvgAssetDataUrl } from '../../services/studioAssetApi';
+import {
+  operationalIconFactsForTreeNode,
+  pointLayerForTreeNode,
+  resolveOperationalIcon,
+  visualIdentityForTreeNode,
+} from '../../utils/pointIconPreview';
+import { pointStyleForNode } from './GoogleMapPanel';
 import { computeWalkRoute, type LngLat } from '../../utils/googleRoutes';
 import { formatDropDistance, stitchDropPath } from '../../utils/dropSimulation';
 import { shortSubstatus } from '../../utils/substatus';
@@ -44,15 +55,85 @@ const statusLabel = (status: string | undefined, substatus?: string): string => 
   return 'Indefinida';
 };
 
+// "5 de 8 portas livres"; singular quando o total é 1.
+const formatPorts = (free: number, total: number): string =>
+  `${free} de ${total} ${total === 1 ? 'porta livre' : 'portas livres'}`;
+
 const formatWalkTime = (seconds: number | undefined): string | null => {
   if (!seconds) return null;
   const minutes = Math.max(1, Math.round(seconds / 60));
   return `${minutes} min a pé`;
 };
 
+const LIST_ICON_SIZE = 22;
+
+/**
+ * Ícone da CDO na lista: mesma resolução do marcador do mapa — identidade do ResourceType
+ * modelado no Studio e cor/opacidade publicadas no catálogo de camadas para o status do nó.
+ * Sem entidade publicada, cai no ícone do tipo real (não mais num tipo fixo).
+ */
+function CdoStudioIcon({ node, catalog }: { node: GeoTreeNode; catalog: StudioGeoCatalog }) {
+  const [assetUrl, setAssetUrl] = useState<string>();
+  const facts = operationalIconFactsForTreeNode(node);
+  const layer = pointLayerForTreeNode(node, catalog);
+  const identity = visualIdentityForTreeNode(node, catalog);
+  const pointStyle = pointStyleForNode(node, catalog, null);
+  const icon = facts
+    ? resolveOperationalIcon(facts, identity, {
+        context: 'glyph',
+        size: LIST_ICON_SIZE,
+        color: pointStyle?.color,
+        opacity: pointStyle?.opacity,
+      })
+    : undefined;
+  const assetId = icon?.assetId;
+
+  useEffect(() => {
+    let active = true;
+    setAssetUrl(undefined);
+    if (!assetId) return undefined;
+    void getStudioSvgAssetDataUrl(assetId).then((url) => {
+      if (active) setAssetUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, [assetId]);
+
+  if (!layer || !icon) {
+    return (
+      <ResourceIcon
+        resource={{
+          resourceType: node.resourceType,
+          status: node.status,
+          name: node.label,
+          sublabel: node.sublabel,
+        }}
+        variant="glyph"
+        size={LIST_ICON_SIZE}
+      />
+    );
+  }
+  const src = assetUrl ?? icon.url;
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      title={icon.label}
+      className="shrink-0"
+      style={{
+        width: LIST_ICON_SIZE,
+        height: LIST_ICON_SIZE,
+        ...(assetUrl && icon.opacity !== undefined ? { opacity: icon.opacity } : {}),
+      }}
+    />
+  );
+}
+
 /**
  * Aba de Viabilidade do painel de Endereço: as caixas de distribuição óptica (CDOE e
- * CDOI) num raio de 300 m lineares do endereço, ordenadas pela distância **a pé** — o
+ * CDOI) num raio de 200 m lineares do endereço, ordenadas pela distância **a pé** — o
  * proxy do lançamento real, que segue a rua e não a linha reta.
  *
  * Clicar numa delas pede o traçado à Routes API e devolve a simulação do drop para o
@@ -60,6 +141,7 @@ const formatWalkTime = (seconds: number | undefined): string | null => {
  */
 export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
   const { status, candidates, error } = useAddressViability(origin, true);
+  const mapLayerCatalog = useMapLayerCatalog();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   // Traçado já resolvido por CDO — reclicar (ou o double-mount do StrictMode) não paga
@@ -195,19 +277,11 @@ export function ViabilityTab({ origin, onSimulate }: ViabilityTabProps) {
                     : 'text-app-text hover:bg-app-accent-soft'
                 }`}
               >
-                <ResourceIcon
-                  resource={{
-                    resourceType: 'CTO',
-                    status: candidate.node.status,
-                    name: candidate.node.label,
-                    sublabel: candidate.node.sublabel,
-                  }}
-                  variant="badge"
-                  size={22}
-                />
+                <CdoStudioIcon node={candidate.node} catalog={mapLayerCatalog.catalog} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[0.85rem] font-medium leading-tight">
-                    {candidate.node.label}
+                  <span className="block truncate text-[0.85rem] leading-tight">
+                    <strong className="font-bold">{candidate.node.label}</strong>
+                    {` - ${formatPorts(candidate.portsFree, candidate.portsTotal)}`}
                   </span>
                   {/* Sem `truncate`: o motivo do substatus pode ser longo e deve quebrar em
                       mais de uma linha em vez de ser cortado (ver shortSubstatus). */}

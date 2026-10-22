@@ -39,7 +39,12 @@ vi.mock('../../hooks/useGeonetAddress', () => ({ useGeonetAddress: () => geonet(
 const viaCep = vi.fn();
 vi.mock('../../hooks/useViaCepAddress', () => ({ useViaCepAddress: () => viaCep() }));
 
+// A aba Locais consulta o inventário por endereço; o hook é mockado para não ir à rede.
+const addressSites = vi.fn();
+vi.mock('../../hooks/useAddressSites', () => ({ useAddressSites: () => addressSites() }));
+
 beforeEach(() => {
+  addressSites.mockReturnValue({ status: 'ready', sites: [] });
   viability.mockReturnValue({ status: 'ready', candidates: [], error: null });
   geonet.mockReturnValue({
     status: 'not_configured',
@@ -55,6 +60,58 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('AddressDetailPanel', () => {
+  const siteAddress: DraftAddress = {
+    street: 'Rua Doutor Paulo Cesar',
+    streetNr: '179',
+    country: 'BR',
+    coordinates: [-43.1, -22.9],
+    label: 'Rua Doutor Paulo Cesar, 179',
+  };
+  const linkedSite: GeoTreeNode = {
+    id: 'site:2b9fde8f',
+    kind: 'site',
+    label: 'R31302 - 37091',
+    sublabel: 'SITE CLIENTE',
+    status: 'Ativo',
+    hasChildren: false,
+  };
+
+  it('lista na aba Locais o Local do endereço e abre o painel dele ao clicar', async () => {
+    addressSites.mockReturnValue({ status: 'ready', sites: [linkedSite] });
+    const onSelectSite = vi.fn();
+    render(
+      <AddressDetailPanel
+        isMobile={false}
+        address={siteAddress}
+        onClose={vi.fn()}
+        onSelectSite={onSelectSite}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('tab', { name: /Locais/ }));
+    await userEvent.click(screen.getByRole('button', { name: /R31302 - 37091/ }));
+
+    expect(onSelectSite).toHaveBeenCalledWith(linkedSite);
+  });
+
+  it('informa quando não há Local cadastrado para o endereço', async () => {
+    render(<AddressDetailPanel isMobile={false} address={siteAddress} onClose={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('tab', { name: /Locais/ }));
+
+    expect(screen.getByText('Nenhum Local cadastrado para este endereço.')).toBeTruthy();
+  });
+
+  it('sinaliza falha na consulta de Locais sem esconder o restante do painel', async () => {
+    addressSites.mockReturnValue({ status: 'error' });
+    render(<AddressDetailPanel isMobile={false} address={siteAddress} onClose={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('tab', { name: /Locais/ }));
+
+    expect(screen.getByRole('alert').textContent).toMatch(/Não foi possível consultar/);
+    expect(screen.getByRole('tab', { name: /Geral/ })).toBeTruthy();
+  });
+
   it('prioriza a coordenada Geonet no empate de precisão e cede ao Google quando pior', () => {
     const address: DraftAddress = {
       street: 'Rua Exemplo',
@@ -234,7 +291,7 @@ describe('AddressDetailPanel', () => {
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
-    expect(screen.getByText(/Nenhuma CDO num raio de 300 m/)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhuma CDO num raio de 200 m/)).toBeInTheDocument();
     expect(screen.queryByText('Google Maps')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Geral' }));
@@ -286,6 +343,8 @@ describe('AddressDetailPanel', () => {
       point: [-43.108, -22.899],
       distanceMeters: 120,
       straightMeters: 120,
+      portsFree: 5,
+      portsTotal: 8,
       mode: 'straight',
     };
     viability.mockReturnValue({ status: 'ready', candidates: [candidate], error: null });

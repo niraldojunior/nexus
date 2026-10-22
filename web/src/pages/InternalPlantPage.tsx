@@ -1,6 +1,7 @@
 import { Layers, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   useEffect,
+  useMemo,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -18,17 +19,20 @@ import {
   INTERNAL_PLANT_PAGE_SIZE,
   useInternalPlantResources,
 } from '../hooks/useInternalPlantResources';
+import { useInternalPlantSites } from '../hooks/useInternalPlantSites';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useVisualIdentityPreviewUrl } from '../hooks/useVisualIdentityPreviewUrl';
 import {
   STUDIO_GEO_CUSTOM_ICON_COLOR,
   STUDIO_GEO_NEUTRAL_ICON_COLOR,
 } from '../utils/studioGeoDefaults';
+import { formatCoordinates } from '../utils/placeLabel';
 import { useSession } from '../hooks/useSession';
 import {
   fetchInternalPlantSiteContext,
   type InternalPlantLocationNode,
   type InternalPlantSiteContext,
+  type InternalPlantSiteRow,
   InternalPlantResourceFilter,
   InternalPlantResourceRow,
 } from '../services/internalPlantApi';
@@ -44,18 +48,24 @@ import {
 import { InternalPlantSearchBar } from './internal-plant/InternalPlantSearchBar';
 import { ResourceEditorModal } from './internal-plant/ResourceEditorModal';
 import { SiteEditorModal } from './internal-plant/SiteEditorModal';
+import { SiteSearchResults } from './internal-plant/SiteSearchResults';
 import { invalidateInternalPlantRoots, LocationTree } from './internal-plant/LocationTree';
 import { TypeTree, type TypeSelection } from './internal-plant/TypeTree';
 
 type DockTab = 'locations' | 'types';
 
-type ContextIcon = { kind: 'site' | 'type' | 'search'; resourceTypeCode?: string | undefined };
+type ContextIcon = {
+  kind: 'site' | 'type' | 'search' | 'site-search';
+  resourceTypeCode?: string | undefined;
+};
 
 type Context = {
   label: string;
   filter: InternalPlantResourceFilter;
   icon: ContextIcon;
   key?: string;
+  /** Termo da busca por Locais (aba Locais); o filtro de recursos fica vazio. */
+  siteQuery?: string | undefined;
   /** Folha ResourceType selecionada na aba Tipos; habilita a criação. */
   leafTypeId?: string | undefined;
 };
@@ -156,7 +166,12 @@ function formatSiteAddress(address: InternalPlantSiteContext['address']): string
 
 function SiteContextSubtitle({ context }: { context: InternalPlantSiteContext }) {
   const hierarchy = context.hierarchy.map((item) => item.name).join(' → ');
-  const addressText = formatSiteAddress(context.address);
+  const addressText = [
+    formatSiteAddress(context.address),
+    context.coordinates ? `[${formatCoordinates(context.coordinates)}]` : undefined,
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <span className="block min-w-0 text-[0.8rem] leading-snug text-app-muted">
       {context.hierarchy.length > 1 ? (
@@ -182,7 +197,17 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
   const [dockWidth, setDockWidth] = useState(readStoredDockWidth);
   // No mobile a doca vira gaveta sobre a tabela, aberta por um botão na página.
   const [dockOpen, setDockOpen] = useState(false);
-  const state = useInternalPlantResources(context?.filter ?? null, offset, retryToken);
+  const isSiteSearch = context?.icon.kind === 'site-search';
+  const state = useInternalPlantResources(
+    isSiteSearch ? null : (context?.filter ?? null),
+    offset,
+    retryToken,
+  );
+  const sitesState = useInternalPlantSites(context?.siteQuery ?? null, offset, retryToken);
+  // Pedido de "Abrir na árvore": o caminho só existe depois que o contexto do Site chega.
+  const [revealRequest, setRevealRequest] = useState<{ siteId: string; token: number } | null>(
+    null,
+  );
   const { canEdit } = useSession();
   const [editor, setEditor] = useState<{
     resourceId?: string;
@@ -254,6 +279,14 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       : []),
   ];
 
+  const reveal = useMemo(
+    () =>
+      revealRequest && siteContext?.site.id === revealRequest.siteId
+        ? { path: siteContext.treePath, token: revealRequest.token }
+        : null,
+    [revealRequest, siteContext],
+  );
+
   const onResourceTerminated = () => {
     if (state.status === 'ready' && state.page.items.length === 1 && offset > 0) {
       setOffset(Math.max(0, offset - INTERNAL_PLANT_PAGE_SIZE));
@@ -305,6 +338,20 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
       filter: { siteId: node.refId },
       icon: { kind: 'site' },
       key: node.refId,
+    });
+  };
+
+  // Revelar e selecionar: limpa o filtro do painel para não esconder o caminho e abre o Site.
+  const openSiteInTree = (row: InternalPlantSiteRow) => {
+    setTab('locations');
+    setTreeQuery('');
+    setSelectedCityId(undefined);
+    setRevealRequest((current) => ({ siteId: row.id, token: (current?.token ?? 0) + 1 }));
+    confirm({
+      label: row.name,
+      filter: { siteId: row.id },
+      icon: { kind: 'site' },
+      key: row.id,
     });
   };
 
@@ -510,6 +557,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   onSelectCity={selectCity}
                   onEditSite={(node) => node.refId && setSiteEditor({ siteId: node.refId })}
                   onRemoveSite={(node) => void askRemoveSite(node)}
+                  reveal={reveal}
                 />
               ) : (
                 <TypeTree query={treeQuery} onSelect={selectType} selectedKey={context?.key} />
@@ -538,9 +586,20 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             />
             <EmptyState
               title="Selecione um local ou tipo"
-              description="Pesquise um recurso ou escolha um Local ou Tipo na doca para listar o inventário."
+              description="Pesquise um local ou recurso, ou escolha um Local ou Tipo na doca, para listar o inventário."
             />
           </section>
+        ) : isSiteSearch ? (
+          <SiteSearchResults
+            term={context.siteQuery ?? ''}
+            state={sitesState}
+            offset={offset}
+            onOffsetChange={setOffset}
+            onRetry={() => setRetryToken((n) => n + 1)}
+            canEdit={canEdit}
+            onOpenTree={openSiteInTree}
+            onEdit={(row) => setSiteEditor({ siteId: row.id })}
+          />
         ) : (
           <section aria-label="Recursos" className="grid min-w-0 w-full gap-0.5">
             {(() => {
@@ -565,37 +624,37 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
                   }
                   marginBottom="8px"
                   actions={
-                canEdit && context.icon.kind === 'site' && context.key ? (
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      aria-label="Editar local"
-                      title="Editar local"
-                      style={{ width: 32, padding: 0 }}
-                      onClick={() => setSiteEditor({ siteId: context.key })}
-                    >
-                      <Pencil size={15} aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="danger-soft"
-                      size="sm"
-                      aria-label="Remover local"
-                      title="Remover local"
-                      style={{ width: 32, padding: 0 }}
-                      onClick={() =>
-                        void askRemoveSite({
-                          refId: context.key,
-                          label: siteContext?.site.name ?? context.label,
-                        })
-                      }
-                    >
-                      <Trash2 size={15} aria-hidden="true" />
-                    </Button>
-                  </div>
-                ) : undefined
-              }
-            />
+                    canEdit && context.icon.kind === 'site' && context.key ? (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          aria-label="Editar local"
+                          title="Editar local"
+                          style={{ width: 32, padding: 0 }}
+                          onClick={() => setSiteEditor({ siteId: context.key })}
+                        >
+                          <Pencil size={15} aria-hidden="true" />
+                        </Button>
+                        <Button
+                          variant="danger-soft"
+                          size="sm"
+                          aria-label="Remover local"
+                          title="Remover local"
+                          style={{ width: 32, padding: 0 }}
+                          onClick={() =>
+                            void askRemoveSite({
+                              refId: context.key,
+                              label: siteContext?.site.name ?? context.label,
+                            })
+                          }
+                        >
+                          <Trash2 size={15} aria-hidden="true" />
+                        </Button>
+                      </div>
+                    ) : undefined
+                  }
+                />
               );
             })()}
             {state.status === 'error' ? (
@@ -612,8 +671,7 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             ) : (
               (() => {
                 const canCreateResource = Boolean(
-                  canEdit &&
-                    (context.leafTypeId || (context.icon.kind === 'site' && context.key)),
+                  canEdit && (context.leafTypeId || (context.icon.kind === 'site' && context.key)),
                 );
                 return (
                   <>
@@ -716,8 +774,17 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
         value={draft}
         onChange={setDraft}
         width={dockWidth - INTERNAL_PLANT_SEARCH_GUTTER * 2}
+        placeholder={tab === 'locations' ? 'Pesquise um local' : 'Pesquise um recurso'}
+        ariaLabel={tab === 'locations' ? 'Pesquisar locais' : 'Pesquisar recursos'}
         onSubmit={(term) =>
-          confirm({ label: `Busca: ${term}`, filter: { q: term }, icon: { kind: 'search' } })
+          tab === 'locations'
+            ? confirm({
+                label: `Busca: ${term}`,
+                filter: {},
+                siteQuery: term,
+                icon: { kind: 'site-search' },
+              })
+            : confirm({ label: `Busca: ${term}`, filter: { q: term }, icon: { kind: 'search' } })
         }
         onClear={() => {
           setDraft('');

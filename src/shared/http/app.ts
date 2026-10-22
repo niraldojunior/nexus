@@ -2695,6 +2695,36 @@ const routeGeoRequest = async ({
     );
   }
 
+  // Locais já vinculados a um endereço resolvido pelo Google: alimenta a aba "Locais" do
+  // painel de Endereço. A validação mínima evita listar Locais de uma rua inteira a partir
+  // de texto parcial (ver GeoTreeService.sitesByAddress).
+  if (request.method === 'GET' && url.pathname === '/v1/geo/tree/sites-by-address') {
+    const street = url.searchParams.get('street')?.trim();
+    const streetNr = url.searchParams.get('streetNr')?.trim();
+    if (!street || !streetNr) {
+      throw new AppError('street and streetNr required', {
+        code: 'GEO_TREE_ADDRESS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    return sendJson(
+      response,
+      200,
+      await geoTreeService.sitesByAddress({
+        street,
+        streetNr,
+        ...(url.searchParams.get('city') ? { city: url.searchParams.get('city')! } : {}),
+        ...(url.searchParams.get('stateOrProvince')
+          ? { stateOrProvince: url.searchParams.get('stateOrProvince')! }
+          : {}),
+        ...(url.searchParams.get('postcode')
+          ? { postcode: url.searchParams.get('postcode')! }
+          : {}),
+        ...(url.searchParams.get('country') ? { country: url.searchParams.get('country')! } : {}),
+      }),
+    );
+  }
+
   // Caminho da raiz até um nó — usado para revelar na árvore um Site/Recurso
   // selecionado por fora dela (clique no mapa, resultado de busca), que pode nunca
   // ter passado por uma expansão manual (ver GeoTreeService.pathTo).
@@ -2747,6 +2777,42 @@ const routeGeoRequest = async ({
       });
     }
     return sendJson(response, 200, await geoTreeService.schematicPath(rest));
+  }
+
+  // Consulta especializada da aba Viabilidade. Ela não usa o viewport do mapa: o resultado
+  // precisa refletir CDOs candidatas a drop, não a configuração de visibilidade do Studio.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/nearby-cdos') {
+    const lng = parseOptionalNumber(url.searchParams.get('lng'));
+    const lat = parseOptionalNumber(url.searchParams.get('lat'));
+    if (
+      lng === undefined ||
+      lat === undefined ||
+      lng < -180 ||
+      lng > 180 ||
+      lat < -90 ||
+      lat > 90
+    ) {
+      throw new AppError('valid lng and lat are required', {
+        code: 'GEO_NEARBY_CDOS_COORDINATES_INVALID',
+        statusCode: 400,
+      });
+    }
+    const radiusMeters = Math.min(
+      Math.max(parseOptionalNumber(url.searchParams.get('radiusMeters')) ?? 200, 1),
+      1_000,
+    );
+    const limit = Math.min(
+      Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 25, 1),
+      100,
+    );
+    return sendJson(
+      response,
+      200,
+      await runtime.geoViabilityService.nearbyCdos(
+        { lng, lat },
+        { tenantId: geoContext.tenantId, radiusMeters, limit },
+      ),
+    );
   }
 
   // Infra passiva por região visível do mapa — fonte usada em escala de detalhe (≤ 200 m),
@@ -4034,6 +4100,23 @@ const routeResourceRequest = async ({
         await internalPlantService.children(
           url.searchParams.get('nodeId') ?? '',
           {
+            ...(limit !== undefined ? { limit } : {}),
+            ...(offset !== undefined ? { offset } : {}),
+          },
+          context,
+        ),
+      );
+    }
+    if (url.pathname === '/v1/resource/internal-plant/sites') {
+      const limit = intParam('limit');
+      const offset = intParam('offset');
+      const q = url.searchParams.get('q') ?? undefined;
+      return sendJson(
+        response,
+        200,
+        await internalPlantService.searchSites(
+          {
+            ...(q ? { q } : {}),
             ...(limit !== undefined ? { limit } : {}),
             ...(offset !== undefined ? { offset } : {}),
           },

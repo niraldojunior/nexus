@@ -1119,6 +1119,23 @@ async function deleteExistingFeatures(
   return removed;
 }
 
+/**
+ * Predicado equivalente a `FLOOR(tile_x/2^(tile_z-zoom))=x AND FLOOR(tile_y/2^(tile_z-zoom))=y`,
+ * porém como faixa por `tile_z`, o que permite range scan pela PK (tenant, tile_z, tile_x, tile_y)
+ * em vez de varrer todas as features do tenant.
+ */
+export function densityCellTileRangesSql(zoom: number, x: number, y: number): string {
+  const ranges: string[] = [];
+  for (let z = zoom; z <= MAP_TILE_ZOOM; z += 1) {
+    const span = 2 ** (z - zoom);
+    ranges.push(
+      `(tile_z=${z} AND tile_x BETWEEN ${x * span} AND ${(x + 1) * span - 1}` +
+        ` AND tile_y BETWEEN ${y * span} AND ${(y + 1) * span - 1})`,
+    );
+  }
+  return ranges.join(' OR ');
+}
+
 async function rebuildDensityCells(
   conn: Connection,
   ctx: MigrationContext,
@@ -1140,9 +1157,7 @@ async function rebuildDensityCells(
               COUNT(DISTINCT CASE WHEN feature_kind='resource' THEN entity_id END),
               COUNT(DISTINCT CASE WHEN feature_kind='site' THEN entity_id END),AVG(lng),AVG(lat)
          FROM ${ctx.t('geographic_map_feature')}
-        WHERE tenant_id=:tenantId AND tile_z>=:zoom
-          AND FLOOR(tile_x/POWER(2,tile_z-:zoom))=:x
-          AND FLOOR(tile_y/POWER(2,tile_z-:zoom))=:y
+        WHERE tenant_id=:tenantId AND (${densityCellTileRangesSql(zoom, x, y)})
         GROUP BY tenant_id`,
       binds,
     );

@@ -29,6 +29,9 @@ import { PanelTabBar } from './PanelTabBar';
 import { usePanelExit } from './usePanelExit';
 import { PrecisionBadge } from './PrecisionBadge';
 import { ViabilityTab, type DropSimulation } from './ViabilityTab';
+import { AddressSitesTab } from './AddressSitesTab';
+import { useAddressSites } from '../../hooks/useAddressSites';
+import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { useGeonetAddress } from '../../hooks/useGeonetAddress';
 import { useViaCepAddress } from '../../hooks/useViaCepAddress';
 import type { GeonetAddressDetail } from '../../services/geonetAddressApi';
@@ -48,7 +51,7 @@ export {
   type AddressPinLocation,
 } from './addressLocationResolution';
 
-type AddressTab = 'overview' | 'viability';
+type AddressTab = 'overview' | 'sites' | 'viability';
 
 // Identidade estável para quando o painel é montado sem quem desenhe a simulação
 // (testes e usos fora do mapa) — um literal inline remontaria o efeito do ViabilityTab.
@@ -69,6 +72,8 @@ export type AddressDetailPanelProps = {
   onDropSimulation?: (simulation: DropSimulation | null) => void;
   geonetEnabled?: boolean;
   onLocationResolved?: (resolution: AddressLocationResolution) => void;
+  // Abre o painel de um Local listado na aba Locais (mesmo caminho da busca por nome).
+  onSelectSite?: (site: GeoTreeNode) => void;
 };
 
 /**
@@ -87,6 +92,7 @@ export function AddressDetailPanel({
   onDropSimulation,
   geonetEnabled = true,
   onLocationResolved,
+  onSelectSite,
 }: AddressDetailPanelProps) {
   const { isClosing } = usePanelExit(isMobile);
   const title =
@@ -96,6 +102,7 @@ export function AddressDetailPanel({
   const [tab, setTab] = useState<AddressTab>('overview');
   const { snapCommand, requestSnap } = useSheetSnapCommand(minimizeSignal);
   const geonet = useGeonetAddress(address, geonetEnabled);
+  const addressSites = useAddressSites(address);
   const resolutionKey = `${address.coordinates.join(',')}|${geonet.detail?.coordinates?.join(',') ?? ''}`;
   const [sourceChoice, setSourceChoice] = useState<{
     key: string;
@@ -177,6 +184,14 @@ export function AddressDetailPanel({
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />
+        <PanelBarButton
+          asTab
+          icon={Building2}
+          label="Locais"
+          badge={addressSites.status === 'ready' ? addressSites.sites.length : null}
+          active={tab === 'sites'}
+          onClick={() => setTab('sites')}
+        />
         {activeLocation ? (
           <PanelBarButton
             asTab
@@ -187,7 +202,9 @@ export function AddressDetailPanel({
           />
         ) : null}
       </PanelTabBar>
-      {tab === 'viability' && activeLocation ? (
+      {tab === 'sites' ? (
+        <AddressSitesTab state={addressSites} onSelectSite={onSelectSite ?? noop} />
+      ) : tab === 'viability' && activeLocation ? (
         <ViabilityTab origin={activeLocation.coordinates} onSimulate={handleSimulate} />
       ) : (
         <AddressOverview

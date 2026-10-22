@@ -86,6 +86,32 @@ export const fetchTreeChildren = (
 
 export type MapBounds = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
+export type NearbyCdo = {
+  id: string;
+  name: string;
+  resourceType: string;
+  status?: string;
+  substatus?: string;
+  lng: number;
+  lat: number;
+  straightMeters: number;
+  portsFree: number;
+  portsTotal: number;
+};
+
+export const fetchNearbyCdos = (
+  origin: { lng: number; lat: number },
+  options: { radiusMeters: number; limit: number },
+): Promise<NearbyCdo[]> => {
+  const params = new URLSearchParams({
+    lng: String(origin.lng),
+    lat: String(origin.lat),
+    radiusMeters: String(options.radiusMeters),
+    limit: String(options.limit),
+  });
+  return getJson<NearbyCdo[]>(`/v1/geo/nearby-cdos?${params.toString()}`);
+};
+
 // Infra passiva (recursos + cabos) dentro da região visível do mapa — usada em escala de
 // detalhe (≤ 50 m), no lugar da expansão da árvore de Hierarquia. `include` restringe o que o
 // servidor busca (RF-011, controle de camadas do mapa — ver utils/mapLayers.viewportInclude);
@@ -110,6 +136,30 @@ export const fetchViewportResources = (
 // exatamente como qualquer outro nó (ver selectNode em GeoPage). `scope` (RF-013) restringe
 // a busca a um tipo (ver utils/geoSearchScope); omitido ou `'all'`, não serializa nada — o
 // caminho quente segue com a URL limpa.
+// Locais vinculados ao endereço resolvido pelo Google. A API exige logradouro e número;
+// ausência de resultado mantém o painel de Endereço (não é busca por proximidade).
+export const fetchSitesByAddress = (
+  address: {
+    street: string;
+    streetNr?: string;
+    city?: string;
+    stateOrProvince?: string;
+    postcode?: string;
+    country?: string;
+  },
+  options: { signal?: AbortSignal } = {},
+): Promise<GeoTreeNode[]> => {
+  const params = new URLSearchParams({ street: address.street });
+  if (address.streetNr) params.set('streetNr', address.streetNr);
+  if (address.city) params.set('city', address.city);
+  if (address.stateOrProvince) params.set('stateOrProvince', address.stateOrProvince);
+  if (address.postcode) params.set('postcode', address.postcode);
+  if (address.country) params.set('country', address.country);
+  return getJson<GeoTreeNode[]>(`/v1/geo/tree/sites-by-address?${params.toString()}`, {
+    signal: options.signal,
+  });
+};
+
 export const fetchTreeSearch = (
   q: string,
   options: {

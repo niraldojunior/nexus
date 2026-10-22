@@ -8,6 +8,9 @@ import type {
   InternalPlantResourceQuery,
   InternalPlantResourceRow,
   InternalPlantSiteContext,
+  InternalPlantSitePage,
+  InternalPlantSiteQuery,
+  InternalPlantSiteRow,
   InternalPlantVisualIdentity,
 } from './internal-plant-domain.js';
 import type { IInternalPlantRepository } from './internal-plant-repository-interface.js';
@@ -189,14 +192,30 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       state_or_province: string | null;
       postcode: string | null;
       lvl: number | string;
+      administrative_city_id: string | null;
+      country_code: string | null;
+      state_code: string | null;
+      lng: number | string | null;
+      lat: number | string | null;
     }>(
+      // Coordenada: a localização do próprio Site e, na falta dela, a do endereço — só Point
+      // (em LineString/Polygon `coordinates[0]` é um array e o JSON_VALUE devolve NULL).
       `SELECT x.id, x.name, sp.name AS specification_name,
               x.site_specification_id AS site_specification_id, x.geographic_address_id,
               a.street_type, a.street_name, a.street_nr, a.locality, a.city,
-              a.state_or_province, a.postcode, LEVEL AS lvl
+              a.state_or_province, a.postcode, LEVEL AS lvl,
+              x.administrative_city_id AS administrative_city_id,
+              ac.country_code AS country_code, ac.state_code AS state_code,
+              CASE WHEN l.geometry_type = 'Point'
+                   THEN JSON_VALUE(l.geometry, '$.coordinates[0]' RETURNING NUMBER) END AS lng,
+              CASE WHEN l.geometry_type = 'Point'
+                   THEN JSON_VALUE(l.geometry, '$.coordinates[1]' RETURNING NUMBER) END AS lat
          FROM geographic_site x
          JOIN geographic_site_specification sp ON sp.id = x.site_specification_id
          LEFT JOIN geographic_address a ON a.id = x.geographic_address_id
+         LEFT JOIN geographic_location l
+           ON l.id = COALESCE(x.geographic_location_id, a.geographic_location_id)
+         LEFT JOIN geographic_administrative_city ac ON ac.id = x.administrative_city_id
         START WITH x.id = ? AND x.tenant_id = ? AND x.status <> 'Retired'
       CONNECT BY NOCYCLE PRIOR x.parent_site_id = x.id
         ORDER BY LEVEL DESC`,
@@ -228,9 +247,24 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
           ...(selected.postcode ? { postcode: selected.postcode } : {}),
         }
       : undefined;
+    const lng = selected.lng === null || selected.lng === undefined ? NaN : Number(selected.lng);
+    const lat = selected.lat === null || selected.lat === undefined ? NaN : Number(selected.lat);
+    const coordinates: [number, number] | undefined =
+      Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : undefined;
     const visualIdentity = (await this.identityMap(tenantId, [selected.site_specification_id])).get(
       selected.site_specification_id,
     );
+    // Caminho na árvore de Locais: o Site raiz define município e tipo (ver `rootScope`).
+    const root = rows[0]!;
+    const hasCity = Boolean(root.administrative_city_id && root.country_code && root.state_code);
+    const cityKey = hasCity ? root.administrative_city_id! : UNREGISTERED;
+    const treePath = [
+      hasCity ? `country:${root.country_code}` : 'country:BR',
+      hasCity ? `uf:${root.country_code}|${root.state_code}` : `uf:${UNREGISTERED}`,
+      `city:${cityKey}`,
+      `site-type:${cityKey}|${root.site_specification_id}`,
+      ...rows.map((row) => `site:${row.id}`),
+    ];
     return {
       site: {
         ...hierarchy[hierarchy.length - 1]!,
@@ -238,6 +272,8 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       },
       hierarchy,
       ...(address ? { address } : {}),
+      ...(coordinates ? { coordinates } : {}),
+      treePath,
     };
   }
 
@@ -420,6 +456,127 @@ export class OracleInternalPlantRepository implements IInternalPlantRepository {
       } else if (row.icon_asset_id) {
         map.set(row.site_specification_id, { kind: 'asset', assetId: row.icon_asset_id });
       }
+    }
+    return map;
+  }
+
+  // Busca de Sites por nome: prefixo (indexável) primeiro; sem resultado, cai para substring.
+  public async listSites(query: InternalPlantSiteQuery): Promise<InternalPlantSitePage> {
+    const q = escapeLike(query.q.toLowerCase());
+    const byPrefix = await this.querySites(query, `${q}%`);
+    if (byPrefix.total > 0 || query.offset > 0) return byPrefix;
+    return await this.querySites(query, `%${q}%`);
+  }
+
+  private async querySites(
+    query: InternalPlantSiteQuery,
+    likePattern: string,
+  ): Promise<InternalPlantSitePage> {
+    const { tenantId, limit, offset } = query;
+    const where = `tenant_id = ? AND status <> 'Retired' AND LOWER(name) LIKE ? ESCAPE '${LIKE_ESCAPE}'`;
+    const rows = await this.db.all<{
+      id: string;
+      name: string;
+      status: string;
+      spec_id: string;
+      spec_name: string;
+      street_type: string | null;
+      street_name: string | null;
+      street_nr: string | null;
+      locality: string | null;
+      city: string | null;
+      state_or_province: string | null;
+      postcode: string | null;
+      total: number | string;
+    }>(
+      `SELECT p.id, p.name, p.status, p.spec_id, sp.name AS spec_name, p.total,
+              a.street_type, a.street_name, a.street_nr, a.locality, a.city,
+              a.state_or_province, a.postcode
+         FROM (
+           SELECT id, name, status, site_specification_id AS spec_id, geographic_address_id,
+                  count(*) OVER() AS total
+             FROM geographic_site
+            WHERE ${where}
+            ORDER BY LOWER(name), id
+            LIMIT ? OFFSET ?
+         ) p
+         JOIN geographic_site_specification sp ON sp.id = p.spec_id
+         LEFT JOIN geographic_address a ON a.id = p.geographic_address_id
+        ORDER BY LOWER(p.name), p.id`,
+      [tenantId, likePattern, limit, offset],
+    );
+    const total = await this.totalOrFallback(rows[0]?.total, offset, rows.length, () =>
+      this.scalar(`SELECT count(*) AS n FROM geographic_site WHERE ${where}`, [
+        tenantId,
+        likePattern,
+      ]),
+    );
+    if (rows.length === 0) return { items: [], total, limit, offset };
+
+    const [identities, cities] = await Promise.all([
+      this.identityMap(
+        tenantId,
+        rows.map((row) => row.spec_id),
+      ),
+      this.rootCityMap(
+        tenantId,
+        rows.map((row) => row.id),
+      ),
+    ]);
+    const items: InternalPlantSiteRow[] = rows.map((row) => {
+      const identity = identities.get(row.spec_id);
+      const address = [
+        [row.street_type, row.street_name].filter(Boolean).join(' '),
+        row.street_nr ? `nº ${row.street_nr}` : '',
+        row.locality,
+        row.city,
+        row.state_or_province,
+        row.postcode,
+      ]
+        .filter(Boolean)
+        .join(', ');
+      const location = cities.get(row.id);
+      return {
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        siteSpecification: { id: row.spec_id, name: row.spec_name },
+        ...(identity ? { visualIdentity: identity } : {}),
+        ...(address ? { address } : {}),
+        ...(location?.stateOrProvince ? { stateOrProvince: location.stateOrProvince } : {}),
+        ...(location?.city ? { city: location.city } : {}),
+      };
+    });
+    return { items, total, limit, offset };
+  }
+
+  // Município do Site raiz da cadeia de cada Site (Sub-Sites herdam o município da raiz).
+  private async rootCityMap(tenantId: string, siteIds: string[]) {
+    const ids = [...new Set(siteIds)];
+    const map = new Map<string, { stateOrProvince?: string; city?: string }>();
+    if (ids.length === 0) return map;
+    const rows = await this.db.all<{
+      site_id: string;
+      state_code: string | null;
+      city_name: string | null;
+    }>(
+      `SELECT r.site_id AS site_id, c.state_code AS state_code, c.city_name AS city_name
+         FROM (
+           SELECT CONNECT_BY_ROOT x.id AS site_id, x.administrative_city_id AS city_id,
+                  x.parent_site_id AS parent_site_id
+             FROM geographic_site x
+            START WITH x.tenant_id = ? AND x.id IN (${placeholders(ids)})
+          CONNECT BY NOCYCLE x.id = PRIOR x.parent_site_id
+         ) r
+         JOIN geographic_administrative_city c ON c.id = r.city_id
+        WHERE r.parent_site_id IS NULL`,
+      [tenantId, ...ids],
+    );
+    for (const row of rows) {
+      map.set(row.site_id, {
+        ...(row.state_code ? { stateOrProvince: row.state_code } : {}),
+        ...(row.city_name ? { city: row.city_name } : {}),
+      });
     }
     return map;
   }

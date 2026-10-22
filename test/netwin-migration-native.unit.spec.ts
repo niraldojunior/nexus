@@ -68,7 +68,9 @@ import {
 import { MIGRATION_BATCHES } from '../src/shared/persistence/schema.js';
 import { parseCliArgs } from '../src/scripts/netwin-migration/index.js';
 import {
+  densityCellTileRangesSql,
   densityTileCoordinates,
+  resolveVirtualIndexColumn,
   hasPhase3IncrementalIndex,
   hasPhase3ResourceScanIndex,
   oracleDictionaryObjectName,
@@ -84,7 +86,10 @@ import {
   phase3VisibleMapSpecificationsSql,
   stalePhase3Statistics,
 } from '../src/scripts/netwin-migration/phase3-map-features.js';
-import { phase3CdoSourceSql } from '../src/scripts/netwin-migration/phase3-coverage.js';
+import {
+  coverageCityTuple,
+  phase3CdoSourceSql,
+} from '../src/scripts/netwin-migration/phase3-coverage.js';
 import {
   assertReconciliationInvocation,
   parseReconciliationOptions,
@@ -576,6 +581,32 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(() => densityTileCoordinates('inválida')).toThrow(/inválida/i);
   });
 
+  it('expressa a célula de densidade como faixas por tile_z, sem FLOOR sobre a coluna', () => {
+    const sql = densityCellTileRangesSql(13, 2730, 4165);
+    expect(sql).not.toMatch(/FLOOR|POWER/i);
+    expect(sql).toContain(
+      '(tile_z=13 AND tile_x BETWEEN 2730 AND 2730 AND tile_y BETWEEN 4165 AND 4165)',
+    );
+    expect(sql).toContain(
+      '(tile_z=16 AND tile_x BETWEEN 21840 AND 21847 AND tile_y BETWEEN 33320 AND 33327)',
+    );
+    expect(sql.split(' OR ')).toHaveLength(4);
+  });
+
+  it('resolve coluna virtual SYS_NC de TIMESTAMP WITH TIME ZONE para a coluna real', () => {
+    const base = { INDEX_NAME: 'IX', COLUMN_POSITION: 2 };
+    expect(
+      resolveVirtualIndexColumn({
+        ...base,
+        COLUMN_NAME: 'SYS_NC00029$',
+        COLUMN_EXPRESSION: 'SYS_EXTRACT_UTC("UPDATED_AT")',
+      }),
+    ).toEqual({ ...base, COLUMN_NAME: 'UPDATED_AT' });
+    expect(
+      resolveVirtualIndexColumn({ ...base, COLUMN_NAME: 'ID', COLUMN_EXPRESSION: null }),
+    ).toEqual({ ...base, COLUMN_NAME: 'ID' });
+  });
+
   it('dimensiona o bind de geographic_map_feature pelo lote e isola a geometria larga', () => {
     const columns = ['entity_id', 'tile_x', 'geometry'];
     // Feature de ponto: geometry null. É a maioria esmagadora das linhas e não deve pagar CLOB.
@@ -708,6 +739,19 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(source).toContain("UPPER(r.name) LIKE 'CDO%'");
     expect(source).toContain('ORDER BY address.id');
     expect(source).toContain('FETCH FIRST 1 ROWS ONLY');
+  });
+
+  it('cobertura nasce no município: bairro e município têm tupla, UF e "Sem município" não', () => {
+    const stat = { uf: 'RJ', city: 'São Gonçalo' };
+    expect(coverageCityTuple('neighborhood', stat)).toMatchObject({
+      countryCode: 'BR',
+      stateCode: 'RJ',
+      cityKey: 'SAO GONCALO',
+    });
+    expect(coverageCityTuple('city', stat)).toMatchObject({ stateCode: 'RJ' });
+    expect(coverageCityTuple('uf', stat)).toBeNull();
+    expect(coverageCityTuple('city', { uf: 'RJ', city: 'Sem município' })).toBeNull();
+    expect(coverageCityTuple('city', { uf: 'ZZ', city: 'Algum' })).toBeNull();
   });
 });
 

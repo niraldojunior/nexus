@@ -426,7 +426,7 @@ export function MapBaseLayerSelector({
           id={listboxId}
           role="listbox"
           aria-label="Opções de base cartográfica"
-          className="absolute bottom-[calc(100%+8px)] left-0 grid grid-cols-4 gap-1.5 rounded-[12px] border border-app-border bg-app-panel p-1.5 shadow-map-control-lg"
+          className="absolute bottom-[calc(100%+8px)] left-0 grid w-max grid-cols-[repeat(4,84px)] gap-1.5 rounded-[12px] border border-app-border bg-app-panel p-1.5 shadow-map-control-lg"
         >
           {options.map((option) => {
             const selected = option.id === selectedLayer?.id;

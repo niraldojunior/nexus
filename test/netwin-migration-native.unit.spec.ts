@@ -86,7 +86,10 @@ import {
   phase3VisibleMapSpecificationsSql,
   stalePhase3Statistics,
 } from '../src/scripts/netwin-migration/phase3-map-features.js';
-import { phase3CdoSourceSql } from '../src/scripts/netwin-migration/phase3-coverage.js';
+import {
+  coverageCityTuple,
+  phase3CdoSourceSql,
+} from '../src/scripts/netwin-migration/phase3-coverage.js';
 import {
   assertReconciliationInvocation,
   parseReconciliationOptions,
@@ -736,6 +739,19 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     expect(source).toContain("UPPER(r.name) LIKE 'CDO%'");
     expect(source).toContain('ORDER BY address.id');
     expect(source).toContain('FETCH FIRST 1 ROWS ONLY');
+  });
+
+  it('cobertura nasce no município: bairro e município têm tupla, UF e "Sem município" não', () => {
+    const stat = { uf: 'RJ', city: 'São Gonçalo' };
+    expect(coverageCityTuple('neighborhood', stat)).toMatchObject({
+      countryCode: 'BR',
+      stateCode: 'RJ',
+      cityKey: 'SAO GONCALO',
+    });
+    expect(coverageCityTuple('city', stat)).toMatchObject({ stateCode: 'RJ' });
+    expect(coverageCityTuple('uf', stat)).toBeNull();
+    expect(coverageCityTuple('city', { uf: 'RJ', city: 'Sem município' })).toBeNull();
+    expect(coverageCityTuple('city', { uf: 'ZZ', city: 'Algum' })).toBeNull();
   });
 });
 

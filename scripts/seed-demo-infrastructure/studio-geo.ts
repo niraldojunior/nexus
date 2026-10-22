@@ -109,7 +109,7 @@ const SCALE_BAND_KEYS = [
  * ponto acima de 100 m porque poste e caixa só fazem sentido em zoom de rua. Subestação é
  * infraestrutura de escala estadual: com o default, a DEMO abriria num zoom em que nada aparece.
  */
-const pointVisualConfig = (color: string): StudioGeoPointVisualConfig => ({
+export const pointVisualConfig = (color: string): StudioGeoPointVisualConfig => ({
   geometryKind: 'POINT',
   color: { mode: 'fixed', defaultColor: color, statusColors: { ...LOCAL_STATUS_COLORS } },
   opacity: 1,
@@ -140,7 +140,7 @@ const LINE_LOD_BAND_PROFILE: Record<(typeof SCALE_BAND_KEYS)[number], string> = 
   le5m: 'detail',
 };
 
-const lineVisualConfig = (color: string): StudioGeoLineVisualConfig => ({
+export const lineVisualConfig = (color: string): StudioGeoLineVisualConfig => ({
   geometryKind: 'LINE',
   stroke: { mode: 'fixed', defaultColor: color, statusColors: { ...RESOURCE_STATUS_COLORS } },
   strokeStyle: 'solid',
@@ -435,26 +435,28 @@ export function oilNodes(sortOrderBase = 130): StudioGeoNode[] {
   ];
 }
 
-const DOMAIN_NODES: Record<Domain, (sortOrderBase: number) => StudioGeoNode[]> = {
+const DOMAIN_NODES: Record<Domain, NodeBuilder> = {
   energy: energyNodes,
   gas: gasNodes,
   rail: railNodes,
   oil: oilNodes,
 };
 
+/** Constrói os nós de um grupo a partir do `sortOrder` de raiz que o grupo vai ocupar. */
+export type NodeBuilder = (sortOrderBase: number) => StudioGeoNode[];
+
 /**
- * Acrescenta os nós dos domínios pedidos a um snapshot existente, sem remover nada alheio.
+ * Acrescenta os nós dos construtores a um snapshot existente, sem remover nada alheio.
  *
  * `sortOrder` é único **entre irmãos** (`STUDIO_GEO_SIBLING_ORDER_DUPLICATE`), então cada grupo entra
  * depois do maior `sortOrder` de raiz já publicado. Nós com os mesmos ids são substituídos — é o
- * que torna a republicação idempotente. Grupos de domínios não pedidos ficam como estão.
+ * que torna a republicação idempotente. Grupos de outros construtores ficam como estão.
  */
-export function mergeDomainNodes(
+export function mergeNodes(
   existing: StudioGeoNode[],
-  domains: readonly Domain[],
+  fresh: readonly NodeBuilder[],
 ): StudioGeoSnapshot {
-  const fresh = domains.map((domain) => DOMAIN_NODES[domain]);
-  // Ids que o seed publica, descobertos gerando os nós (um único ponto de verdade).
+  // Ids que o loader publica, descobertos gerando os nós (um único ponto de verdade).
   const ours = new Set(fresh.flatMap((build) => build(0).map((node) => node.id)));
   const kept = existing.filter((node) => !ours.has(node.id));
   let nextRootOrder = kept
@@ -467,29 +469,51 @@ export function mergeDomainNodes(
   return { schemaVersion: 3, nodes: [...kept, ...added] };
 }
 
+/** Nós dos domínios do seed pedidos, mesclados ao snapshot existente. */
+export const mergeDomainNodes = (
+  existing: StudioGeoNode[],
+  domains: readonly Domain[],
+): StudioGeoSnapshot =>
+  mergeNodes(
+    existing,
+    domains.map((domain) => DOMAIN_NODES[domain]),
+  );
+
 /** Compatibilidade: só o grupo ENERGIA. */
 export const mergeEnergyNodes = (existing: StudioGeoNode[]): StudioGeoSnapshot =>
   mergeDomainNodes(existing, ['energy']);
 
 export type PublishResult = { versionNumber: number; nodeCount: number; alreadyPublished: boolean };
 
+/** Publica o catálogo GEO com as camadas dos domínios do seed (default: energia). */
+export const publishDomainLayers = (
+  studioService: StudioService,
+  context: RequestContext,
+  domains: readonly Domain[] = ['energy'],
+): Promise<PublishResult> =>
+  publishNodes(
+    studioService,
+    context,
+    domains.map((domain) => DOMAIN_NODES[domain]),
+  );
+
 /**
- * Publica o catálogo GEO com as camadas de energia.
+ * Publica o catálogo GEO acrescido dos nós dos construtores.
  *
  * `getStatus` → `saveDraft` → `publish(ifMatch)`, nunca `ensurePublishedBootstrap`: aquele é no-op
  * quando já existe publicação (studio/service.ts:112) e não acrescentaria nós a um catálogo vivo.
  * O `ifMatch` é o checksum devolvido pelo próprio draft.
  */
-export async function publishDomainLayers(
+export async function publishNodes(
   studioService: StudioService,
   context: RequestContext,
-  domains: readonly Domain[] = ['energy'],
+  builders: readonly NodeBuilder[],
 ): Promise<PublishResult> {
   const status = await studioService.getStatus('studio-geo', context);
   const current = (status.publishedVersion?.snapshot ?? { nodes: [] }) as {
     nodes?: StudioGeoNode[];
   };
-  const snapshot = mergeDomainNodes(current.nodes ?? [], domains);
+  const snapshot = mergeNodes(current.nodes ?? [], builders);
 
   const draft = await studioService.saveDraft(
     'studio-geo',

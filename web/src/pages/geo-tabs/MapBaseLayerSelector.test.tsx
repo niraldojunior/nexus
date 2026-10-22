@@ -69,6 +69,32 @@ describe('MapBaseLayerSelector', () => {
     expect(onChange).toHaveBeenCalledWith('blank');
   });
 
+  it('seleciona as bases Neutro, Relevo e Satélite puro na lista de escolha', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(<MapBaseLayerSelector value="roadmap" onChange={onChange} />);
+
+    for (const [label, id] of [
+      ['Neutro', 'neutral'],
+      ['Relevo', 'terrain'],
+      ['Satélite puro', 'satellite-pure'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
+      await user.click(screen.getByRole('option', { name: label }));
+      expect(onChange).toHaveBeenLastCalledWith(id);
+    }
+  });
+
+  it('mapeia Relevo e Satélite puro para os tipos de mapa do Google', () => {
+    const byId = (id: string) => BASE_MAP_LAYERS.find((layer) => layer.id === id);
+
+    expect(byId('terrain')?.googleMapTypeId).toBe('terrain');
+    expect(byId('satellite-pure')?.googleMapTypeId).toBe('satellite');
+    expect(byId('satellite-pure')?.mapStyles).toEqual([]);
+    expect(byId('neutral')?.googleMapTypeId).toBe('roadmap');
+  });
+
   it('mostra o Geonet desabilitado e não dispara onChange ao clicar', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -90,13 +116,14 @@ describe('MapBaseLayerSelector', () => {
     const onChange = vi.fn();
     const { rerender } = render(<MapBaseLayerSelector value="roadmap" onChange={onChange} />);
 
-    const mubButton = screen.getByRole('button', { name: /Selecionar base cartográfica/i });
-    await user.dblClick(mubButton);
-    expect(onChange).toHaveBeenLastCalledWith('satellite');
-
-    rerender(<MapBaseLayerSelector value="satellite" onChange={onChange} />);
-    await user.dblClick(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
-    expect(onChange).toHaveBeenLastCalledWith('blank');
+    const cycle = ['neutral', 'terrain', 'satellite', 'satellite-pure', 'blank'];
+    let current = 'roadmap';
+    for (const next of cycle) {
+      rerender(<MapBaseLayerSelector value={current} onChange={onChange} />);
+      await user.dblClick(screen.getByRole('button', { name: /Selecionar base cartográfica/i }));
+      expect(onChange).toHaveBeenLastCalledWith(next);
+      current = next;
+    }
 
     // Do último selecionável (Branco), o próximo dá a volta para o Mapa — o Geonet
     // (disabled) nunca entra no ciclo.

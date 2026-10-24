@@ -18,7 +18,6 @@ const KNOWLEDGE_FILES = [
   { title: 'Visao geral do produto', path: 'docs/1-overview/product-overview.md' },
   { title: 'Regras de negocio', path: 'docs/1-overview/business-rules.md' },
   { title: 'Glossario', path: 'docs/1-overview/glossary.md' },
-  { title: 'Nexus Copilot', path: 'docs/1-overview/nexus-copilot-training.md' },
   { title: 'Estrategia de plataforma', path: 'docs/1-overview/platform-strategy.md' },
   { title: 'Modulo Geographic', path: 'docs/2-functional-specs/01-module-geo.md' },
   { title: 'Modulo Resource', path: 'docs/2-functional-specs/02-module-resource.md' },
@@ -113,7 +112,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- O nome informado vira o nome do modelo no catalogo.',
       '- O fabricante deve ser resolvido automaticamente quando ja existir no inventario; nao faz sentido pedir ID para usuario leigo.',
       '- Para ONT e CPE, a categoria canonica e Equipamentos de Cliente (`Equipment.CustomerPremises`) e o tipo e `ONT`.',
-      'Fontes locais: docs/1-overview/nexus-copilot-training.md, docs/2-functional-specs/02-module-resource.md',
+      'Fontes locais: docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
   {
@@ -123,7 +122,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       '- O catalogo nao faz exclusao fisica.',
       '- A resposta precisa ser explicita: se o modelo nao existir, ou houver ambiguidade, diga qual foi a causa.',
       '- Para ONT, CPE, OLT, Router e Switch, a referencia continua sendo o modelo de catalogo; a instancia fisica e outro objeto.',
-      'Fontes locais: docs/1-overview/nexus-copilot-training.md, docs/1-overview/business-rules.md, docs/2-functional-specs/02-module-resource.md',
+      'Fontes locais: docs/1-overview/business-rules.md, docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
   {
@@ -132,7 +131,7 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
       'Quando o usuario envia varios modelos em lote, o Nexus deve consolidar a operacao como cadastro em lote e nao parar no primeiro item.',
       '- A confirmacao precisa listar todos os itens do lote antes do commit.',
       '- O retorno final deve refletir o total de modelos processados.',
-      'Fontes locais: docs/1-overview/nexus-copilot-training.md, docs/2-functional-specs/02-module-resource.md',
+      'Fontes locais: docs/2-functional-specs/02-module-resource.md',
     ].join('\n'),
   },
   {
@@ -189,9 +188,8 @@ const CURATED_ANSWERS: CuratedAnswer[] = [
     content: [
       'Nexus Copilot e o agente conversacional especializado do V.tal Nexus.',
       '- Ele responde apenas sobre V.tal, Telecom, inventario, redes, TMF e operacao wholesale.',
-      '- Seu contexto padrao vem de docs/1-overview/nexus-copilot-training.md.',
       '- Quando a pergunta sair do escopo, o comportamento correto e recusar e redirecionar.',
-      'Fontes locais: docs/1-overview/nexus-copilot-training.md',
+      'Fontes locais: docs/1-overview/product-overview.md',
     ].join('\n'),
   },
   {

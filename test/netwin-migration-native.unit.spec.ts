@@ -73,6 +73,7 @@ import {
   resolveVirtualIndexColumn,
   hasPhase3IncrementalIndex,
   hasPhase3ResourceScanIndex,
+  incrementalCursorKey,
   oracleDictionaryObjectName,
   phase3IncrementalResourcePageSql,
   phase3IncrementalSitePageSql,
@@ -437,21 +438,29 @@ describe('netwin-migration: CLI', () => {
       tenantId: 'vtal',
       scope: { full: false },
     });
+    expect(parseCliArgs(['--phase', '3d', '--tenant-id', 'vtal'])).toMatchObject({
+      phase: '3d',
+      tenantId: 'vtal',
+      scope: { full: false },
+    });
   });
 
-  it.each(['3', '3b'])('rejeita filtros e execução parcial na Fase %s tenant-integral', (phase) => {
-    expect(() => parseCliArgs(['--phase', phase, '--uf', 'RJ'])).toThrow(/tenant inteiro/i);
-    expect(() => parseCliArgs(['--phase', phase, '--municipio', 'Niterói'])).toThrow(
-      /tenant inteiro/i,
-    );
-    expect(() =>
-      parseCliArgs(['--phase', phase, '--bairro', 'Icaraí', '--municipio', 'Niterói']),
-    ).toThrow(/tenant inteiro/i);
-    expect(() => parseCliArgs(['--phase', phase, '--max-records', '1'])).toThrow(/não aceita/i);
-    expect(() =>
-      parseCliArgs(['--phase', phase, '--apply', '--resume', '--job-id', 'job-1']),
-    ).toThrow(/não aceita/i);
-  });
+  it.each(['3', '3b', '3d'])(
+    'rejeita filtros e execução parcial na Fase %s tenant-integral',
+    (phase) => {
+      expect(() => parseCliArgs(['--phase', phase, '--uf', 'RJ'])).toThrow(/tenant inteiro/i);
+      expect(() => parseCliArgs(['--phase', phase, '--municipio', 'Niterói'])).toThrow(
+        /tenant inteiro/i,
+      );
+      expect(() =>
+        parseCliArgs(['--phase', phase, '--bairro', 'Icaraí', '--municipio', 'Niterói']),
+      ).toThrow(/tenant inteiro/i);
+      expect(() => parseCliArgs(['--phase', phase, '--max-records', '1'])).toThrow(/não aceita/i);
+      expect(() =>
+        parseCliArgs(['--phase', phase, '--apply', '--resume', '--job-id', 'job-1']),
+      ).toThrow(/não aceita/i);
+    },
+  );
 
   it('valida o corte temporal obrigatório e exclusivo da Fase 3.A', () => {
     expect(() => parseCliArgs(['--phase', '3a'])).toThrow(/updated-since/i);
@@ -563,9 +572,19 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     for (const source of [resourcePage, sitePage]) {
       expect(source).toContain('updated_at >= :updatedSince');
       expect(source).toContain('updated_at < :updatedBefore');
-      expect(source).toMatch(/[rs]\.updated_at > :lastUpdatedAt/);
-      expect(source).toContain('updated_at = :lastUpdatedAt');
-      expect(source).toMatch(/ORDER BY [rs]\.updated_at, [rs]\.id/);
+      // Cursor em microssegundos (texto UTC), não em `Date`: o JS trunca em milissegundos e a
+      // página seguinte repetia linhas com fração abaixo disso — laço infinito no NX_DEV16_.
+      expect(source).toMatch(
+        /SYS_EXTRACT_UTC\([rs]\.updated_at\) > TO_TIMESTAMP\(:lastUpdatedKey, 'YYYY-MM-DD HH24:MI:SS\.FF6'\)/,
+      );
+      expect(source).toMatch(
+        /SYS_EXTRACT_UTC\([rs]\.updated_at\) = TO_TIMESTAMP\(:lastUpdatedKey, 'YYYY-MM-DD HH24:MI:SS\.FF6'\) AND [rs]\.id > :lastId/,
+      );
+      expect(source).toMatch(
+        /TO_CHAR\(SYS_EXTRACT_UTC\([rs]\.updated_at\), 'YYYY-MM-DD HH24:MI:SS\.FF6'\) AS "UPDATED_KEY"/,
+      );
+      expect(source).not.toContain(':lastUpdatedAt');
+      expect(source).toMatch(/ORDER BY SYS_EXTRACT_UTC\([rs]\.updated_at\), [rs]\.id/);
       expect(source).toMatch(/FETCH FIRST \d+ ROWS ONLY/);
     }
     expect(resourcePage.indexOf('FROM NX_TEST_RESOURCE_PHYSICAL')).toBeLessThan(
@@ -573,6 +592,16 @@ describe('netwin-migration: Fase 3 geoespacial derivada', () => {
     );
     expect(sitePage.indexOf('FROM NX_TEST_GEOGRAPHIC_SITE')).toBeLessThan(
       sitePage.indexOf("spec.category = 'Site'"),
+    );
+  });
+
+  it('formata o cursor incremental em UTC com seis casas, independente do fuso de origem', () => {
+    expect(incrementalCursorKey(new Date('2026-10-22T09:37:56.438-03:00'))).toBe(
+      '2026-10-22 12:37:56.438000',
+    );
+    // Corte inclusivo: o cursor inicial fica 1 ms antes de --updated-since.
+    expect(incrementalCursorKey(new Date(Date.parse('2026-10-14T03:00:00.000Z') - 1))).toBe(
+      '2026-10-14 02:59:59.999000',
     );
   });
 

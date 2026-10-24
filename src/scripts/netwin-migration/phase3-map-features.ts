@@ -55,7 +55,7 @@ type TableStatistic = {
 };
 
 type IncrementalCandidate = Candidate & {
-  UPDATED_AT: Date | string;
+  UPDATED_KEY: string;
 };
 
 type ExistingFeatureTile = {
@@ -64,10 +64,19 @@ type ExistingFeatureTile = {
   TILE_Y: number;
 };
 
+// O cursor guarda `updated_at` em UTC como texto com microssegundos: `Date` do JS trunca em
+// milissegundos e, com frações abaixo disso, a página seguinte repetia as mesmas linhas.
 type IncrementalCursor = {
-  updatedAt: Date;
+  updatedKey: string;
   id: string;
 };
+
+const INCREMENTAL_CURSOR_FORMAT = 'YYYY-MM-DD HH24:MI:SS.FF6';
+
+export function incrementalCursorKey(date: Date): string {
+  const iso = date.toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 23)}000`;
+}
 
 const FEATURE_COLUMNS = [
   'tenant_id',
@@ -370,8 +379,8 @@ export function phase3IncrementalResourcePageSql(t: (table: string) => string): 
                AND r.updated_at >= :updatedSince
                AND r.updated_at < :updatedBefore
                AND (
-                 r.updated_at > :lastUpdatedAt OR
-                 (r.updated_at = :lastUpdatedAt AND r.id > :lastId)
+                 SYS_EXTRACT_UTC(r.updated_at) > TO_TIMESTAMP(:lastUpdatedKey, '${INCREMENTAL_CURSOR_FORMAT}') OR
+                 (SYS_EXTRACT_UTC(r.updated_at) = TO_TIMESTAMP(:lastUpdatedKey, '${INCREMENTAL_CURSOR_FORMAT}') AND r.id > :lastId)
                )
                AND (
                  r.place_id IS NOT NULL OR EXISTS (
@@ -415,11 +424,11 @@ export function phase3IncrementalResourcePageSql(t: (table: string) => string): 
                    WHEN r.visible = 1 AND l.geometry_type IN ('Point', 'LineString')
                    THEN l.geometry ELSE NULL
                  END AS "GEOMETRY",
-                 r.updated_at AS "UPDATED_AT"
+                 TO_CHAR(SYS_EXTRACT_UTC(r.updated_at), '${INCREMENTAL_CURSOR_FORMAT}') AS "UPDATED_KEY"
             FROM resolved r
             LEFT JOIN ${t('geographic_location')} l
               ON l.id = r.location_id AND l.tenant_id = r.tenant_id
-           ORDER BY r.updated_at, r.id`;
+           ORDER BY SYS_EXTRACT_UTC(r.updated_at), r.id`;
 }
 
 export function phase3IncrementalSitePageSql(t: (table: string) => string): string {
@@ -431,8 +440,8 @@ export function phase3IncrementalSitePageSql(t: (table: string) => string): stri
                AND s.updated_at >= :updatedSince
                AND s.updated_at < :updatedBefore
                AND (
-                 s.updated_at > :lastUpdatedAt OR
-                 (s.updated_at = :lastUpdatedAt AND s.id > :lastId)
+                 SYS_EXTRACT_UTC(s.updated_at) > TO_TIMESTAMP(:lastUpdatedKey, '${INCREMENTAL_CURSOR_FORMAT}') OR
+                 (SYS_EXTRACT_UTC(s.updated_at) = TO_TIMESTAMP(:lastUpdatedKey, '${INCREMENTAL_CURSOR_FORMAT}') AND s.id > :lastId)
                )
              ORDER BY SYS_EXTRACT_UTC(s.updated_at), s.id
              FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
@@ -463,12 +472,12 @@ export function phase3IncrementalSitePageSql(t: (table: string) => string): stri
                     )
                    THEN l.geometry ELSE NULL
                  END AS "GEOMETRY",
-                 s.updated_at AS "UPDATED_AT"
+                 TO_CHAR(SYS_EXTRACT_UTC(s.updated_at), '${INCREMENTAL_CURSOR_FORMAT}') AS "UPDATED_KEY"
             FROM changed s
             LEFT JOIN ${t('geographic_site_specification')} spec ON spec.id = s.site_specification_id
             LEFT JOIN ${t('geographic_location')} l
               ON l.id = s.geographic_location_id AND l.tenant_id = s.tenant_id
-           ORDER BY s.updated_at, s.id`;
+           ORDER BY SYS_EXTRACT_UTC(s.updated_at), s.id`;
 }
 
 function indexWithPrefix(
@@ -1302,7 +1311,7 @@ async function scanIncrementalKind(
   // A primeira página usa cursor imediatamente anterior ao corte, preservando a semântica
   // inclusiva de `updated_at >= :updatedSince` sem introduzir OR/NULL no predicado indexável.
   const cursor: IncrementalCursor = {
-    updatedAt: new Date(updatedSince.getTime() - 1),
+    updatedKey: incrementalCursorKey(new Date(updatedSince.getTime() - 1)),
     id: '',
   };
   while (true) {
@@ -1313,7 +1322,7 @@ async function scanIncrementalKind(
           tenantId: ctx.options.tenantId,
           updatedSince,
           updatedBefore,
-          lastUpdatedAt: cursor.updatedAt,
+          lastUpdatedKey: cursor.updatedKey,
           lastId: cursor.id,
         },
         {
@@ -1349,7 +1358,7 @@ async function scanIncrementalKind(
 
     progress.advance(candidates.length);
     const last = candidates[candidates.length - 1]!;
-    cursor.updatedAt = new Date(last.UPDATED_AT);
+    cursor.updatedKey = last.UPDATED_KEY;
     cursor.id = last.ID;
   }
 }
@@ -1469,6 +1478,61 @@ async function rebuildDensity(conn: Connection, ctx: MigrationContext): Promise<
   return densityCells;
 }
 
+async function replaceDensity(conn: Connection, ctx: MigrationContext): Promise<number> {
+  await disableMapIndexes(conn, ctx, 'geographic_map_density');
+  await conn.execute(`DELETE FROM ${ctx.t('geographic_map_density')} WHERE tenant_id=:tenantId`, {
+    tenantId: ctx.options.tenantId,
+  });
+  const densityCells = await rebuildDensity(conn, ctx);
+  await rebuildMapIndexes(conn, ctx, 'geographic_map_density');
+  return densityCells;
+}
+
+/**
+ * Recalcula só a densidade do tenant a partir das features vigentes (`--phase 3d`). Serve para
+ * fechar uma Fase 3.A incremental interrompida: o conjunto de tiles afetados vive em memória e
+ * se perde com o processo, então a densidade parcial não pode ser retomada.
+ */
+export async function runPhase3MapDensity(ctx: MigrationContext): Promise<number> {
+  const conn = await ctx.getTargetReadConnection();
+  try {
+    console.log('\n=== Fase 3.D: Densidade do mapa (recálculo integral) ===');
+    await recoverUnusableMapIndexes(conn, ctx);
+    if (!ctx.options.apply) {
+      const result = await conn.execute<{ FEATURES: number }>(
+        `SELECT COUNT(*) AS "FEATURES" FROM ${ctx.t('geographic_map_feature')} WHERE tenant_id=:tenantId`,
+        { tenantId: ctx.options.tenantId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      const features = Number(result.rows?.[0]?.FEATURES ?? 0);
+      console.log(`[Mapa] DRY-RUN: ${features} feature(s) seriam agregadas; densidade preservada.`);
+      return 0;
+    }
+    await conn.execute(`ALTER SESSION SET SKIP_UNUSABLE_INDEXES = TRUE`);
+    try {
+      const densityCells = await replaceDensity(conn, ctx);
+      await conn.execute('COMMIT');
+      console.log(`[Mapa] células de densidade=${densityCells}.`);
+      return densityCells;
+    } catch (error) {
+      console.error('[Mapa] Falha no recálculo da densidade; erro original:', error);
+      try {
+        await rebuildMapIndexes(conn, ctx, 'geographic_map_density');
+      } catch (rebuildError) {
+        console.error('[Mapa] Rebuild de emergência falhou:', rebuildError);
+      }
+      try {
+        await conn.execute('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('[Mapa] ROLLBACK falhou (conexão já encerrada):', rollbackError);
+      }
+      throw error;
+    }
+  } finally {
+    await conn.close();
+  }
+}
+
 export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase3MapStats> {
   const conn = await ctx.getTargetReadConnection();
   try {
@@ -1576,15 +1640,7 @@ export async function runPhase3MapFeatures(ctx: MigrationContext): Promise<Phase
         await rebuildMapIndexes(conn, ctx, 'geographic_map_feature');
         // A densidade agrega a tabela inteira, então só pode ser reconstruída depois que todas as
         // features existem — permanece um passo final único, junto do commit que o fecha.
-        await disableMapIndexes(conn, ctx, 'geographic_map_density');
-        await conn.execute(
-          `DELETE FROM ${ctx.t('geographic_map_density')} WHERE tenant_id=:tenantId`,
-          {
-            tenantId: ctx.options.tenantId,
-          },
-        );
-        densityCells = await rebuildDensity(conn, ctx);
-        await rebuildMapIndexes(conn, ctx, 'geographic_map_density');
+        densityCells = await replaceDensity(conn, ctx);
         await conn.execute('COMMIT');
       } catch (error) {
         // Paliativo de disponibilidade: tenta deixar os índices VALID mesmo no caminho de erro,

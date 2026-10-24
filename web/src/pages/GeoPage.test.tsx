@@ -340,41 +340,6 @@ describe('GoogleMapPanel', () => {
     );
   });
 
-  it('mostra a legenda de cobertura quando a camada está visível', async () => {
-    const coverage = {
-      level: 'neighborhood' as const,
-      grid: { sizeMeters: 50, projection: 'EPSG:3857' as const },
-      cells: [],
-      areas: [],
-      neighborhoods: [],
-      truncated: false,
-    };
-    render(
-      <GoogleMapPanel
-        nodes={[]}
-        selectedNode={null}
-        draftAddress={null}
-        focusRequest={null}
-        balloon={null}
-        onSelectNode={vi.fn()}
-        onHoverNode={vi.fn()}
-        onCloseBalloon={vi.fn()}
-        onDraftAddress={vi.fn()}
-        onViewportChange={vi.fn()}
-        coverage={coverage}
-        siteMarkerSize={25}
-        resourceMarkerSize={30}
-        onCoverageHover={vi.fn()}
-      />,
-    );
-
-    const legend = await screen.findByRole('group', { name: 'Legenda da cobertura' });
-    expect(legend).toHaveClass('bottom-8', 'left-1/2', '-translate-x-1/2');
-    expect(screen.getByText('Suspenso')).toBeInTheDocument();
-    expect(screen.getByText('Disponível')).toBeInTheDocument();
-    expect(screen.queryByText('Cobertura GPON')).not.toBeInTheDocument();
-  });
-
   it('desenha a Central/Estação no tamanho vindo de `siteMarkerSize` (10 km para cima)', async () => {
     render(
       <GoogleMapPanel

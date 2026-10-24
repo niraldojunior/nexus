@@ -1,9 +1,9 @@
-// Cliente do índice de exibição do mapa por tile (`GET /v1/geo/map/tile` — Fase 2 da
-// reengenharia de performance, issue #69). Leitura por tile único (z/x/y), não por bbox: quem
-// decide quais tiles faltam é o cliente (ver useMapTiles), que mantém o cache local.
+// Forma de uma feature do índice de exibição do mapa (`geographic_map_feature` — Fase 2 da
+// reengenharia de performance, issue #69), comum às leituras por bbox de Sites (geoMapSiteApi),
+// Recursos pontuais (geoMapResourceApi) e Linhas (geoMapLineApi). O mapa não lê mais por tile
+// único (`GET /v1/geo/map/tile`): o fan-out de tiles z16 crescia com a área da viewport (#416).
 
-import { getJson, type GeoGeometry } from './geoApi';
-import type { Tile } from '../utils/mapTile';
+import type { GeoGeometry } from './geoApi';
 
 export type MapTileFeature = {
   entityId: string;
@@ -29,6 +29,3 @@ export type MapTileFeature = {
 // (`resource:<uuid>` | `site:<uuid>`) usado pela árvore/busca/seleção.
 export const mapTileFeatureNodeId = (feature: MapTileFeature): string =>
   `${feature.kind}:${feature.entityId}`;
-
-export const fetchMapTile = (tile: Tile): Promise<MapTileFeature[]> =>
-  getJson<MapTileFeature[]>(`/v1/geo/map/tile?z=${tile.z}&x=${tile.x}&y=${tile.y}`);

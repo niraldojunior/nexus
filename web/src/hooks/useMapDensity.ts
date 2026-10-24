@@ -3,7 +3,7 @@
 // escalas abertas (ver comentário em mapScale.ts); este hook fica pronto para reativação sem
 // reintroduzir corte global de visibilidade de infra passiva.
 //
-// Segue o mesmo padrão de useCoverage, e não o de useMapTiles, porque a leitura é por bbox:
+// Segue o mesmo padrão de useCoverage (leitura por bbox, não por tile único):
 // em zoom aberto a viewport cobre poucas células grossas e pedir uma a uma custaria mais em
 // ida-e-volta do que a consulta inteira. Daí também o reuso do truque de folga: o bbox pedido é
 // 25% maior que a viewport e arredondado a uma grade por nível, então um pan pequeno dentro da

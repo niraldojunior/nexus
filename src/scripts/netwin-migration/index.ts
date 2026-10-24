@@ -232,6 +232,9 @@ async function main() {
         await runPhase2AdministrativeCity(ctx);
         await runPhase2InternalPlant(ctx);
         await runPhase2StationRacks(ctx);
+        // Somente leitura: não grava nada e nenhuma etapa depende do resultado. É um placeholder
+        // da carga completa da planta interna (rack/shelf/slot/placa/porta), pendente na issue
+        // #417 — quando ela sair, esta chamada vira carga. Lenta no CE (~10 min de leitura).
         await runPhase2StationInternalPlantDiscovery(ctx);
         await completeNativeMigrationJob(ctx);
         if (options.phase === 'all') await runPhase3(ctx);

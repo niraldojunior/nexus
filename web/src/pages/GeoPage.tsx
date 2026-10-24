@@ -19,7 +19,7 @@ import {
   type CoverageLevel,
 } from '../utils/mapScale';
 import { useCoverage } from '../hooks/useCoverage';
-import { useMapTiles } from '../hooks/useMapTiles';
+import { useMapResources } from '../hooks/useMapResources';
 import { useMapSites } from '../hooks/useMapSites';
 import { useMapLines } from '../hooks/useMapLines';
 import { type MapTileFeature } from '../services/geoMapTileApi';
@@ -31,6 +31,7 @@ import {
   visibleCoverageLayer,
   viewportInclude,
   visibleMapLineSelections,
+  visibleMapResourcePointSourceIds,
   visibleMapSiteSourceIds,
   isMapFeatureVisible,
 } from '../utils/mapLayers';
@@ -373,7 +374,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011): liga/desliga fetch + render por
   // grupo, persistido em localStorage. `include` fica memoizado pelas flags que realmente
   // importam para o viewport — sem isso, `viewportInclude` devolveria uma referência de array
-  // nova a cada render e o useEffect de useMapTiles reentraria em loop.
+  // nova a cada render e os efeitos que dependem dele reentrariam em loop.
   const mapLayers = useMapLayers(mapLayerCatalog.catalog);
   const viewportShapesInclude = useMemo(
     () => viewportInclude(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
@@ -394,15 +395,29 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Régua de escala própria dos pins de local de Projeto com manchas geradas (REQ-MOD01-017) —
   // mais restrita que a infra passiva comum (ver PROJECT_PIN_MAX_SCALE_METERS).
   const projectPinScaleVisible = scaleMeters !== null && scaleMeters < PROJECT_PIN_MAX_SCALE_METERS;
-  // Resources: índice por tile z16 (cache local). Sites: leitura única por bbox, uniforme para
-  // qualquer GeographicSiteSpecification pontual publicada (issue #314) — sem exceção por tipo.
-  const { data: resourceFeatures, loading: viewportLoading } = useMapTiles(
-    viewportBounds,
-    scaleMeters,
-    viewportShapesInclude,
-    mapLayers.layers,
-    siteRoleByCode,
-    mapLayerCatalog.catalog,
+  // Recursos pontuais e Sites: leitura única por bbox, filtrada no servidor pelas camadas POINT
+  // visíveis (issues #314 e #416) — sem exceção por tipo e sem fan-out de tiles z16, cujo custo
+  // crescia com a área da viewport e travava o browser em escala nacional.
+  const resourcePointSourceIds = useMemo(
+    () => visibleMapResourcePointSourceIds(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters),
+    [mapLayers.layers, mapLayerCatalog.catalog, scaleMeters],
+  );
+  const { features: resourceFeaturesRaw, loading: viewportLoading } = useMapResources(
+    mapLayerCatalog.loading ? null : viewportBounds,
+    resourcePointSourceIds,
+  );
+  const resourceFeatures = useMemo(
+    () =>
+      resourceFeaturesRaw.filter((feature) =>
+        isMapFeatureVisible(
+          feature,
+          mapLayers.layers,
+          siteRoleByCode,
+          mapLayerCatalog.catalog,
+          scaleMeters,
+        ),
+      ),
+    [resourceFeaturesRaw, mapLayers.layers, siteRoleByCode, mapLayerCatalog.catalog, scaleMeters],
   );
   const siteSourceIds = useMemo(
     () => visibleMapSiteSourceIds(mapLayers.layers, mapLayerCatalog.catalog, scaleMeters, specs),
@@ -1733,7 +1748,9 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                     const nodeId = stackedPortNode.id;
                     void fetchTreeNode(nodeId)
                       .then((hydrated) =>
-                        setStackedPortNode((current) => (current?.id === nodeId ? hydrated : current)),
+                        setStackedPortNode((current) =>
+                          current?.id === nodeId ? hydrated : current,
+                        ),
                       )
                       .catch(() => undefined);
                   }}
@@ -1894,7 +1911,6 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
                 onViewportChange={handleViewportChange}
                 coverage={coverageVisible ? coverage : null}
                 coverageStyle={coverageStyle}
-                coverageLayerLabel={coverageLayer?.label}
                 siteMarkerSize={siteMarkerSize}
                 stationMarkerSize={stationMarkerSize}
                 resourceMarkerSize={resourceMarkerSize}

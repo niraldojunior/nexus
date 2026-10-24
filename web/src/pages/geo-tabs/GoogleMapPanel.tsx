@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CoverageLegend, FallbackMap, MapBalloonCard, type MapBalloon } from './MapOverlays';
+import { FallbackMap, MapBalloonCard, type MapBalloon } from './MapOverlays';
 import {
   treeNodePoint,
   treeNodeRoute,
@@ -364,7 +364,6 @@ export function GoogleMapPanel({
   onViewportChange,
   coverage,
   coverageStyle,
-  coverageLayerLabel,
   siteMarkerSize,
   stationMarkerSize = siteMarkerSize,
   resourceMarkerSize,
@@ -396,7 +395,7 @@ export function GoogleMapPanel({
   projectSiteFeatures?: ProjectSite[];
   // Infra passiva (recursos + Sites não-CO + cabos) da região visível, desenhada por
   // InfraOverlay (canvas, Fase 3 da issue #69) — nunca vira Marker/Polyline. Já vem filtrada
-  // por camada/escala pelo chamador (ver useMapTiles em GeoPage). Opcional com default vazio,
+  // por camada/escala pelo chamador (ver useMapResources/useMapSites/useMapLines em GeoPage). Opcional com default vazio,
   // para os testes existentes que montam GoogleMapPanel sem o InfraOverlay em jogo.
   infraFeatures?: MapTileFeature[];
   // Clique/hover resolvido pelo hit-test do InfraOverlay — o chamador decide seleção e
@@ -456,9 +455,6 @@ export function GoogleMapPanel({
   coverage: CoverageResponse | null;
   // Estilo da mancha já resolvido pelo catálogo publicado do Studio GEO para a escala atual.
   coverageStyle?: ResolvedStudioGeoPolygonStyle;
-  // Rótulo da camada publicada no Studio GEO (ex.: "Cobertura GPON") — vira o texto da legenda
-  // em vez de um nome de tecnologia fixo (ver CoverageLegend).
-  coverageLayerLabel?: string;
   // Tamanho em px do pin de Site na escala atual (ver siteIconSizeForScale em mapScale.ts).
   siteMarkerSize: number;
   // Tamanho da Central Office publicado pelo Studio para a faixa de escala atual.
@@ -486,7 +482,7 @@ export function GoogleMapPanel({
   busy?: boolean;
   // Controle de camadas do mapa (RF-011, REQ-MOD01-011) — o painel só renderiza o botão/lista
   // (MapLayerControl); fetch e render condicionais são decididos pelo chamador (mapNodes,
-  // coverage, useMapTiles em GeoPage). O catálogo publicado vem do Studio; os testes seguem
+  // coverage, useMapResources em GeoPage). O catálogo publicado vem do Studio; os testes seguem
   // usando o fallback canônico para montar o painel isoladamente.
   mapLayerCatalog?: import('../../services/studioGeoApi').StudioGeoCatalog;
   mapLayers?: MapLayerVisibility;
@@ -2199,7 +2195,6 @@ export function GoogleMapPanel({
         allVisible={mapLayersAllVisible}
         scaleMeters={mapLayersScaleMeters}
       />
-      {coverage ? <CoverageLegend layerLabel={coverageLayerLabel} /> : null}
       {balloon ? createPortal(<MapBalloonCard balloon={balloon} />, balloonNode) : null}
     </>
   );

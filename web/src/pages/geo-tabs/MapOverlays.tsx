@@ -2,7 +2,6 @@ import { Fragment } from 'react';
 import type { DraftAddress } from '../../utils/googleMaps';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { StudioGeoCatalog } from '../../services/studioGeoApi';
-import { coverageSwatch } from '../../utils/coverageColor';
 import {
   operationalIconFactsForTreeNode,
   resolveOperationalIcon,
@@ -26,31 +25,6 @@ export type MapBalloon = {
   title: string;
   rows: Array<[string, string]>;
 };
-
-// Legenda da cobertura: a rampa de disponibilidade (vermelho → verde). Aparece só quando a
-// camada está visível. Cor via coverageSwatch (mesma rampa do canvas), não token hardcoded.
-// `layerLabel` vem da camada publicada no Studio GEO — GPON é hoje o único caso, mas o texto
-// não é fixo nele.
-export function CoverageLegend({ layerLabel }: { layerLabel?: string }) {
-  return (
-    <div
-      role="group"
-      aria-label={`Legenda da ${layerLabel ? layerLabel.toLowerCase() : 'cobertura'}`}
-      className="pointer-events-none absolute bottom-8 left-1/2 z-30 -translate-x-1/2 rounded-[14px] border border-app-border bg-white/90 px-2 py-2 text-[0.66rem] shadow-map-control backdrop-blur sm:px-3 sm:text-[0.72rem]"
-    >
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        <span className="text-app-muted">Suspenso</span>
-        <span
-          className="h-2.5 w-16 rounded-full sm:w-24"
-          style={{
-            background: `linear-gradient(90deg, ${coverageSwatch(0)}, ${coverageSwatch(0.5)}, ${coverageSwatch(1)})`,
-          }}
-        />
-        <span className="text-app-muted">Disponível</span>
-      </div>
-    </div>
-  );
-}
 
 // Conteúdo do balão de preview: identidade do item (tipo + nome + ícone) e os
 // campos que o identificam em campo. Puro cartão de visita, sem ação — o

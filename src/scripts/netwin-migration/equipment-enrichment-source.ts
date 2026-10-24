@@ -274,7 +274,7 @@ export async function hydrateEquipmentExtras(
 }
 
 /** Projetos do tenant por nome normalizado; nome com mais de um candidato fica ambíguo (null). */
-export async function resolveGeoProjectIds(
+export async function resolveProjectIds(
   target: Connection,
   table: string,
   tenantId: string,

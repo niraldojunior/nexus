@@ -12,7 +12,7 @@ export { ProjectListView, type ProjectListViewProps } from './ProjectListView';
 export { ProjectDetailPanel, type ProjectDetailPanelProps } from './ProjectDetailPanel';
 export { SitePanel, type SitePanelProps } from './SitePanel';
 export { ResourcePanel, type ResourcePanelProps } from './ResourcePanel';
-export { ResourceOverviewTab, type ResourceOverviewTabProps } from './ResourceOverviewTab';
+export { ResourceInfoTab, type ResourceInfoTabProps } from './ResourceInfoTab';
 export { ResourceHistoryTab, type ResourceHistoryTabProps } from './ResourceHistoryTab';
 export { ResourceConnectionsTab, type ResourceConnectionsTabProps } from './ResourceConnectionsTab';
 export { ResourceComponentsTab, type ResourceComponentsTabProps } from './ResourceComponentsTab';

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectDetailPanel } from './ProjectDetailPanel';
-import type { GeoProject, ProjectArea } from '../../services/geoProjectApi';
+import type { Project, ProjectArea } from '../../services/projectApi';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 
 afterEach(() => {
@@ -9,7 +9,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
+const project = (overrides: Partial<Project> = {}): Project => ({
   id: 'prj-1',
   tenantId: 'default',
   name: 'Expansão Icaraí',
@@ -285,12 +285,12 @@ describe('ProjectDetailPanel', () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
-        '/v1/geo/projects/prj-1/resources',
+        '/v1/projects/prj-1/resources',
         expect.objectContaining({ method: 'POST' }),
       ),
     );
     const [, request] = fetchMock.mock.calls.find(
-      ([url, init]) => url === '/v1/geo/projects/prj-1/resources' && init?.method === 'POST',
+      ([url, init]) => url === '/v1/projects/prj-1/resources' && init?.method === 'POST',
     ) as [string, RequestInit];
     expect(JSON.parse(request.body as string)).toEqual({
       '@type': 'PhysicalResource',

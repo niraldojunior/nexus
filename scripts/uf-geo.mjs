@@ -1,16 +1,13 @@
 /**
  * Fonte única de dados geográficos por UF para os scripts de carga.
  *
- * Antes cada script trazia (ou hardcodava) sua própria caixa de coordenadas — o
- * conversor e o loader de recursos estavam travados no Rio de Janeiro, e a
- * carga de estações tinha sua própria cópia de `UF_BBOX`. Este módulo centraliza
- * as duas coisas para que qualquer UF no layout "estado" (recursos_<uf>_<data>.csv)
- * seja carregável passando apenas `--uf`.
+ * Centraliza a caixa de coordenadas e o nome por extenso de cada UF, para que os
+ * scripts de reparo/enriquecimento não mantenham cópias próprias.
  *
  *   · UF_BBOX  — caixa delimitadora aproximada por UF, [latMin, latMax, lonMin, lonMax],
  *     com folga. Não é precisão de fronteira: serve para rejeitar coordenada
  *     "consistente com o Brasil" mas claramente de outra região (lixo grosseiro
- *     de digitação/parse). Valores idênticos aos que viviam em estacoes_carregar.mjs.
+ *     de digitação/parse).
  *   · UF_NAME_TO_ABBREV — nome por extenso (como vem na coluna `UF` do Netwin,
  *     sem acento e em caixa alta: "PARANA", "DISTRITO FEDERAL") → sigla de 2 letras.
  */
@@ -103,15 +100,6 @@ export function ufAbbrev(input) {
 export function bboxForUf(input) {
   const uf = ufAbbrev(input);
   return uf ? UF_BBOX[uf] : null;
-}
-
-// Converte a caixa para a convenção do load-recursos-netwin.mjs:
-// { uf, LAT_RANGE: [min,max], LNG_RANGE: [min,max] }. null se UF desconhecida.
-export function loaderRangesForUf(input) {
-  const uf = ufAbbrev(input);
-  if (!uf) return null;
-  const [latMin, latMax, lonMin, lonMax] = UF_BBOX[uf];
-  return { uf, LAT_RANGE: [latMin, latMax], LNG_RANGE: [lonMin, lonMax] };
 }
 
 export function inBbox(lat, lng, bbox) {

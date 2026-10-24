@@ -3,11 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'vitest';
+import { MAP_DENSITY_ZOOMS, coarsenTile } from '../src/modules/geo/map-density.js';
 import {
   GeoMapFeatureSynchronizer,
   MAP_FEATURE_POINT_INSERT_SQL,
   candidatesSql,
+  densityDelta,
 } from '../src/modules/geo/map-feature-synchronizer.js';
+import { MAP_TILE_ZOOM, tileForPoint } from '../src/modules/geo/map-tile.js';
 import { INTERNAL_RESOURCE_TYPES } from '../src/modules/geo/map-visibility.js';
 import type { DatabaseClient, DatabaseSession } from '../src/shared/persistence/database-client.js';
 
@@ -130,8 +133,264 @@ test('syncEntity consulta e grava somente no tenant informado', async () => {
 
   await new GeoMapFeatureSynchronizer(db).syncEntity('resource-1', 'vtal');
 
-  assert.deepEqual(calls[0]?.params, ['vtal', 'resource-1']);
-  assert.deepEqual(calls[1]?.params, ['resource-1', 'vtal', 'resource-1', 'vtal']);
+  const candidates = calls.find((call) => call.sql.includes('UNION ALL'));
+  assert.deepEqual(candidates?.params, ['resource-1', 'vtal', 'resource-1', 'vtal']);
+  for (const call of calls.filter((entry) => entry.sql.includes('geographic_map_feature'))) {
+    assert.equal(call.params[0], 'vtal');
+  }
+});
+
+// Issue #425: o write-through não regrava traçado de cabo (LOD vem do rebuild batch), então um
+// DELETE sem filtro de shape fazia o cabo editado sumir do mapa até o próximo rebuild.
+test('write-through só apaga a linha pontual; traçado de cabo sai apenas quando terminado', async () => {
+  const deletes: string[] = [];
+  const session = {
+    async all<T>(): Promise<T[]> {
+      return [];
+    },
+    async execute(sql: string) {
+      if (/DELETE FROM geographic_map_feature/.test(sql)) deletes.push(sql);
+      return { changes: 0 };
+    },
+  } as unknown as DatabaseSession;
+  const db = {
+    async transaction<T>(work: (current: DatabaseSession) => Promise<T>): Promise<T> {
+      return await work(session);
+    },
+  } as unknown as DatabaseClient;
+
+  await new GeoMapFeatureSynchronizer(db).syncEntity('cable-1', 'vtal');
+
+  assert.equal(deletes.length, 2);
+  assert.match(deletes[0]!, /shape = 'point'/);
+  assert.match(deletes[1]!, /shape = 'line'/);
+  assert.match(deletes[1]!, /status = 'terminated'/);
+  for (const sql of deletes) assert.match(sql, /shape = '(point|line)'/);
+});
+
+type FakeDensity = Map<
+  string,
+  { features: number; resources: number; sites: number; lng: number; lat: number }
+>;
+
+// Banco falso só com o que o write-through toca: linhas pontuais antigas, candidatos e a tabela
+// de densidade (com UPDATE/DELETE/INSERT aplicados de verdade sobre um Map).
+function densityHarness(input: {
+  previous: Array<{
+    feature_kind: string;
+    tile_x: number;
+    tile_y: number;
+    lng: number;
+    lat: number;
+  }>;
+  candidates: Array<{
+    entity_id: string;
+    feature_kind: 'resource' | 'site';
+    lng: number;
+    lat: number;
+  }>;
+  density: FakeDensity;
+}) {
+  const session = {
+    async all<T>(sql: string): Promise<T[]> {
+      if (sql.includes('UNION ALL')) {
+        return input.candidates.map((candidate) => ({
+          ...candidate,
+          entity_type: candidate.feature_kind === 'site' ? 'GeographicSite' : 'PhysicalResource',
+          geometry: JSON.stringify({ type: 'Point', coordinates: [candidate.lng, candidate.lat] }),
+          label: candidate.entity_id,
+        })) as T[];
+      }
+      if (sql.includes('FROM geographic_map_feature')) return input.previous as T[];
+      return [];
+    },
+    async get<T>(sql: string): Promise<T | undefined> {
+      if (sql.includes('FROM geographic_map_density'))
+        return (input.density.size > 0 ? { found: 1 } : undefined) as T | undefined;
+      return undefined;
+    },
+    async execute(sql: string, params: unknown[] = []) {
+      if (sql.startsWith('UPDATE geographic_map_density')) {
+        const [sumLng, , sumLat, , features, resources, sites, , z, x, y] = params as number[];
+        const key = `${z}/${x}/${y}`;
+        const cell = input.density.get(key);
+        if (!cell || cell.features + features! <= 0) return { changes: 0 };
+        const total = cell.features + features!;
+        input.density.set(key, {
+          lng: (cell.lng * cell.features + sumLng!) / total,
+          lat: (cell.lat * cell.features + sumLat!) / total,
+          features: total,
+          resources: cell.resources + resources!,
+          sites: cell.sites + sites!,
+        });
+        return { changes: 1 };
+      }
+      if (sql.trimStart().startsWith('DELETE FROM geographic_map_density')) {
+        const [, z, x, y, features] = params as number[];
+        const key = `${z}/${x}/${y}`;
+        const cell = input.density.get(key);
+        if (!cell || cell.features + features! > 0) return { changes: 0 };
+        input.density.delete(key);
+        return { changes: 1 };
+      }
+      if (sql.trimStart().startsWith('INSERT INTO geographic_map_density')) {
+        const [, z, x, y, features, resources, sites, lng, lat] = params as number[];
+        input.density.set(`${z}/${x}/${y}`, {
+          features: features!,
+          resources: resources!,
+          sites: sites!,
+          lng: lng!,
+          lat: lat!,
+        });
+      }
+      return { changes: 1 };
+    },
+  } as unknown as DatabaseSession;
+  return {
+    async transaction<T>(work: (current: DatabaseSession) => Promise<T>): Promise<T> {
+      return await work(session);
+    },
+  } as unknown as DatabaseClient;
+}
+
+const NITEROI: [number, number] = [-43.1, -22.9];
+const RECIFE: [number, number] = [-34.9, -8.05];
+
+function pointRow(kind: string, [lng, lat]: [number, number]) {
+  const tile = tileForPoint([lng, lat], MAP_TILE_ZOOM);
+  return { feature_kind: kind, tile_x: tile.x, tile_y: tile.y, lng, lat };
+}
+
+function cellKey(point: [number, number], zoom: (typeof MAP_DENSITY_ZOOMS)[number]): string {
+  const tile = coarsenTile(tileForPoint(point, MAP_TILE_ZOOM), zoom);
+  return `${tile.z}/${tile.x}/${tile.y}`;
+}
+
+// Issue #425: mover um recurso no mapa tem que mover também a densidade agregada (z13/z10/z7),
+// sem esperar o rebuild batch — por delta, nunca por GROUP BY de uma célula de milhões de linhas.
+test('mover um recurso tira 1 da célula antiga e soma 1 na nova em cada nível de densidade', async () => {
+  const density: FakeDensity = new Map();
+  for (const zoom of MAP_DENSITY_ZOOMS) {
+    density.set(cellKey(NITEROI, zoom), {
+      features: 3,
+      resources: 2,
+      sites: 1,
+      lng: NITEROI[0],
+      lat: NITEROI[1],
+    });
+  }
+  const db = densityHarness({
+    previous: [pointRow('resource', NITEROI)],
+    candidates: [
+      { entity_id: 'resource-1', feature_kind: 'resource', lng: RECIFE[0], lat: RECIFE[1] },
+    ],
+    density,
+  });
+
+  await new GeoMapFeatureSynchronizer(db).syncEntity('resource-1', 'vtal');
+
+  for (const zoom of MAP_DENSITY_ZOOMS) {
+    const old = density.get(cellKey(NITEROI, zoom));
+    assert.deepEqual(
+      { features: old?.features, resources: old?.resources, sites: old?.sites },
+      { features: 2, resources: 1, sites: 1 },
+    );
+    const moved = density.get(cellKey(RECIFE, zoom));
+    assert.deepEqual(moved, {
+      features: 1,
+      resources: 1,
+      sites: 0,
+      lng: RECIFE[0],
+      lat: RECIFE[1],
+    });
+  }
+});
+
+test('célula que zera é removida; edição sem mover não toca a densidade', async () => {
+  const density: FakeDensity = new Map();
+  for (const zoom of MAP_DENSITY_ZOOMS) {
+    density.set(cellKey(NITEROI, zoom), {
+      features: 1,
+      resources: 0,
+      sites: 1,
+      lng: NITEROI[0],
+      lat: NITEROI[1],
+    });
+    density.set(cellKey(RECIFE, zoom), {
+      features: 1,
+      resources: 1,
+      sites: 0,
+      lng: RECIFE[0],
+      lat: RECIFE[1],
+    });
+  }
+  // Site terminado: some do índice e a célula com ele só fica vazia.
+  await new GeoMapFeatureSynchronizer(
+    densityHarness({ previous: [pointRow('site', NITEROI)], candidates: [], density }),
+  ).syncEntity('site-1', 'vtal');
+  for (const zoom of MAP_DENSITY_ZOOMS) assert.equal(density.has(cellKey(NITEROI, zoom)), false);
+
+  // Recurso renomeado no mesmo lugar: delta nulo, célula intacta.
+  const before = JSON.stringify([...density]);
+  await new GeoMapFeatureSynchronizer(
+    densityHarness({
+      previous: [pointRow('resource', RECIFE)],
+      candidates: [
+        { entity_id: 'resource-2', feature_kind: 'resource', lng: RECIFE[0], lat: RECIFE[1] },
+      ],
+      density,
+    }),
+  ).syncEntity('resource-2', 'vtal');
+  assert.equal(JSON.stringify([...density]), before);
+});
+
+test('tenant sem densidade construída não ganha células avulsas do write-through', async () => {
+  const density: FakeDensity = new Map();
+  await new GeoMapFeatureSynchronizer(
+    densityHarness({
+      previous: [],
+      candidates: [
+        { entity_id: 'resource-1', feature_kind: 'resource', lng: RECIFE[0], lat: RECIFE[1] },
+      ],
+      density,
+    }),
+  ).syncEntity('resource-1', 'vtal');
+  assert.equal(density.size, 0);
+});
+
+test('densityDelta reproduz contagem e centroide da agregação batch', () => {
+  const cells = densityDelta(
+    [],
+    [pointRow('resource', NITEROI), pointRow('site', [-43.1002, -22.9002])],
+  );
+  const z7 = cells.find((cell) => cell.z === 7);
+  assert.equal(z7?.features, 2);
+  assert.equal(z7?.resources, 1);
+  assert.equal(z7?.sites, 1);
+  assert.ok(Math.abs(z7!.sumLng / z7!.features - -43.1001) < 1e-9);
+});
+
+test('syncEntities divide listas grandes em lotes abaixo do limite de IN do Oracle', async () => {
+  const batchSizes: number[] = [];
+  const session = {
+    async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+      if (sql.includes('FROM geographic_map_feature')) batchSizes.push(params.length - 1);
+      return [];
+    },
+    async execute() {
+      return { changes: 0 };
+    },
+  } as unknown as DatabaseSession;
+  const db = {
+    async transaction<T>(work: (current: DatabaseSession) => Promise<T>): Promise<T> {
+      return await work(session);
+    },
+  } as unknown as DatabaseClient;
+
+  const ids = Array.from({ length: 1201 }, (_, index) => `resource-${index}`);
+  await new GeoMapFeatureSynchronizer(db).syncEntities(ids, 'vtal');
+
+  assert.deepEqual(batchSizes, [500, 500, 201]);
 });
 
 test('syncLocation procura dependentes no tenant informado mesmo com Location compartilhada', async () => {
@@ -157,15 +416,78 @@ test('syncLocation procura dependentes no tenant informado mesmo com Location co
   await new GeoMapFeatureSynchronizer(db).syncLocation('location-default', 'vtal');
 
   assert.deepEqual(lookupCalls[0]?.params, [
-    'location-default',
     'vtal',
+    'location-default',
+    'location-default',
+    'location-default',
     'location-default',
     'vtal',
   ]);
+  assert.match(lookupCalls[0]?.sql ?? '', /r\.tenant_id = \?/);
+});
+
+// Issue #425: o place canônico de recurso é o Site (às vezes Address). Mover a Location só
+// reposicionava recurso com place_id = Location — os de dentro do Site ficavam no ponto antigo.
+test('syncLocation inclui recursos cujo place é Site ou Address naquela Location', async () => {
+  let lookupSql = '';
+  const synced: unknown[][] = [];
+  const session = {
+    async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+      if (sql.includes('FROM geographic_map_feature')) synced.push(params.slice(1));
+      return [];
+    },
+    async execute(): Promise<{ changes: number }> {
+      return { changes: 0 };
+    },
+  } as unknown as DatabaseSession;
+  const db = {
+    async all<T>(sql: string): Promise<T[]> {
+      lookupSql = sql;
+      return [{ id: 'site-1' }, { id: 'resource-in-site' }, { id: 'resource-at-address' }] as T[];
+    },
+    async transaction<T>(work: (current: DatabaseSession) => Promise<T>): Promise<T> {
+      return await work(session);
+    },
+  } as unknown as DatabaseClient;
+
+  await new GeoMapFeatureSynchronizer(db).syncLocation('location-1', 'vtal');
+
   assert.match(
-    lookupCalls[0]?.sql ?? '',
-    /resource_physical WHERE place_id = \? AND tenant_id = \?/,
+    lookupSql,
+    /SELECT s\.id FROM geographic_site s WHERE s\.geographic_location_id = \?/,
   );
+  assert.match(
+    lookupSql,
+    /SELECT a\.id FROM geographic_address a WHERE a\.geographic_location_id = \?/,
+  );
+  assert.deepEqual(synced, [['site-1', 'resource-in-site', 'resource-at-address']]);
+});
+
+test('syncSite ressincroniza o Site e os recursos instalados nele', async () => {
+  const synced: unknown[][] = [];
+  const session = {
+    async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+      if (sql.includes('FROM geographic_map_feature')) synced.push(params.slice(1));
+      return [];
+    },
+    async execute(): Promise<{ changes: number }> {
+      return { changes: 0 };
+    },
+  } as unknown as DatabaseSession;
+  const db = {
+    async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+      assert.match(sql, /resource_physical WHERE place_id = \? AND tenant_id = \?/);
+      assert.deepEqual(params, ['site-1', 'vtal']);
+      return [{ id: 'olt-1' }, { id: 'dio-1' }] as T[];
+    },
+    async transaction<T>(work: (current: DatabaseSession) => Promise<T>): Promise<T> {
+      return await work(session);
+    },
+  } as unknown as DatabaseClient;
+
+  await new GeoMapFeatureSynchronizer(db).syncSite('site-1', 'vtal');
+
+  assert.deepEqual(synced, [['site-1', 'olt-1', 'dio-1']]);
 });
 
 test('resolveLoaderEnvironment prioriza --environment, normaliza e mantém o fallback da sessão', async () => {
@@ -211,7 +533,10 @@ test('rebuild do índice inclui somente PhysicalResource, compatível com Resour
 test('rebuilds resolvem explicitamente o ambiente antes de abrir o loader Oracle', async () => {
   for (const file of ['build-map-features.mjs', 'build-map-density.mjs']) {
     const script = await readFile(resolve(rootDir, 'scripts', file), 'utf8');
-    assert.match(script, /import \{ openLoaderDb, resolveLoaderEnvironment \} from '\.\/loader-db\.mjs';/);
+    assert.match(
+      script,
+      /import \{ openLoaderDb, resolveLoaderEnvironment \} from '\.\/loader-db\.mjs';/,
+    );
     const resolvedAt = script.indexOf('const ENVIRONMENT = resolveLoaderEnvironment(argv);');
     const openedAt = script.indexOf('await openLoaderDb();');
     assert.ok(resolvedAt >= 0, `${file} não resolve --environment`);
@@ -308,5 +633,8 @@ test('rebuild preserva o rank dos trechos de cabo e a chave inclui o ordinal', a
     script,
     /geometry: JSON\.stringify\(\{ type: 'LineString', coordinates \}\),\s*lod_key: lodKey,\s*rank,/,
   );
-  assert.match(script, /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank\)/);
+  assert.match(
+    script,
+    /PRIMARY KEY \(tenant_id, tile_z, tile_x, tile_y, entity_id, shape, lod_key, rank\)/,
+  );
 });

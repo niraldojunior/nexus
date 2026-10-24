@@ -32,10 +32,9 @@
  *   `POST /v1/geo/projects/:id/sites` (a única rota que teria essa forma) SEMPRE
  *   cria Location+Address+Site novos e exige `geonetAddressId` — não serve para
  *   reuso em massa. E não existe rota para vincular um Site já existente a um
- *   Projeto. Escrever direto no schema, como `load-recursos-netwin.mjs` e
- *   `estacoes_carregar.mjs --fast`, é o único caminho viável para 62 mil linhas
- *   (o backend dev atende requisições em série — ver AGENTS.md §3). Mesmo
- *   trade-off já aceito nesses scripts: não publica evento TMF688 (C7) nem
+ *   Projeto. Escrever direto no schema é o único caminho viável para 62 mil linhas
+ *   (o backend dev atende requisições em série — ver AGENTS.md §3). Trade-off
+ *   aceito: não publica evento TMF688 (C7) nem
  *   grava audit log, por ser carga de migração, não mudança operacional.
  *
  * Consequência a saber: um Site vinculado a um Projeto NÃO terminado some da

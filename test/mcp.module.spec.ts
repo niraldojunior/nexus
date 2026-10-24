@@ -12,7 +12,15 @@ const createFixture = async () => {
   const client = await getOracleTestClient();
   const runtime = await createNexusRuntime(client);
   const module = createNexusMcpModule(runtime);
-  const context = runtime.createToolContext({ executionMode: 'internal-http' });
+  const context = runtime.createToolContext({
+    executionMode: 'internal-http',
+    requestContext: {
+      actorSub: 'mcp-test-admin',
+      tenantId: 'default',
+      roles: ['platform.admin'],
+      traceId: 'mcp-test',
+    },
+  });
 
   return {
     client,
@@ -364,7 +372,10 @@ test.skipIf(!oracleConfigured)(
         payload: { name: 'ISP Alfa' },
         summary: 'expired',
         warnings: [],
-        context: {},
+        context: {
+          actorSub: fixture.context.requestContext.actorSub,
+          tenantId: fixture.context.requestContext.tenantId,
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
         expiresAt: '2026-01-01T00:01:00.000Z',
       });

@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { postJson, type GeoSite, type GeoSpec } from '../../services/geoApi';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { Project } from '../../services/projectApi';
 import {
   fetchGeonetCandidates,
   fetchGeonetDetail,
@@ -60,7 +60,7 @@ export type SitePanelProps = {
   // Presente quando o painel é aberto de dentro de um Projeto de trabalho (REQ-MOD01-015):
   // em criação, exige candidato GEONET real (RN-008); em consulta, trava o Status enquanto
   // o projeto está em curso (RN-007).
-  project?: GeoProject | null;
+  project?: Project | null;
   projectId?: string | null;
   specs: GeoSpec[];
   sites: GeoSite[];
@@ -78,7 +78,7 @@ export type SitePanelProps = {
   onChanged: () => void;
   onOpenResource: (resourceId: string) => void;
   // "Remover do projeto" (RN-009): só existe enquanto o projeto está em curso — soft-termina
-  // o Site e desfaz o vínculo (DELETE /v1/geo/projects/:id/sites/:siteId), fecha o painel em
+  // o Site e desfaz o vínculo (DELETE /v1/projects/:id/sites/:siteId), fecha o painel em
   // seguida. Ausente fora do contexto de Projeto ou depois que ele terminou (aí o Site já tem
   // vida própria — RF-010 — e "remover" vira a mesma troca de Status de qualquer outro local).
   onRemoveFromProject?: () => Promise<void>;
@@ -92,8 +92,8 @@ const geonetDetailInFlight = new Map<string, ReturnType<typeof fetchGeonetDetail
 /**
  * Painel unificado de Local (REQ-MOD01-016): substitui `ProjectSitePanel`, `SiteDetailBody` e
  * `GuidedSignupModal` por uma única casca com dois modos — criação (formulário com endereço
- * GEONET/Google) e consulta (foto de Street View + título/tipo editáveis + 4 abas: Visão
- * Geral, Sub-locais, Recursos, Histórico). A navegação para um sub-local (aba Sub-locais)
+ * GEONET/Google) e consulta (foto de Street View + título/tipo editáveis + 4 abas: Info,
+ * Interior, Recursos, Histórico). A navegação para um sub-local (aba Interior)
  * fica inteiramente dentro deste componente, numa pilha local — o painel "assume" o
  * sub-local aberto e o botão voltar (‹) desempilha antes de voltar para quem abriu.
  */
@@ -239,24 +239,21 @@ export function SitePanel({
     <div className="px-2 py-6 text-center text-[0.86rem] text-app-muted">Carregando local…</div>
   ) : detail.site ? (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-      <div className="flex items-end border-b border-app-border">
-        <PanelTabBar
-          activeTab={tab}
-          role="tablist"
-          ariaLabel="Seções do local"
-          className="min-w-0 flex-1"
-        >
+      {/* Editar/Remover rolam junto, no fim da faixa — fixos à direita, roubavam largura e
+          escondiam Histórico. O `tablist` é só o grupo das abas (ações não são `tab`). */}
+      <PanelTabBar activeTab={tab} className="items-end border-b border-app-border">
+        <div role="tablist" aria-label="Seções do local" className="flex shrink-0 gap-1">
           <PanelBarButton
             asTab
             icon={InfoIcon}
-            label="Geral"
+            label="Info"
             active={tab === 'overview'}
             onClick={() => setTab('overview')}
           />
           <PanelBarButton
             asTab
             icon={Building2}
-            label="Sub-locais"
+            label="Interior"
             active={tab === 'subsites'}
             onClick={() => setTab('subsites')}
           />
@@ -274,9 +271,9 @@ export function SitePanel({
             active={tab === 'history'}
             onClick={() => setTab('history')}
           />
-        </PanelTabBar>
+        </div>
         {canEdit ? (
-          <div className="flex shrink-0 items-end">
+          <>
             <PanelBarButton icon={Pencil} label="Editar" onClick={() => setEditing(true)} />
             <PanelBarButton
               icon={Trash2}
@@ -284,9 +281,9 @@ export function SitePanel({
               danger
               onClick={() => setRemoving(true)}
             />
-          </div>
+          </>
         ) : null}
-      </div>
+      </PanelTabBar>
 
       {tab === 'overview' ? (
         <SiteOverviewTab
@@ -499,7 +496,7 @@ function CreateBody({
   onDirtyChange,
 }: {
   specs: GeoSpec[];
-  project: GeoProject | null;
+  project: Project | null;
   projectId: string | null;
   pickedAddress: DraftAddress | null;
   pickingOnMap: boolean;
@@ -631,7 +628,7 @@ function CreateBody({
         ...(projectId ? { geonetAddressId, note: noteDraft.trim() || undefined } : {}),
       };
       const result = projectId
-        ? await postJson<{ site: GeoSite }>(`/v1/geo/projects/${projectId}/sites`, payload)
+        ? await postJson<{ site: GeoSite }>(`/v1/projects/${projectId}/sites`, payload)
         : await postJson<{ site: GeoSite }>('/v1/geo/workspace/site-at-address', payload);
       onCreated(result);
     } catch (err) {

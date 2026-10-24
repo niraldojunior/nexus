@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SitePanel } from './SitePanel';
 import type { GeoSite, GeoSpec, SiteOrigin } from '../../services/geoApi';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { Project } from '../../services/projectApi';
 import type { SiteDetailState } from '../../hooks/useSiteDetail';
 
 const mocks = vi.hoisted(() => ({
@@ -63,7 +63,7 @@ const site = (overrides: Partial<GeoSite> = {}): GeoSite => ({
   ...overrides,
 });
 
-const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
+const project = (overrides: Partial<Project> = {}): Project => ({
   id: 'prj-1',
   tenantId: 'default',
   name: 'Expansão Icaraí',
@@ -129,8 +129,8 @@ describe('SitePanel', () => {
     renderPanel();
     expect(screen.getByText('CDO Rua Miguel de Frias, 380')).toBeInTheDocument();
     expect(screen.queryByLabelText('Nome do local')).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Geral' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Sub-locais' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Info' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Interior' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Recursos' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Histórico' })).toBeInTheDocument();
   });
@@ -224,7 +224,7 @@ describe('SitePanel', () => {
 
     await waitFor(() =>
       expect(mocks.postJson).toHaveBeenCalledWith(
-        '/v1/geo/projects/prj-1/sites',
+        '/v1/projects/prj-1/sites',
         expect.objectContaining({ geonetAddressId: 'geo-1' }),
       ),
     );

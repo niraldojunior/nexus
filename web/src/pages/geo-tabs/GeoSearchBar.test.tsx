@@ -8,6 +8,7 @@ import type { GeoSearchHistoryEntry } from '../../services/geoSearchHistoryApi';
 
 const mocks = vi.hoisted(() => ({
   fetchTreeSearch: vi.fn(),
+  fetchSitesByAddress: vi.fn(),
   fetchAddressPredictions: vi.fn(),
   resolveAddressByPlaceId: vi.fn(),
   geocodeAddress: vi.fn(),
@@ -20,7 +21,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../services/geoTreeApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/geoTreeApi')>();
-  return { ...actual, fetchTreeSearch: mocks.fetchTreeSearch };
+  return {
+    ...actual,
+    fetchTreeSearch: mocks.fetchTreeSearch,
+    fetchSitesByAddress: mocks.fetchSitesByAddress,
+  };
 });
 
 vi.mock('../../utils/googleMaps', async (importOriginal) => {
@@ -49,6 +54,7 @@ beforeEach(() => {
   // Defaults seguros: o histórico resolve vazio salvo quando o teste diz o contrário; sem
   // isso o hook receberia `undefined` de fetchSearchHistory após clearAllMocks.
   mocks.fetchSearchHistory.mockResolvedValue([]);
+  mocks.fetchSitesByAddress.mockResolvedValue([]);
   mocks.recordNodeVisit.mockResolvedValue(undefined);
   mocks.recordAddressVisit.mockResolvedValue(undefined);
   mocks.removeSearchHistoryEntry.mockResolvedValue(undefined);
@@ -764,6 +770,50 @@ describe('GeoSearchBar', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(input).not.toHaveFocus();
+  });
+
+  it('seleciona o Local vinculado em vez de abrir o endereço resolvido', async () => {
+    const onSelectNode = vi.fn();
+    const onAddressFound = vi.fn();
+    mocks.fetchTreeSearch.mockResolvedValue([]);
+    mocks.fetchAddressPredictions.mockResolvedValue([
+      { placeId: 'place:1', description: 'Rua Doutor Paulo Cesar, 155, Niterói' },
+    ]);
+    mocks.resolveAddressByPlaceId.mockResolvedValue({
+      ok: true,
+      address: {
+        street: 'Rua Doutor Paulo Cesar',
+        streetNr: '155',
+        city: 'Niterói',
+        stateOrProvince: 'RJ',
+        postcode: '24220-401',
+        country: 'BR',
+        coordinates: [-43.1, -22.9],
+        label: 'Rua Doutor Paulo Cesar, 155, Niterói',
+      },
+    });
+    mocks.fetchSitesByAddress.mockResolvedValue([node]);
+
+    render(
+      <GeoSearchBar
+        query="Paulo Cesar"
+        onQueryChange={vi.fn()}
+        onSelectNode={onSelectNode}
+        onAddressFound={onAddressFound}
+        onAddressError={vi.fn()}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Pesquise no Nexus'));
+    await waitFor(() => expect(screen.getByText(/Rua Doutor Paulo Cesar/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/Rua Doutor Paulo Cesar, 155, Niterói/i));
+
+    await waitFor(() => expect(mocks.fetchSitesByAddress).toHaveBeenCalledWith(
+      expect.objectContaining({ street: 'Rua Doutor Paulo Cesar', streetNr: '155' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+    await waitFor(() => expect(onSelectNode).toHaveBeenCalledWith(node));
+    expect(onAddressFound).not.toHaveBeenCalled();
   });
 
   it('retira o foco imediatamente ao escolher um endereço no mobile', async () => {

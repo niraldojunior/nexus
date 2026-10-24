@@ -7,7 +7,7 @@
 // ver projectAreaColor.ts. Reusa `traceSmoothRing` (mesmo corner-smoothing por quadrática) e o
 // mesmo ray-casting de hit-test com buracos.
 
-import type { ProjectArea } from '../../services/geoProjectApi';
+import type { ProjectArea } from '../../services/projectApi';
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { projectAreaFill, projectAreaStroke } from '../../utils/projectAreaColor';
 import { buildFastProjection, traceSmoothRing } from './CoverageOverlay';

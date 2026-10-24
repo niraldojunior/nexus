@@ -163,10 +163,9 @@ describe('SchematicTab', () => {
     render(<SchematicTab nodeId={resource.id} onSimulate={vi.fn()} onPreview={vi.fn()} />);
 
     expect(screen.getAllByTestId('resource-icon')).toHaveLength(2);
-    expect(screen.getAllByTestId('resource-icon').map((icon) => icon.dataset.resourceType)).toEqual([
-      'CDOE',
-      'DistributionCable',
-    ]);
+    expect(screen.getAllByTestId('resource-icon').map((icon) => icon.dataset.resourceType)).toEqual(
+      ['CDOE', 'DistributionCable'],
+    );
     expect(mocks.resourceIcon).toHaveBeenCalledWith(
       expect.objectContaining({ resource, variant: 'glyph', size: 20 }),
     );
@@ -247,7 +246,7 @@ describe('SchematicTab', () => {
     expect(onPreview).toHaveBeenCalledWith(cdoeNode);
   });
 
-  it('avisa quando a cadeia não chegou a uma Estação', () => {
+  it('avisa quando a cadeia não chegou ao Local Atendido', () => {
     const path: GeoSchematicPath = {
       nodeId: 'resource:cdoe-2',
       reachedSite: false,
@@ -264,7 +263,7 @@ describe('SchematicTab', () => {
 
     render(<SchematicTab nodeId="resource:cdoe-2" onSimulate={vi.fn()} onPreview={vi.fn()} />);
 
-    expect(screen.getByText(/não chegou a uma Estação/)).toBeInTheDocument();
+    expect(screen.getByText(/não chegou ao Local Atendido/)).toBeInTheDocument();
   });
 
   it('devolve a simulação com o traçado costurado dos cabos, na ordem dos saltos', async () => {

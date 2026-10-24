@@ -1,5 +1,5 @@
 // Projetos de trabalho da página Locais (REQ-MOD01-015). Toca o banco de verdade (Oracle) porque
-// GeoProjectRepository e a exclusão em GeoTreeService falam com o DatabaseClient direto — não há
+// ProjectRepository e a exclusão em GeoTreeService falam com o DatabaseClient direto — não há
 // como exercitar a regra sem SQL real.
 
 import assert from 'node:assert/strict';
@@ -34,11 +34,11 @@ const createStationSpec = async (runtime: NexusRuntime) => {
 };
 
 test.skipIf(!oracleConfigured)(
-  'GeoProjectRepository cria, atualiza e lista projetos do tenant',
+  'ProjectRepository cria, atualiza e lista projetos do tenant',
   async () => {
     const fixture = await createFixture();
     try {
-      const created = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const created = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Expansão Icaraí',
       });
       assert.equal(created.name, 'Expansão Icaraí');
@@ -46,15 +46,15 @@ test.skipIf(!oracleConfigured)(
       assert.equal(created.tenantId, TENANT_ID);
       assert.equal(created.createdBy, ACTOR);
 
-      const updated = await fixture.runtime.geoProjectRepository.update(TENANT_ID, created.id, {
+      const updated = await fixture.runtime.projectRepository.update(TENANT_ID, created.id, {
         description: 'Levantamento de campo do Q3',
       });
       assert.equal(updated?.description, 'Levantamento de campo do Q3');
 
-      const list = await fixture.runtime.geoProjectRepository.list(TENANT_ID);
+      const list = await fixture.runtime.projectRepository.list(TENANT_ID);
       assert.ok(list.some((project) => project.id === created.id));
 
-      const missing = await fixture.runtime.geoProjectRepository.update(
+      const missing = await fixture.runtime.projectRepository.update(
         'outro-tenant',
         created.id,
         {
@@ -74,7 +74,7 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto com locais',
       });
 
@@ -86,10 +86,10 @@ test.skipIf(!oracleConfigured)(
         name: 'Local B',
         siteSpecificationId: spec.id,
       });
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, siteA.id);
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, siteB.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, siteA.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, siteB.id);
 
-      let reloaded = await fixture.runtime.geoProjectRepository.get(TENANT_ID, project.id);
+      let reloaded = await fixture.runtime.projectRepository.get(TENANT_ID, project.id);
       assert.equal(reloaded?.siteCount, 2);
 
       await fixture.runtime.geoService.transitionSite(siteB.id, {
@@ -100,7 +100,7 @@ test.skipIf(!oracleConfigured)(
       // Com o status herdado do projeto (RF-010), um projeto Terminado tem todos os Sites
       // Retired — filtrar por status faria a lista mostrar N locais e o contador dizer "0
       // locais". siteCount conta o vínculo de plataforma, não o status do Site.
-      reloaded = await fixture.runtime.geoProjectRepository.get(TENANT_ID, project.id);
+      reloaded = await fixture.runtime.projectRepository.get(TENANT_ID, project.id);
       assert.equal(reloaded?.siteCount, 2, 'local Retired continua contando enquanto vinculado');
     } finally {
       await cleanup();
@@ -114,19 +114,19 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto a excluir',
       });
       const site = await fixture.runtime.geoService.createSite({
         name: 'Local a excluir',
         siteSpecificationId: spec.id,
       });
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, site.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, site.id);
 
-      const siteIds = await fixture.runtime.geoProjectRepository.remove(TENANT_ID, project.id);
+      const siteIds = await fixture.runtime.projectRepository.remove(TENANT_ID, project.id);
       assert.deepEqual(siteIds, [site.id]);
 
-      const reloaded = await fixture.runtime.geoProjectRepository.get(TENANT_ID, project.id);
+      const reloaded = await fixture.runtime.projectRepository.get(TENANT_ID, project.id);
       assert.equal(reloaded, null);
 
       // C6: remove() só apaga as linhas de plataforma. Quem decide o soft-terminate do Site é
@@ -146,14 +146,14 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto',
       });
       const site = await fixture.runtime.geoService.createSite({
         name: 'Local do projeto',
         siteSpecificationId: spec.id,
       });
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, site.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, site.id);
 
       // Mesma sequência de src/shared/http/app.ts (DELETE /v1/geo/projects/:id): soft-terminate
       // (C6) primeiro, remove() depois — nunca a ordem inversa (ver comentário da rota).
@@ -161,11 +161,11 @@ test.skipIf(!oracleConfigured)(
         status: 'Retired',
         statusReason: 'Projeto de trabalho excluído',
       });
-      await fixture.runtime.geoProjectRepository.remove(TENANT_ID, project.id);
+      await fixture.runtime.projectRepository.remove(TENANT_ID, project.id);
 
       const terminated = await fixture.runtime.geoService.getSite(site.id);
       assert.equal(terminated?.status, 'Retired');
-      const links = await fixture.runtime.geoProjectRepository.listSiteIds(TENANT_ID, project.id);
+      const links = await fixture.runtime.projectRepository.listSiteIds(TENANT_ID, project.id);
       assert.deepEqual(links, []);
     } finally {
       await cleanup();
@@ -182,7 +182,7 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto em massa',
       });
       const sites = await Promise.all(
@@ -194,7 +194,7 @@ test.skipIf(!oracleConfigured)(
         ),
       );
       for (const site of sites)
-        await fixture.runtime.geoProjectRepository.linkSite(project.id, site.id);
+        await fixture.runtime.projectRepository.linkSite(project.id, site.id);
 
       const result = await fixture.runtime.geoService.transitionProjectSites(
         project.id,
@@ -228,7 +228,7 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto com bloqueio',
       });
       const free = await fixture.runtime.geoService.createSite({
@@ -244,8 +244,8 @@ test.skipIf(!oracleConfigured)(
         siteSpecificationId: spec.id,
       });
       await fixture.runtime.geoService.addSiteRelationship(blocked.id, feeder.id, 'fedBy');
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, free.id);
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, blocked.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, free.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, blocked.id);
 
       const result = await fixture.runtime.geoService.transitionProjectSites(
         project.id,
@@ -270,14 +270,14 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto retomado',
       });
       const site = await fixture.runtime.geoService.createSite({
         name: 'Local retomado',
         siteSpecificationId: spec.id,
       });
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, site.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, site.id);
 
       await fixture.runtime.geoService.transitionProjectSites(
         project.id,
@@ -315,7 +315,7 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createSiteSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto HTTP',
       });
       const free = await fixture.runtime.geoService.createSite({
@@ -331,12 +331,12 @@ test.skipIf(!oracleConfigured)(
         siteSpecificationId: spec.id,
       });
       await fixture.runtime.geoService.addSiteRelationship(blocked.id, feeder.id, 'fedBy');
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, free.id);
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, blocked.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, free.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, blocked.id);
 
       // Mesma sequência da rota DELETE em app.ts, sem subir um servidor HTTP: lista os ids,
       // chama transitionProjectSites, só remove o projeto se nada ficou bloqueado.
-      const siteIds = await fixture.runtime.geoProjectRepository.listSiteIds(TENANT_ID, project.id);
+      const siteIds = await fixture.runtime.projectRepository.listSiteIds(TENANT_ID, project.id);
       const result = await fixture.runtime.geoService.transitionProjectSites(
         project.id,
         siteIds,
@@ -345,9 +345,9 @@ test.skipIf(!oracleConfigured)(
       );
       assert.equal(result.blocked.length, 1);
       // Projeto NÃO é removido: a rota só chama remove() quando blocked.length === 0.
-      const stillThere = await fixture.runtime.geoProjectRepository.get(TENANT_ID, project.id);
+      const stillThere = await fixture.runtime.projectRepository.get(TENANT_ID, project.id);
       assert.ok(stillThere, 'projeto deve continuar existindo com local bloqueado');
-      const linksStillThere = await fixture.runtime.geoProjectRepository.listSiteIds(
+      const linksStillThere = await fixture.runtime.projectRepository.listSiteIds(
         TENANT_ID,
         project.id,
       );
@@ -364,7 +364,7 @@ test.skipIf(!oracleConfigured)(
     const fixture = await createFixture();
     try {
       const spec = await createStationSpec(fixture.runtime);
-      const project = await fixture.runtime.geoProjectRepository.create(TENANT_ID, ACTOR, {
+      const project = await fixture.runtime.projectRepository.create(TENANT_ID, ACTOR, {
         name: 'Projeto oculto',
       });
       const marker = `ProjSite-${Date.now()}`;
@@ -379,7 +379,7 @@ test.skipIf(!oracleConfigured)(
       const searchBefore = await fixture.runtime.geoTreeService.search(marker);
       assert.ok(searchBefore.some((node) => node.refId === site.id));
 
-      await fixture.runtime.geoProjectRepository.linkSite(project.id, site.id);
+      await fixture.runtime.projectRepository.linkSite(project.id, site.id);
 
       const rootsAfter = await fixture.runtime.geoTreeService.roots();
       assert.ok(
@@ -398,7 +398,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal(bySiteIds[0]?.label, marker);
 
       // Desvinculado, volta a aparecer — a exclusão é dirigida pelo dado (RN-003), não por flag.
-      await fixture.runtime.geoProjectRepository.unlinkSite(project.id, site.id);
+      await fixture.runtime.projectRepository.unlinkSite(project.id, site.id);
       const rootsRestored = await fixture.runtime.geoTreeService.roots();
       assert.ok(rootsRestored.some((node) => node.refId === site.id));
     } finally {

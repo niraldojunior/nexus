@@ -1,4 +1,5 @@
 import { createCanonicalId } from '../utils/canonical-id.js';
+import type { RequestContext } from '../http/request-context.js';
 import { OracleGeoRepository } from '../../modules/geo/oracle-repository.js';
 import { GeoService } from '../../modules/geo/service.js';
 import { GeoTreeService } from '../../modules/geo/tree-service.js';
@@ -32,9 +33,11 @@ import { EventService } from '../tmf/index.js';
 import { OracleEventRepository } from '../tmf/oracle-event-repository.js';
 import { AuthService } from '../../modules/auth/index.js';
 import { GeoSearchHistoryRepository } from '../../modules/geo/search-history-repository.js';
-import { GeoProjectRepository } from '../../modules/geo/project-repository.js';
+import { ProjectRepository } from '../../modules/project/project-repository.js';
 import { PartyRoleTypeCharacteristicRepository } from '../../modules/party/party-role-type-characteristic-repository.js';
 import { PartyRoleTypeRepository } from '../../modules/party/party-role-type-repository.js';
+import { PartyRoleTypeService } from '../../modules/party/party-role-type-service.js';
+import { ReferenceDataService } from '../../modules/reference-data/service.js';
 import { OracleReferenceDataRepository } from '../../modules/reference-data/oracle-repository.js';
 import { StudioService } from '../../modules/studio/service.js';
 import { OracleStudioRepository } from '../../modules/studio/oracle-repository.js';
@@ -53,8 +56,9 @@ import {
   TemplatesStudioAdapter,
   CANONICAL_TEMPLATES_SNAPSHOT,
 } from '../../modules/studio/adapters/templates-studio-adapter.js';
-import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/geo/project-workflow.js';
-import { GeoProjectWorkflowService } from '../../modules/geo/project-workflow-service.js';
+import { CANONICAL_PROJECT_WORKFLOW_SNAPSHOT } from '../../modules/project/project-workflow.js';
+import { ProjectService } from '../../modules/project/project-service.js';
+import { ProjectWorkflowService } from '../../modules/project/project-workflow-service.js';
 import { OracleStudioAssetRepository } from '../../modules/studio/oracle-asset-repository.js';
 import { StudioAssetService } from '../../modules/studio/asset-service.js';
 import {
@@ -80,6 +84,9 @@ const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 const DEFAULT_TENANT_ID = 'default';
 
 export type NexusToolContextOptions = {
+  // Identidade real de quem chama (Copilot: JWT da sessão; stdio: NEXUS_MCP_TOKEN). Sem ela, a
+  // tool roda como o `defaultUser` com papéis de leitura apenas — nunca como admin implícito.
+  requestContext?: RequestContext;
   correlationId?: string;
   executionMode?: 'internal-chat' | 'external-stdio' | 'internal-http';
   permissions?: string[];
@@ -104,7 +111,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     accessTokenTtlSeconds: options.auth?.accessTokenTtlSeconds ?? DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
   });
   const geoSearchHistoryRepository = new GeoSearchHistoryRepository(db);
-  const geoProjectRepository = new GeoProjectRepository(db, {
+  const projectRepository = new ProjectRepository(db, {
     bootstrapStatusCatalog: !isEmptyEnvironment,
   });
   const searchRepository = new OracleSearchRepository(db);
@@ -332,7 +339,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     });
     await studioService.ensurePublishedBootstrap(
       'rules-workflows',
-      CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       {
         actorSub: 'studio-bootstrap',
         tenantId: DEFAULT_TENANT_ID,
@@ -351,14 +358,36 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
       },
     );
   }
-  const geoProjectWorkflowService = new GeoProjectWorkflowService(
+  const projectWorkflowService = new ProjectWorkflowService(
     db,
-    geoProjectRepository,
+    projectRepository,
     geoService,
     resourceService,
     studioService,
     eventService,
     { fallbackToCanonical: !isEmptyEnvironment },
+  );
+  const projectService = new ProjectService(
+    db,
+    projectRepository,
+    projectWorkflowService,
+    geoService,
+    resourceService,
+    eventService,
+  );
+
+  const partyRoleTypeService = new PartyRoleTypeService(
+    db,
+    partyRoleTypeRepository,
+    studioService,
+    eventService,
+  );
+
+  const referenceDataService = new ReferenceDataService(
+    db,
+    referenceDataRepository,
+    studioService,
+    eventService,
   );
 
   let defaultUser = isEmptyEnvironment
@@ -383,8 +412,9 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     userRepository,
     authService,
     geoSearchHistoryRepository,
-    geoProjectRepository,
-    geoProjectWorkflowService,
+    projectRepository,
+    projectWorkflowService,
+    projectService,
     searchRepository,
     researchRepository,
     searchService,
@@ -404,8 +434,10 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     partyRepository,
     partyService,
     partyRoleTypeRepository,
+    partyRoleTypeService,
     partyRoleTypeCharacteristicRepository,
     referenceDataRepository,
+    referenceDataService,
     resourceRepository,
     resourceService,
     internalPlantService,
@@ -418,18 +450,29 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     studioAssetService,
     studioService,
     defaultUser,
-    createToolContext: (options: NexusToolContextOptions = {}) => ({
-      user: {
-        id: defaultUser.id,
-        externalId: defaultUser.externalId,
-        name: defaultUser.name,
-      },
-      tenant: options.tenant,
-      permissions: options.permissions ?? ['tmf:read', 'tmf:write'],
-      correlationId: options.correlationId ?? createCanonicalId(),
-      executionMode: options.executionMode ?? 'internal-http',
-      sessionId: options.sessionId,
-    }),
+    createToolContext: (options: NexusToolContextOptions = {}) => {
+      const requestContext: RequestContext = options.requestContext ?? {
+        actorSub: defaultUser.externalId,
+        tenantId: options.tenant?.id ?? DEFAULT_TENANT_ID,
+        roles: ['inventory.reader'],
+        traceId: options.correlationId ?? createCanonicalId(),
+      };
+      return {
+        user: {
+          id: defaultUser.id,
+          externalId: defaultUser.externalId,
+          name: defaultUser.name,
+        },
+        tenant: options.tenant ?? { id: requestContext.tenantId },
+        permissions: options.permissions ?? ['tmf:read', 'tmf:write'],
+        correlationId: options.correlationId ?? requestContext.traceId,
+        executionMode: options.executionMode ?? 'internal-http',
+        sessionId: options.sessionId,
+        // Repassado como último argumento dos services: é ele que faz audit/outbox gravarem o
+        // ator e o tenant reais e que aplica o RBAC do GeoService.
+        requestContext,
+      };
+    },
   };
 };
 

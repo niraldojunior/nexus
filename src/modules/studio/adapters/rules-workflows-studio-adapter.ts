@@ -6,16 +6,16 @@ import type {
   StudioValidationResult,
 } from '../domain.js';
 import {
-  GEO_PROJECT_WORKFLOW_ID,
-  GEO_PROJECT_WORKFLOW_ROLES,
-  GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
-  type GeoProjectWorkflowAction,
-  type GeoProjectWorkflowSnapshot,
-  type GeoProjectWorkflowState,
-} from '../../geo/project-workflow.js';
+  PROJECT_WORKFLOW_ID,
+  PROJECT_WORKFLOW_ROLES,
+  PROJECT_WORKFLOW_SCHEMA_VERSION,
+  type ProjectWorkflowAction,
+  type ProjectWorkflowSnapshot,
+  type ProjectWorkflowState,
+} from '../../project/project-workflow.js';
 
-const ALLOWED_ROLES_SET = new Set<string>(GEO_PROJECT_WORKFLOW_ROLES);
-const ALLOWED_ACTIONS_SET = new Set<GeoProjectWorkflowAction>([
+const ALLOWED_ROLES_SET = new Set<string>(PROJECT_WORKFLOW_ROLES);
+const ALLOWED_ACTIONS_SET = new Set<ProjectWorkflowAction>([
   'update-project',
   'cascade-sites-planning',
   'cascade-sites-execution',
@@ -38,23 +38,23 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
       return { valid: true, issues: [], validatedAt: new Date().toISOString() };
     }
 
-    const typed = snapshot as Partial<GeoProjectWorkflowSnapshot>;
+    const typed = snapshot as Partial<ProjectWorkflowSnapshot>;
     const issues: StudioValidationIssue[] = [];
 
-    if (typed.schemaVersion !== GEO_PROJECT_WORKFLOW_SCHEMA_VERSION) {
+    if (typed.schemaVersion !== PROJECT_WORKFLOW_SCHEMA_VERSION) {
       issues.push({
         severity: 'error',
         code: 'WORKFLOW_SCHEMA_VERSION_INVALID',
-        message: `A versão do schema deve ser ${GEO_PROJECT_WORKFLOW_SCHEMA_VERSION}.`,
+        message: `A versão do schema deve ser ${PROJECT_WORKFLOW_SCHEMA_VERSION}.`,
         path: 'schemaVersion',
       });
     }
 
-    if (typed.workflowId !== GEO_PROJECT_WORKFLOW_ID) {
+    if (typed.workflowId !== PROJECT_WORKFLOW_ID) {
       issues.push({
         severity: 'error',
         code: 'WORKFLOW_ID_INVALID',
-        message: `O workflowId deve ser "${GEO_PROJECT_WORKFLOW_ID}".`,
+        message: `O workflowId deve ser "${PROJECT_WORKFLOW_ID}".`,
         path: 'workflowId',
       });
     }
@@ -75,7 +75,7 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
       };
     }
 
-    const stateCodeMap = new Map<string, GeoProjectWorkflowState>();
+    const stateCodeMap = new Map<string, ProjectWorkflowState>();
     for (const [index, state] of typed.states.entries()) {
       const path = `states[${index}]`;
       if (!nonEmpty(state?.code)) {
@@ -321,7 +321,7 @@ export class RulesWorkflowsStudioAdapter implements StudioDomainAdapter {
 
     if (!this.db || Object.keys(snapshot).length === 0) return;
 
-    const typed = snapshot as unknown as GeoProjectWorkflowSnapshot;
+    const typed = snapshot as unknown as ProjectWorkflowSnapshot;
     const incomingCodes = new Set(typed.states.map((state) => state.code));
 
     // Sincroniza estados declarados no read-model de compatibilidade project_status_catalog

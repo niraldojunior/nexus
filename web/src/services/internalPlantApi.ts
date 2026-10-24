@@ -325,18 +325,22 @@ export const fetchResourceEditor = (id: string, signal?: AbortSignal) =>
 export const fetchResourceHistory = (id: string, signal?: AbortSignal) =>
   getJson<ResourceAuditEntry[]>(`${BASE}/resources/${encodeURIComponent(id)}/audit`, signal);
 
-export const saveResourceAggregate = (payload: SaveResourceAggregatePayload) =>
-  payload.id
-    ? sendJson<{ resource: EditorResource; createdIds: string[] }>(
+// O agregado grava place/nome/status do recurso — tudo que o mapa mostra (issue #425).
+export const saveResourceAggregate = async (payload: SaveResourceAggregatePayload) => {
+  const result = payload.id
+    ? await sendJson<{ resource: EditorResource; createdIds: string[] }>(
         'PUT',
         `${BASE}/resources/${encodeURIComponent(payload.id)}`,
         payload,
       )
-    : sendJson<{ resource: EditorResource; createdIds: string[] }>(
+    : await sendJson<{ resource: EditorResource; createdIds: string[] }>(
         'POST',
         `${BASE}/resources`,
         payload,
       );
+  invalidateMapTiles();
+  return result;
+};
 
 export const terminateInternalPlantResource = async (
   id: string,

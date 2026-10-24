@@ -1,6 +1,6 @@
 // Catálogo de quais características cada "tipo de party" (identificado por `roleName`, ex.
 // "manufacturer") aceita — metadado de modelagem para a aba "Características Gerais" do Studio ->
-// Partes (issue #220). Como GeoProjectRepository.ensureStatusCatalog/listStatusCatalog, é uma
+// Partes (issue #220). Como ProjectRepository.ensureStatusCatalog/listStatusCatalog, é uma
 // projeção de plataforma que fala direto com o DatabaseClient: não é entidade TMF, não passa pelo
 // IPartyRepository nem pelo PartyService. Governado via PartiesStudioAdapter (publish/discard);
 // a API direta (create/update/deactivate) segue existindo para o editor mutar dentro de um draft.
@@ -97,7 +97,7 @@ const toCharacteristic = (row: CharacteristicRow): PartyRoleTypeCharacteristic =
   referenceDataSetKey: row.referenceDataSetKey ?? null,
 });
 
-// Não é um "IPartyRepository" — sem classe Oracle separada (padrão GeoProjectRepository): SQL
+// Não é um "IPartyRepository" — sem classe Oracle separada (padrão ProjectRepository): SQL
 // portável com placeholders `?`, booleans como INTEGER 0/1, sem ON CONFLICT/upsert nativo.
 export class PartyRoleTypeCharacteristicRepository {
   constructor(private db: DatabaseClient) {}

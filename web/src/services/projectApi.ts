@@ -1,4 +1,4 @@
-// Cliente dos Projetos de trabalho da página Locais (REQ-MOD01-015, `/v1/geo/projects/*`),
+// Cliente dos Projetos de trabalho da página Locais (REQ-MOD01-015, `/v1/projects/*`),
 // estilo "Salvos" do Google Maps. Compartilhado por tenant (C8) — não há filtro por usuário
 // aqui, ao contrário do histórico de busca (geoSearchHistoryApi.ts).
 
@@ -23,26 +23,26 @@ import type {
 // está em curso, o local não tem status próprio editável, só herda este valor — uma vez que
 // o projeto termina (status 'terminated'), o local passa a ter vida própria (Active) e ganha
 // controle de status independente no painel unificado de Local (SiteOverviewTab).
-export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
-export type GeoProjectStatusBehavior = 'planning' | 'execution' | 'suspended' | 'close-release';
-export type GeoProjectStatusCatalogItem = {
+export type ProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
+export type ProjectStatusBehavior = 'planning' | 'execution' | 'suspended' | 'close-release';
+export type ProjectStatusCatalogItem = {
   code: string;
   name: string;
   sortOrder: number;
   active: boolean;
-  behavior: GeoProjectStatusBehavior;
+  behavior: ProjectStatusBehavior;
 };
 
-export type GeoProject = {
+export type Project = {
   id: string;
   tenantId: string;
   name: string;
   description: string | null;
   iconDataUrl: string | null;
-  status: GeoProjectStatus;
+  status: ProjectStatus;
   statusCode?: string;
   statusName?: string;
-  statusBehavior?: GeoProjectStatusBehavior;
+  statusBehavior?: ProjectStatusBehavior;
   createdBy: string | null;
   siteCount: number;
   resourceCount?: number;
@@ -55,17 +55,17 @@ export type GeoProject = {
 };
 
 // Quantos locais a cascata de status conseguiu (e não conseguiu) transicionar — só vem no
-// PATCH que muda `status` (ver /v1/geo/projects/:id em app.ts). `blocked` só aparece quando
+// PATCH que muda `status` (ver /v1/projects/:id em app.ts). `blocked` só aparece quando
 // algum local tem dependência ativa (filho/relacionamento/recurso/serviço/ordem).
-export type GeoProjectSiteCascade = { updated: number; skipped: number; blocked?: number };
+export type ProjectSiteCascade = { updated: number; skipped: number; blocked?: number };
 
-// Resposta do DELETE /v1/geo/projects/:id: o projeto só é excluído (`deleted: true`) quando
+// Resposta do DELETE /v1/projects/:id: o projeto só é excluído (`deleted: true`) quando
 // TODOS os locais puderam ser encerrados — havendo algum bloqueado, o projeto e seus vínculos
 // são mantidos íntegros (ver comentário da rota em app.ts) e `blockedSiteIds` traz uma amostra
 // para o usuário resolver as pendências antes de tentar de novo.
-export type GeoProjectDeleteSummary = {
+export type ProjectDeleteSummary = {
   archived?: boolean;
-  project?: GeoProject;
+  project?: Project;
   /** @deprecated compatibility with the pre-archive endpoint. */
   deleted?: boolean;
   retired?: number;
@@ -131,28 +131,28 @@ export type ProjectArea = {
   generatedAt: string;
 };
 
-const BASE_URL = '/v1/geo/projects';
+const BASE_URL = '/v1/projects';
 
-export const fetchProjects = (): Promise<GeoProject[]> => getJson<GeoProject[]>(BASE_URL);
+export const fetchProjects = (): Promise<Project[]> => getJson<Project[]>(BASE_URL);
 
 // Manchas já geradas para o projeto (vazio se nenhuma foi gerada ainda — o painel volta ao
 // comportamento de sempre, listando/desenhando os locais individuais).
 export const fetchProjectAreas = (projectId: string): Promise<ProjectArea[]> =>
   getJson<{ areas: ProjectArea[] }>(`${BASE_URL}/${projectId}/areas`).then((res) => res.areas);
 
-export const createProject = (name?: string): Promise<GeoProject> =>
-  postJson<GeoProject>(BASE_URL, name?.trim() ? { name: name.trim() } : {});
+export const createProject = (name?: string): Promise<Project> =>
+  postJson<Project>(BASE_URL, name?.trim() ? { name: name.trim() } : {});
 
 export const updateProject = (
   id: string,
   patch: Partial<
-    Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+    Pick<Project, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
   >,
-): Promise<GeoProject & { siteCascade?: GeoProjectSiteCascade }> =>
-  patchJson<GeoProject & { siteCascade?: GeoProjectSiteCascade }>(`${BASE_URL}/${id}`, patch);
+): Promise<Project & { siteCascade?: ProjectSiteCascade }> =>
+  patchJson<Project & { siteCascade?: ProjectSiteCascade }>(`${BASE_URL}/${id}`, patch);
 
-export const deleteProject = (id: string): Promise<GeoProjectDeleteSummary> =>
-  deleteJson<GeoProjectDeleteSummary>(`${BASE_URL}/${id}`);
+export const deleteProject = (id: string): Promise<ProjectDeleteSummary> =>
+  deleteJson<ProjectDeleteSummary>(`${BASE_URL}/${id}`);
 
 // Página de locais do projeto — `total` vem do servidor (COUNT(*) OVER() em
 // GeoTreeService.projectSitePage), não do tamanho de `items`: com o teto de 100 por página,
@@ -203,7 +203,7 @@ export const fetchProjectSites = (
 // `projectId` (pode haver mais de um projeto sendo aberto/fechado na sessão) — StrictMode monta
 // o efeito duas vezes e reabrir o mesmo projeto rapidamente remonta de novo; sem isto, cada
 // montagem disparava um novo par de requisições ao backend, que atende em série (AGENTS.md §3).
-// Mesmo padrão de useGeoProjects.ts e do dedupe do catálogo de status em ProjectDetailPanel.tsx.
+// Mesmo padrão de useProjects.ts e do dedupe do catálogo de status em ProjectDetailPanel.tsx.
 const areasAndSitesInFlight = new Map<string, Promise<[ProjectArea[], ProjectSitePage]>>();
 
 export const fetchProjectAreasAndSites = (
@@ -282,20 +282,20 @@ export const createProjectResource = (
 ): Promise<ResourceEntity> =>
   postJson<ResourceEntity>(`${BASE_URL}/${projectId}/resources`, payload);
 
-export const listProjectStatusCatalog = (): Promise<GeoProjectStatusCatalogItem[]> =>
-  getJson('/v1/geo/project-statuses');
-export const createProjectStatusCatalogItem = (item: Omit<GeoProjectStatusCatalogItem, 'code'>) =>
-  postJson<GeoProjectStatusCatalogItem>('/v1/geo/project-statuses', item);
+export const listProjectStatusCatalog = (): Promise<ProjectStatusCatalogItem[]> =>
+  getJson('/v1/project-statuses');
+export const createProjectStatusCatalogItem = (item: Omit<ProjectStatusCatalogItem, 'code'>) =>
+  postJson<ProjectStatusCatalogItem>('/v1/project-statuses', item);
 export const updateProjectStatusCatalogItem = (
   code: string,
-  patch: Partial<Omit<GeoProjectStatusCatalogItem, 'code'>>,
+  patch: Partial<Omit<ProjectStatusCatalogItem, 'code'>>,
 ) =>
-  patchJson<GeoProjectStatusCatalogItem>(
-    `/v1/geo/project-statuses/${encodeURIComponent(code)}`,
+  patchJson<ProjectStatusCatalogItem>(
+    `/v1/project-statuses/${encodeURIComponent(code)}`,
     patch,
   );
 export const deactivateProjectStatusCatalogItem = (code: string) =>
-  deleteJson<GeoProjectStatusCatalogItem>(`/v1/geo/project-statuses/${encodeURIComponent(code)}`);
+  deleteJson<ProjectStatusCatalogItem>(`/v1/project-statuses/${encodeURIComponent(code)}`);
 
 export const linkProjectResource = (projectId: string, resourceId: string): Promise<unknown> =>
   postJson(`${BASE_URL}/${projectId}/resources/${resourceId}`, {});
@@ -306,8 +306,8 @@ export const unlinkProjectResource = (
 ): Promise<{ detached: boolean }> =>
   deleteJson<{ detached: boolean }>(`${BASE_URL}/${projectId}/resources/${resourceId}`);
 
-export type GeoProjectWorkflowRole = 'inventory.editor' | 'platform.admin';
-export type GeoProjectWorkflowAction =
+export type ProjectWorkflowRole = 'inventory.editor' | 'platform.admin';
+export type ProjectWorkflowAction =
   | 'update-project'
   | 'cascade-sites-planning'
   | 'cascade-sites-execution'
@@ -315,42 +315,42 @@ export type GeoProjectWorkflowAction =
   | 'release-inventory'
   | 'terminate-inventory';
 
-export type GeoProjectWorkflowTransition = {
+export type ProjectWorkflowTransition = {
   id: string;
   fromStateCodes: string[];
   toStateCode: string;
-  allowedRoles: GeoProjectWorkflowRole[];
-  actions: GeoProjectWorkflowAction[];
+  allowedRoles: ProjectWorkflowRole[];
+  actions: ProjectWorkflowAction[];
 };
 
-export type GeoProjectWorkflowReadModel = {
+export type ProjectWorkflowReadModel = {
   schemaVersion: 1;
   workflowId: 'geo-project';
   initialStateCode: string;
-  states: GeoProjectStatusCatalogItem[];
-  transitions: GeoProjectWorkflowTransition[];
+  states: ProjectStatusCatalogItem[];
+  transitions: ProjectWorkflowTransition[];
   publicationChecksum?: string;
   fallback: boolean;
 };
 
-export type GeoProjectTransitionsResponse = {
-  project: GeoProject;
-  allowedTransitions: GeoProjectWorkflowTransition[];
-  workflow: GeoProjectWorkflowReadModel;
+export type ProjectTransitionsResponse = {
+  project: Project;
+  allowedTransitions: ProjectWorkflowTransition[];
+  workflow: ProjectWorkflowReadModel;
 };
 
-export type GeoProjectTransitionResult = {
-  project: GeoProject;
+export type ProjectTransitionResult = {
+  project: Project;
   transitionId: string;
-  siteCascade: GeoProjectSiteCascade;
+  siteCascade: ProjectSiteCascade;
   resourceCascade: { updated: number; skipped: number };
 };
 
-let workflowRequest: Promise<GeoProjectWorkflowReadModel> | null = null;
+let workflowRequest: Promise<ProjectWorkflowReadModel> | null = null;
 
-export const fetchProjectWorkflow = (): Promise<GeoProjectWorkflowReadModel> => {
+export const fetchProjectWorkflow = (): Promise<ProjectWorkflowReadModel> => {
   if (!workflowRequest) {
-    workflowRequest = getJson<GeoProjectWorkflowReadModel>('/v1/geo/project-workflow').finally(
+    workflowRequest = getJson<ProjectWorkflowReadModel>('/v1/project-workflow').finally(
       () => {
         workflowRequest = null;
       },
@@ -361,19 +361,19 @@ export const fetchProjectWorkflow = (): Promise<GeoProjectWorkflowReadModel> => 
 
 export const fetchProjectTransitions = (
   projectId: string,
-): Promise<GeoProjectTransitionsResponse> =>
-  getJson<GeoProjectTransitionsResponse>(`${BASE_URL}/${projectId}/transitions`);
+): Promise<ProjectTransitionsResponse> =>
+  getJson<ProjectTransitionsResponse>(`${BASE_URL}/${projectId}/transitions`);
 
 export const transitionProject = (
   projectId: string,
   input: { transitionId?: string; targetStateCode?: string },
-): Promise<GeoProjectTransitionResult> =>
-  postJson<GeoProjectTransitionResult>(`${BASE_URL}/${projectId}/transitions`, input);
+): Promise<ProjectTransitionResult> =>
+  postJson<ProjectTransitionResult>(`${BASE_URL}/${projectId}/transitions`, input);
 
 export const updateProjectMetadata = (
   id: string,
-  patch: Partial<Pick<GeoProject, 'name' | 'description' | 'iconDataUrl'>>,
-): Promise<GeoProject> => patchJson<GeoProject>(`${BASE_URL}/${id}`, patch);
+  patch: Partial<Pick<Project, 'name' | 'description' | 'iconDataUrl'>>,
+): Promise<Project> => patchJson<Project>(`${BASE_URL}/${id}`, patch);
 
 // Devolve o `projectId` carimbado por `fetchProjectSites`, ou `null` para qualquer outro
 // `GeoTreeNode` (árvore, busca, infra passiva) — usado por GeoPage.selectNodeFromMap para

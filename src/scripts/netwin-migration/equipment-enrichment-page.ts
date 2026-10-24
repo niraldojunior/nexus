@@ -14,7 +14,7 @@ import {
 } from './equipment-enrichment.js';
 import {
   hydrateEquipmentExtras,
-  resolveGeoProjectIds,
+  resolveProjectIds,
   type EquipmentSourceExtras,
 } from './equipment-enrichment-source.js';
 import { netwinLocationId, netwinOwnerPartyId } from './identity.js';
@@ -159,8 +159,8 @@ export async function enrichEquipmentPage(
       }),
     ),
   ];
-  const geoProjects = target
-    ? await resolveGeoProjectIds(
+  const projectsByName = target
+    ? await resolveProjectIds(
         target,
         ctx.t('project'),
         ctx.options.tenantId,
@@ -214,11 +214,11 @@ export async function enrichEquipmentPage(
     const projectName = isp?.ID_BD_PROJECTO
       ? caches.projectName.get(isp.ID_BD_PROJECTO)
       : undefined;
-    const geoProjectId = projectName
-      ? (geoProjects.get(normalizeTypeKey(projectName)) ?? null)
+    const projectIdResolved = projectName
+      ? (projectsByName.get(normalizeTypeKey(projectName)) ?? null)
       : null;
     if (projectName) {
-      if (geoProjectId) stats.projectsResolved++;
+      if (projectIdResolved) stats.projectsResolved++;
       else stats.projectsUnresolved++;
     }
 
@@ -241,7 +241,7 @@ export async function enrichEquipmentPage(
         : null,
       projectState: isp?.PROJECT_STATE,
       // Projeto estruturado resolvido vira project_id; só o não resolvido cai na characteristic.
-      projectName: geoProjectId ? null : projectName,
+      projectName: projectIdResolved ? null : projectName,
       dynamic: extras.dynamic.get(input.ospId) ?? new Map(),
       cellName: cell?.name,
       servingSiteId,
@@ -274,7 +274,7 @@ export async function enrichEquipmentPage(
       usage_state_changed_at: parseNetwinDate(isp?.DATA_ESTADO_PROVISAO),
       label: enrichment.label,
       serial_number: serial?.serialNumber ?? null,
-      project_id: geoProjectId,
+      project_id: projectIdResolved,
       serving_site_id: servingSiteId,
       related_party: JSON.stringify(mergeOwnedRelatedParties(current?.relatedParty, owner)),
       characteristics: JSON.stringify(

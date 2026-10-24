@@ -13,24 +13,24 @@ import Button from '../../../components/ui/Button';
 import Modal from '../../../components/ui/Modal';
 import { getStudioStatus, saveStudioDraft } from '../../../services/studioApi';
 import {
-  type GeoProjectStatusBehavior,
-  type GeoProjectStatusCatalogItem,
-  type GeoProjectWorkflowAction,
-  type GeoProjectWorkflowReadModel,
-  type GeoProjectWorkflowRole,
-  type GeoProjectWorkflowTransition,
-} from '../../../services/geoProjectApi';
+  type ProjectStatusBehavior,
+  type ProjectStatusCatalogItem,
+  type ProjectWorkflowAction,
+  type ProjectWorkflowReadModel,
+  type ProjectWorkflowRole,
+  type ProjectWorkflowTransition,
+} from '../../../services/projectApi';
 import { SortableHeader, sortedBy, useSort } from '../../config-tabs/sortable';
 
-type GeoProjectWorkflowStudioProps = {
+type ProjectWorkflowStudioProps = {
   canEdit: boolean;
   isEditing: boolean;
   onRegisterCaptureDraft?: (fn: (() => Promise<void>) | null) => void;
   onRegisterCaptureInitialSnapshot?: (fn: (() => Promise<Record<string, unknown>>) | null) => void;
 };
 
-const ALL_ROLES: GeoProjectWorkflowRole[] = ['inventory.editor', 'platform.admin'];
-const ALL_ACTIONS: GeoProjectWorkflowAction[] = [
+const ALL_ROLES: ProjectWorkflowRole[] = ['inventory.editor', 'platform.admin'];
+const ALL_ACTIONS: ProjectWorkflowAction[] = [
   'update-project',
   'cascade-sites-planning',
   'cascade-sites-execution',
@@ -38,17 +38,17 @@ const ALL_ACTIONS: GeoProjectWorkflowAction[] = [
   'release-inventory',
   'terminate-inventory',
 ];
-const behaviors: Array<{ value: GeoProjectStatusBehavior; label: string }> = [
+const behaviors: Array<{ value: ProjectStatusBehavior; label: string }> = [
   { value: 'planning', label: 'Planejamento' },
   { value: 'execution', label: 'Execução' },
   { value: 'suspended', label: 'Suspenso' },
   { value: 'close-release', label: 'Encerrar e liberar' },
 ];
 type WorkflowSnapshot = Partial<
-  Omit<GeoProjectWorkflowReadModel, 'fallback' | 'publicationChecksum'>
+  Omit<ProjectWorkflowReadModel, 'fallback' | 'publicationChecksum'>
 >;
-type StateDraft = Pick<GeoProjectStatusCatalogItem, 'name' | 'behavior' | 'sortOrder'>;
-type StateEditDraft = StateDraft & Pick<GeoProjectStatusCatalogItem, 'active'>;
+type StateDraft = Pick<ProjectStatusCatalogItem, 'name' | 'behavior' | 'sortOrder'>;
+type StateEditDraft = StateDraft & Pick<ProjectStatusCatalogItem, 'active'>;
 type Tab = 'states' | 'transitions';
 
 const emptyStateDraft = (): StateDraft => ({ name: '', behavior: 'planning', sortOrder: 100 });
@@ -60,12 +60,12 @@ const workflowDefaults = (): WorkflowSnapshot => ({
   transitions: [],
 });
 
-export function GeoProjectWorkflowStudio({
+export function ProjectWorkflowStudio({
   canEdit,
   isEditing,
   onRegisterCaptureDraft,
   onRegisterCaptureInitialSnapshot,
-}: GeoProjectWorkflowStudioProps) {
+}: ProjectWorkflowStudioProps) {
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>({});
   const [checksum, setChecksum] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -162,7 +162,7 @@ export function GeoProjectWorkflowStudio({
     setSavingState(false);
     setStateModalOpen(false);
   };
-  const startEdit = (state: GeoProjectStatusCatalogItem) => {
+  const startEdit = (state: ProjectStatusCatalogItem) => {
     setEditingCode(state.code);
     setEditDraft({
       name: state.name,
@@ -220,7 +220,7 @@ export function GeoProjectWorkflowStudio({
       ],
     }));
   };
-  const updateTransition = (id: string, patch: Partial<GeoProjectWorkflowTransition>) =>
+  const updateTransition = (id: string, patch: Partial<ProjectWorkflowTransition>) =>
     updateSnapshot((current) => ({
       ...current,
       transitions: current.transitions.map((transition) =>
@@ -343,7 +343,7 @@ export function GeoProjectWorkflowStudio({
                               onChange={(event) =>
                                 setEditDraft({
                                   ...editDraft,
-                                  behavior: event.target.value as GeoProjectStatusBehavior,
+                                  behavior: event.target.value as ProjectStatusBehavior,
                                 })
                               }
                             >
@@ -616,7 +616,7 @@ function StateModal({
             className="geo-input"
             value={draft.behavior}
             onChange={(event) =>
-              onChange({ ...draft, behavior: event.target.value as GeoProjectStatusBehavior })
+              onChange({ ...draft, behavior: event.target.value as ProjectStatusBehavior })
             }
           >
             {behaviors
@@ -648,10 +648,10 @@ function TransitionCard({
   onChange,
   onRemove,
 }: {
-  transition: GeoProjectWorkflowTransition;
-  states: GeoProjectStatusCatalogItem[];
+  transition: ProjectWorkflowTransition;
+  states: ProjectStatusCatalogItem[];
   canMutate: boolean;
-  onChange: (id: string, patch: Partial<GeoProjectWorkflowTransition>) => void;
+  onChange: (id: string, patch: Partial<ProjectWorkflowTransition>) => void;
   onRemove: () => void;
 }) {
   return (
@@ -703,7 +703,7 @@ function TransitionCard({
         values={transition.allowedRoles}
         disabled={!canMutate}
         onChange={(allowedRoles) =>
-          onChange(transition.id, { allowedRoles: allowedRoles as GeoProjectWorkflowRole[] })
+          onChange(transition.id, { allowedRoles: allowedRoles as ProjectWorkflowRole[] })
         }
       />
       <TransitionOptions
@@ -713,7 +713,7 @@ function TransitionCard({
         disabled={!canMutate}
         required="update-project"
         onChange={(actions) =>
-          onChange(transition.id, { actions: actions as GeoProjectWorkflowAction[] })
+          onChange(transition.id, { actions: actions as ProjectWorkflowAction[] })
         }
       />
     </div>

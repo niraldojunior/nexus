@@ -4,7 +4,7 @@
 // para que nenhuma página mantenha seu próprio dicionário local duplicado.
 
 import type { GeoSiteRole, GeoSiteStatus, GeoSpec, GeoSpecCategory } from '../services/geoApi';
-import type { GeoProjectStatus } from '../services/geoProjectApi';
+import type { ProjectStatus } from '../services/projectApi';
 
 // --- Status de GeographicSite (5 estados canônicos, PascalCase) -----------------------
 
@@ -20,9 +20,9 @@ export function siteStatusLabel(status: string | undefined): string {
   return SITE_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status ?? '—';
 }
 
-// --- Status de GeoProject (vocabulário separado, 4 estados lowercase) -----------------
+// --- Status de Project (vocabulário separado, 4 estados lowercase) -----------------
 
-export const PROJECT_STATUS_OPTIONS: ReadonlyArray<{ value: GeoProjectStatus; label: string }> = [
+export const PROJECT_STATUS_OPTIONS: ReadonlyArray<{ value: ProjectStatus; label: string }> = [
   { value: 'planned', label: 'Planejado' },
   { value: 'active', label: 'Ativo' },
   { value: 'suspended', label: 'Suspenso' },

@@ -8,40 +8,40 @@ import {
   fetchProjects,
   transitionProject,
   updateProject,
-  type GeoProject,
-  type GeoProjectDeleteSummary,
-  type GeoProjectSiteCascade,
-  type GeoProjectTransitionResult,
-} from '../services/geoProjectApi';
+  type Project,
+  type ProjectDeleteSummary,
+  type ProjectSiteCascade,
+  type ProjectTransitionResult,
+} from '../services/projectApi';
 
 // Dedupe da carga inicial: o backend serializa requisições e o StrictMode monta o componente
 // duas vezes (ver AGENTS.md §3 e useGeoDirectory/useGeoSearchHistory).
-let inFlight: Promise<GeoProject[]> | null = null;
+let inFlight: Promise<Project[]> | null = null;
 
 export type UseGeoProjectsResult = {
-  projects: GeoProject[];
+  projects: Project[];
   loading: boolean;
   reload: () => Promise<void>;
-  create: () => Promise<GeoProject>;
+  create: () => Promise<Project>;
   update: (
     id: string,
     patch: Partial<
-      Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+      Pick<Project, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
     >,
-  ) => Promise<{ siteCascade?: GeoProjectSiteCascade }>;
+  ) => Promise<{ siteCascade?: ProjectSiteCascade }>;
   transition: (
     id: string,
     input: { transitionId?: string; targetStateCode?: string },
-  ) => Promise<GeoProjectTransitionResult>;
-  remove: (id: string) => Promise<GeoProjectDeleteSummary>;
+  ) => Promise<ProjectTransitionResult>;
+  remove: (id: string) => Promise<ProjectDeleteSummary>;
   // Ajuste otimista do contador de locais (criar/remover local de dentro do painel do
   // projeto) — sem isto, `siteCount` só era carregado uma vez no mount e a lista de
   // Projetos mostrava um número desatualizado até um reload de página inteiro.
   adjustSiteCount: (id: string, delta: number) => void;
 };
 
-export function useGeoProjects(): UseGeoProjectsResult {
-  const [projects, setProjects] = useState<GeoProject[]>([]);
+export function useProjects(): UseGeoProjectsResult {
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const mountedRef = useRef(true);
 
@@ -74,7 +74,7 @@ export function useGeoProjects(): UseGeoProjectsResult {
     async (
       id: string,
       patch: Partial<
-        Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+        Pick<Project, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
       >,
     ) => {
       const { siteCascade, ...updated } = await updateProject(id, patch);
@@ -88,7 +88,7 @@ export function useGeoProjects(): UseGeoProjectsResult {
     async (
       id: string,
       input: { transitionId?: string; targetStateCode?: string },
-    ): Promise<GeoProjectTransitionResult> => {
+    ): Promise<ProjectTransitionResult> => {
       const result = await transitionProject(id, input);
       setProjects((current) => current.map((item) => (item.id === id ? result.project : item)));
       return result;

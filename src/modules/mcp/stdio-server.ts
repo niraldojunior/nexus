@@ -1,6 +1,10 @@
 import { config as loadEnv } from 'dotenv';
 import { createInterface } from 'node:readline';
 import { loadConfig } from '../../shared/config/env.js';
+import {
+  buildRequestContextFromBearer,
+  type RequestContext,
+} from '../../shared/http/request-context.js';
 import { createLogger } from '../../shared/logging/logger.js';
 import { createDatabaseClient } from '../../shared/persistence/database-factory.js';
 import { createNexusRuntime, type NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
@@ -19,6 +23,10 @@ const config = loadConfig(process.env);
 configureHrefBaseUrl(config.tmfPublicBaseUrl);
 const logger = createLogger(config.logLevel);
 const db = createDatabaseClient(config.database);
+
+// Identidade do processo stdio, resolvida uma vez no boot a partir de NEXUS_MCP_TOKEN. Sem
+// token o createToolContext cai no contexto somente-leitura (`inventory.reader`).
+let requestContext: RequestContext | undefined;
 
 const writeMessage = (payload: unknown): void => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -84,7 +92,10 @@ const handleRequest = async (
     const result = await module.registry.executeTool(
       name,
       argumentsInput,
-      runtime.createToolContext({ executionMode: 'external-stdio' }),
+      runtime.createToolContext({
+        executionMode: 'external-stdio',
+        ...(requestContext ? { requestContext } : {}),
+      }),
     );
     writeMessage({
       jsonrpc: '2.0',
@@ -103,6 +114,14 @@ const handleRequest = async (
 
 const main = async (): Promise<void> => {
   await db.initialize();
+  const mcpToken = process.env.NEXUS_MCP_TOKEN?.trim();
+  if (mcpToken) {
+    requestContext = await buildRequestContextFromBearer(mcpToken, config);
+  } else {
+    process.stderr.write(
+      'NEXUS_MCP_TOKEN ausente: o servidor MCP opera somente leitura (inventory.reader).\n',
+    );
+  }
   const runtime = await createNexusRuntime(db);
   const module = createNexusMcpModule(runtime);
   const reader = createInterface({

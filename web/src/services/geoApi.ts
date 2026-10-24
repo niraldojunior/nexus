@@ -3,11 +3,12 @@
 // ResourcePage e ServicePage. Não muda o modelo canônico TMF — apenas expõe
 // os dados já existentes para que outras telas resolvam rótulos amigáveis.
 import { bearerToken } from './session';
+import { invalidateMapTiles } from '../utils/mapTileCache';
 import type { VisualIdentity } from './studioGeoApi';
 
 export type { VisualIdentity };
 
-// Vocabulário de GeoProject.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
+// Vocabulário de Project.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
 // que usa o vocabulário canônico de 5 estados abaixo (GeoSiteStatus). Os dois nunca
 // colidem como chave de dicionário porque um é lowercase e o outro PascalCase, mas são
 // domínios diferentes — não use GeoStatus para status de site.
@@ -276,6 +277,16 @@ export async function getJsonOrUndefined<T>(url: string): Promise<T | undefined>
   return (await response.json()) as T;
 }
 
+// Escrita em Location/Site/Address muda posição ou visibilidade no mapa (o backend já regrava o
+// índice por write-through). Vários fluxos chamam estes helpers direto (SiteAddressModal,
+// SiteSubSitesTab, ResourceAddressSection, Studio espacial), então a invalidação do cache de
+// tiles fica aqui, pela URL, em vez de depender de cada tela lembrar (issue #425).
+const MAP_AFFECTING_WRITE = /^\/v1\/geo\/(locations|sites|addresses)(\/|\?|$)/;
+
+function invalidateMapIfGeoWrite(url: string): void {
+  if (MAP_AFFECTING_WRITE.test(url)) invalidateMapTiles();
+}
+
 export async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
@@ -283,7 +294,9 @@ export async function postJson<T = unknown>(url: string, body: unknown): Promise
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`POST ${url} falhou (${response.status})`);
-  return (await response.json()) as T;
+  const result = (await response.json()) as T;
+  invalidateMapIfGeoWrite(url);
+  return result;
 }
 
 export async function patchJson<T = unknown>(url: string, body: unknown): Promise<T> {
@@ -293,12 +306,15 @@ export async function patchJson<T = unknown>(url: string, body: unknown): Promis
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`PATCH ${url} falhou (${response.status})`);
-  return (await response.json()) as T;
+  const result = (await response.json()) as T;
+  invalidateMapIfGeoWrite(url);
+  return result;
 }
 
 export async function deleteJson<T = void>(url: string): Promise<T> {
   const response = await fetch(url, { method: 'DELETE', headers: authHeaders() });
   if (!response.ok) throw new Error(`DELETE ${url} falhou (${response.status})`);
+  invalidateMapIfGeoWrite(url);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

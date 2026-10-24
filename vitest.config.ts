@@ -27,6 +27,8 @@ export default {
       'test/mcp-project.spec.ts',
       'test/catalog-metadata-services.spec.ts',
       'test/mcp-http.spec.ts',
+      'test/mcp-parity.spec.ts',
+      'test/geo-characteristic-backfill.oracle.spec.ts',
       'test/mcp-geo-workflow.spec.ts',
       'test/project.unit.spec.ts',
       'test/order.unit.spec.ts',

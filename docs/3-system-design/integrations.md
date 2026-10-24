@@ -35,6 +35,12 @@
 
 ---
 
+### 2.1 Transportes MCP
+
+O registro de operações MCP é servido por dois transportes com o mesmo handler JSON-RPC (`src/modules/mcp/jsonrpc.ts`): stdio (`npm run mcp:tmf`, identidade por `NEXUS_MCP_TOKEN`) e HTTP `POST /mcp` (Bearer JWT do usuário). Ambos negociam `protocolVersion` (`2025-06-18`, `2025-03-26`, `2024-11-05`), respondem `ping`, não respondem notifications e devolvem `tools/call` como `{content, structuredContent, isError}`. Escrita é sempre prepare → `nexus.confirm_operation`.
+
+---
+
 ## 3. Legados — as fontes da carga inicial
 
 A carga inicial **não vem de uma fonte só**. São três sistemas legados distintos, e a extração é

@@ -48,6 +48,8 @@ const result = spawnSync(
     'test/party-role-type-characteristic.unit.spec.ts',
     'test/mcp.module.spec.ts',
     'test/mcp-http.spec.ts',
+    'test/mcp-parity.spec.ts',
+    'test/geo-characteristic-backfill.oracle.spec.ts',
     'test/mcp-geo-workflow.spec.ts',
     'test/mcp-rbac.spec.ts',
     'test/mcp-domain-operations.spec.ts',

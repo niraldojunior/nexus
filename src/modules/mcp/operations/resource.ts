@@ -1,3 +1,4 @@
+import { AppError } from '../../../shared/errors/app-error.js';
 // Operações de Resource, Planta Interna e Resource Catalog expostas via MCP. Delegam aos services
 // com o RequestContext do ator; catálogo (tipos, regras, nós, specs) exige catalog.admin como as
 // rotas HTTP (C9). Nomes já registrados em module.ts não são repetidos aqui.
@@ -328,6 +329,30 @@ export const registerResourceOperations = (
     (i, c) => svc.getResourceFunctionSpecification(s(i.id), c.requestContext),
   );
 
+  catalogWrite(
+    'bulk_create_resource_specifications',
+    'cria várias Resource Specifications (até 2000); cada item é { line, input }. Falhas por item não abortam o lote.',
+    {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+    (i) =>
+      `${Array.isArray(i.items) ? i.items.length : 0} Resource Specifications serão criadas em lote.`,
+    (i, c) => {
+      const items = Array.isArray(i.items) ? i.items : [];
+      if (items.length === 0 || items.length > 2000) {
+        throw new AppError('items must have between 1 and 2000 entries', {
+          code: 'INVALID_BULK_IMPORT_PAYLOAD',
+          statusCode: 400,
+        });
+      }
+      return svc.bulkCreateResourceSpecifications(items as never, c.requestContext);
+    },
+  );
   // ── Resource Catalog: escrita (catalog.admin) ────────────────────────────────────────────────
   catalogWrite(
     'create_resource_catalog',

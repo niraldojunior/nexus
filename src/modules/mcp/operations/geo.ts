@@ -1,6 +1,7 @@
 // Operações de Geo expostas via MCP. Leitura executa direto; escrita é sempre prepare → commit,
 // e ambos delegam ao GeoService com o RequestContext do ator (RBAC, audit e outbox do service).
 
+import { AppError } from '../../../shared/errors/app-error.js';
 import { createGoogleGeocodingGateway } from '../../geo/geocoding-gateway.js';
 import type { NexusRuntime } from '../../../shared/runtime/nexus-runtime.js';
 import type { McpToolContext, McpToolRegistry } from '../module.js';
@@ -128,6 +129,102 @@ export const registerGeoOperations = (registry: McpToolRegistry, runtime: NexusR
     idSchema({ limit: { type: 'number' }, offset: { type: 'number' } }),
     (i) => tree.children(s(i.id), opt(i, ['limit', 'offset'])),
   );
+  read(
+    'tree_sites_by_address',
+    'Sites já cadastrados em um endereço (rua + número, com cidade/UF/CEP opcionais).',
+    {
+      type: 'object',
+      properties: {
+        street: str,
+        streetNr: str,
+        city: str,
+        stateOrProvince: str,
+        postcode: str,
+        country: str,
+      },
+      required: ['street', 'streetNr'],
+      additionalProperties: false,
+    },
+    (i) =>
+      tree.sitesByAddress({
+        street: s(i.street),
+        streetNr: s(i.streetNr),
+        ...(opt(i, ['city', 'stateOrProvince', 'postcode', 'country']) as Record<string, string>),
+      }),
+  );
+  read(
+    'tree_viewport',
+    'Sites e recursos dentro de uma caixa geográfica (include: sites, resource-points, resource-lines).',
+    {
+      type: 'object',
+      properties: {
+        minLng: { type: 'number' },
+        minLat: { type: 'number' },
+        maxLng: { type: 'number' },
+        maxLat: { type: 'number' },
+        limit: { type: 'number' },
+        include: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['minLng', 'minLat', 'maxLng', 'maxLat'],
+      additionalProperties: false,
+    },
+    async (i) => {
+      const bounds = {
+        minLng: Number(i.minLng),
+        minLat: Number(i.minLat),
+        maxLng: Number(i.maxLng),
+        maxLat: Number(i.maxLat),
+      };
+      const include = Array.isArray(i.include) ? i.include.map(String) : undefined;
+      const wants = (token: string) => include === undefined || include.includes(token);
+      const limit = i.limit !== undefined ? { limit: Number(i.limit) } : {};
+      const [resources, sites] = await Promise.all([
+        wants('resource-points') || wants('resource-lines')
+          ? tree.resourcesInViewport(bounds, {
+              ...limit,
+              shapes: { point: wants('resource-points'), line: wants('resource-lines') },
+            })
+          : Promise.resolve([]),
+        wants('sites') ? tree.sitesInViewport(bounds, limit) : Promise.resolve([]),
+      ]);
+      return [...resources, ...sites];
+    },
+  );
+  read(
+    'tree_schematic',
+    'Caminho esquemático (traceroute da fibra) a partir de um recurso.',
+    idSchema(),
+    (i) => tree.schematicPath(s(i.id)),
+  );
+  read(
+    'get_site_origin',
+    'Origem de um Site: importado (_origin), projeto ou cadastro manual.',
+    idSchema(),
+    async (i, c) => {
+      const siteId = s(i.id);
+      const site = await geo.getSite(siteId, c.requestContext);
+      if (!site)
+        throw new AppError('site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+      const originSystem = site.characteristic.find((x) => x.name === '_origin.system')?.value;
+      if (typeof originSystem === 'string' && originSystem) {
+        return { kind: 'import', system: originSystem };
+      }
+      const project = await runtime.projectRepository.findProjectBySiteId(
+        c.requestContext.tenantId,
+        siteId,
+      );
+      if (project) {
+        return { kind: 'project', projectId: project.projectId, projectName: project.projectName };
+      }
+      const audit = await geo.listSiteAudit(siteId, c.requestContext);
+      const created = audit.find((entry) => entry.action === 'create');
+      return {
+        kind: 'manual',
+        actorSub: created?.actorSub ?? 'desconhecido',
+        createdAt: created?.eventTime ?? '',
+      };
+    },
+  );
   read('tree_path', 'Caminho (ancestrais) até um nó da árvore.', idSchema(), (i) =>
     tree.pathTo(s(i.id)),
   );
@@ -136,19 +233,22 @@ export const registerGeoOperations = (registry: McpToolRegistry, runtime: NexusR
   // resultado serve para o usuário escolher/confirmar antes de um create_address.
   read(
     'geocode_address',
-    'Converte um endereço em texto em coordenada (Google Maps). Use para localizar endereços ainda não cadastrados.',
+    'Converte um endereço em texto em coordenada (Google Maps). Use para localizar endereços ainda não cadastrados. Aceita só CEP + número (sem logradouro).',
     {
       type: 'object',
-      properties: { address: str, city: str, stateOrProvince: str, postcode: str },
-      required: ['address'],
+      properties: { address: str, streetNr: str, city: str, stateOrProvince: str, postcode: str },
       additionalProperties: false,
     },
     async (i) => {
       if (!geocoder.configured) {
         return { status: 'not_configured', source: 'google-geocoding', result: null };
       }
+      if (!i.address && !i.postcode) {
+        return { status: 'not_found', source: 'google-geocoding', result: null };
+      }
       const result = await geocoder.geocode([
         i.address,
+        i.streetNr,
         i.city,
         i.stateOrProvince,
         i.postcode,
@@ -284,6 +384,77 @@ export const registerGeoOperations = (registry: McpToolRegistry, runtime: NexusR
     payloadSchema,
     (i) => `Location ${s(i.id)} será atualizada.`,
     (i, c) => geo.updateLocation(s(i.id), payloadOf(i), c.requestContext),
+  );
+  write(
+    'create_location',
+    'cria uma Geographic Location.',
+    {
+      type: 'object',
+      properties: { payload: { type: 'object', additionalProperties: true } },
+      required: ['payload'],
+      additionalProperties: false,
+    },
+    () => 'Uma Location será criada.',
+    (i, c) => geo.createLocation(payloadOf(i) as never, c.requestContext),
+  );
+  write(
+    'link_resource_to_site',
+    'vincula um recurso a um Site (place do recurso).',
+    {
+      type: 'object',
+      properties: { id: str, resourceId: str },
+      required: ['id', 'resourceId'],
+      additionalProperties: false,
+    },
+    (i) => `Recurso ${s(i.resourceId)} será vinculado ao Site ${s(i.id)}.`,
+    async (i, c) => {
+      const siteId = s(i.id);
+      const resourceId = s(i.resourceId);
+      const site = await geo.getSite(siteId, c.requestContext);
+      if (!site)
+        throw new AppError('site not found', { code: 'GEO_SITE_NOT_FOUND', statusCode: 404 });
+      const resource = await runtime.resourceService.getResource(resourceId, c.requestContext);
+      if (!resource)
+        throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+      const placeInput = { placeId: siteId, placeType: 'GeographicSite' } as never;
+      return resource['@type'] === 'PhysicalResource'
+        ? runtime.resourceService.updatePhysicalResource(resourceId, placeInput, c.requestContext)
+        : runtime.resourceService.updateLogicalResource(resourceId, placeInput, c.requestContext);
+    },
+  );
+  write(
+    'unlink_resource_from_site',
+    'desvincula um recurso do Site (mode=unlink) ou o encerra por soft-delete (mode=terminate).',
+    {
+      type: 'object',
+      properties: {
+        id: str,
+        resourceId: str,
+        mode: { type: 'string', enum: ['unlink', 'terminate'] },
+      },
+      required: ['id', 'resourceId'],
+      additionalProperties: false,
+    },
+    (i) =>
+      i.mode === 'terminate'
+        ? `Recurso ${s(i.resourceId)} será encerrado.`
+        : `Recurso ${s(i.resourceId)} será desvinculado do Site ${s(i.id)}.`,
+    async (i, c) => {
+      const resourceId = s(i.resourceId);
+      const resource = await runtime.resourceService.getResource(resourceId, c.requestContext);
+      if (!resource)
+        throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
+      const physical = resource['@type'] === 'PhysicalResource';
+      if (i.mode === 'terminate') {
+        return physical
+          ? runtime.resourceService.deletePhysicalResource(resourceId, c.requestContext)
+          : runtime.resourceService.deleteLogicalResource(resourceId, c.requestContext);
+      }
+      const unlink = { placeId: null } as never;
+      return physical
+        ? runtime.resourceService.updatePhysicalResource(resourceId, unlink, c.requestContext)
+        : runtime.resourceService.updateLogicalResource(resourceId, unlink, c.requestContext);
+    },
   );
   write(
     'terminate_location',

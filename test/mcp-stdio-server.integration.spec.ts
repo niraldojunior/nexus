@@ -145,15 +145,26 @@ test.skipIf(!oracleConfigured)(
   async () => {
     const server = startStdioServer();
     try {
-      server.send({ id: 1, method: 'initialize' });
+      server.send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
       const initResponse = await server.nextMessage();
       assert.equal(initResponse.id, 1);
       assert.equal((initResponse.result?.serverInfo as { name: string }).name, 'nexus-tmf-mcp');
+      assert.equal(initResponse.result?.protocolVersion, '2025-06-18');
+      assert.deepEqual(initResponse.result?.capabilities, { tools: { listChanged: false } });
+
+      // Notification não tem resposta: a próxima mensagem é a do ping.
+      server.send({ method: 'notifications/initialized' });
+      server.send({ id: 5, method: 'ping' });
+      const pingResponse = await server.nextMessage();
+      assert.equal(pingResponse.id, 5);
+      assert.deepEqual(pingResponse.result, {});
 
       server.send({ id: 2, method: 'tools/list' });
       const listResponse = await server.nextMessage();
       const tools = listResponse.result?.tools as Array<{ name: string }>;
       assert.ok(tools.some((tool) => tool.name === 'geo.list_sites'));
+      assert.ok(tools.some((tool) => tool.name === 'nexus.confirm_operation'));
+      assert.ok(!tools.some((tool) => tool.name.includes('.commit_')));
 
       server.send({
         id: 3,
@@ -161,7 +172,14 @@ test.skipIf(!oracleConfigured)(
         params: { name: 'geo.list_sites', arguments: {} },
       });
       const callResponse = await server.nextMessage();
-      assert.equal((callResponse.result as { ok: boolean }).ok, true);
+      const callResult = callResponse.result as {
+        isError: boolean;
+        content: Array<{ type: string; text: string }>;
+        structuredContent: { ok: boolean };
+      };
+      assert.equal(callResult.isError, false);
+      assert.equal(callResult.content[0]?.type, 'text');
+      assert.equal(callResult.structuredContent.ok, true);
     } finally {
       await server.stop();
       const client = await getOracleTestClient();
@@ -193,9 +211,23 @@ test.skipIf(!oracleConfigured)(
 
       server.send({ id: 4, method: 'tools/call', params: { name: 'missing.tool', arguments: {} } });
       const missingTool = await server.nextMessage();
-      assert.equal((missingTool.result as { ok: boolean }).ok, false);
+      const missing = missingTool.result as {
+        isError: boolean;
+        structuredContent: { error: { code: string } };
+      };
+      assert.equal(missing.isError, true);
+      assert.equal(missing.structuredContent.error.code, 'MCP_TOOL_NOT_FOUND');
+
+      // commit_* não é chamável direto por cliente externo.
+      server.send({
+        id: 5,
+        method: 'tools/call',
+        params: { name: 'geo.commit_create_site', arguments: { confirmationToken: 'x' } },
+      });
+      const directCommit = await server.nextMessage();
       assert.equal(
-        (missingTool.result as { error: { code: string } }).error.code,
+        (directCommit.result as { structuredContent: { error: { code: string } } })
+          .structuredContent.error.code,
         'MCP_TOOL_NOT_FOUND',
       );
     } finally {

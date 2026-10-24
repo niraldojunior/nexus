@@ -32,6 +32,7 @@ import {
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
+import { handleJsonRpcMessage, type JsonRpcRequest } from '../../modules/mcp/jsonrpc.js';
 import { CORE_MODEL_TOOLS } from '../../modules/mcp/module.js';
 import type { GeoService } from '../../modules/geo/service.js';
 import { isProjectInfrastructureResourceType } from '../../modules/project/project-resource-classification.js';
@@ -395,6 +396,28 @@ const routeRequest = async ({
   // Público como /health (readiness do OpenShift/Prometheus não deve exigir bearer token).
   if (request.method === 'GET' && url.pathname === '/metrics') {
     sendText(response, renderPrometheusMetrics());
+    return;
+  }
+
+  // MCP Streamable HTTP (resposta JSON, sem SSE). Mesmo registro, RBAC e identidade do usuário
+  // (Bearer JWT) que o Copilot e o stdio.
+  if (url.pathname === '/mcp') {
+    if (request.method !== 'POST') {
+      response.writeHead(405, { Allow: 'POST' }).end();
+      return;
+    }
+    const mcpContext = await buildRequestContext(request, config);
+    const body = (await readBody(request)) as JsonRpcRequest;
+    const reply = await handleJsonRpcMessage(body, {
+      module: mcpModule,
+      createContext: () =>
+        runtime.createToolContext({ executionMode: 'internal-http', requestContext: mcpContext }),
+    });
+    if (!reply) {
+      response.writeHead(202).end();
+      return;
+    }
+    sendJson(response, 200, reply);
     return;
   }
 
@@ -993,6 +1016,7 @@ const routeRequest = async ({
       mcpModule,
       llmToolCatalog,
       llmRateLimiter,
+      logger,
       url,
     });
     return;
@@ -6369,6 +6393,7 @@ const createLlmProvider = (
   localKnowledgeProvider: LocalKnowledgeProvider,
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>,
   session: ResearchSession,
+  logger: Logger,
 ): ((llmRequest: LLMRequest) => Promise<LLMResponse>) =>
   provider
     ? async (llmRequest) => {
@@ -6386,6 +6411,7 @@ const createLlmProvider = (
           };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
+          logger.warn({ error: errorMsg }, 'LLM request failed; returning local fallback');
           return localKnowledgeProvider
             .invoke({
               ...llmRequest,
@@ -6419,6 +6445,7 @@ const routeResearchRequest = async ({
   mcpModule,
   llmToolCatalog,
   llmRateLimiter,
+  logger,
   url,
 }: {
   request: IncomingMessage;
@@ -6433,6 +6460,7 @@ const routeResearchRequest = async ({
   mcpModule: ReturnType<typeof createNexusMcpModule>;
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
   llmRateLimiter: RateLimiter;
+  logger: Logger;
   url: URL;
 }): Promise<void> => {
   // Sessões de pesquisa/Copilot são por usuário: antes, toda sessão era gravada e lida sob o
@@ -6610,6 +6638,7 @@ const routeResearchRequest = async ({
       localKnowledgeProvider,
       llmToolCatalog,
       session,
+      logger,
     );
 
     // Streaming responses must never throw past this point: headers are already sent, so any
@@ -6672,6 +6701,7 @@ const routeResearchRequest = async ({
       localKnowledgeProvider,
       llmToolCatalog,
       session,
+      logger,
     );
 
     const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
@@ -6873,7 +6903,11 @@ const buildLlmToolCatalog = (
   // Só o núcleo nomeado e as meta-tools; o resto é descoberto via nexus.search_operations.
   const exposed = mcpModule.registry
     .listTools({ exposeToModelOnly: true })
-    .filter((tool) => tool.name.startsWith('nexus.') || CORE_MODEL_TOOLS.has(tool.name));
+    .filter(
+      (tool) =>
+        (tool.name.startsWith('nexus.') && tool.name !== 'nexus.confirm_operation') ||
+        CORE_MODEL_TOOLS.has(tool.name),
+    );
   const tools = exposed.map((tool) => {
     const alias = tool.name.replace(/\./g, '__');
     aliasToToolName.set(alias, tool.name);

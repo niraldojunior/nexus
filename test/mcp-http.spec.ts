@@ -14,6 +14,84 @@ afterEach(() => {
 });
 
 test.skipIf(!oracleConfigured)(
+  'POST /mcp fala JSON-RPC MCP com o RBAC do usuario e nao expoe commit_*',
+  async () => {
+    const app = await startHttpTestApp();
+    try {
+      const init = await app.requestJson('POST', '/mcp', {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18' },
+      });
+      assert.equal(init.statusCode, 200);
+      const initResult = (init.body as { result: Record<string, unknown> }).result;
+      assert.equal(initResult.protocolVersion, '2025-06-18');
+      assert.deepEqual(initResult.capabilities, { tools: { listChanged: false } });
+
+      const notification = await app.requestJson('POST', '/mcp', {
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      });
+      assert.equal(notification.statusCode, 202);
+
+      const list = await app.requestJson('POST', '/mcp', {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/list',
+      });
+      const tools = (list.body as { result: { tools: Array<{ name: string }> } }).result.tools;
+      assert.ok(tools.some((tool) => tool.name === 'nexus.confirm_operation'));
+      assert.ok(!tools.some((tool) => tool.name.includes('.commit_')));
+
+      const call = await app.requestJson('POST', '/mcp', {
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'geo.list_sites', arguments: {} },
+      });
+      const callResult = (
+        call.body as { result: { isError: boolean; structuredContent: { ok: boolean } } }
+      ).result;
+      assert.equal(callResult.isError, false);
+      assert.equal(callResult.structuredContent.ok, true);
+
+      const direct = await app.requestJson('POST', '/mcp', {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: { name: 'geo.commit_create_site', arguments: { confirmationToken: 'x' } },
+      });
+      assert.equal(
+        (direct.body as { result: { structuredContent: { error: { code: string } } } }).result
+          .structuredContent.error.code,
+        'MCP_TOOL_NOT_FOUND',
+      );
+
+      const confirm = await app.requestJson('POST', '/mcp', {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'nexus.confirm_operation',
+          arguments: { confirmationToken: 'inexistente' },
+        },
+      });
+      assert.equal(
+        (confirm.body as { result: { structuredContent: { error: { code: string } } } }).result
+          .structuredContent.error.code,
+        'MCP_CONFIRMATION_NOT_FOUND',
+      );
+
+      const get = await app.requestJson('GET', '/mcp');
+      assert.equal(get.statusCode, 405);
+    } finally {
+      await app.cleanup();
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
   'Copilot consulta sites via MCP e devolve dados reais do inventario',
   async () => {
     process.env.OPENAI_API_KEY = 'test-key';
@@ -866,7 +944,7 @@ test.skipIf(!oracleConfigured)(
             ?.function?.name
         : undefined;
 
-      if (lastMessage?.role === 'tool' && firstToolName === 'resource__delete_equipment_model') {
+      if (lastMessage?.role === 'tool' && firstToolName === 'nexus__invoke_operation') {
         const prepared = JSON.parse(String(lastMessage.content)) as {
           data: { confirmationToken: string };
         };
@@ -913,7 +991,7 @@ test.skipIf(!oracleConfigured)(
         Array.isArray(body.tools) &&
         body.tools.some(
           (tool: { function?: { name?: string } }) =>
-            tool.function?.name === 'resource__delete_equipment_model',
+            tool.function?.name === 'nexus__invoke_operation',
         )
       ) {
         return new Response(
@@ -929,12 +1007,15 @@ test.skipIf(!oracleConfigured)(
                       id: 'call-delete-equipment-model',
                       type: 'function',
                       function: {
-                        name: 'resource__delete_equipment_model',
+                        name: 'nexus__invoke_operation',
                         arguments: JSON.stringify({
-                          payload: {
-                            model,
-                            manufacturerName,
-                            equipmentType: 'ONT',
+                          name: 'resource.delete_equipment_model',
+                          input: {
+                            payload: {
+                              model,
+                              manufacturerName,
+                              equipmentType: 'ONT',
+                            },
                           },
                         }),
                       },
@@ -961,12 +1042,15 @@ test.skipIf(!oracleConfigured)(
                     id: 'call-delete-equipment-model',
                     type: 'function',
                     function: {
-                      name: 'resource__delete_equipment_model',
+                      name: 'nexus__invoke_operation',
                       arguments: JSON.stringify({
-                        payload: {
-                          model,
-                          manufacturerName,
-                          equipmentType: 'ONT',
+                        name: 'resource.delete_equipment_model',
+                        input: {
+                          payload: {
+                            model,
+                            manufacturerName,
+                            equipmentType: 'ONT',
+                          },
                         },
                       }),
                     },

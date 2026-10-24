@@ -1,4 +1,5 @@
 import { AppError } from '../../shared/errors/app-error.js';
+import { isProjectInfrastructureResourceType } from '../project/project-resource-classification.js';
 import type { NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import type { Characteristic, TmfEventQuery } from '../../shared/tmf/index.js';
 import type { CreatePartyInput, CreatePartyRoleInput, PartyQuery } from '../party/index.js';
@@ -26,7 +27,9 @@ import {
   INVENTORY_WRITE_ROLES,
   ORDER_READ_ROLES,
   ORDER_REQUEST_ROLES,
+  PROJECT_READ_ROLES,
   STUDIO_READ_ROLES,
+  USER_ADMIN_ROLES,
 } from '../../shared/http/roles.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
 import { registerGeoOperations } from './operations/geo.js';
@@ -184,6 +187,48 @@ export class McpToolRegistry {
     } catch (error) {
       return this.normalizeError(tool.name, context, error);
     }
+  }
+
+  // Porta dos clientes externos (stdio/HTTP): os `commit_*` não são chamáveis diretamente; a
+  // escrita só se efetiva por `nexus.confirm_operation`.
+  public async executeExternal(
+    name: string,
+    input: Record<string, unknown>,
+    context: McpToolContext,
+  ): Promise<McpToolResult> {
+    if (this.tools.get(name)?.exposeToModel === false) {
+      return this.errorResult(
+        'mcp',
+        'execute_tool',
+        context,
+        'MCP_TOOL_NOT_FOUND',
+        `tool ${name} not found`,
+      );
+    }
+    return await this.executeTool(name, input, context);
+  }
+
+  // Efetiva uma operação preparada. O token é vinculado a actorSub/tenantId em commitMutation;
+  // o commit reaplica o RBAC da operação de destino.
+  public async confirmOperation(
+    confirmationToken: string,
+    context: McpToolContext,
+  ): Promise<McpToolResult> {
+    const pending = await this.confirmations.get(confirmationToken);
+    if (!pending || pending.context.actorSub !== context.requestContext.actorSub) {
+      return this.errorResult(
+        'nexus',
+        'confirm_operation',
+        context,
+        'MCP_CONFIRMATION_NOT_FOUND',
+        'confirmation token not found',
+      );
+    }
+    return await this.executeTool(
+      `${pending.domain}.commit_${pending.operation}`,
+      { confirmationToken },
+      context,
+    );
   }
 
   // Operações descobríveis: tudo que o modelo pode acionar (exclui commit_* e as próprias
@@ -429,6 +474,21 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   const registry = new McpToolRegistry(confirmations);
   const geocoder = createGoogleGeocodingGateway();
 
+  const pageSchema = (extra: Record<string, JsonSchema> = {}): JsonSchema => ({
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      limit: { type: 'number' },
+      offset: { type: 'number' },
+      ...extra,
+    },
+    required: ['id'],
+    additionalProperties: false,
+  });
+  const pageArgs = (input: Record<string, unknown>, max: number, fallback: number) => ({
+    limit: Math.min(Math.max(Number(input.limit ?? fallback) || fallback, 1), max),
+    offset: Math.max(Number(input.offset ?? 0) || 0, 0),
+  });
   const projectIdSchema: JsonSchema = {
     type: 'object',
     properties: { id: { type: 'string' } },
@@ -1005,6 +1065,176 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     required: ['payload'],
     additionalProperties: false,
   };
+  // Leituras de apoio do workspace de Projetos (mesmos dados das rotas /v1/projects/:id/*).
+  registry.register({
+    name: 'project.list_project_areas',
+    description: 'Manchas de concentração/dispersão de um projeto (somente leitura).',
+    inputSchema: projectIdSchema,
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) =>
+      registry.successResult('project', 'list_project_areas', context, {
+        areas: await runtime.projectRepository.listAreas(
+          context.requestContext.tenantId,
+          String(input.id),
+        ),
+      }),
+  });
+  registry.register({
+    name: 'project.search_project_items',
+    description:
+      'Busca locais e recursos de um projeto por texto (mín. 2 caracteres); scope: all, sites, infrastructure ou resources.',
+    inputSchema: pageSchema({
+      q: { type: 'string' },
+      scope: { type: 'string', enum: ['all', 'sites', 'infrastructure', 'resources'] },
+    }),
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) => {
+      const { limit, offset } = pageArgs(input, 20, 20);
+      const query = String(input.q ?? '')
+        .trim()
+        .toLocaleLowerCase();
+      if (query.length < 2) {
+        return registry.successResult('project', 'search_project_items', context, {
+          items: [],
+          offset,
+          limit,
+          hasMore: false,
+        });
+      }
+      const scope =
+        input.scope === 'sites' || input.scope === 'infrastructure' || input.scope === 'resources'
+          ? input.scope
+          : 'all';
+      const matches = await runtime.projectRepository.searchItems(
+        context.requestContext.tenantId,
+        String(input.id),
+        query,
+        limit + 1,
+        scope,
+      );
+      const page = matches.slice(offset, offset + limit);
+      const [sites, resources] = await Promise.all([
+        runtime.geoTreeService.sitesByIds(
+          page.filter((item) => item.kind === 'site').map((item) => item.id),
+        ),
+        runtime.geoTreeService.resourcesByIds(
+          page.filter((item) => item.kind === 'resource').map((item) => item.id),
+        ),
+      ]);
+      const byKey = new Map(
+        [...sites, ...resources].map((item) => [`${item.kind}:${item.refId ?? item.id}`, item]),
+      );
+      const items = page
+        .map((item) => byKey.get(`${item.kind}:${item.id}`))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+      return registry.successResult('project', 'search_project_items', context, {
+        items,
+        offset,
+        limit,
+        hasMore: matches.length > offset + limit,
+      });
+    },
+  });
+  registry.register({
+    name: 'project.list_project_resource_candidates',
+    description:
+      'Recursos que podem ser vinculados ao projeto (livres ou já neste projeto); q filtra por nome.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' }, q: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) => {
+      const projectId = String(input.id);
+      const query = String(input.q ?? '').trim();
+      const resources = await runtime.resourceService.listResources(
+        { ...(query ? { name: query } : {}), limit: 50 },
+        context.requestContext,
+      );
+      const available = [];
+      for (const resource of resources) {
+        const linked = await runtime.projectRepository.findOpenProjectByResourceId(
+          context.requestContext.tenantId,
+          resource.id,
+        );
+        if (!linked || linked.projectId === projectId) available.push(resource);
+      }
+      return registry.successResult(
+        'project',
+        'list_project_resource_candidates',
+        context,
+        available,
+      );
+    },
+  });
+  registry.register({
+    name: 'project.get_resource_creation_options',
+    description:
+      'Tipos e especificações de recurso que podem ser criados dentro do projeto (catálogo ativo).',
+    inputSchema: projectIdSchema,
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) => {
+      const project = await runtime.projectRepository.get(
+        context.requestContext.tenantId,
+        String(input.id),
+      );
+      if (!project || project.archivedAt) {
+        throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
+      }
+      const catalogs = await runtime.resourceService.listResourceCatalogs(
+        { status: 'active' },
+        context.requestContext,
+      );
+      const catalog = catalogs.find((item) => item.isDefault) ?? catalogs[0];
+      if (!catalog) {
+        return registry.successResult('project', 'get_resource_creation_options', context, {
+          catalog: null,
+          resourceTypes: [],
+          resourceSpecifications: [],
+        });
+      }
+      const source = await runtime.resourceService.getResourceModelSnapshotSource(
+        catalog.id,
+        context.requestContext,
+      );
+      const modeledTypeIds = new Set(
+        source.nodes.flatMap((node) =>
+          node.kind === 'RESOURCE_TYPE' && node.status === 'active' && node.resourceTypeId
+            ? [node.resourceTypeId]
+            : [],
+        ),
+      );
+      const resourceTypes = source.resourceTypes
+        .filter((item) => item.status === 'active' && modeledTypeIds.has(item.id))
+        .map((item) => ({
+          id: item.id,
+          code: item.code,
+          name: item.name,
+          nature: item.nature,
+          infrastructureEligible: isProjectInfrastructureResourceType(item.code),
+        }));
+      const typeIds = new Set(resourceTypes.map((item) => item.id));
+      const specifications = [];
+      for (let offset = 0; ; offset += 500) {
+        const page = await runtime.resourceService.listResourceSpecifications(
+          { limit: 500, offset },
+          context.requestContext,
+        );
+        specifications.push(...page);
+        if (page.length < 500) break;
+      }
+      return registry.successResult('project', 'get_resource_creation_options', context, {
+        catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+        resourceTypes,
+        resourceSpecifications: specifications
+          .filter((item) => typeIds.has(item.resourceTypeId))
+          .map((item) => ({ id: item.id, name: item.name, resourceTypeId: item.resourceTypeId })),
+      });
+    },
+  });
+
   registerPreparationAlias(
     'project.create_project',
     'Prepara a criação de um projeto. Retorna confirmationToken para commit.',
@@ -1088,6 +1318,190 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     required: ['id', ...required],
     additionalProperties: false,
   });
+
+  // Workflow e catálogo de status de projeto (mesmas regras e papéis das rotas /v1/geo/project-*).
+  registry.register({
+    name: 'project.get_project_workflow',
+    description: 'Consulta o workflow de projetos (transições permitidas por status).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (_input, context) =>
+      registry.successResult(
+        'project',
+        'get_project_workflow',
+        context,
+        await runtime.projectWorkflowService.getWorkflow(context.requestContext),
+      ),
+  });
+  registry.register({
+    name: 'project.list_project_statuses',
+    description: 'Lista o catálogo de status de projeto do tenant.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    requiredRoles: USER_ADMIN_ROLES,
+    handler: async (_input, context) =>
+      registry.successResult(
+        'project',
+        'list_project_statuses',
+        context,
+        await runtime.projectRepository.listStatusCatalog(context.requestContext.tenantId),
+      ),
+  });
+  const statusBehaviors = ['planning', 'execution', 'suspended', 'close-release'];
+  const statusError = (message: string, code: string, statusCode = 409) =>
+    new AppError(message, { code, statusCode });
+  const registerStatusWrite = (
+    operation: string,
+    description: string,
+    inputSchema: JsonSchema,
+    summarize: (input: Record<string, unknown>) => string,
+    validate: (input: Record<string, unknown>) => void,
+    execute: (input: Record<string, unknown>, context: McpToolContext) => Promise<unknown>,
+  ) => {
+    registry.register({
+      name: `project.${operation}`,
+      description: `Prepara: ${description} Retorna confirmationToken; a execução exige confirmação do usuário.`,
+      inputSchema,
+      requiredRoles: USER_ADMIN_ROLES,
+      handler: (input, context) =>
+        registry.prepareMutation('project', operation, input, context, () => {
+          validate(input);
+          return { summary: summarize(input) };
+        }),
+    });
+    registry.register({
+      name: `project.commit_${operation}`,
+      description: `Confirma e executa: ${description}`,
+      inputSchema: confirmationTokenSchema,
+      requiredRoles: USER_ADMIN_ROLES,
+      handler: (input, context) =>
+        registry.commitMutation(
+          'project',
+          operation,
+          String(input.confirmationToken),
+          context,
+          (pending) => {
+            validate(pending.payload);
+            return execute(pending.payload, context);
+          },
+        ),
+    });
+  };
+  const behaviorEnum: JsonSchema = { type: 'string', enum: statusBehaviors };
+  registerStatusWrite(
+    'create_project_status',
+    'cria um status no catálogo de projetos.',
+    {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        behavior: behaviorEnum,
+        sortOrder: { type: 'number' },
+        active: { type: 'boolean' },
+      },
+      required: ['name', 'behavior'],
+      additionalProperties: false,
+    },
+    (i) => `Status de projeto "${String(i.name)}" será criado.`,
+    (i) => {
+      if (!String(i.name ?? '').trim() || !statusBehaviors.includes(String(i.behavior))) {
+        throw statusError(
+          'project status name and behavior are required',
+          'PROJECT_STATUS_CATALOG_INVALID',
+          400,
+        );
+      }
+      if (i.behavior === 'close-release') {
+        throw statusError(
+          'only status code 17 can close a project',
+          'PROJECT_STATUS_TERMINAL_RESERVED',
+        );
+      }
+    },
+    (i, c) =>
+      runtime.projectRepository.createStatusCatalogItem(c.requestContext.tenantId, {
+        name: String(i.name).trim(),
+        sortOrder: Number(i.sortOrder ?? 1000),
+        active: i.active !== false,
+        behavior: i.behavior as 'planning' | 'execution' | 'suspended' | 'close-release',
+      }),
+  );
+  const validateStatusChange = (i: Record<string, unknown>, deleting: boolean) => {
+    const code = String(i.code);
+    const behavior = deleting ? undefined : i.behavior;
+    const deactivating = deleting || i.active === false;
+    if (behavior !== undefined && !statusBehaviors.includes(String(behavior))) {
+      throw statusError('invalid project status behavior', 'PROJECT_STATUS_CATALOG_INVALID', 400);
+    }
+    if (code === '1' && deactivating) {
+      throw statusError(
+        'default project status cannot be deactivated',
+        'PROJECT_STATUS_DEFAULT_PROTECTED',
+      );
+    }
+    if (
+      code === '17' &&
+      ((behavior !== undefined && behavior !== 'close-release') || deactivating)
+    ) {
+      throw statusError('project closing status is protected', 'PROJECT_STATUS_TERMINAL_PROTECTED');
+    }
+    if (code !== '17' && behavior === 'close-release') {
+      throw statusError(
+        'only status code 17 can close a project',
+        'PROJECT_STATUS_TERMINAL_RESERVED',
+      );
+    }
+  };
+  const statusChange = async (
+    i: Record<string, unknown>,
+    context: McpToolContext,
+    patch: Record<string, unknown>,
+  ) => {
+    const updated = await runtime.projectRepository.updateStatusCatalogItem(
+      context.requestContext.tenantId,
+      String(i.code),
+      patch as never,
+    );
+    if (!updated) throw statusError('project status not found', 'PROJECT_STATUS_NOT_FOUND', 404);
+    return updated;
+  };
+  registerStatusWrite(
+    'update_project_status',
+    'atualiza um status do catálogo de projetos.',
+    {
+      type: 'object',
+      properties: {
+        code: { type: 'string' },
+        name: { type: 'string' },
+        behavior: behaviorEnum,
+        sortOrder: { type: 'number' },
+        active: { type: 'boolean' },
+      },
+      required: ['code'],
+      additionalProperties: false,
+    },
+    (i) => `Status de projeto ${String(i.code)} será atualizado.`,
+    (i) => validateStatusChange(i, false),
+    (i, c) =>
+      statusChange(i, c, {
+        ...(i.name !== undefined ? { name: String(i.name).trim() } : {}),
+        ...(i.sortOrder !== undefined ? { sortOrder: Number(i.sortOrder) } : {}),
+        ...(i.active !== undefined ? { active: Boolean(i.active) } : {}),
+        ...(i.behavior !== undefined ? { behavior: i.behavior } : {}),
+      }),
+  );
+  registerStatusWrite(
+    'delete_project_status',
+    'desativa (soft-delete) um status do catálogo de projetos.',
+    {
+      type: 'object',
+      properties: { code: { type: 'string' } },
+      required: ['code'],
+      additionalProperties: false,
+    },
+    (i) => `Status de projeto ${String(i.code)} será desativado.`,
+    (i) => validateStatusChange(i, true),
+    (i, c) => statusChange(i, c, { active: false }),
+  );
 
   registerProjectWrite(
     'update_project',
@@ -1214,21 +1628,6 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     },
   );
 
-  const pageSchema = (extra: Record<string, JsonSchema> = {}): JsonSchema => ({
-    type: 'object',
-    properties: {
-      id: { type: 'string' },
-      limit: { type: 'number' },
-      offset: { type: 'number' },
-      ...extra,
-    },
-    required: ['id'],
-    additionalProperties: false,
-  });
-  const pageArgs = (input: Record<string, unknown>, max: number, fallback: number) => ({
-    limit: Math.min(Math.max(Number(input.limit ?? fallback) || fallback, 1), max),
-    offset: Math.max(Number(input.offset ?? 0) || 0, 0),
-  });
   registry.register({
     name: 'project.get_project_transitions',
     description: 'Lista as transições de workflow que o usuário pode executar no projeto.',
@@ -3250,6 +3649,23 @@ const META_TOOL_ROLES = [
 ] as const;
 
 const registerOperationMetaTools = (registry: McpToolRegistry): void => {
+  // Só para clientes externos (stdio/HTTP). No Copilot o commit é o botão de confirmação da UI,
+  // por isso a tool fica fora de CORE_MODEL_TOOLS e do catálogo do modelo (ver app.ts).
+  registry.register({
+    name: 'nexus.confirm_operation',
+    requiredRoles: META_TOOL_ROLES,
+    description:
+      'Confirma e executa uma operação de escrita preparada, usando o confirmationToken devolvido por invoke_operation. Só chame depois que o usuário aprovar o resumo.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.confirmOperation(String(input.confirmationToken), context),
+  });
+
   registry.register({
     name: 'nexus.search_operations',
     requiredRoles: META_TOOL_ROLES,

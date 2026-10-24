@@ -113,6 +113,10 @@ uma vez, mas não protege uma chamada de serviço que não passe pela rota (é e
 caminho MCP/Copilot, [#100](https://github.com/niraldojunior/nexus/issues/100)). Migrar esses quatro módulos para o padrão do Geo é trabalho
 futuro, não urgente enquanto o único outro chamador (MCP) ainda não passa por RBAC nenhum.
 
+### 3.1 RBAC no MCP e no Copilot (épico #387)
+
+O MCP (stdio, `POST /mcp` e Copilot) executa com o `RequestContext` do usuário — `actorSub`, `tenantId` e papéis —, nunca com um usuário padrão. Cada operação declara `requiredRoles`, espelhando o gate da rota HTTP equivalente (`src/shared/http/roles.ts`); a checagem roda no prepare e no commit e devolve `MCP_FORBIDDEN` com os papéis exigidos. `nexus.search_operations` lista só o que o usuário pode executar. O `confirmationToken` fica vinculado a `actorSub` e `tenantId`, expira em 30 minutos e é consumido atomicamente. As operações `commit_*` não são expostas ao modelo; só o clique do usuário (Copilot) ou `nexus.confirm_operation` (cliente externo) as aciona, de modo que audit e outbox registram o ator real. `test/mcp-parity.spec.ts` impede que uma rota do frontend surja sem operação MCP correspondente.
+
 ---
 
 ## 4. Isolamento multi-tenant — imposto, não combinado

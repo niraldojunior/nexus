@@ -32,9 +32,9 @@ import {
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
+import { handleJsonRpcMessage, type JsonRpcRequest } from '../../modules/mcp/jsonrpc.js';
 import { CORE_MODEL_TOOLS } from '../../modules/mcp/module.js';
 import type { GeoService } from '../../modules/geo/service.js';
-import { isProjectInfrastructureResourceType } from '../../modules/project/project-resource-classification.js';
 import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
 import { promisify } from 'node:util';
@@ -395,6 +395,28 @@ const routeRequest = async ({
   // Público como /health (readiness do OpenShift/Prometheus não deve exigir bearer token).
   if (request.method === 'GET' && url.pathname === '/metrics') {
     sendText(response, renderPrometheusMetrics());
+    return;
+  }
+
+  // MCP Streamable HTTP (resposta JSON, sem SSE). Mesmo registro, RBAC e identidade do usuário
+  // (Bearer JWT) que o Copilot e o stdio.
+  if (url.pathname === '/mcp') {
+    if (request.method !== 'POST') {
+      response.writeHead(405, { Allow: 'POST' }).end();
+      return;
+    }
+    const mcpContext = await buildRequestContext(request, config);
+    const body = (await readBody(request)) as JsonRpcRequest;
+    const reply = await handleJsonRpcMessage(body, {
+      module: mcpModule,
+      createContext: () =>
+        runtime.createToolContext({ executionMode: 'internal-http', requestContext: mcpContext }),
+    });
+    if (!reply) {
+      response.writeHead(202).end();
+      return;
+    }
+    sendJson(response, 200, reply);
     return;
   }
 
@@ -993,6 +1015,7 @@ const routeRequest = async ({
       mcpModule,
       llmToolCatalog,
       llmRateLimiter,
+      logger,
       url,
     });
     return;
@@ -1824,90 +1847,30 @@ const routeGeoRequest = async ({
   // um DELETE físico (C6). A exclusão da Hierarquia é feita no próprio GeoTreeService
   // (PROJECT_SITE_EXCLUSION_SQL).
   if (url.pathname === '/v1/geo/project-statuses') {
-    requireRoles(geoContext, USER_ADMIN_ROLES);
     if (request.method === 'GET') {
-      return sendJson(
-        response,
-        200,
-        await runtime.projectRepository.listStatusCatalog(geoContext.tenantId),
-      );
+      return sendJson(response, 200, await runtime.projectService.listStatuses(geoContext));
     }
     if (request.method === 'POST') {
       const body = await readBody(request);
-      const name = String(body.name ?? '').trim();
-      const behavior = parseProjectStatusBehavior(body.behavior);
-      if (!name || !behavior) {
-        throw new AppError('project status name and behavior are required', {
-          code: 'PROJECT_STATUS_CATALOG_INVALID',
-          statusCode: 400,
-        });
-      }
-      if (behavior === 'close-release') {
-        throw new AppError('only status code 17 can close a project', {
-          code: 'PROJECT_STATUS_TERMINAL_RESERVED',
-          statusCode: 409,
-        });
-      }
-      return sendJson(
-        response,
-        201,
-        await runtime.projectRepository.createStatusCatalogItem(geoContext.tenantId, {
-          name,
-          sortOrder: Number(body.sortOrder ?? 1000),
-          active: body.active !== false,
-          behavior,
-        }),
-      );
+      return sendJson(response, 201, await runtime.projectService.createStatus(body, geoContext));
     }
   }
 
   const projectStatusCatalogMatch = url.pathname.match(/^\/v1\/geo\/project-statuses\/([^/]+)$/);
   if (projectStatusCatalogMatch?.[1]) {
-    requireRoles(geoContext, USER_ADMIN_ROLES);
     const code = decodeURIComponent(projectStatusCatalogMatch[1]);
     if (request.method === 'PATCH' || request.method === 'DELETE') {
       const body = request.method === 'PATCH' ? await readBody(request) : {};
-      const behavior =
-        body.behavior === undefined ? undefined : parseProjectStatusBehavior(body.behavior);
-      if (code === '1' && body.active === false) {
-        throw new AppError('default project status cannot be deactivated', {
-          code: 'PROJECT_STATUS_DEFAULT_PROTECTED',
-          statusCode: 409,
-        });
-      }
-      if (
-        code === '17' &&
-        ((behavior !== undefined && behavior !== 'close-release') || body.active === false)
-      ) {
-        throw new AppError('project closing status is protected', {
-          code: 'PROJECT_STATUS_TERMINAL_PROTECTED',
-          statusCode: 409,
-        });
-      }
-      if (code !== '17' && behavior === 'close-release') {
-        throw new AppError('only status code 17 can close a project', {
-          code: 'PROJECT_STATUS_TERMINAL_RESERVED',
-          statusCode: 409,
-        });
-      }
-      const updated = await runtime.projectRepository.updateStatusCatalogItem(
-        geoContext.tenantId,
-        code,
-        request.method === 'DELETE'
-          ? { active: false }
-          : {
-              ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
-              ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
-              ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
-              ...(behavior !== undefined ? { behavior } : {}),
-            },
+      return sendJson(
+        response,
+        200,
+        await runtime.projectService.updateStatus(
+          code,
+          body,
+          geoContext,
+          request.method === 'DELETE',
+        ),
       );
-      if (!updated)
-        throw new AppError('project status not found', {
-          code: 'PROJECT_STATUS_NOT_FOUND',
-          statusCode: 404,
-        });
-      return sendJson(response, 200, updated);
     }
   }
 
@@ -1969,59 +1932,12 @@ const routeGeoRequest = async ({
     /^\/v1\/geo\/projects\/([^/]+)\/resource-creation-options$/,
   );
   if (request.method === 'GET' && projectResourceCreationOptionsMatch?.[1]) {
-    requireRoles(geoContext, PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectResourceCreationOptionsMatch[1]);
-    const project = await runtime.projectRepository.get(geoContext.tenantId, projectId);
-    if (!project || project.archivedAt) {
-      throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
-    }
-    const catalogs = await runtime.resourceService.listResourceCatalogs(
-      { status: 'active' },
-      geoContext,
+    return sendJson(
+      response,
+      200,
+      await runtime.projectService.getResourceCreationOptions(projectId, geoContext),
     );
-    const catalog = catalogs.find((item) => item.isDefault) ?? catalogs[0];
-    if (!catalog) {
-      return sendJson(response, 200, {
-        catalog: null,
-        resourceTypes: [],
-        resourceSpecifications: [],
-      });
-    }
-    const source = await runtime.resourceService.getResourceModelSnapshotSource(
-      catalog.id,
-      geoContext,
-    );
-    const modeledTypeIds = new Set(
-      source.nodes.flatMap((node) =>
-        node.kind === 'RESOURCE_TYPE' && node.status === 'active' && node.resourceTypeId
-          ? [node.resourceTypeId]
-          : [],
-      ),
-    );
-    const resourceTypes = source.resourceTypes
-      .filter((item) => item.status === 'active' && modeledTypeIds.has(item.id))
-      .map((item) => ({
-        id: item.id,
-        code: item.code,
-        name: item.name,
-        nature: item.nature,
-        infrastructureEligible: isProjectInfrastructureResourceType(item.code),
-      }));
-    const resourceTypeIds = new Set(resourceTypes.map((item) => item.id));
-    const resourceSpecifications = (
-      await loadAllResourceSpecifications(runtime.resourceService, geoContext)
-    )
-      .filter((item) => resourceTypeIds.has(item.resourceTypeId))
-      .map((item) => ({
-        id: item.id,
-        name: item.name,
-        resourceTypeId: item.resourceTypeId,
-      }));
-    return sendJson(response, 200, {
-      catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
-      resourceTypes,
-      resourceSpecifications,
-    });
   }
 
   // Manchas de concentração/dispersão do projeto (REQ-MOD01-017), geradas por
@@ -2033,20 +1949,21 @@ const routeGeoRequest = async ({
   if (projectResourcesMatch?.[1]) {
     const projectId = decodeURIComponent(projectResourcesMatch[1]);
     if (request.method === 'GET') {
-      requireRoles(geoContext, PROJECT_READ_ROLES);
       const limit = Math.min(
         Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 50, 1),
         100,
       );
       const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
       const view = url.searchParams.get('view') === 'infrastructure' ? 'infrastructure' : 'all';
-      const links = await runtime.projectRepository.listResourceLinks(
-        geoContext.tenantId,
-        projectId,
-        { limit, offset, view },
+      return sendJson(
+        response,
+        200,
+        await runtime.projectService.listProjectResources(
+          projectId,
+          { limit, offset, view },
+          geoContext,
+        ),
       );
-      const items = await geoTreeService.resourcesByIds(links.map((link) => link.resourceId));
-      return sendJson(response, 200, { items, offset, limit, hasMore: links.length === limit });
     }
     if (request.method === 'POST') {
       const body = await readBody(request);
@@ -2079,79 +1996,48 @@ const routeGeoRequest = async ({
 
   const projectSearchMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/search$/);
   if (projectSearchMatch?.[1] && request.method === 'GET') {
-    requireRoles(geoContext, PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectSearchMatch[1]);
-    const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase();
-    const scopeParam = url.searchParams.get('scope');
-    const scope =
-      scopeParam === 'sites' || scopeParam === 'infrastructure' || scopeParam === 'resources'
-        ? scopeParam
-        : 'all';
     const limit = Math.min(
       Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 20, 1),
       20,
     );
     const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
-    if (query.length < 2)
-      return sendJson(response, 200, { items: [], offset, limit, hasMore: false });
-    const matches = await runtime.projectRepository.searchItems(
-      geoContext.tenantId,
-      projectId,
-      query,
-      limit + 1,
-      scope,
-    );
-    const page = matches.slice(offset, offset + limit);
-    const [sites, resources] = await Promise.all([
-      geoTreeService.sitesByIds(page.filter((item) => item.kind === 'site').map((item) => item.id)),
-      geoTreeService.resourcesByIds(
-        page.filter((item) => item.kind === 'resource').map((item) => item.id),
+    return sendJson(
+      response,
+      200,
+      await runtime.projectService.searchItems(
+        projectId,
+        {
+          q: url.searchParams.get('q') ?? '',
+          scope: url.searchParams.get('scope'),
+          limit,
+          offset,
+        },
+        geoContext,
       ),
-    ]);
-    const byKey = new Map(
-      [...sites, ...resources].map((item) => [`${item.kind}:${item.refId ?? item.id}`, item]),
     );
-    const items = page
-      .map((item) => byKey.get(`${item.kind}:${item.id}`))
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-    return sendJson(response, 200, {
-      items,
-      offset,
-      limit,
-      hasMore: matches.length > offset + limit,
-    });
   }
 
   const projectCandidatesMatch = url.pathname.match(
     /^\/v1\/geo\/projects\/([^/]+)\/resource-candidates$/,
   );
   if (projectCandidatesMatch?.[1] && request.method === 'GET') {
-    requireRoles(geoContext, PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectCandidatesMatch[1]);
-    const query = (url.searchParams.get('q') ?? '').trim();
-    const resources = await runtime.resourceService.listResources(
-      {
-        ...(query ? { name: query } : {}),
-        limit: 50,
-      },
-      geoContext,
+    return sendJson(
+      response,
+      200,
+      await runtime.projectService.listResourceCandidates(
+        projectId,
+        url.searchParams.get('q') ?? '',
+        geoContext,
+      ),
     );
-    const available = [] as Resource[];
-    for (const resource of resources) {
-      const linked = await runtime.projectRepository.findOpenProjectByResourceId(
-        geoContext.tenantId,
-        resource.id,
-      );
-      if (!linked || linked.projectId === projectId) available.push(resource);
-    }
-    return sendJson(response, 200, available);
   }
 
   const projectAreasMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/areas$/);
   if (projectAreasMatch?.[1] && request.method === 'GET') {
     const projectId = decodeURIComponent(projectAreasMatch[1]);
-    requireRoles(geoContext, PROJECT_READ_ROLES);
-    const areas = await runtime.projectRepository.listAreas(geoContext.tenantId, projectId);
+    const areas = await runtime.projectService.listAreas(projectId, geoContext);
     return sendJson(response, 200, { areas });
   }
 
@@ -4942,24 +4828,6 @@ const parseOptionalNumber = (value: string | null): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const PROJECT_STATUS_BEHAVIORS = ['planning', 'execution', 'suspended', 'close-release'] as const;
-
-const parseProjectStatusBehavior = (
-  value: unknown,
-): (typeof PROJECT_STATUS_BEHAVIORS)[number] | undefined => {
-  if (value === undefined) return undefined;
-  if (
-    typeof value === 'string' &&
-    (PROJECT_STATUS_BEHAVIORS as readonly string[]).includes(value)
-  ) {
-    return value as (typeof PROJECT_STATUS_BEHAVIORS)[number];
-  }
-  throw new AppError('invalid project status behavior', {
-    code: 'PROJECT_STATUS_BEHAVIOR_INVALID',
-    statusCode: 400,
-  });
-};
-
 // Apenas parseia a query string. O clamp de `limit` (teto implícito quando ausente, ver
 // src/shared/http/list-query.ts) é responsabilidade de cada rota chamadora — nunca retornar
 // lista completa sem teto a partir daqui (ver issue #291).
@@ -6369,6 +6237,7 @@ const createLlmProvider = (
   localKnowledgeProvider: LocalKnowledgeProvider,
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>,
   session: ResearchSession,
+  logger: Logger,
 ): ((llmRequest: LLMRequest) => Promise<LLMResponse>) =>
   provider
     ? async (llmRequest) => {
@@ -6386,6 +6255,7 @@ const createLlmProvider = (
           };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
+          logger.warn({ error: errorMsg }, 'LLM request failed; returning local fallback');
           return localKnowledgeProvider
             .invoke({
               ...llmRequest,
@@ -6419,6 +6289,7 @@ const routeResearchRequest = async ({
   mcpModule,
   llmToolCatalog,
   llmRateLimiter,
+  logger,
   url,
 }: {
   request: IncomingMessage;
@@ -6433,6 +6304,7 @@ const routeResearchRequest = async ({
   mcpModule: ReturnType<typeof createNexusMcpModule>;
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
   llmRateLimiter: RateLimiter;
+  logger: Logger;
   url: URL;
 }): Promise<void> => {
   // Sessões de pesquisa/Copilot são por usuário: antes, toda sessão era gravada e lida sob o
@@ -6610,6 +6482,7 @@ const routeResearchRequest = async ({
       localKnowledgeProvider,
       llmToolCatalog,
       session,
+      logger,
     );
 
     // Streaming responses must never throw past this point: headers are already sent, so any
@@ -6672,6 +6545,7 @@ const routeResearchRequest = async ({
       localKnowledgeProvider,
       llmToolCatalog,
       session,
+      logger,
     );
 
     const { userMessage: userMsg, assistantMessage } = await searchService.addMessageAndGetResponse(
@@ -6873,7 +6747,11 @@ const buildLlmToolCatalog = (
   // Só o núcleo nomeado e as meta-tools; o resto é descoberto via nexus.search_operations.
   const exposed = mcpModule.registry
     .listTools({ exposeToModelOnly: true })
-    .filter((tool) => tool.name.startsWith('nexus.') || CORE_MODEL_TOOLS.has(tool.name));
+    .filter(
+      (tool) =>
+        (tool.name.startsWith('nexus.') && tool.name !== 'nexus.confirm_operation') ||
+        CORE_MODEL_TOOLS.has(tool.name),
+    );
   const tools = exposed.map((tool) => {
     const alias = tool.name.replace(/\./g, '__');
     aliasToToolName.set(alias, tool.name);

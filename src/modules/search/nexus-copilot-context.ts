@@ -1,12 +1,26 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export type NexusCopilotChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
 
-const CONTEXT_FILE = resolve(process.cwd(), 'docs/1-overview/nexus-copilot-training.md');
+const CONTEXT_RELATIVE_PATH = 'docs/1-overview/nexus-copilot-training.md';
+
+// Sobe a partir deste arquivo (src/ ou dist/src/) até achar o doc; não depende do cwd do processo.
+const resolveContextFile = (): string => {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = resolve(dir, CONTEXT_RELATIVE_PATH);
+    if (existsSync(candidate)) return candidate;
+    dir = dirname(dir);
+  }
+  return resolve(process.cwd(), CONTEXT_RELATIVE_PATH);
+};
+
+const CONTEXT_FILE = resolveContextFile();
 const BEHAVIOR_OVERLAY = [
   'Quando o usuario pedir o cadastro de um modelo de equipamento, use linguagem de negocio e nao exponha termos TMF desnecessarios.',
   'Se o usuario informar modelo e fabricante, tente resolver o fabricante existente no inventario automaticamente; nao peca ID de party para usuario leigo.',

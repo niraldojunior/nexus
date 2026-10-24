@@ -1,5 +1,9 @@
 import { AppError } from '../../shared/errors/app-error.js';
-import { PROJECT_READ_ROLES, PROJECT_WRITE_ROLES } from '../../shared/http/roles.js';
+import {
+  PROJECT_READ_ROLES,
+  PROJECT_WRITE_ROLES,
+  USER_ADMIN_ROLES,
+} from '../../shared/http/roles.js';
 import { requireRoles, type RequestContext } from '../../shared/http/request-context.js';
 import type { DatabaseClient } from '../../shared/persistence/database-client.js';
 import { recordMutation, type AuditAction } from '../../shared/persistence/audit-outbox.js';
@@ -11,10 +15,14 @@ import type {
   ProjectRepository,
   ProjectStatus,
   ProjectStatusBehavior,
+  ProjectStatusCatalogItem,
 } from './project-repository.js';
 import type { ProjectWorkflowService } from './project-workflow-service.js';
 import type { ProjectWorkflowTransitionResult } from './project-workflow.js';
 import type { GeoService } from '../geo/service.js';
+import type { GeoTreeService } from '../geo/tree-service.js';
+import { isProjectInfrastructureResourceType } from './project-resource-classification.js';
+import { assertProjectStatusChange, assertProjectStatusCreate } from './project-status-rules.js';
 
 // Recusa um ícone de projeto (REQ-MOD01-015) maior que este limite antes de gravar — a validação
 // do cliente (web/src/utils/projectIconImage.ts) não pode ser a única barreira contra um upload
@@ -97,6 +105,7 @@ export class ProjectService {
     private readonly geoService: GeoService,
     private readonly resourceService: ResourceService,
     private readonly eventService: EventService,
+    private readonly geoTreeService: GeoTreeService,
   ) {}
 
   public async list(context: RequestContext): Promise<Project[]> {
@@ -403,6 +412,216 @@ export class ProjectService {
       code: 'PROJECT_ICON_TOO_LARGE',
       statusCode: 413,
     });
+  }
+
+  // ── Catálogo de status (USER_ADMIN_ROLES) ────────────────────────────────────────────────────
+
+  public async listStatuses(context: RequestContext): Promise<ProjectStatusCatalogItem[]> {
+    requireRoles(context, USER_ADMIN_ROLES);
+    return await this.repository.listStatusCatalog(context.tenantId);
+  }
+
+  public async createStatus(
+    command: { name?: unknown; behavior?: unknown; sortOrder?: unknown; active?: unknown },
+    context: RequestContext,
+  ): Promise<ProjectStatusCatalogItem> {
+    requireRoles(context, USER_ADMIN_ROLES);
+    const { name, behavior } = assertProjectStatusCreate(command.name, command.behavior);
+    return await this.repository.createStatusCatalogItem(context.tenantId, {
+      name,
+      sortOrder: Number(command.sortOrder ?? 1000),
+      active: command.active !== false,
+      behavior,
+    });
+  }
+
+  /** PATCH (campos do corpo) ou, com deleting, a desativação soft-delete do status. */
+  public async updateStatus(
+    code: string,
+    command: { name?: unknown; behavior?: unknown; sortOrder?: unknown; active?: unknown },
+    context: RequestContext,
+    deleting = false,
+  ): Promise<ProjectStatusCatalogItem> {
+    requireRoles(context, USER_ADMIN_ROLES);
+    const behavior = assertProjectStatusChange(code, deleting ? {} : command, deleting);
+    const updated = await this.repository.updateStatusCatalogItem(
+      context.tenantId,
+      code,
+      deleting
+        ? { active: false }
+        : {
+            ...(command.name !== undefined ? { name: String(command.name).trim() } : {}),
+            ...(command.sortOrder !== undefined ? { sortOrder: Number(command.sortOrder) } : {}),
+            ...(command.active !== undefined ? { active: Boolean(command.active) } : {}),
+            ...(behavior !== undefined ? { behavior } : {}),
+          },
+    );
+    if (!updated) {
+      throw new AppError('project status not found', {
+        code: 'PROJECT_STATUS_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return updated;
+  }
+
+  // ── Leituras do workspace de Projetos (PROJECT_READ_ROLES) ───────────────────────────────────
+
+  public async listAreas(id: string, context: RequestContext) {
+    requireRoles(context, PROJECT_READ_ROLES);
+    return await this.repository.listAreas(context.tenantId, id);
+  }
+
+  public async listProjectResources(
+    id: string,
+    options: { limit: number; offset: number; view: 'all' | 'infrastructure' },
+    context: RequestContext,
+  ) {
+    requireRoles(context, PROJECT_READ_ROLES);
+    const links = await this.repository.listResourceLinks(context.tenantId, id, options);
+    const items = await this.geoTreeService.resourcesByIds(links.map((link) => link.resourceId));
+    return {
+      items,
+      offset: options.offset,
+      limit: options.limit,
+      hasMore: links.length === options.limit,
+    };
+  }
+
+  public async listProjectSites(
+    id: string,
+    options: { limit: number; offset: number },
+    context: RequestContext,
+  ) {
+    requireRoles(context, PROJECT_READ_ROLES);
+    const page = await this.geoTreeService.projectSitePage(
+      context.tenantId,
+      id,
+      options.limit,
+      options.offset,
+    );
+    return {
+      items: page.items,
+      offset: options.offset,
+      limit: options.limit,
+      total: page.total,
+      hasMore: options.offset + page.items.length < page.total,
+    };
+  }
+
+  /** Busca por texto (mín. 2 caracteres) em locais/recursos do projeto. */
+  public async searchItems(
+    id: string,
+    options: { q: string; scope?: string | null; limit: number; offset: number },
+    context: RequestContext,
+  ) {
+    requireRoles(context, PROJECT_READ_ROLES);
+    const { limit, offset } = options;
+    const query = options.q.trim().toLocaleLowerCase();
+    if (query.length < 2) return { items: [], offset, limit, hasMore: false };
+    const scope =
+      options.scope === 'sites' ||
+      options.scope === 'infrastructure' ||
+      options.scope === 'resources'
+        ? options.scope
+        : 'all';
+    const matches = await this.repository.searchItems(
+      context.tenantId,
+      id,
+      query,
+      limit + 1,
+      scope,
+    );
+    const page = matches.slice(offset, offset + limit);
+    const [sites, resources] = await Promise.all([
+      this.geoTreeService.sitesByIds(
+        page.filter((item) => item.kind === 'site').map((item) => item.id),
+      ),
+      this.geoTreeService.resourcesByIds(
+        page.filter((item) => item.kind === 'resource').map((item) => item.id),
+      ),
+    ]);
+    const byKey = new Map(
+      [...sites, ...resources].map((item) => [`${item.kind}:${item.refId ?? item.id}`, item]),
+    );
+    const items = page
+      .map((item) => byKey.get(`${item.kind}:${item.id}`))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    return { items, offset, limit, hasMore: matches.length > offset + limit };
+  }
+
+  /** Recursos livres ou já vinculados a este projeto. */
+  public async listResourceCandidates(
+    id: string,
+    query: string,
+    context: RequestContext,
+  ): Promise<Resource[]> {
+    requireRoles(context, PROJECT_READ_ROLES);
+    const name = query.trim();
+    const resources = await this.resourceService.listResources(
+      { ...(name ? { name } : {}), limit: 50 },
+      context,
+    );
+    const available: Resource[] = [];
+    for (const resource of resources) {
+      const linked = await this.repository.findOpenProjectByResourceId(
+        context.tenantId,
+        resource.id,
+      );
+      if (!linked || linked.projectId === id) available.push(resource);
+    }
+    return available;
+  }
+
+  /** Tipos e specifications do catálogo ativo que o Projeto pode criar. */
+  public async getResourceCreationOptions(id: string, context: RequestContext) {
+    requireRoles(context, PROJECT_READ_ROLES);
+    const project = await this.repository.get(context.tenantId, id);
+    if (!project || project.archivedAt) throw this.notFound();
+    const catalogs = await this.resourceService.listResourceCatalogs({ status: 'active' }, context);
+    const catalog = catalogs.find((item) => item.isDefault) ?? catalogs[0];
+    if (!catalog) return { catalog: null, resourceTypes: [], resourceSpecifications: [] };
+    const source = await this.resourceService.getResourceModelSnapshotSource(catalog.id, context);
+    const modeledTypeIds = new Set(
+      source.nodes.flatMap((node) =>
+        node.kind === 'RESOURCE_TYPE' && node.status === 'active' && node.resourceTypeId
+          ? [node.resourceTypeId]
+          : [],
+      ),
+    );
+    const resourceTypes = source.resourceTypes
+      .filter((item) => item.status === 'active' && modeledTypeIds.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        nature: item.nature,
+        infrastructureEligible: isProjectInfrastructureResourceType(item.code),
+      }));
+    const typeIds = new Set(resourceTypes.map((item) => item.id));
+    const pageSize = 100;
+    const resourceSpecifications: Array<{ id: string; name: string; resourceTypeId: string }> = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await this.resourceService.listResourceSpecifications(
+        { limit: pageSize, offset },
+        context,
+      );
+      for (const item of page) {
+        if (typeIds.has(item.resourceTypeId)) {
+          resourceSpecifications.push({
+            id: item.id,
+            name: item.name,
+            resourceTypeId: item.resourceTypeId,
+          });
+        }
+      }
+      if (page.length < pageSize) break;
+    }
+    return {
+      catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
+      resourceTypes,
+      resourceSpecifications,
+    };
   }
 
   private notFound(): AppError {

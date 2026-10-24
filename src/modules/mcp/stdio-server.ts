@@ -7,15 +7,10 @@ import {
 } from '../../shared/http/request-context.js';
 import { createLogger } from '../../shared/logging/logger.js';
 import { createDatabaseClient } from '../../shared/persistence/database-factory.js';
-import { createNexusRuntime, type NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
+import { createNexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import { configureHrefBaseUrl } from '../../shared/tmf/index.js';
+import { handleJsonRpcMessage, type JsonRpcRequest } from './jsonrpc.js';
 import { createNexusMcpModule } from './module.js';
-
-type JsonRpcRequest = {
-  id?: string | number | null;
-  method?: string;
-  params?: Record<string, unknown>;
-};
 
 loadEnv();
 
@@ -30,86 +25,6 @@ let requestContext: RequestContext | undefined;
 
 const writeMessage = (payload: unknown): void => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
-};
-
-const handleRequest = async (
-  request: JsonRpcRequest,
-  module: ReturnType<typeof createNexusMcpModule>,
-  runtime: NexusRuntime,
-): Promise<void> => {
-  const id = request.id ?? null;
-  const method = request.method;
-
-  if (!method) {
-    writeMessage({
-      jsonrpc: '2.0',
-      id,
-      error: { code: -32600, message: 'method is required' },
-    });
-    return;
-  }
-
-  if (method === 'initialize') {
-    writeMessage({
-      jsonrpc: '2.0',
-      id,
-      result: {
-        serverInfo: {
-          name: module.serverName,
-          version: '0.1.0',
-        },
-        capabilities: {
-          tools: true,
-        },
-      },
-    });
-    return;
-  }
-
-  if (method === 'tools/list') {
-    writeMessage({
-      jsonrpc: '2.0',
-      id,
-      result: {
-        tools: module.registry.listTools().map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        })),
-      },
-    });
-    return;
-  }
-
-  if (method === 'tools/call') {
-    const name = typeof request.params?.name === 'string' ? request.params.name : '';
-    const argumentsInput =
-      request.params &&
-      typeof request.params.arguments === 'object' &&
-      request.params.arguments !== null
-        ? (request.params.arguments as Record<string, unknown>)
-        : {};
-    const result = await module.registry.executeTool(
-      name,
-      argumentsInput,
-      runtime.createToolContext({
-        executionMode: 'external-stdio',
-        ...(requestContext ? { requestContext } : {}),
-      }),
-    );
-    writeMessage({
-      jsonrpc: '2.0',
-      id,
-      result,
-    });
-    return;
-  }
-
-  writeMessage({
-    jsonrpc: '2.0',
-    id,
-    error: { code: -32601, message: `method ${method} not found` },
-  });
 };
 
 const main = async (): Promise<void> => {
@@ -143,14 +58,26 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    void handleRequest(request, module, runtime).catch((error: unknown) => {
-      logger.error({ error }, 'mcp stdio request failed');
-      writeMessage({
-        jsonrpc: '2.0',
-        id: request.id ?? null,
-        error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+    void handleJsonRpcMessage(request, {
+      module,
+      createContext: () =>
+        runtime.createToolContext({
+          executionMode: 'external-stdio',
+          ...(requestContext ? { requestContext } : {}),
+        }),
+    })
+      .then((response) => {
+        if (response) writeMessage(response);
+      })
+      .catch((error: unknown) => {
+        logger.error({ error }, 'mcp stdio request failed');
+        if (request.id === undefined) return;
+        writeMessage({
+          jsonrpc: '2.0',
+          id: request.id,
+          error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
+        });
       });
-    });
   });
 
   reader.on('close', () => {

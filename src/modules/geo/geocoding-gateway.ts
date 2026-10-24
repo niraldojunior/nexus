@@ -5,6 +5,8 @@
 export type GeocodedPoint = { lng: number; lat: number; formattedAddress: string };
 
 export type GeocodingGateway = {
+  /** false quando não há GOOGLE_MAPS_API_KEY: o chamador distingue "não configurado" de "sem resultado". */
+  readonly configured: boolean;
   geocode(parts: unknown[]): Promise<GeocodedPoint | undefined>;
 };
 
@@ -17,6 +19,7 @@ export const createGoogleGeocodingGateway = (
 ): GeocodingGateway => {
   const key = env.GOOGLE_MAPS_API_KEY?.trim();
   return {
+    configured: Boolean(key),
     // Sem chave, sem texto ou com erro do provedor devolve undefined: quem chama trata como
     // "localização não resolvida", nunca como "endereço não existe".
     async geocode(parts) {

@@ -133,11 +133,23 @@ test.skipIf(!oracleConfigured)('MCP grava audit com o ator real no commit', asyn
     );
     assert.equal(committed.ok, true, JSON.stringify(committed.error));
 
-    const rows = await fixture.client.queryMany<{ actor_sub: string }>(
-      'SELECT actor_sub FROM user_audit_log WHERE actor_sub = ?',
-      ['editor-audit'],
+    const rows = await fixture.client.queryMany<{
+      actor_sub: string;
+      tenant_id: string;
+      event_time: string;
+    }>(
+      'SELECT actor_sub, tenant_id, event_time FROM user_audit_log WHERE actor_sub = ? AND trace_id = ?',
+      ['editor-audit', 'rbac-editor-audit'],
     );
     assert.ok(rows.length > 0);
+    assert.equal(rows[0]?.tenant_id, 'default');
+
+    // C7: o mesmo commit enfileira o evento no outbox, no tenant do ator.
+    const outbox = await fixture.client.queryMany<{ tenant_id: string; status: string }>(
+      'SELECT tenant_id, status FROM environment_outbox WHERE tenant_id = ?',
+      ['default'],
+    );
+    assert.ok(outbox.length > 0, 'commit via MCP deve gravar environment_outbox');
   } finally {
     await fixture.cleanup();
   }

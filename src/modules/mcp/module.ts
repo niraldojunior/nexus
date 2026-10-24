@@ -1,4 +1,9 @@
 import { AppError } from '../../shared/errors/app-error.js';
+import {
+  assertProjectStatusChange,
+  assertProjectStatusCreate,
+  PROJECT_STATUS_BEHAVIORS,
+} from '../project/project-status-rules.js';
 import type { NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import type { Characteristic, TmfEventQuery } from '../../shared/tmf/index.js';
 import type { CreatePartyInput, CreatePartyRoleInput, PartyQuery } from '../party/index.js';
@@ -26,9 +31,17 @@ import {
   INVENTORY_WRITE_ROLES,
   ORDER_READ_ROLES,
   ORDER_REQUEST_ROLES,
+  PROJECT_READ_ROLES,
+  STUDIO_READ_ROLES,
+  USER_ADMIN_ROLES,
 } from '../../shared/http/roles.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
 import { registerGeoOperations } from './operations/geo.js';
+import { registerResourceOperations } from './operations/resource.js';
+import { registerServiceOperations } from './operations/service.js';
+import { registerOrderOperations } from './operations/order.js';
+import { registerPartyOperations } from './operations/party.js';
+import { registerStudioOperations } from './operations/studio.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
 import { createGoogleGeocodingGateway } from '../geo/geocoding-gateway.js';
 import { findNearbyCdos, portAvailabilityByCdo } from '../geo/nearby-cdo.js';
@@ -178,6 +191,48 @@ export class McpToolRegistry {
     } catch (error) {
       return this.normalizeError(tool.name, context, error);
     }
+  }
+
+  // Porta dos clientes externos (stdio/HTTP): os `commit_*` não são chamáveis diretamente; a
+  // escrita só se efetiva por `nexus.confirm_operation`.
+  public async executeExternal(
+    name: string,
+    input: Record<string, unknown>,
+    context: McpToolContext,
+  ): Promise<McpToolResult> {
+    if (this.tools.get(name)?.exposeToModel === false) {
+      return this.errorResult(
+        'mcp',
+        'execute_tool',
+        context,
+        'MCP_TOOL_NOT_FOUND',
+        `tool ${name} not found`,
+      );
+    }
+    return await this.executeTool(name, input, context);
+  }
+
+  // Efetiva uma operação preparada. O token é vinculado a actorSub/tenantId em commitMutation;
+  // o commit reaplica o RBAC da operação de destino.
+  public async confirmOperation(
+    confirmationToken: string,
+    context: McpToolContext,
+  ): Promise<McpToolResult> {
+    const pending = await this.confirmations.get(confirmationToken);
+    if (!pending || pending.context.actorSub !== context.requestContext.actorSub) {
+      return this.errorResult(
+        'nexus',
+        'confirm_operation',
+        context,
+        'MCP_CONFIRMATION_NOT_FOUND',
+        'confirmation token not found',
+      );
+    }
+    return await this.executeTool(
+      `${pending.domain}.commit_${pending.operation}`,
+      { confirmationToken },
+      context,
+    );
   }
 
   // Operações descobríveis: tudo que o modelo pode acionar (exclui commit_* e as próprias
@@ -423,6 +478,21 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   const registry = new McpToolRegistry(confirmations);
   const geocoder = createGoogleGeocodingGateway();
 
+  const pageSchema = (extra: Record<string, JsonSchema> = {}): JsonSchema => ({
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      limit: { type: 'number' },
+      offset: { type: 'number' },
+      ...extra,
+    },
+    required: ['id'],
+    additionalProperties: false,
+  });
+  const pageArgs = (input: Record<string, unknown>, max: number, fallback: number) => ({
+    limit: Math.min(Math.max(Number(input.limit ?? fallback) || fallback, 1), max),
+    offset: Math.max(Number(input.offset ?? 0) || 0, 0),
+  });
   const projectIdSchema: JsonSchema = {
     type: 'object',
     properties: { id: { type: 'string' } },
@@ -999,6 +1069,86 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     required: ['payload'],
     additionalProperties: false,
   };
+  // Leituras de apoio do workspace de Projetos (mesmos dados das rotas /v1/projects/:id/*).
+  registry.register({
+    name: 'project.list_project_areas',
+    description: 'Manchas de concentração/dispersão de um projeto (somente leitura).',
+    inputSchema: projectIdSchema,
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) =>
+      registry.successResult('project', 'list_project_areas', context, {
+        areas: await runtime.projectService.listAreas(String(input.id), context.requestContext),
+      }),
+  });
+  registry.register({
+    name: 'project.search_project_items',
+    description:
+      'Busca locais e recursos de um projeto por texto (mín. 2 caracteres); scope: all, sites, infrastructure ou resources.',
+    inputSchema: pageSchema({
+      q: { type: 'string' },
+      scope: { type: 'string', enum: ['all', 'sites', 'infrastructure', 'resources'] },
+    }),
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) => {
+      const { limit, offset } = pageArgs(input, 20, 20);
+      return registry.successResult(
+        'project',
+        'search_project_items',
+        context,
+        await runtime.projectService.searchItems(
+          String(input.id),
+          {
+            q: String(input.q ?? ''),
+            scope: typeof input.scope === 'string' ? input.scope : null,
+            limit,
+            offset,
+          },
+          context.requestContext,
+        ),
+      );
+    },
+  });
+  registry.register({
+    name: 'project.list_project_resource_candidates',
+    description:
+      'Recursos que podem ser vinculados ao projeto (livres ou já neste projeto); q filtra por nome.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' }, q: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) =>
+      registry.successResult(
+        'project',
+        'list_project_resource_candidates',
+        context,
+        await runtime.projectService.listResourceCandidates(
+          String(input.id),
+          String(input.q ?? ''),
+          context.requestContext,
+        ),
+      ),
+  });
+  registry.register({
+    name: 'project.get_resource_creation_options',
+    description:
+      'Tipos e especificações de recurso que podem ser criados dentro do projeto (catálogo ativo).',
+    inputSchema: projectIdSchema,
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (input, context) =>
+      registry.successResult(
+        'project',
+        'get_resource_creation_options',
+        context,
+        await runtime.projectService.getResourceCreationOptions(
+          String(input.id),
+          context.requestContext,
+        ),
+      ),
+  });
+
   registerPreparationAlias(
     'project.create_project',
     'Prepara a criação de um projeto. Retorna confirmationToken para commit.',
@@ -1082,6 +1232,130 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     required: ['id', ...required],
     additionalProperties: false,
   });
+
+  // Workflow e catálogo de status de projeto (mesmas regras e papéis das rotas /v1/geo/project-*).
+  registry.register({
+    name: 'project.get_project_workflow',
+    description: 'Consulta o workflow de projetos (transições permitidas por status).',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    requiredRoles: PROJECT_READ_ROLES,
+    handler: async (_input, context) =>
+      registry.successResult(
+        'project',
+        'get_project_workflow',
+        context,
+        await runtime.projectWorkflowService.getWorkflow(context.requestContext),
+      ),
+  });
+  registry.register({
+    name: 'project.list_project_statuses',
+    description: 'Lista o catálogo de status de projeto do tenant.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    requiredRoles: USER_ADMIN_ROLES,
+    handler: async (_input, context) =>
+      registry.successResult(
+        'project',
+        'list_project_statuses',
+        context,
+        await runtime.projectService.listStatuses(context.requestContext),
+      ),
+  });
+  const statusBehaviors: string[] = [...PROJECT_STATUS_BEHAVIORS];
+  const registerStatusWrite = (
+    operation: string,
+    description: string,
+    inputSchema: JsonSchema,
+    summarize: (input: Record<string, unknown>) => string,
+    validate: (input: Record<string, unknown>) => void,
+    execute: (input: Record<string, unknown>, context: McpToolContext) => Promise<unknown>,
+  ) => {
+    registry.register({
+      name: `project.${operation}`,
+      description: `Prepara: ${description} Retorna confirmationToken; a execução exige confirmação do usuário.`,
+      inputSchema,
+      requiredRoles: USER_ADMIN_ROLES,
+      handler: (input, context) =>
+        registry.prepareMutation('project', operation, input, context, () => {
+          validate(input);
+          return { summary: summarize(input) };
+        }),
+    });
+    registry.register({
+      name: `project.commit_${operation}`,
+      description: `Confirma e executa: ${description}`,
+      inputSchema: confirmationTokenSchema,
+      requiredRoles: USER_ADMIN_ROLES,
+      handler: (input, context) =>
+        registry.commitMutation(
+          'project',
+          operation,
+          String(input.confirmationToken),
+          context,
+          (pending) => {
+            validate(pending.payload);
+            return execute(pending.payload, context);
+          },
+        ),
+    });
+  };
+  const behaviorEnum: JsonSchema = { type: 'string', enum: statusBehaviors };
+  registerStatusWrite(
+    'create_project_status',
+    'cria um status no catálogo de projetos.',
+    {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        behavior: behaviorEnum,
+        sortOrder: { type: 'number' },
+        active: { type: 'boolean' },
+      },
+      required: ['name', 'behavior'],
+      additionalProperties: false,
+    },
+    (i) => `Status de projeto "${String(i.name)}" será criado.`,
+    (i) => {
+      assertProjectStatusCreate(i.name, i.behavior);
+    },
+    (i, c) => runtime.projectService.createStatus(i, c.requestContext),
+  );
+  const validateStatusChange = (i: Record<string, unknown>, deleting: boolean) => {
+    assertProjectStatusChange(String(i.code), i, deleting);
+  };
+  const statusChange = (i: Record<string, unknown>, context: McpToolContext, deleting = false) =>
+    runtime.projectService.updateStatus(String(i.code), i, context.requestContext, deleting);
+  registerStatusWrite(
+    'update_project_status',
+    'atualiza um status do catálogo de projetos.',
+    {
+      type: 'object',
+      properties: {
+        code: { type: 'string' },
+        name: { type: 'string' },
+        behavior: behaviorEnum,
+        sortOrder: { type: 'number' },
+        active: { type: 'boolean' },
+      },
+      required: ['code'],
+      additionalProperties: false,
+    },
+    (i) => `Status de projeto ${String(i.code)} será atualizado.`,
+    (i) => validateStatusChange(i, false),
+    (i, c) => statusChange(i, c),
+  );
+  registerStatusWrite(
+    'delete_project_status',
+    'desativa (soft-delete) um status do catálogo de projetos.',
+    {
+      type: 'object',
+      properties: { code: { type: 'string' } },
+      required: ['code'],
+      additionalProperties: false,
+    },
+    (i) => `Status de projeto ${String(i.code)} será desativado.`,
+    (i) => validateStatusChange(i, true),
+    (i, c) => statusChange(i, c, true),
+  );
 
   registerProjectWrite(
     'update_project',
@@ -1208,21 +1482,6 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     },
   );
 
-  const pageSchema = (extra: Record<string, JsonSchema> = {}): JsonSchema => ({
-    type: 'object',
-    properties: {
-      id: { type: 'string' },
-      limit: { type: 'number' },
-      offset: { type: 'number' },
-      ...extra,
-    },
-    required: ['id'],
-    additionalProperties: false,
-  });
-  const pageArgs = (input: Record<string, unknown>, max: number, fallback: number) => ({
-    limit: Math.min(Math.max(Number(input.limit ?? fallback) || fallback, 1), max),
-    offset: Math.max(Number(input.offset ?? 0) || 0, 0),
-  });
   registry.register({
     name: 'project.get_project_transitions',
     description: 'Lista as transições de workflow que o usuário pode executar no projeto.',
@@ -3067,6 +3326,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
   });
 
   registerGeoOperations(registry, runtime);
+  registerResourceOperations(registry, runtime);
+  registerServiceOperations(registry, runtime);
+  registerOrderOperations(registry, runtime);
+  registerPartyOperations(registry, runtime);
+  registerStudioOperations(registry, runtime);
   registerOperationMetaTools(registry);
 
   return {
@@ -3215,6 +3479,8 @@ export const CORE_MODEL_TOOLS: ReadonlySet<string> = new Set([
   'geo.get_site',
   'geo.list_addresses',
   'geo.find_nearby_cdos',
+  'geo.geocode_address',
+  'geo.search_geonet_addresses',
   'resource.list_resources',
   'resource.get_resource',
   'service.list_services',
@@ -3233,9 +3499,27 @@ const META_TOOL_ROLES = [
   ...CATALOG_ADMIN_ROLES,
   ...ORDER_READ_ROLES,
   ...ORDER_REQUEST_ROLES,
+  ...STUDIO_READ_ROLES,
 ] as const;
 
 const registerOperationMetaTools = (registry: McpToolRegistry): void => {
+  // Só para clientes externos (stdio/HTTP). No Copilot o commit é o botão de confirmação da UI,
+  // por isso a tool fica fora de CORE_MODEL_TOOLS e do catálogo do modelo (ver app.ts).
+  registry.register({
+    name: 'nexus.confirm_operation',
+    requiredRoles: META_TOOL_ROLES,
+    description:
+      'Confirma e executa uma operação de escrita preparada, usando o confirmationToken devolvido por invoke_operation. Só chame depois que o usuário aprovar o resumo.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.confirmOperation(String(input.confirmationToken), context),
+  });
+
   registry.register({
     name: 'nexus.search_operations',
     requiredRoles: META_TOOL_ROLES,

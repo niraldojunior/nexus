@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   Boxes,
   ChevronLeft,
-  FileText,
   History as HistoryIcon,
   Info as InfoIcon,
   Layers3,
@@ -43,8 +42,7 @@ import { PanelBarButton } from './PanelBarButton';
 import { PanelTabBar } from './PanelTabBar';
 import { CoordinateStreetView } from './CoordinateStreetView';
 import { usePanelExit } from './usePanelExit';
-import { ResourceOverviewTab } from './ResourceOverviewTab';
-import { ResourceAboutTab } from './ResourceAboutTab';
+import { ResourceInfoTab } from './ResourceInfoTab';
 import { ResourceHistoryTab } from './ResourceHistoryTab';
 import { ResourceComponentsTab } from './ResourceComponentsTab';
 import { ResourceConnectionsView } from './ResourceConnectionsView';
@@ -118,9 +116,9 @@ export function ResourcePanel({
     error: portServiceError,
     reload: reloadPortService,
   } = usePortService(resourceId, isPort);
-  const [tab, setTab] = useState<
-    'overview' | 'about' | 'components' | 'connections' | 'service' | 'history'
-  >('overview');
+  const [tab, setTab] = useState<'info' | 'components' | 'connections' | 'service' | 'history'>(
+    'info',
+  );
   // A árvore recursiva pode conter milhares de nós e o backend atende requisições em série
   // (AGENTS §3). Portanto, só a buscamos quando a pessoa abre Componentes. O hook retém o
   // resultado por recurso, para que navegar entre abas não refaça a mesma consulta.
@@ -250,32 +248,17 @@ export function ResourcePanel({
 
   const body = (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-      <div className="flex items-end border-b border-app-border">
-        <PanelTabBar
-          activeTab={tab}
-          role="tablist"
-          ariaLabel="Seções do recurso"
-          className="min-w-0 flex-1"
-        >
+      {/* Editar/Remover rolam junto, no fim da faixa — fixos à direita, roubavam largura e
+          escondiam Histórico. O `tablist` é só o grupo das abas (ações não são `tab`). */}
+      <PanelTabBar activeTab={tab} className="items-end border-b border-app-border">
+        <div role="tablist" aria-label="Seções do recurso" className="flex shrink-0 gap-1">
           <PanelBarButton
             asTab
             icon={InfoIcon}
-            label="Geral"
-            active={tab === 'overview'}
-            onClick={() => setTab('overview')}
+            label="Info"
+            active={tab === 'info'}
+            onClick={() => setTab('info')}
           />
-          {/* "Sobre" concentra as características do recurso (spec + instância, issue #273) — sem
-            sentido para Porta hoje, que não tem especificação/definições de instância no seu
-            detalhe (ResourcePortDetail). Mesmo gate de !isPort do StreetViewHero abaixo. */}
-          {!isPort ? (
-            <PanelBarButton
-              asTab
-              icon={FileText}
-              label="Sobre"
-              active={tab === 'about'}
-              onClick={() => setTab('about')}
-            />
-          ) : null}
           {isPort ? (
             <PanelBarButton
               asTab
@@ -319,9 +302,9 @@ export function ResourcePanel({
             active={tab === 'history'}
             onClick={() => setTab('history')}
           />
-        </PanelTabBar>
+        </div>
         {canEdit ? (
-          <div className="flex shrink-0 items-end">
+          <>
             <PanelBarButton icon={Pencil} label="Editar" onClick={() => setEditing(true)} />
             <PanelBarButton
               icon={Trash2}
@@ -329,9 +312,9 @@ export function ResourcePanel({
               danger
               onClick={() => setRemoving(true)}
             />
-          </div>
+          </>
         ) : null}
-      </div>
+      </PanelTabBar>
 
       {editing && canEdit
         ? createPortal(
@@ -362,10 +345,17 @@ export function ResourcePanel({
           )
         : null}
 
-      {tab === 'overview' ? (
+      {tab === 'info' ? (
         isPort ? (
           portDetail ? (
-            <PortOverviewTab detail={portDetail} onOpenResource={onOpenResource} />
+            // Porta: a sub-aba Geral é a visão própria da porta; Modelo/Equipamento usam o
+            // detalhe genérico do recurso quando ele existir.
+            <ResourceInfoTab
+              detail={detail}
+              generalOverride={
+                <PortOverviewTab detail={portDetail} onOpenResource={onOpenResource} />
+              }
+            />
           ) : portDetailLoading ? (
             <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
               <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -377,39 +367,25 @@ export function ResourcePanel({
             </div>
           ) : null
         ) : detail ? (
-          <div className="grid gap-2">
-            <ResourceOverviewTab detail={detail} />
-            {/* Ponto único (a maioria dos recursos) já aparece inline como "Localização"
-                em ResourceOverviewTab — este bloco só entra para geometria de linha
-                (cabos/dutos), com o par Início/Fim. */}
-            {streetViewTargets.length > 1 ? (
-              <div className="border-t border-app-border pt-2">
-                {streetViewTargets.map((target) => (
-                  <div
-                    key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
-                    className="py-1"
-                  >
-                    <CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : detailLoading ? (
-          <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-            Carregando detalhes do recurso…
-          </div>
-        ) : detailError ? (
-          <div className="rounded-[18px] border border-dashed border-status-red/30 bg-status-red-soft p-4 text-[0.84rem] text-status-red">
-            {detailError}
-          </div>
-        ) : null
-      ) : null}
-
-      {tab === 'about' && !isPort ? (
-        detail ? (
-          <ResourceAboutTab detail={detail} />
+          <ResourceInfoTab
+            detail={detail}
+            generalFooter={
+              // Ponto único (a maioria dos recursos) já aparece inline como "Localização" —
+              // este bloco só entra para geometria de linha (cabos/dutos), com o par Início/Fim.
+              streetViewTargets.length > 1 ? (
+                <div className="border-t border-app-border pt-2">
+                  {streetViewTargets.map((target) => (
+                    <div
+                      key={`${target.label ?? 'ponto'}:${target.point.join(',')}`}
+                      className="py-1"
+                    >
+                      <CoordinateStreetView marker={resourceStreetViewMarker(node, target.point)} />
+                    </div>
+                  ))}
+                </div>
+              ) : null
+            }
+          />
         ) : detailLoading ? (
           <div className="flex items-center gap-2 rounded-[18px] border border-dashed border-app-border p-4 text-[0.88rem] text-app-muted">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -542,7 +518,7 @@ export function ResourcePanel({
   if (isMobile) {
     return (
       <BottomSheet onClose={onClose} onSnapChange={onSnapChange} snapCommand={snapCommand}>
-        {!isPort && tab === 'overview' ? <StreetViewHero marker={heroMarker} /> : null}
+        {!isPort && tab === 'info' ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
         <div className="min-w-0 overflow-hidden px-4 py-3">{body}</div>
       </BottomSheet>
@@ -554,7 +530,7 @@ export function ResourcePanel({
       className={`geo-detail-panel ${isClosing ? 'geo-detail-panel-exit' : ''} ${DOCK_ELEVATION_CLASS} flex h-full ${DOCK_WIDTH_CLASS} max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-app-border bg-app-panel shadow-dock`}
     >
       <OverlayScrollArea className="overflow-x-hidden">
-        {!isPort && tab === 'overview' ? <StreetViewHero marker={heroMarker} /> : null}
+        {!isPort && tab === 'info' ? <StreetViewHero marker={heroMarker} /> : null}
         {header}
         <div className="min-w-0 px-3 py-3">{body}</div>
       </OverlayScrollArea>

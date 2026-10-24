@@ -7,6 +7,8 @@ import {
 } from '../../services/studioReferenceDataApi';
 import { getParty, listOrganizationsByRoleTypeIds } from '../../services/partyApi';
 import { ImageCharacteristicInput } from '../studio/resource-model/ImageCharacteristicInput';
+import { characteristicIcon } from './characteristicIcon';
+import { IconInfoRow } from './IconInfoRow';
 import { Info } from './InfoRow';
 import { InlineEditRow } from './InlineEditRow';
 
@@ -150,12 +152,15 @@ export function ResourceInstanceCharacteristics({
             ? (resolvedOrgNames[currentText] ?? currentText)
             : currentText;
 
+        // Somente leitura (sub-aba Info > Equipamento): ícone pelo tipo do valor e o nome da
+        // característica no hint, no mesmo padrão IconInfoRow dos demais campos do painel.
         if (!canEdit) {
           if (def.valueType === 'image') {
             return currentText ? (
-              <Info
+              <IconInfoRow
                 key={def.name}
-                label={def.name}
+                icon={characteristicIcon(def.valueType)}
+                hint={def.name}
                 value={
                   <ImageCharacteristicInput
                     value={currentText}
@@ -169,7 +174,12 @@ export function ResourceInstanceCharacteristics({
             ) : null;
           }
           return displayValue ? (
-            <Info key={def.name} label={def.name} value={displayValue} />
+            <IconInfoRow
+              key={def.name}
+              icon={characteristicIcon(def.valueType)}
+              hint={def.name}
+              value={displayValue}
+            />
           ) : null;
         }
 

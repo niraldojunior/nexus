@@ -14,7 +14,7 @@
  *   --municipio <NOME>    (ex: --municipio "Niterói")
  *   --bairro <NOME>       (ex: --municipio "Niterói" --bairro "Icaraí")
  *   --full                (varredura nacional)
- *   --phase 1|2|2c|2d|3|3a|3b|all (default: all)
+ *   --phase 1|2|2c|2d|3|3a|3b|3d|all (default: all; 3d = só a densidade do mapa)
  *   --updated-since <ISO> (somente Fase 3.A; exige Z ou offset explícito)
  *   --target-prefix       (default: NX_DEV1_ ou variável de ambiente)
  *   --tenant-id <ID>      (obrigatório em APPLY; NX_DEV1_ aceita apenas vtal)
@@ -49,7 +49,7 @@ import {
   runPhase2StationRacks,
 } from './phase2-station-internal-plant.js';
 import { runPhase3Coverage } from './phase3-coverage.js';
-import { runPhase3MapFeatures } from './phase3-map-features.js';
+import { runPhase3MapDensity, runPhase3MapFeatures } from './phase3-map-features.js';
 import type { CliOptions, MigrationPhase } from './types.js';
 
 async function runPhase3(ctx: Awaited<ReturnType<typeof createMigrationContext>>): Promise<void> {
@@ -57,6 +57,8 @@ async function runPhase3(ctx: Awaited<ReturnType<typeof createMigrationContext>>
   await runPhase3MapFeatures(ctx);
   await runPhase3Coverage(ctx);
 }
+
+const PHASE3_PHASES: readonly MigrationPhase[] = ['3', '3a', '3b', '3d'];
 
 loadEnv({ path: process.env.NEXUS_ENV_FILE ?? '.env', override: true });
 
@@ -68,8 +70,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   const has = (flag: string) => argv.includes(flag);
 
   const phaseRaw = get('--phase') ?? 'all';
-  if (!['1', '2', '2c', '2d', '3', '3a', '3b', 'all'].includes(phaseRaw)) {
-    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3, 3a, 3b ou all.`);
+  if (!['1', '2', '2c', '2d', '3', '3a', '3b', '3d', 'all'].includes(phaseRaw)) {
+    throw new Error(`Fase inválida: "${phaseRaw}". Use 1, 2, 2c, 2d, 3, 3a, 3b, 3d ou all.`);
   }
   const phase = phaseRaw as MigrationPhase;
 
@@ -84,7 +86,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
       throw new Error('--updated-since só pode ser usado com --phase 3a.');
     }
     if (!/(?:Z|[+-]\d{2}:\d{2})$/u.test(updatedSinceRaw)) {
-      throw new Error('--updated-since exige data/hora ISO-8601 com timezone explícito (Z ou ±HH:MM).');
+      throw new Error(
+        '--updated-since exige data/hora ISO-8601 com timezone explícito (Z ou ±HH:MM).',
+      );
     }
     updatedSince = new Date(updatedSinceRaw);
     if (Number.isNaN(updatedSince.getTime())) {
@@ -102,12 +106,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
       '--bairro exige --municipio <NOME> ou --uf <UF> para evitar escopo nacional ambíguo.',
     );
   }
-  if (['3', '3a', '3b'].includes(phase) && (uf || municipio || bairro || full)) {
+  if (PHASE3_PHASES.includes(phase) && (uf || municipio || bairro || full)) {
     throw new Error(
       'A Fase 3 opera pelo tenant inteiro; não combine com --full, --uf, --municipio ou --bairro.',
     );
   }
-  if (!full && !uf && !municipio && phase !== '1' && !['3', '3a', '3b'].includes(phase)) {
+  if (!full && !uf && !municipio && phase !== '1' && !PHASE3_PHASES.includes(phase)) {
     throw new Error(
       'Para as Fases 2, 2c, 2d ou All, informe um escopo: --uf <UF>, --municipio <NOME> ou --full.',
     );
@@ -136,10 +140,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   if (jobId && !resume) {
     throw new Error('--job-id só pode ser usado com --resume.');
   }
-  if (['3', '3a', '3b'].includes(phase) && (resume || jobId || maxRecords)) {
-    throw new Error(
-      'As Fases 3, 3a e 3b não aceitam --resume, --job-id ou --max-records.',
-    );
+  if (PHASE3_PHASES.includes(phase) && (resume || jobId || maxRecords)) {
+    throw new Error('As Fases 3, 3a, 3b e 3d não aceitam --resume, --job-id ou --max-records.');
   }
 
   return {
@@ -183,7 +185,7 @@ async function main() {
       ]
         .filter(Boolean)
         .join(' | ') ||
-      (['3', '3a', '3b'].includes(options.phase)
+      (PHASE3_PHASES.includes(options.phase)
         ? `TENANT ${options.phase === '3a' ? 'INCREMENTAL' : 'INTEGRAL'} (Fase 3)`
         : 'NÃO INFORMADO');
   console.log(`Escopo           : ${scopeLabel}`);
@@ -230,6 +232,9 @@ async function main() {
         await runPhase2AdministrativeCity(ctx);
         await runPhase2InternalPlant(ctx);
         await runPhase2StationRacks(ctx);
+        // Somente leitura: não grava nada e nenhuma etapa depende do resultado. É um placeholder
+        // da carga completa da planta interna (rack/shelf/slot/placa/porta), pendente na issue
+        // #417 — quando ela sair, esta chamada vira carga. Lenta no CE (~10 min de leitura).
         await runPhase2StationInternalPlantDiscovery(ctx);
         await completeNativeMigrationJob(ctx);
         if (options.phase === 'all') await runPhase3(ctx);
@@ -238,6 +243,8 @@ async function main() {
       await runPhase3Coverage(ctx);
     } else if (options.phase === '3a') {
       await runPhase3MapFeatures(ctx);
+    } else if (options.phase === '3d') {
+      await runPhase3MapDensity(ctx);
     } else if (options.phase === '3') {
       await runPhase3(ctx);
     } else if (options.phase === '2c') {

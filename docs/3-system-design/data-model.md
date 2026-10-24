@@ -433,6 +433,30 @@ ORACLE_OBJECT_PREFIX=NX_DEV9_ npm run db:restructure -- --verify
 
 Pare backend, Studio e migradores antes do `--apply` e faça backup do ambiente. Se origem e destino coexistirem, o comando aborta. `--rollback --confirm-prefix <PREFIXO>` reverte pelo mesmo mapa.
 
+## 9.3 Projeções geoespaciais do migrador Netwin — operação da Fase 3 (#367)
+
+A Fase 3 deriva, só no destino e sem consultar o Netwin, as projeções de leitura do mapa: `geographic_map_feature` (pontos e linhas por tile), `geographic_map_density` (agregados por zoom) e as manchas de cobertura GPON (`geographic_coverage_area`/`_cell`). Todas são regeráveis a partir de Sites, Resources e Locations; a cobertura está especificada no REQ-MOD01-014 de [`01-module-geo.md`](../2-functional-specs/01-module-geo.md). Por isso a Fase 3 opera sempre pelo tenant inteiro e recusa `--uf`, `--municipio`, `--bairro`, `--full`, `--resume`, `--job-id` e `--max-records`.
+
+| `--phase` | O que faz                                                                                                                                  | Quando usar                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `3`       | 3.A integral (apaga e regrava todas as features e a densidade do tenant) seguida da 3.B                                                    | Ambiente novo ou projeções suspeitas                                  |
+| `3a`      | 3.A incremental: só Sites e Resources com `updated_at` na janela `[--updated-since, início da execução)`, e a densidade dos tiles afetados | Depois de cargas da Fase 2 por UF/município em um tenant já projetado |
+| `3d`      | Recalcula só a densidade do tenant, a partir das features vigentes                                                                         | Depois de uma 3.A incremental interrompida                            |
+| `3b`      | Recalcula a cobertura GPON do tenant inteiro a partir das CDOs (não tem modo incremental)                                                  | Depois da 3.A, sempre que CDOs tiverem mudado                         |
+
+Fluxo para o delta de cargas da Fase 2 (comandos sem `--apply` rodam em DRY-RUN):
+
+```
+npm run migrate:netwin:native -- --phase 3a --apply --updated-since 2026-10-14T00:00:00-03:00 --target-prefix NX_DEV16_ --tenant-id vtal
+npm run migrate:netwin:native -- --phase 3b --apply --target-prefix NX_DEV16_ --tenant-id vtal
+```
+
+- **Escolha do corte.** `--updated-since` exige fuso explícito (`Z` ou `±HH:MM`) e deve ser anterior à primeira carga da Fase 2 ainda não projetada. Um corte mais antigo só custa tempo: cada entidade tem suas features apagadas e regravadas, então reprocessar é idempotente.
+- **Execução interrompida.** As features já gravadas ficam, porque o commit é por página. O conjunto de tiles cuja densidade precisa ser recalculada vive só em memória e se perde com o processo. Para recuperar, rode de novo a `3a` a partir de um corte anterior ao ponto de parada (ou aceite o que já foi gravado), depois a `3d` e por fim a `3b`.
+- **Alterações durante a execução.** A janela termina no instante em que a 3.A começa. O que a Fase 2 gravar depois disso entra na próxima execução, com `--updated-since` igual ao fim da janela anterior, que a 3.A registra no log (`Janela incremental: [início, fim)`).
+- **Paginação.** O cursor da 3.A incremental é `SYS_EXTRACT_UTC(updated_at)` em texto com microssegundos mais o `id`, na mesma expressão do índice `(tenant_id, SYS_EXTRACT_UTC(updated_at), id)`. Ordenar pela coluna crua força um sort da janela inteira a cada página. Um cursor em `Date` do JavaScript trunca em milissegundos e relê para sempre linhas com fração abaixo disso.
+- **Ordem de grandeza** (NX_DEV16_, out/2026): a 3.A incremental projeta 400 a 1.000 entidades/s; a `3d` leva poucos minutos (15 mil células); a `3b` leva cerca de 30 min para 1,1 milhão de CDOs (16 mil polígonos, 2,6 milhões de células).
+
 ## 10. Referências
 
 | Onde                                                                 | O quê                                         |

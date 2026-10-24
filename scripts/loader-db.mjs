@@ -207,11 +207,17 @@ async function bulkInsertOracle(
 
 async function gatherStatsOracle(conn, prefix, table) {
   const tableName = prefixed(table, prefix).toUpperCase();
+  // Sem histograma em LNG/LAT (BINARY_DOUBLE) o CBO assume 25% de seletividade no bbox do mapa e
+  // troca o índice por full scan de ~20s.
+  const methodOpt =
+    table === 'geographic_map_feature'
+      ? 'FOR ALL COLUMNS SIZE AUTO FOR COLUMNS SIZE 254 LNG, LAT'
+      : 'FOR ALL COLUMNS SIZE AUTO';
   await conn.execute(
     `BEGIN DBMS_STATS.GATHER_TABLE_STATS(
        ownname => USER, tabname => :1, cascade => TRUE,
        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
-       method_opt => 'FOR ALL COLUMNS SIZE AUTO'
+       method_opt => '${methodOpt}'
      ); END;`,
     [tableName],
     { autoCommit: false },

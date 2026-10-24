@@ -192,6 +192,7 @@ export const handleHttpRequest = async (
 const MAP_NAVIGATION_PATH_PREFIXES = [
   '/v1/geo/map/tile',
   '/v1/geo/map/lines',
+  '/v1/geo/map/resources',
   '/v1/geo/map/density',
   '/v1/geo/map-layer-catalog',
   '/v1/geo/tree/',
@@ -2547,6 +2548,45 @@ const routeGeoRequest = async ({
     return sendJson(response, 200, result);
   }
 
+  // Recursos pontuais do mapa por bbox (issue #416): mesmo contrato de /v1/geo/map/sites, com
+  // `sourceModelId` = ResourceTypes cujas camadas POINT estão visíveis no Studio GEO. Substitui o
+  // fan-out de /v1/geo/map/tile no mapa, cujo custo crescia com a área da viewport.
+  if (request.method === 'GET' && url.pathname === '/v1/geo/map/resources') {
+    const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
+    const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
+    const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
+    const maxLat = parseOptionalNumber(url.searchParams.get('maxLat'));
+    if (
+      minLng === undefined ||
+      minLat === undefined ||
+      maxLng === undefined ||
+      maxLat === undefined ||
+      minLng > maxLng ||
+      minLat > maxLat
+    ) {
+      throw new AppError('valid minLng, minLat, maxLng and maxLat are required', {
+        code: 'GEO_MAP_RESOURCES_BOUNDS_REQUIRED',
+        statusCode: 400,
+      });
+    }
+    const sourceModelIds = [...new Set(url.searchParams.getAll('sourceModelId'))];
+    if (
+      sourceModelIds.length > 200 ||
+      sourceModelIds.some((id) => id.length === 0 || id.length > 200)
+    ) {
+      throw new AppError('sourceModelId must have at most 200 values of up to 200 characters', {
+        code: 'GEO_MAP_RESOURCES_SOURCE_INVALID',
+        statusCode: 400,
+      });
+    }
+    const result = await runtime.geoMapResourceService.resources(
+      { minLng, minLat, maxLng, maxLat },
+      sourceModelIds,
+      { tenantId: geoContext.tenantId },
+    );
+    return sendJson(response, 200, result);
+  }
+
   // Densidade agregada opcional da planta (geographic_map_density — Fase 4, issue #69). Por bbox,
   // não por tile único como /v1/geo/map/tile — uma visualização agregada cobre poucas células
   // grossas, e pedir uma a uma custaria mais em ida-e-volta do que a consulta inteira. `z` tem
@@ -2818,7 +2858,7 @@ const routeGeoRequest = async ({
 
   // Origem do local (aba Visão Geral do painel unificado, REQ-MOD01-016): de onde este Site
   // veio — três formas mutuamente exclusivas, checadas nesta ordem. `_origin.system` (C5)
-  // vem de uma carga de migração (ver scripts/estacoes_carregar.mjs); o vínculo em
+  // vem de uma carga de migração (migrador Netwin a partir do DR); o vínculo em
   // project_site sobrevive ao término do projeto (Fase 2), então continua respondendo
   // 'project' mesmo com o local já liberado; sem nenhum dos dois, cai no autor do evento de
   // criação (user_audit_log) — cadastro manual pela UI.

@@ -107,7 +107,7 @@ export type GeoTreeChildrenPage = {
 export type GeoSchematicHopRole = 'equipment' | 'cable' | 'site';
 
 export type GeoSchematicHop = {
-  // 1..n, ordem do recurso selecionado até a Estação.
+  // 1..n, ordem do recurso selecionado até o Local atendido.
   index: number;
   role: GeoSchematicHopRole;
   node: GeoTreeNode;
@@ -119,9 +119,8 @@ export type GeoSchematicHop = {
 export type GeoSchematicPath = {
   nodeId: string;
   hops: GeoSchematicHop[];
-  // false quando a caminhada terminou sem achar uma Estação — cadeia incompleta na
-  // origem (ver `_migration.pathIncomplete` gravado por migrate-netwin-osp.ts) ou o
-  // recurso não tem planta a montante nenhuma.
+  // false quando nenhum recurso da cadeia leva a um Local atendido (serving site válido,
+  // ou place do equipamento mais a montante num Local) — ver `resolveSchematicServingSite`.
   reachedSite: boolean;
   // true quando a caminhada bateu em SCHEMATIC_MAX_HOPS sem terminar — o caminho
   // devolvido é um prefixo, não a cadeia inteira.
@@ -787,7 +786,8 @@ export class GeoTreeService {
 
   /**
    * "Traceroute" da fibra: do equipamento óptico selecionado (`resourceId`, sem prefixo
-   * `resource:`) até a Estação, andando pela cadeia `equipA --connectedTo--> cabo
+   * `resource:`) até o Local atendido (serving site, qualquer tipo de Local — ver
+   * `resolveSchematicServingSite`), andando pela cadeia `equipA --connectedTo--> cabo
    * --connectedTo--> equipZ` que `migrate-netwin-osp.ts` grava — sempre subindo (aresta de
    * entrada do nó atual), o inverso do sentido A→Z da carga.
    *
@@ -863,29 +863,49 @@ export class GeoTreeService {
     }
 
     let reachedSite = false;
-    if (lastEquipmentId) {
-      const siteId = await this.resourceServingSiteId(lastEquipmentId);
-      if (siteId) {
-        const [siteNode] = await this.sitesByIds([siteId]);
-        if (siteNode) {
-          hops.push({ index: index++, role: 'site', node: siteNode });
-          reachedSite = true;
-        }
+    const siteId = await this.resolveSchematicServingSite(chain, lastEquipmentId);
+    if (siteId) {
+      const [siteNode] = await this.sitesByIds([siteId]);
+      if (siteNode) {
+        hops.push({ index: index++, role: 'site', node: siteNode });
+        reachedSite = true;
       }
     }
 
     return { nodeId: resourceId, hops, reachedSite, truncated };
   }
 
-  // Site que o equipamento serve, lido direto (sem exigir ausência de aresta de entrada,
-  // ao contrário de `findDirectOwningSite` — aqui o chamador já sabe que este é o
-  // equipamento mais a montante do traçado, não precisa da checagem de "raiz").
-  private async resourceServingSiteId(resourceId: string): Promise<string | null> {
-    const row = await this.db.get<{ serving_site_id: string | null }>(
-      'SELECT serving_site_id FROM resource_physical WHERE id = ?',
-      [resourceId],
+  // Local que fecha o traçado — o serving site da cadeia, de qualquer tipo (não só CO/POP).
+  // O nó mais a montante nem sempre o carrega: na carga Netwin o nó óptico genérico dentro
+  // da estação (ex.: OPT1) vem com `serving_site_id` nulo e `place_id` = a própria estação,
+  // enquanto os equipamentos a jusante apontam para ela. Por isso:
+  // 1. o primeiro `serving_site_id` válido da cadeia, do mais a montante para o selecionado
+  //    (o do último equipamento segue com prioridade); o JOIN descarta ids sem Site — os
+  //    cabos migrados carregam um serving que não existe em `geographic_site`;
+  // 2. sem nenhum, o Local onde o último equipamento está (`place_id`).
+  private async resolveSchematicServingSite(
+    chain: string[],
+    lastEquipmentId: string | null,
+  ): Promise<string | null> {
+    const rows = await this.db.all<{ id: string; serving_site_id: string }>(
+      `SELECT r.id, r.serving_site_id
+         FROM resource_physical r
+         JOIN geographic_site s ON s.id = r.serving_site_id
+        WHERE r.id IN (${placeholders(chain)})`,
+      chain,
     );
-    return row?.serving_site_id ?? null;
+    const servingById = new Map(rows.map((row) => [row.id, row.serving_site_id]));
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const servingSiteId = servingById.get(chain[i]!);
+      if (servingSiteId) return servingSiteId;
+    }
+
+    if (!lastEquipmentId) return null;
+    const place = await this.db.get<{ place_id: string | null }>(
+      'SELECT place_id FROM resource_physical WHERE id = ?',
+      [lastEquipmentId],
+    );
+    return place?.place_id ? await this.siteIdOfPlace(place.place_id) : null;
   }
 
   // Lances (`supportedBy`) que sustentam um cabo — resumo (tipos distintos + contagem),
@@ -1022,10 +1042,9 @@ export class GeoTreeService {
     offset: number,
     scope: GeoTreeScope,
   ): Promise<{ nodes: GeoTreeNode[]; total: number }> {
-    const site = await this.db.get<{ id: string }>(
-      'SELECT id FROM geographic_site WHERE id = ?',
-      [siteId],
-    );
+    const site = await this.db.get<{ id: string }>('SELECT id FROM geographic_site WHERE id = ?', [
+      siteId,
+    ]);
     if (!site) return { nodes: [], total: 0 };
 
     const subSites =
@@ -1347,6 +1366,21 @@ export class GeoTreeService {
     return null;
   }
 
+  // Site apontado pelo `place_id` de um recurso — que pode ser o id do próprio Site ou o da
+  // GeographicLocation dele.
+  private async siteIdOfPlace(placeId: string): Promise<string | null> {
+    const byOwnId = await this.db.get<{ id: string }>(
+      'SELECT id FROM geographic_site WHERE id = ?',
+      [placeId],
+    );
+    if (byOwnId) return byOwnId.id;
+    const byLocationId = await this.db.get<{ id: string }>(
+      'SELECT id FROM geographic_site WHERE geographic_location_id = ?',
+      [placeId],
+    );
+    return byLocationId?.id ?? null;
+  }
+
   // Site dono do recurso, se a filiação for direta (mesmas três formas de
   // siteResourceIdSource, na direção inversa: dado o recurso, qual é o Site).
   // `null` quando o recurso pende de outro recurso — pathTo então sobe pela aresta.
@@ -1363,16 +1397,8 @@ export class GeoTreeService {
     if (!resource) return null;
 
     if (resource.place_id) {
-      const byOwnId = await this.db.get<{ id: string }>(
-        'SELECT id FROM geographic_site WHERE id = ?',
-        [resource.place_id],
-      );
-      if (byOwnId) return byOwnId.id;
-      const byLocationId = await this.db.get<{ id: string }>(
-        'SELECT id FROM geographic_site WHERE geographic_location_id = ?',
-        [resource.place_id],
-      );
-      if (byLocationId) return byLocationId.id;
+      const placeSiteId = await this.siteIdOfPlace(resource.place_id);
+      if (placeSiteId) return placeSiteId;
     }
 
     if (resource.serving_site_id) {

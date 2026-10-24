@@ -6,8 +6,7 @@
  * LOOPS avaliado linha a linha.
  *
  * Rodar uma vez agora (base já carregada e sem estatísticas atuais) e, dali em diante, ao final de
- * qualquer carga massiva (`sites_carregar.mjs`, `load-recursos-netwin.mjs`,
- * `estacoes_carregar.mjs` já chamam isto sozinhos com --apply).
+ * qualquer carga massiva (`sites_carregar.mjs` já chama isto sozinho com --apply).
  *
  * Uso:
  *   npm run build                                              # obrigatório uma vez

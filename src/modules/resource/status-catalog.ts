@@ -16,7 +16,7 @@ export type ResourceStatusDefault = Omit<
  * O eixo SID (`ResourceBase.status`, CHECK fechado em active/inactive/suspended/terminated) diz
  * *o que* o recurso é para o inventário; este catálogo diz *por quê* — "Bloqueado por área de
  * risco" em vez de só "Bloqueado". Substitui a characteristic `substatus`, texto livre que as
- * cargas Netwin gravavam a partir de `ds_estado_controle` (`scripts/load-recursos-netwin.mjs`).
+ * cargas Netwin por CSV (já removidas) gravavam a partir de `ds_estado_controle`.
  *
  * Os codes abaixo cobrem os 45 valores distintos de `substatus` que existem hoje na base Oracle
  * de dev (~1,48M recursos); `resourceType` marca os específicos de CTO, `undefined` os que valem

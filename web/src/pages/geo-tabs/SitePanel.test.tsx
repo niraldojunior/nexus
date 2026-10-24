@@ -129,8 +129,8 @@ describe('SitePanel', () => {
     renderPanel();
     expect(screen.getByText('CDO Rua Miguel de Frias, 380')).toBeInTheDocument();
     expect(screen.queryByLabelText('Nome do local')).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Geral' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Sub-locais' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Info' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Interior' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Recursos' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Histórico' })).toBeInTheDocument();
   });

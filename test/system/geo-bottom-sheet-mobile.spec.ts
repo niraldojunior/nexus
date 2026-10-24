@@ -170,7 +170,7 @@ test('bottom sheet mobile transfere o gesto entre expansão, lista longa e recol
     midHeight + 2,
   );
 
-  await sheet.getByRole('button', { name: /Sub-locais/ }).click();
+  await sheet.getByRole('button', { name: /Interior/ }).click();
   await expect(sheet.getByText('Sub-local 30')).toBeVisible();
 
   // mid (48vh) → full (92vh) exige 371px; o restante do mesmo swipe deve rolar a lista.

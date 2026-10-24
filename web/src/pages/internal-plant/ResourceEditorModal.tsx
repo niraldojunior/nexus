@@ -126,8 +126,11 @@ type Draft = {
   serialNumber: string;
   assetReference: string;
   notes: string;
-  placeId: string | null;
-  placeName: string;
+  /** Local Atendido (characteristic `servingSite`) — estação que atende o recurso. */
+  servingSiteId: string | null;
+  servingSiteName: string;
+  /** `place` do recurso (place_id/place_type): onde ele está instalado. Conceito distinto do
+   *  Local Atendido — misturar os dois movia o recurso para a estação ao salvar (issue #423). */
   geoPlace: GeoPlaceDraft;
   instanceValues: Record<string, string>;
   children: ChildNode[];
@@ -161,11 +164,8 @@ const manufacturerNameOf = (specification: ResourceSpecification | undefined): s
   specification?.relatedParty.find((party) => party.role === 'manufacturer')?.name ??
   'Não informado';
 
-/** Rede externa: o `place` é a Location/Address do ponto; o site atendido vive na characteristic `servingSite`. */
-const placeIsSite = (snap: ResourceEditorSnapshot | null): boolean => {
-  const ref = snap?.place?.['@referredType'] ?? snap?.resource.place?.['@referredType'];
-  return !ref || ref === 'GeographicSite';
-};
+const placeKeyOf = (place: GeoPlaceDraft): string =>
+  place.kind === 'existing' ? `${place.type}:${place.id}` : place.kind;
 
 const geoPlaceOf = (snap: ResourceEditorSnapshot): GeoPlaceDraft => {
   const ref = snap.place ?? snap.resource.place;
@@ -249,7 +249,7 @@ export type ResourceEditorModalProps = {
   resourceId?: string | undefined;
   /** Tipo pré-selecionado na criação. */
   initialTypeId?: string | undefined;
-  /** Local Atendido pré-preenchido na criação (Site selecionado na árvore). */
+  /** Site selecionado na árvore: na criação vira o `place` e o Local Atendido do recurso. */
   initialPlace?: { id: string; name: string } | undefined;
   onClose: () => void;
   onSaved: () => void;
@@ -273,6 +273,7 @@ export function ResourceEditorModal({
     components: string;
     relationships: string;
     siteRelationships: string;
+    place: string;
   } | null>(null);
   const { confirm, dialog: confirmDialog, open: confirmOpen } = useConfirmDialog();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -422,6 +423,7 @@ export function ResourceEditorModal({
               })),
             ),
             siteRelationships: JSON.stringify(loadedSiteRels),
+            place: placeKeyOf(geoPlaceOf(snap)),
           };
           setDraft({
             name: snap.resource.name,
@@ -436,12 +438,8 @@ export function ResourceEditorModal({
             serialNumber: snap.resource.serialNumber ?? '',
             assetReference: snap.resource.assetReference ?? '',
             notes: notesOf(snap.resource.characteristic),
-            placeId:
-              servingSiteOf(snap) ??
-              (placeIsSite(snap) ? (snap.place?.id ?? snap.resource.place?.id ?? null) : null),
-            placeName: servingSiteOf(snap)
-              ? ''
-              : (snap.place?.name ?? snap.resource.place?.name ?? ''),
+            servingSiteId: servingSiteOf(snap),
+            servingSiteName: '',
             geoPlace: geoPlaceOf(snap),
             instanceValues,
             children: toTree(snap, typeOfSpec),
@@ -469,9 +467,12 @@ export function ResourceEditorModal({
             serialNumber: '',
             assetReference: '',
             notes: '',
-            placeId: initialPlace?.id ?? null,
-            placeName: initialPlace?.name ?? '',
-            geoPlace: { kind: 'none' },
+            // Criado a partir de um Site: ele é o place (onde está instalado) e o Local Atendido.
+            servingSiteId: initialPlace?.id ?? null,
+            servingSiteName: initialPlace?.name ?? '',
+            geoPlace: initialPlace
+              ? { kind: 'existing', id: initialPlace.id, type: 'GeographicSite' }
+              : { kind: 'none' },
             instanceValues: {},
             children: [],
             relations: [],
@@ -643,8 +644,8 @@ export function ResourceEditorModal({
     const notesCharacteristic: EditorCharacteristic[] = draft.notes.trim()
       ? [{ name: 'notes', value: draft.notes.trim(), valueType: 'string' }]
       : [];
-    const servingSiteCharacteristic: EditorCharacteristic[] = draft.placeId
-      ? [{ name: SERVING_SITE, value: draft.placeId, valueType: 'string' }]
+    const servingSiteCharacteristic: EditorCharacteristic[] = draft.servingSiteId
+      ? [{ name: SERVING_SITE, value: draft.servingSiteId, valueType: 'string' }]
       : [];
     const edited: EditorCharacteristic[] = instanceDefs
       .filter(
@@ -660,7 +661,13 @@ export function ResourceEditorModal({
               : d.valueType === 'boolean'
                 ? raw === 'true'
                 : raw;
-        return { ...d, value, characteristicLevel: 'instance' as const };
+        // Só o valor vai para a instância; descrição, domínio e afins são da definição no tipo.
+        return {
+          name: d.name,
+          value,
+          ...(d.valueType ? { valueType: d.valueType } : {}),
+          characteristicLevel: 'instance' as const,
+        };
       });
     const payload: SaveResourceAggregatePayload = {
       ...(resourceId ? { id: resourceId } : {}),
@@ -679,8 +686,6 @@ export function ResourceEditorModal({
             assetReference: draft.assetReference,
           }
         : {}),
-      // Só o `place` do tipo Site é gravado aqui; Location/Address (rede externa) permanece intacto.
-      ...(placeIsSite(snapshot) ? { placeId: draft.placeId } : {}),
       characteristic: [
         ...existing,
         ...servingSiteCharacteristic,
@@ -712,15 +717,18 @@ export function ResourceEditorModal({
     setSaving(true);
     setError(null);
     try {
+      // `place` omitido = intacto no backend. Só vai no payload na criação ou quando mudou —
+      // nunca derivado do Local Atendido (issue #423).
       const gp = draft.geoPlace;
-      const created = await persistPendingGeoPlace(gp);
-      const geoRef =
-        created ?? (gp.kind === 'existing' && gp.type !== 'GeographicSite' ? gp : undefined);
-      if (geoRef) {
-        payload.placeId = geoRef.id;
-        payload.placeType = geoRef.type;
-      } else if (!placeIsSite(snapshot)) {
-        payload.placeId = null;
+      if (!baseline || placeKeyOf(gp) !== baseline.place) {
+        const geoRef =
+          (await persistPendingGeoPlace(gp)) ?? (gp.kind === 'existing' ? gp : undefined);
+        if (geoRef) {
+          payload.placeId = geoRef.id;
+          payload.placeType = geoRef.type;
+        } else if (resourceId) {
+          payload.placeId = null;
+        }
       }
       await saveResourceAggregate(payload);
       setDirty(false);
@@ -923,7 +931,9 @@ export function ResourceEditorModal({
                 siteRules={siteRules}
                 relTypes={relTypes}
                 siteSpecNames={siteSpecNames}
-                onPlace={(placeId, placeName) => patch({ placeId, placeName })}
+                onServingSite={(servingSiteId, servingSiteName) =>
+                  patch({ servingSiteId, servingSiteName })
+                }
                 onChange={(siteRels) => patch({ siteRels })}
               />
             )}
@@ -2022,14 +2032,14 @@ function PlacesTab({
   siteRules,
   relTypes,
   siteSpecNames,
-  onPlace,
+  onServingSite,
   onChange,
 }: {
   draft: Draft;
   siteRules: ResourceTypeRelationshipRule[];
   relTypes: ResourceRelationshipType[];
   siteSpecNames: Record<string, string>;
-  onPlace: (id: string | null, name: string) => void;
+  onServingSite: (id: string | null, name: string) => void;
   onChange: (siteRels: SiteRelDraft[]) => void;
 }) {
   const codes = [...new Set(siteRules.map((r) => r.relationshipTypeCode))];
@@ -2047,21 +2057,21 @@ function PlacesTab({
   } | null>(null);
 
   useEffect(() => {
-    if (!draft.placeId) {
+    if (!draft.servingSiteId) {
       setServingSite(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const site = await getGeoSite(draft.placeId as string);
+        const site = await getGeoSite(draft.servingSiteId as string);
         const [address, loc] = await Promise.all([
           site?.address?.id ? getGeoAddress(site.address.id).catch(() => undefined) : undefined,
           site?.place?.id ? getGeoLocation(site.place.id).catch(() => undefined) : undefined,
         ]);
         if (cancelled) return;
         setServingSite({
-          name: site?.name ?? draft.placeName,
+          name: site?.name ?? draft.servingSiteName,
           typeName: site ? (siteSpecNames[site.siteSpecificationId] ?? null) : null,
           missing: !site,
           address: address ? formatAddress(address) : null,
@@ -2077,22 +2087,22 @@ function PlacesTab({
     return () => {
       cancelled = true;
     };
-  }, [draft.placeId, draft.placeName, siteSpecNames]);
+  }, [draft.servingSiteId, draft.servingSiteName, siteSpecNames]);
 
   const nameOf = (c: string) => relTypes.find((r) => r.code === c)?.name ?? c;
   return (
     <div className="grid gap-6">
       <section className="grid gap-2" aria-label="Local Atendido">
         <h3 className="text-[0.85rem] font-semibold text-app-text">Local Atendido</h3>
-        {draft.placeId ? (
+        {draft.servingSiteId ? (
           <div className="grid gap-3 rounded-[10px] border border-app-border px-3 py-2 text-[0.85rem]">
             <div className="flex items-center justify-between">
               <span className="flex min-w-0 flex-col">
                 <span className="flex items-center gap-2 font-semibold text-app-text">
                   <MapPin size={15} aria-hidden="true" className="text-app-muted" />
                   {servingSite?.missing
-                    ? `Local não encontrado (ID ${draft.placeId})`
-                    : (servingSite?.name ?? draft.placeName)}
+                    ? `Local não encontrado (ID ${draft.servingSiteId})`
+                    : (servingSite?.name ?? draft.servingSiteName)}
                 </span>
                 {servingSite?.typeName ? (
                   <span className="pl-[23px] text-[0.75rem] text-app-muted">
@@ -2104,7 +2114,7 @@ function PlacesTab({
                 type="button"
                 aria-label="Remover local atendido"
                 className="text-app-muted hover:text-status-red"
-                onClick={() => onPlace(null, '')}
+                onClick={() => onServingSite(null, '')}
               >
                 <Trash2 size={15} />
               </button>
@@ -2115,7 +2125,7 @@ function PlacesTab({
             ) : null}
           </div>
         ) : (
-          <SiteSearch onPick={(s) => onPlace(s.id, s.name)} />
+          <SiteSearch onPick={(s) => onServingSite(s.id, s.name)} />
         )}
       </section>
       {codes.length > 0 ? (

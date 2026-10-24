@@ -3,7 +3,7 @@
 // escalas abertas (ver comentário em mapScale.ts); este hook fica pronto para reativação sem
 // reintroduzir corte global de visibilidade de infra passiva.
 //
-// Segue o mesmo padrão de useCoverage, e não o de useMapTiles, porque a leitura é por bbox:
+// Segue o mesmo padrão de useCoverage (leitura por bbox, não por tile único):
 // em zoom aberto a viewport cobre poucas células grossas e pedir uma a uma custaria mais em
 // ida-e-volta do que a consulta inteira. Daí também o reuso do truque de folga: o bbox pedido é
 // 25% maior que a viewport e arredondado a uma grade por nível, então um pan pequeno dentro da
@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchMapDensity, type MapDensityResponse } from '../services/geoMapDensityApi';
 import type { MapBounds } from '../services/geoTreeApi';
+import { MAP_TILES_INVALIDATED_EVENT } from '../utils/mapTileCache';
 import { densityVisibleAtScale, densityZoomForScale, type MapDensityZoom } from '../utils/mapScale';
 
 const inFlight = new Map<string, Promise<MapDensityResponse>>();
@@ -66,6 +67,19 @@ export function useMapDensity(
   const lastKeyRef = useRef<string | null>(null);
   const lastZoomRef = useRef<MapDensityZoom | null>(null);
   const lastFetchedBoundsRef = useRef<MapBounds | null>(null);
+  const [revision, setRevision] = useState(0);
+
+  // Edição de Site/Recurso move a densidade no backend (delta do write-through): descarta a
+  // viewport carregada para a contagem refletir a mudança sem precisar de pan/zoom (issue #425).
+  useEffect(() => {
+    const invalidate = () => {
+      lastKeyRef.current = null;
+      lastFetchedBoundsRef.current = null;
+      setRevision((value) => value + 1);
+    };
+    window.addEventListener(MAP_TILES_INVALIDATED_EVENT, invalidate);
+    return () => window.removeEventListener(MAP_TILES_INVALIDATED_EVENT, invalidate);
+  }, []);
 
   useEffect(() => {
     if (!densityVisibleAtScale(scaleMeters) || !bounds || scaleMeters === null) {
@@ -117,7 +131,7 @@ export function useMapDensity(
     return () => {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
     };
-  }, [bounds, scaleMeters]);
+  }, [bounds, scaleMeters, revision]);
 
   return { data: density, loading };
 }

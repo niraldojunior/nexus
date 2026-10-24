@@ -5,7 +5,7 @@
 // `geographic_location_id` é um espelho morto: nenhum código de src/modules/resource/ lê ou
 // escreve essa coluna — o repositório usa `place_id` como fonte real de "onde está instalado"
 // (place_id sempre aponta para um GeographicSite ou GeographicLocation, C2). Só scripts de carga
-// legados (load-recursos-netwin.mjs, migrate-netwin-osp.ts, migrate-netwin-infranode.ts)
+// legados (o loader Netwin por CSV, já removido, migrate-netwin-osp.ts, migrate-netwin-infranode.ts)
 // preenchiam essa coluna em paralelo a `place_id`, e pararam de fazê-lo nesta mesma issue.
 //
 // A coluna tem FK real (REFERENCES geographic_location(id)) — CASCADE CONSTRAINTS no DROP
@@ -77,7 +77,7 @@ const run = async (): Promise<void> => {
 
     // Auditoria: quantas linhas têm o espelho preenchido, e quantas divergem de place_id — o
     // esperado é `diferentes = 0`, já que os loaders sempre gravaram o mesmo valor nas duas
-    // colunas (ver comentário em load-recursos-netwin.mjs antes desta issue).
+    // colunas.
     const totalRow = await client.queryOne<{ total: number | string }>(
       `SELECT COUNT(*) AS total FROM ${TABLE_NAME}`,
     );

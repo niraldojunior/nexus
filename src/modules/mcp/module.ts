@@ -26,10 +26,15 @@ import {
   INVENTORY_WRITE_ROLES,
   ORDER_READ_ROLES,
   ORDER_REQUEST_ROLES,
+  STUDIO_READ_ROLES,
 } from '../../shared/http/roles.js';
 import type { RequestContext } from '../../shared/http/request-context.js';
 import { registerGeoOperations } from './operations/geo.js';
 import { registerResourceOperations } from './operations/resource.js';
+import { registerServiceOperations } from './operations/service.js';
+import { registerOrderOperations } from './operations/order.js';
+import { registerPartyOperations } from './operations/party.js';
+import { registerStudioOperations } from './operations/studio.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
 import { createGoogleGeocodingGateway } from '../geo/geocoding-gateway.js';
 import { findNearbyCdos, portAvailabilityByCdo } from '../geo/nearby-cdo.js';
@@ -3069,6 +3074,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
 
   registerGeoOperations(registry, runtime);
   registerResourceOperations(registry, runtime);
+  registerServiceOperations(registry, runtime);
+  registerOrderOperations(registry, runtime);
+  registerPartyOperations(registry, runtime);
+  registerStudioOperations(registry, runtime);
   registerOperationMetaTools(registry);
 
   return {
@@ -3237,6 +3246,7 @@ const META_TOOL_ROLES = [
   ...CATALOG_ADMIN_ROLES,
   ...ORDER_READ_ROLES,
   ...ORDER_REQUEST_ROLES,
+  ...STUDIO_READ_ROLES,
 ] as const;
 
 const registerOperationMetaTools = (registry: McpToolRegistry): void => {

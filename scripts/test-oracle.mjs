@@ -50,6 +50,7 @@ const result = spawnSync(
     'test/mcp-http.spec.ts',
     'test/mcp-geo-workflow.spec.ts',
     'test/mcp-rbac.spec.ts',
+    'test/mcp-domain-operations.spec.ts',
     'test/mcp-meta-tools.spec.ts',
     'test/geo-nearby-cdo.spec.ts',
     'test/mcp-project.spec.ts',

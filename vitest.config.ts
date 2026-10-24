@@ -21,6 +21,7 @@ export default {
       'test/*-management.spec.ts',
       'test/mcp.module.spec.ts',
       'test/mcp-rbac.spec.ts',
+      'test/mcp-domain-operations.spec.ts',
       'test/mcp-meta-tools.spec.ts',
       'test/geo-nearby-cdo.spec.ts',
       'test/mcp-project.spec.ts',

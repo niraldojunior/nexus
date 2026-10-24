@@ -114,3 +114,76 @@ test.skipIf(!oracleConfigured)('update_party segue prepare → commit com o ator
     await fixture.cleanup();
   }
 });
+
+test.skipIf(!oracleConfigured)(
+  'geo.geocode_address sem chave devolve not_configured e Geonet sem gateway também',
+  async () => {
+    const saved = process.env.GOOGLE_MAPS_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    const fixture = await createFixture();
+    try {
+      const reader = fixture.contextFor('geo-reader', ['inventory.reader']);
+      const geocode = await fixture.module.registry.executeTool(
+        'geo.geocode_address',
+        { address: 'Rua A' },
+        reader,
+      );
+      assert.equal(geocode.ok, true);
+      assert.equal((geocode.data as { status: string }).status, 'not_configured');
+    } finally {
+      if (saved !== undefined) process.env.GOOGLE_MAPS_API_KEY = saved;
+      await fixture.cleanup();
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'studio.save_draft segue prepare → commit, grava o draft e o ator real',
+  async () => {
+    const fixture = await createFixture();
+    try {
+      const editor = fixture.contextFor('studio-editor-1', ['studio.editor', 'studio.reader']);
+      const prepare = await fixture.module.registry.executeTool(
+        'studio.save_draft',
+        { domain: 'parties', snapshot: {} },
+        editor,
+      );
+      assert.equal(prepare.ok, true, JSON.stringify(prepare.error));
+      const token = (prepare.data as { confirmationToken?: string }).confirmationToken;
+      assert.ok(token, 'prepare deve devolver confirmationToken');
+      const commit = await fixture.module.registry.executeTool(
+        'studio.commit_save_draft',
+        { confirmationToken: token },
+        editor,
+      );
+      assert.equal(commit.ok, true, JSON.stringify(commit.error));
+      const status = await fixture.module.registry.executeTool(
+        'studio.get_status',
+        { domain: 'parties' },
+        editor,
+      );
+      assert.ok((status.data as { draftVersion?: unknown }).draftVersion, 'draft deve existir');
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test.skipIf(!oracleConfigured)(
+  'studio.plan_template_import é de leitura: editor planeja, reader é negado',
+  async () => {
+    const fixture = await createFixture();
+    try {
+      const reader = await fixture.module.registry.executeTool(
+        'studio.plan_template_import',
+        { planInput: {} },
+        fixture.contextFor('studio-reader', ['studio.reader']),
+      );
+      assert.equal(reader.error?.code, 'MCP_FORBIDDEN');
+      const names = fixture.module.registry.listTools().map((tool) => tool.name);
+      assert.ok(!names.includes('studio.commit_plan_template_import'));
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);

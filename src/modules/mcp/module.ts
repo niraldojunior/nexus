@@ -1,5 +1,9 @@
 import { AppError } from '../../shared/errors/app-error.js';
-import { isProjectInfrastructureResourceType } from '../project/project-resource-classification.js';
+import {
+  assertProjectStatusChange,
+  assertProjectStatusCreate,
+  PROJECT_STATUS_BEHAVIORS,
+} from '../project/project-status-rules.js';
 import type { NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import type { Characteristic, TmfEventQuery } from '../../shared/tmf/index.js';
 import type { CreatePartyInput, CreatePartyRoleInput, PartyQuery } from '../party/index.js';
@@ -1073,10 +1077,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     requiredRoles: PROJECT_READ_ROLES,
     handler: async (input, context) =>
       registry.successResult('project', 'list_project_areas', context, {
-        areas: await runtime.projectRepository.listAreas(
-          context.requestContext.tenantId,
-          String(input.id),
-        ),
+        areas: await runtime.projectService.listAreas(String(input.id), context.requestContext),
       }),
   });
   registry.register({
@@ -1090,49 +1091,21 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     requiredRoles: PROJECT_READ_ROLES,
     handler: async (input, context) => {
       const { limit, offset } = pageArgs(input, 20, 20);
-      const query = String(input.q ?? '')
-        .trim()
-        .toLocaleLowerCase();
-      if (query.length < 2) {
-        return registry.successResult('project', 'search_project_items', context, {
-          items: [],
-          offset,
-          limit,
-          hasMore: false,
-        });
-      }
-      const scope =
-        input.scope === 'sites' || input.scope === 'infrastructure' || input.scope === 'resources'
-          ? input.scope
-          : 'all';
-      const matches = await runtime.projectRepository.searchItems(
-        context.requestContext.tenantId,
-        String(input.id),
-        query,
-        limit + 1,
-        scope,
-      );
-      const page = matches.slice(offset, offset + limit);
-      const [sites, resources] = await Promise.all([
-        runtime.geoTreeService.sitesByIds(
-          page.filter((item) => item.kind === 'site').map((item) => item.id),
+      return registry.successResult(
+        'project',
+        'search_project_items',
+        context,
+        await runtime.projectService.searchItems(
+          String(input.id),
+          {
+            q: String(input.q ?? ''),
+            scope: typeof input.scope === 'string' ? input.scope : null,
+            limit,
+            offset,
+          },
+          context.requestContext,
         ),
-        runtime.geoTreeService.resourcesByIds(
-          page.filter((item) => item.kind === 'resource').map((item) => item.id),
-        ),
-      ]);
-      const byKey = new Map(
-        [...sites, ...resources].map((item) => [`${item.kind}:${item.refId ?? item.id}`, item]),
       );
-      const items = page
-        .map((item) => byKey.get(`${item.kind}:${item.id}`))
-        .filter((item): item is NonNullable<typeof item> => Boolean(item));
-      return registry.successResult('project', 'search_project_items', context, {
-        items,
-        offset,
-        limit,
-        hasMore: matches.length > offset + limit,
-      });
     },
   });
   registry.register({
@@ -1146,28 +1119,17 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       additionalProperties: false,
     },
     requiredRoles: PROJECT_READ_ROLES,
-    handler: async (input, context) => {
-      const projectId = String(input.id);
-      const query = String(input.q ?? '').trim();
-      const resources = await runtime.resourceService.listResources(
-        { ...(query ? { name: query } : {}), limit: 50 },
-        context.requestContext,
-      );
-      const available = [];
-      for (const resource of resources) {
-        const linked = await runtime.projectRepository.findOpenProjectByResourceId(
-          context.requestContext.tenantId,
-          resource.id,
-        );
-        if (!linked || linked.projectId === projectId) available.push(resource);
-      }
-      return registry.successResult(
+    handler: async (input, context) =>
+      registry.successResult(
         'project',
         'list_project_resource_candidates',
         context,
-        available,
-      );
-    },
+        await runtime.projectService.listResourceCandidates(
+          String(input.id),
+          String(input.q ?? ''),
+          context.requestContext,
+        ),
+      ),
   });
   registry.register({
     name: 'project.get_resource_creation_options',
@@ -1175,64 +1137,16 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       'Tipos e especificações de recurso que podem ser criados dentro do projeto (catálogo ativo).',
     inputSchema: projectIdSchema,
     requiredRoles: PROJECT_READ_ROLES,
-    handler: async (input, context) => {
-      const project = await runtime.projectRepository.get(
-        context.requestContext.tenantId,
-        String(input.id),
-      );
-      if (!project || project.archivedAt) {
-        throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
-      }
-      const catalogs = await runtime.resourceService.listResourceCatalogs(
-        { status: 'active' },
-        context.requestContext,
-      );
-      const catalog = catalogs.find((item) => item.isDefault) ?? catalogs[0];
-      if (!catalog) {
-        return registry.successResult('project', 'get_resource_creation_options', context, {
-          catalog: null,
-          resourceTypes: [],
-          resourceSpecifications: [],
-        });
-      }
-      const source = await runtime.resourceService.getResourceModelSnapshotSource(
-        catalog.id,
-        context.requestContext,
-      );
-      const modeledTypeIds = new Set(
-        source.nodes.flatMap((node) =>
-          node.kind === 'RESOURCE_TYPE' && node.status === 'active' && node.resourceTypeId
-            ? [node.resourceTypeId]
-            : [],
-        ),
-      );
-      const resourceTypes = source.resourceTypes
-        .filter((item) => item.status === 'active' && modeledTypeIds.has(item.id))
-        .map((item) => ({
-          id: item.id,
-          code: item.code,
-          name: item.name,
-          nature: item.nature,
-          infrastructureEligible: isProjectInfrastructureResourceType(item.code),
-        }));
-      const typeIds = new Set(resourceTypes.map((item) => item.id));
-      const specifications = [];
-      for (let offset = 0; ; offset += 500) {
-        const page = await runtime.resourceService.listResourceSpecifications(
-          { limit: 500, offset },
+    handler: async (input, context) =>
+      registry.successResult(
+        'project',
+        'get_resource_creation_options',
+        context,
+        await runtime.projectService.getResourceCreationOptions(
+          String(input.id),
           context.requestContext,
-        );
-        specifications.push(...page);
-        if (page.length < 500) break;
-      }
-      return registry.successResult('project', 'get_resource_creation_options', context, {
-        catalog: { id: catalog.id, code: catalog.code, name: catalog.name },
-        resourceTypes,
-        resourceSpecifications: specifications
-          .filter((item) => typeIds.has(item.resourceTypeId))
-          .map((item) => ({ id: item.id, name: item.name, resourceTypeId: item.resourceTypeId })),
-      });
-    },
+        ),
+      ),
   });
 
   registerPreparationAlias(
@@ -1343,12 +1257,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'project',
         'list_project_statuses',
         context,
-        await runtime.projectRepository.listStatusCatalog(context.requestContext.tenantId),
+        await runtime.projectService.listStatuses(context.requestContext),
       ),
   });
-  const statusBehaviors = ['planning', 'execution', 'suspended', 'close-release'];
-  const statusError = (message: string, code: string, statusCode = 409) =>
-    new AppError(message, { code, statusCode });
+  const statusBehaviors: string[] = [...PROJECT_STATUS_BEHAVIORS];
   const registerStatusWrite = (
     operation: string,
     description: string,
@@ -1403,67 +1315,15 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     },
     (i) => `Status de projeto "${String(i.name)}" será criado.`,
     (i) => {
-      if (!String(i.name ?? '').trim() || !statusBehaviors.includes(String(i.behavior))) {
-        throw statusError(
-          'project status name and behavior are required',
-          'PROJECT_STATUS_CATALOG_INVALID',
-          400,
-        );
-      }
-      if (i.behavior === 'close-release') {
-        throw statusError(
-          'only status code 17 can close a project',
-          'PROJECT_STATUS_TERMINAL_RESERVED',
-        );
-      }
+      assertProjectStatusCreate(i.name, i.behavior);
     },
-    (i, c) =>
-      runtime.projectRepository.createStatusCatalogItem(c.requestContext.tenantId, {
-        name: String(i.name).trim(),
-        sortOrder: Number(i.sortOrder ?? 1000),
-        active: i.active !== false,
-        behavior: i.behavior as 'planning' | 'execution' | 'suspended' | 'close-release',
-      }),
+    (i, c) => runtime.projectService.createStatus(i, c.requestContext),
   );
   const validateStatusChange = (i: Record<string, unknown>, deleting: boolean) => {
-    const code = String(i.code);
-    const behavior = deleting ? undefined : i.behavior;
-    const deactivating = deleting || i.active === false;
-    if (behavior !== undefined && !statusBehaviors.includes(String(behavior))) {
-      throw statusError('invalid project status behavior', 'PROJECT_STATUS_CATALOG_INVALID', 400);
-    }
-    if (code === '1' && deactivating) {
-      throw statusError(
-        'default project status cannot be deactivated',
-        'PROJECT_STATUS_DEFAULT_PROTECTED',
-      );
-    }
-    if (
-      code === '17' &&
-      ((behavior !== undefined && behavior !== 'close-release') || deactivating)
-    ) {
-      throw statusError('project closing status is protected', 'PROJECT_STATUS_TERMINAL_PROTECTED');
-    }
-    if (code !== '17' && behavior === 'close-release') {
-      throw statusError(
-        'only status code 17 can close a project',
-        'PROJECT_STATUS_TERMINAL_RESERVED',
-      );
-    }
+    assertProjectStatusChange(String(i.code), i, deleting);
   };
-  const statusChange = async (
-    i: Record<string, unknown>,
-    context: McpToolContext,
-    patch: Record<string, unknown>,
-  ) => {
-    const updated = await runtime.projectRepository.updateStatusCatalogItem(
-      context.requestContext.tenantId,
-      String(i.code),
-      patch as never,
-    );
-    if (!updated) throw statusError('project status not found', 'PROJECT_STATUS_NOT_FOUND', 404);
-    return updated;
-  };
+  const statusChange = (i: Record<string, unknown>, context: McpToolContext, deleting = false) =>
+    runtime.projectService.updateStatus(String(i.code), i, context.requestContext, deleting);
   registerStatusWrite(
     'update_project_status',
     'atualiza um status do catálogo de projetos.',
@@ -1481,13 +1341,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     },
     (i) => `Status de projeto ${String(i.code)} será atualizado.`,
     (i) => validateStatusChange(i, false),
-    (i, c) =>
-      statusChange(i, c, {
-        ...(i.name !== undefined ? { name: String(i.name).trim() } : {}),
-        ...(i.sortOrder !== undefined ? { sortOrder: Number(i.sortOrder) } : {}),
-        ...(i.active !== undefined ? { active: Boolean(i.active) } : {}),
-        ...(i.behavior !== undefined ? { behavior: i.behavior } : {}),
-      }),
+    (i, c) => statusChange(i, c),
   );
   registerStatusWrite(
     'delete_project_status',
@@ -1500,7 +1354,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     },
     (i) => `Status de projeto ${String(i.code)} será desativado.`,
     (i) => validateStatusChange(i, true),
-    (i, c) => statusChange(i, c, { active: false }),
+    (i, c) => statusChange(i, c, true),
   );
 
   registerProjectWrite(

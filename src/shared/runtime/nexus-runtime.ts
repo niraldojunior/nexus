@@ -374,6 +374,7 @@ export const createNexusRuntime = async (db: DatabaseClient, options: NexusRunti
     geoService,
     resourceService,
     eventService,
+    geoTreeService,
   );
 
   const partyRoleTypeService = new PartyRoleTypeService(

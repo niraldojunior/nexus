@@ -380,7 +380,7 @@ export function phase3IncrementalResourcePageSql(t: (table: string) => string): 
                       AND f.entity_id = r.id
                  )
                )
-             ORDER BY r.updated_at, r.id
+             ORDER BY SYS_EXTRACT_UTC(r.updated_at), r.id
              FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
           ), resolved AS (
             SELECT /*+ USE_NL(place_site) USE_NL(place_address) */
@@ -434,7 +434,7 @@ export function phase3IncrementalSitePageSql(t: (table: string) => string): stri
                  s.updated_at > :lastUpdatedAt OR
                  (s.updated_at = :lastUpdatedAt AND s.id > :lastId)
                )
-             ORDER BY s.updated_at, s.id
+             ORDER BY SYS_EXTRACT_UTC(s.updated_at), s.id
              FETCH FIRST ${PHASE3_MAP_PAGE_SIZE} ROWS ONLY
           )
           SELECT s.id AS "ID", s.name AS "NAME", 'site' AS "FEATURE_KIND",

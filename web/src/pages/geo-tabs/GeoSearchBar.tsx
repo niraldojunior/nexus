@@ -12,7 +12,11 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
+import {
+  fetchSitesByAddress,
+  fetchTreeSearch,
+  type GeoTreeNode,
+} from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
   geocodeAddress,
@@ -160,6 +164,7 @@ export function GeoSearchBar({
   const { history, recordNode, recordAddress, remove, clear } = useGeoSearchHistory();
   const debounceRef = useRef<number | undefined>(undefined);
   const nodeSearchAbortRef = useRef<AbortController | null>(null);
+  const addressSiteAbortRef = useRef<AbortController | null>(null);
   const nodeSearchCacheRef = useRef<Map<string, GeoTreeNode[]>>(new Map());
   const requestTokenRef = useRef(0);
   const resolutionTokenRef = useRef(0);
@@ -374,6 +379,8 @@ export function GeoSearchBar({
 
   const cancelAddressResolution = () => {
     resolutionTokenRef.current += 1;
+    addressSiteAbortRef.current?.abort();
+    addressSiteAbortRef.current = null;
     setResolving(false);
   };
 
@@ -396,33 +403,70 @@ export function GeoSearchBar({
     closeDropdown();
   };
 
+  // Um endereço resolvido ainda pode já representar um Local do inventário. A busca por esse
+  // vínculo vem antes do painel de Endereço para que o operador chegue aos dados do Local; sem
+  // correspondência, preserva-se integralmente o fluxo atual de consulta Google/GEONET.
+  const selectResolvedAddress = async (address: DraftAddress, token: number) => {
+    if (!address.streetNr) {
+      onAddressFound(address);
+      recordAddress(address);
+      closeDropdown();
+      return;
+    }
+    const controller = new AbortController();
+    addressSiteAbortRef.current?.abort();
+    addressSiteAbortRef.current = controller;
+    try {
+      const sites = await fetchSitesByAddress(address, { signal: controller.signal });
+      if (resolutionTokenRef.current !== token) return;
+      if (sites.length === 1) {
+        selectNode(sites[0]);
+        return;
+      }
+      // Mais de um Local no mesmo endereço não permite escolher um deles silenciosamente.
+      // Mantemos o endereço até haver uma escolha explícita de Local na busca nominal.
+      onAddressFound(address);
+      recordAddress(address);
+      closeDropdown();
+    } catch (error) {
+      if (resolutionTokenRef.current !== token || controller.signal.aborted) return;
+      onAddressError({
+        term: address.label,
+        status: 'INVENTORY_LOOKUP_ERROR',
+        message: error instanceof Error ? error.message : 'Não foi possível consultar os Locais do Nexus.',
+      });
+      closeDropdown();
+    } finally {
+      if (resolutionTokenRef.current === token) setResolving(false);
+      if (addressSiteAbortRef.current === controller) addressSiteAbortRef.current = null;
+    }
+  };
+
   const selectAddress = async (prediction: AddressPrediction) => {
     const token = ++resolutionTokenRef.current;
     dismissKeyboard();
     setResolving(true);
     const outcome = await resolveAddressByPlaceId(prediction.placeId);
     if (resolutionTokenRef.current !== token) return;
-    setResolving(false);
-    if (outcome.ok) {
-      onAddressFound(outcome.address);
-      recordAddress(outcome.address);
-    } else
+    if (outcome.ok) await selectResolvedAddress(outcome.address, token);
+    else {
+      setResolving(false);
       onAddressError({
         term: prediction.description,
         status: outcome.status,
         message: outcome.message,
       });
-    closeDropdown();
+      closeDropdown();
+    }
   };
 
-  // Endereço vindo do histórico: já resolvido, então vai direto para o mapa/painel sem tocar o
-  // Google (não gasta cota) e sobe no ranking.
+  // Endereço do histórico não consome Google, mas é revalidado no inventário: um Local pode ter
+  // sido cadastrado desde a última visita.
   const selectHistoryAddress = (address: DraftAddress) => {
-    cancelAddressResolution();
+    const token = ++resolutionTokenRef.current;
     dismissKeyboard();
-    onAddressFound(address);
-    recordAddress(address);
-    closeDropdown();
+    setResolving(true);
+    void selectResolvedAddress(address, token);
   };
 
   const selectOption = async (option: SearchOption) => {
@@ -452,12 +496,12 @@ export function GeoSearchBar({
     setResolving(true);
     const outcome = await geocodeAddress(term);
     if (resolutionTokenRef.current !== token) return;
-    setResolving(false);
-    if (outcome.ok) {
-      onAddressFound(outcome.address);
-      recordAddress(outcome.address);
-    } else onAddressError({ term, status: outcome.status, message: outcome.message });
-    closeDropdown();
+    if (outcome.ok) await selectResolvedAddress(outcome.address, token);
+    else {
+      setResolving(false);
+      onAddressError({ term, status: outcome.status, message: outcome.message });
+      closeDropdown();
+    }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {

@@ -1,4 +1,5 @@
 import { AppError } from '../../shared/errors/app-error.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
 import type { NexusRuntime } from '../../shared/runtime/nexus-runtime.js';
 import type { RelatedParty } from '../../shared/tmf/index.js';
 import type { GeographicAddress, GeographicSite } from '../geo/domain.js';
@@ -50,6 +51,7 @@ export type CondominiumWorkflowResult = {
 export const prepareCondominiumWorkflow = async (
   runtime: NexusRuntime,
   input: CondominiumWorkflowInput,
+  context?: RequestContext,
 ): Promise<PreparedCondominiumWorkflow> => {
   if (input.blocks.length === 0) {
     throw new AppError('at least one condominium block is required', {
@@ -58,11 +60,10 @@ export const prepareCondominiumWorkflow = async (
     });
   }
 
-  const addresses = await runtime.geoService.listAddresses({
-    ...input.address,
-    includeCharacteristics: false,
-    limit: 50,
-  });
+  const addresses = await runtime.geoService.listAddresses(
+    { ...input.address, includeCharacteristics: false, limit: 50 },
+    context,
+  );
   if (addresses.length === 0) {
     throw new AppError('geographic address not found', {
       code: 'GEO_ADDRESS_NOT_FOUND',
@@ -71,8 +72,8 @@ export const prepareCondominiumWorkflow = async (
   }
 
   const [condominiumSpecification, blockSpecification] = await Promise.all([
-    resolveSiteSpecification(runtime, 'CONDOMINIUM'),
-    resolveSiteSpecification(runtime, 'BLOCK'),
+    resolveSiteSpecification(runtime, 'CONDOMINIUM', context),
+    resolveSiteSpecification(runtime, 'BLOCK', context),
   ]);
   const resolvedBlocks = await Promise.all(
     input.blocks.map(async (block) => {
@@ -82,7 +83,7 @@ export const prepareCondominiumWorkflow = async (
           statusCode: 422,
         });
       }
-      const resource = await resolveCdoi(runtime, block.cdoiName);
+      const resource = await resolveCdoi(runtime, block.cdoiName, context);
       const address = resolveAddressForResource(addresses, resource);
       return {
         name: block.name.trim(),
@@ -118,45 +119,63 @@ export const prepareCondominiumWorkflow = async (
 export const commitCondominiumWorkflow = async (
   runtime: NexusRuntime,
   prepared: PreparedCondominiumWorkflow,
+  context?: RequestContext,
 ): Promise<CondominiumWorkflowResult> =>
   await runtime.db.transaction(async () => {
-    const condominium = await runtime.geoService.createSite({
-      name: prepared.condominiumName,
-      status: prepared.status,
-      siteSpecificationId: prepared.condominiumSpecificationId,
-      addressId: prepared.addressId,
-      relatedParty: prepared.relatedParty.map((party) => ({
-        id: party.id,
-        ...(party.role ? { role: party.role } : {}),
-      })),
-    });
-
-    const blocks: CondominiumWorkflowResult['blocks'] = [];
-    for (const block of prepared.blocks) {
-      const site = await runtime.geoService.createSite({
-        name: block.name,
+    const condominium = await runtime.geoService.createSite(
+      {
+        name: prepared.condominiumName,
         status: prepared.status,
-        siteSpecificationId: prepared.blockSpecificationId,
-        parentSiteId: condominium.id,
-        addressId: block.addressId,
-        placeId: block.locationId,
+        siteSpecificationId: prepared.condominiumSpecificationId,
+        addressId: prepared.addressId,
         relatedParty: prepared.relatedParty.map((party) => ({
           id: party.id,
           ...(party.role ? { role: party.role } : {}),
         })),
-      });
-      const cdoi = await runtime.resourceService.updatePhysicalResource(block.resourceId, {
-        placeId: site.id,
-        placeType: 'GeographicSite',
-      });
+      },
+      context,
+    );
+
+    const blocks: CondominiumWorkflowResult['blocks'] = [];
+    for (const block of prepared.blocks) {
+      const site = await runtime.geoService.createSite(
+        {
+          name: block.name,
+          status: prepared.status,
+          siteSpecificationId: prepared.blockSpecificationId,
+          parentSiteId: condominium.id,
+          addressId: block.addressId,
+          placeId: block.locationId,
+          relatedParty: prepared.relatedParty.map((party) => ({
+            id: party.id,
+            ...(party.role ? { role: party.role } : {}),
+          })),
+        },
+        context,
+      );
+      const cdoi = await runtime.resourceService.updatePhysicalResource(
+        block.resourceId,
+        {
+          placeId: site.id,
+          placeType: 'GeographicSite',
+        },
+        context,
+      );
       blocks.push({ site, cdoi });
     }
 
     return { condominium, blocks };
   });
 
-const resolveSiteSpecification = async (runtime: NexusRuntime, code: string) => {
-  const matches = await runtime.geoService.listSpecs({ code, lifecycleStatus: 'Active', limit: 2 });
+const resolveSiteSpecification = async (
+  runtime: NexusRuntime,
+  code: string,
+  context?: RequestContext,
+) => {
+  const matches = await runtime.geoService.listSpecs(
+    { code, lifecycleStatus: 'Active', limit: 2 },
+    context,
+  );
   const specification = matches.find((item) => item.code === code);
   if (!specification) {
     throw new AppError(`site specification ${code} not found`, {
@@ -167,15 +186,22 @@ const resolveSiteSpecification = async (runtime: NexusRuntime, code: string) => 
   return specification;
 };
 
-const resolveCdoi = async (runtime: NexusRuntime, cdoiName: string): Promise<PhysicalResource> => {
+const resolveCdoi = async (
+  runtime: NexusRuntime,
+  cdoiName: string,
+  context?: RequestContext,
+): Promise<PhysicalResource> => {
   const expected = normalizeAddressText(cdoiName);
   const candidates = (
-    await runtime.resourceService.listResources({
-      name: cdoiName,
-      kind: 'PhysicalResource',
-      status: 'active',
-      limit: 25,
-    })
+    await runtime.resourceService.listResources(
+      {
+        name: cdoiName,
+        kind: 'PhysicalResource',
+        status: 'active',
+        limit: 25,
+      },
+      context,
+    )
   ).filter(
     (resource): resource is PhysicalResource =>
       resource['@type'] === 'PhysicalResource' && resource.resourceType === 'CTO',

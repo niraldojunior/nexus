@@ -388,10 +388,18 @@ const extractPendingConfirmations = (
 
     const pendingItems = extractPendingConfirmationItems(data);
 
+    // Via nexus.invoke_operation o toolName é da meta-tool; domain/operation reais vêm do resultado.
+    const resultRef = execution.result as { domain?: unknown; operation?: unknown };
+    const viaMeta =
+      execution.toolName.startsWith('nexus.') &&
+      typeof resultRef.domain === 'string' &&
+      typeof resultRef.operation === 'string';
     pendingConfirmations.push({
       confirmationToken,
-      domain: execution.toolName.split('.')[0] ?? 'mcp',
-      operation: execution.toolName.split('.').slice(1).join('.'),
+      domain: viaMeta ? (resultRef.domain as string) : (execution.toolName.split('.')[0] ?? 'mcp'),
+      operation: viaMeta
+        ? (resultRef.operation as string)
+        : execution.toolName.split('.').slice(1).join('.'),
       ...(typeof data.summary === 'string' ? { summary: data.summary } : {}),
       ...(typeof data.expiresAt === 'string' ? { expiresAt: data.expiresAt } : {}),
       ...(pendingItems.length > 0 ? { items: pendingItems } : {}),

@@ -37,7 +37,7 @@ import { getStudioSvgAssetDataUrl } from '../../services/studioAssetApi';
 import type { MapTileFeature } from '../../services/geoMapTileApi';
 
 type Maps = GoogleMapsApi['maps'];
-type Project = (lng: number, lat: number) => [number, number] | null;
+type Projector = (lng: number, lat: number) => [number, number] | null;
 type Viewport = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
 // Raio de captura do hit-test, em px de tela — folgado o bastante pra tocar num ícone pequeno
@@ -145,7 +145,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
   // Projeção e resultado do último `draw()` — hitTest reusa os dois: reprojeta a coordenada
   // consultada no MESMO espaço de pixel local em que os pontos/linhas já foram desenhados, em
   // vez de recalcular geometria do zero a cada clique/hover.
-  let lastProject: Project | null = null;
+  let lastProject: Projector | null = null;
   let drawnPoints: DrawnPoint[] = [];
   let drawnLines: DrawnLine[] = [];
 
@@ -349,7 +349,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
         return;
       }
 
-      const toLocal: Project = (lng, lat) => {
+      const toLocal: Projector = (lng, lat) => {
         const pixel = projection.fromLatLngToDivPixel(new maps.LatLng(lat, lng));
         return pixel ? [pixel.x - left, pixel.y - top] : null;
       };
@@ -396,7 +396,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     private drawPolygon(
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
-      project: Project,
+      project: Projector,
     ): void {
       const geometry = feature.geometry;
       if (!geometry || geometry.type !== 'Polygon') return;
@@ -432,7 +432,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     private drawLine(
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
-      project: Project,
+      project: Projector,
       visualRank: number,
     ): void {
       const geometry = feature.geometry;
@@ -477,7 +477,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     private drawResourcePoint(
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
-      project: Project,
+      project: Projector,
       visualRank: number,
     ): void {
       const local = project(feature.lng, feature.lat);
@@ -513,7 +513,7 @@ export function createInfraOverlay(maps: Maps, map: GoogleMapInstance): InfraOve
     private drawSitePoint(
       context: CanvasRenderingContext2D,
       feature: MapTileFeature,
-      project: Project,
+      project: Projector,
       visualRank: number,
     ): void {
       const local = project(feature.lng, feature.lat);

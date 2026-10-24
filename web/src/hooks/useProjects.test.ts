@@ -1,9 +1,9 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useGeoProjects } from './useGeoProjects';
-import type { GeoProject } from '../services/geoProjectApi';
+import { useProjects } from './useProjects';
+import type { Project } from '../services/projectApi';
 
-const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
+const project = (overrides: Partial<Project> = {}): Project => ({
   id: 'prj-1',
   tenantId: 'default',
   name: 'Expansão Icaraí',
@@ -22,8 +22,8 @@ const mocks = vi.hoisted(() => ({
   deleteProject: vi.fn(),
 }));
 
-vi.mock('../services/geoProjectApi', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/geoProjectApi')>();
+vi.mock('../services/projectApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/projectApi')>();
   return { ...actual, fetchProjects: mocks.fetchProjects, deleteProject: mocks.deleteProject };
 });
 
@@ -34,10 +34,10 @@ afterEach(() => {
   mocks.deleteProject.mockReset();
 });
 
-describe('useGeoProjects', () => {
+describe('useProjects', () => {
   it('adjustSiteCount atualiza o contador de um projeto sem esperar reload do servidor', async () => {
     mocks.fetchProjects.mockResolvedValue([project({ siteCount: 1 })]);
-    const { result } = renderHook(() => useGeoProjects());
+    const { result } = renderHook(() => useProjects());
 
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
@@ -50,7 +50,7 @@ describe('useGeoProjects', () => {
 
   it('adjustSiteCount nunca deixa o contador negativo', async () => {
     mocks.fetchProjects.mockResolvedValue([project({ siteCount: 0 })]);
-    const { result } = renderHook(() => useGeoProjects());
+    const { result } = renderHook(() => useProjects());
 
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
@@ -61,7 +61,7 @@ describe('useGeoProjects', () => {
   it('remove() tira o projeto da lista só depois que o servidor confirma deleted:true', async () => {
     mocks.fetchProjects.mockResolvedValue([project()]);
     mocks.deleteProject.mockResolvedValue({ deleted: true, retired: 1, skipped: 0, blocked: 0 });
-    const { result } = renderHook(() => useGeoProjects());
+    const { result } = renderHook(() => useProjects());
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
     await act(async () => {
@@ -74,7 +74,7 @@ describe('useGeoProjects', () => {
   it('remove() mantém o projeto na lista quando o servidor recusa (local bloqueado, issue #58)', async () => {
     mocks.fetchProjects.mockResolvedValue([project()]);
     mocks.deleteProject.mockResolvedValue({ deleted: false, retired: 0, skipped: 0, blocked: 1 });
-    const { result } = renderHook(() => useGeoProjects());
+    const { result } = renderHook(() => useProjects());
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
     const summary = await act(async () => await result.current.remove('prj-1'));
@@ -86,7 +86,7 @@ describe('useGeoProjects', () => {
   it('remove() propaga erro do servidor em vez de engolir a rejeição', async () => {
     mocks.fetchProjects.mockResolvedValue([project()]);
     mocks.deleteProject.mockRejectedValue(new Error('network'));
-    const { result } = renderHook(() => useGeoProjects());
+    const { result } = renderHook(() => useProjects());
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
     await expect(result.current.remove('prj-1')).rejects.toThrow('network');

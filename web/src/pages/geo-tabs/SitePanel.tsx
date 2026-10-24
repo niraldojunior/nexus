@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { postJson, type GeoSite, type GeoSpec } from '../../services/geoApi';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { Project } from '../../services/projectApi';
 import {
   fetchGeonetCandidates,
   fetchGeonetDetail,
@@ -60,7 +60,7 @@ export type SitePanelProps = {
   // Presente quando o painel é aberto de dentro de um Projeto de trabalho (REQ-MOD01-015):
   // em criação, exige candidato GEONET real (RN-008); em consulta, trava o Status enquanto
   // o projeto está em curso (RN-007).
-  project?: GeoProject | null;
+  project?: Project | null;
   projectId?: string | null;
   specs: GeoSpec[];
   sites: GeoSite[];
@@ -78,7 +78,7 @@ export type SitePanelProps = {
   onChanged: () => void;
   onOpenResource: (resourceId: string) => void;
   // "Remover do projeto" (RN-009): só existe enquanto o projeto está em curso — soft-termina
-  // o Site e desfaz o vínculo (DELETE /v1/geo/projects/:id/sites/:siteId), fecha o painel em
+  // o Site e desfaz o vínculo (DELETE /v1/projects/:id/sites/:siteId), fecha o painel em
   // seguida. Ausente fora do contexto de Projeto ou depois que ele terminou (aí o Site já tem
   // vida própria — RF-010 — e "remover" vira a mesma troca de Status de qualquer outro local).
   onRemoveFromProject?: () => Promise<void>;
@@ -499,7 +499,7 @@ function CreateBody({
   onDirtyChange,
 }: {
   specs: GeoSpec[];
-  project: GeoProject | null;
+  project: Project | null;
   projectId: string | null;
   pickedAddress: DraftAddress | null;
   pickingOnMap: boolean;
@@ -631,7 +631,7 @@ function CreateBody({
         ...(projectId ? { geonetAddressId, note: noteDraft.trim() || undefined } : {}),
       };
       const result = projectId
-        ? await postJson<{ site: GeoSite }>(`/v1/geo/projects/${projectId}/sites`, payload)
+        ? await postJson<{ site: GeoSite }>(`/v1/projects/${projectId}/sites`, payload)
         : await postJson<{ site: GeoSite }>('/v1/geo/workspace/site-at-address', payload);
       onCreated(result);
     } catch (err) {

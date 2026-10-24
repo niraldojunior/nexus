@@ -15,14 +15,14 @@
 // Função pura (sem banco, sem I/O) — o mesmo motivo de coverage-grid.ts: o script de geração
 // (via dist/) e o teste unitário compõem em cima.
 
-import type { GeoJSONPolygon } from './domain.js';
+import type { GeoJSONPolygon } from '../geo/domain.js';
 import {
   connectedComponents,
   lngLatToMercator,
   stampCells,
   tracePolygon,
   type CdoPoint,
-} from './coverage-grid.js';
+} from '../geo/coverage-grid.js';
 
 // Raio de agrupamento: dois locais a menos de 2× isto caem na mesma mancha (mesmo raciocínio do
 // disco de cobertura em coverage-grid.ts). 200 m — validado contra a carga real (Onitel):

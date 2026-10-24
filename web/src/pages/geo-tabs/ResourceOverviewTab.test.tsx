@@ -263,7 +263,7 @@ const detail = (overrides: Partial<PhysicalResourceDetail> = {}): PhysicalResour
     geometry: { type: 'Point', coordinates: [-43.10944, -22.90278] },
   },
   servingSite: { id: 'co-1', name: 'Estação Icaraí', '@referredType': 'GeographicSite' },
-  project: { id: 'project-1', name: 'Expansão Icaraí', '@referredType': 'GeoProject' },
+  project: { id: 'project-1', name: 'Expansão Icaraí', '@referredType': 'Project' },
   childCount: 8,
   ...overrides,
 });

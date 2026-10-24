@@ -20,7 +20,18 @@ import type {
   CreateServiceOrderInput,
   CreateServiceQualificationInput,
 } from '../order/index.js';
+import {
+  CATALOG_ADMIN_ROLES,
+  INVENTORY_READ_ROLES,
+  INVENTORY_WRITE_ROLES,
+  ORDER_READ_ROLES,
+  ORDER_REQUEST_ROLES,
+} from '../../shared/http/roles.js';
+import type { RequestContext } from '../../shared/http/request-context.js';
+import { registerGeoOperations } from './operations/geo.js';
+import { registerResourceOperations } from './operations/resource.js';
 import { type JsonSchema, validateJsonSchema } from './schema.js';
+import { createGoogleGeocodingGateway } from '../geo/geocoding-gateway.js';
 import { findNearbyCdos, portAvailabilityByCdo } from '../geo/nearby-cdo.js';
 import {
   OracleMcpConfirmationRepository,
@@ -63,24 +74,29 @@ export type McpToolDefinition = {
   description: string;
   inputSchema: JsonSchema;
   exposeToModel?: boolean;
+  // Papéis aceitos (qualquer um basta). Sem valor, `defaultRequiredRoles` deriva do domínio e do
+  // tipo da operação, espelhando o gate HTTP equivalente.
+  requiredRoles?: readonly string[];
   handler: (
     input: Record<string, unknown>,
     context: McpToolContext,
   ) => Promise<McpToolResult> | McpToolResult;
 };
 
+// Especificações e modelos de equipamento são catálogo (C9): mesma regra de `catalog.admin` das
+// rotas HTTP de Specification.
+const CATALOG_OPERATION = /specification|equipment_model/;
+
+const defaultRequiredRoles = (name: string, isWrite: boolean): readonly string[] => {
+  const [domain = '', ...rest] = name.split('.');
+  const operation = rest.join('.');
+  if (isWrite && CATALOG_OPERATION.test(operation)) return CATALOG_ADMIN_ROLES;
+  if (domain === 'order') return isWrite ? ORDER_REQUEST_ROLES : ORDER_READ_ROLES;
+  return isWrite ? INVENTORY_WRITE_ROLES : INVENTORY_READ_ROLES;
+};
+
 const SOURCE = 'nexus-tmf-mcp' as const;
 const DEFAULT_CONFIRMATION_TTL_MS = 30 * 60 * 1000;
-const EQUIPMENT_MODEL_CATALOG: Record<
-  'ONT' | 'CPE' | 'OLT' | 'Router' | 'Switch',
-  { resourceTypeCode: string; label: string }
-> = {
-  ONT: { resourceTypeCode: 'ONT', label: 'ONT' },
-  CPE: { resourceTypeCode: 'CPE', label: 'CPE' },
-  OLT: { resourceTypeCode: 'OLT', label: 'OLT' },
-  Router: { resourceTypeCode: 'Router', label: 'Router' },
-  Switch: { resourceTypeCode: 'Switch', label: 'Switch' },
-};
 
 type PrepareResult = {
   summary: string;
@@ -93,7 +109,23 @@ export class McpToolRegistry {
   public constructor(private readonly confirmations: OracleMcpConfirmationRepository) {}
 
   public register(tool: McpToolDefinition): void {
-    this.tools.set(tool.name, tool);
+    // Commit é a escrita de fato: só o clique de confirmação do usuário pode acioná-lo, nunca o
+    // modelo no mesmo turno do prepare.
+    const isCommit = tool.name.includes('.commit_');
+    this.tools.set(tool.name, isCommit ? { ...tool, exposeToModel: false } : tool);
+  }
+
+  // Uma tool é de escrita se é um `commit_*` ou o `prepare` de um commit registrado.
+  private isWriteTool(name: string): boolean {
+    if (name.includes('.commit_')) return true;
+    const [domain = '', ...rest] = name.split('.');
+    return this.tools.has(`${domain}.commit_${rest.join('.')}`);
+  }
+
+  private missingRole(tool: McpToolDefinition, context: McpToolContext): readonly string[] | null {
+    const required =
+      tool.requiredRoles ?? defaultRequiredRoles(tool.name, this.isWriteTool(tool.name));
+    return context.requestContext.roles.some((role) => required.includes(role)) ? null : required;
   }
 
   public listTools(options: { exposeToModelOnly?: boolean } = {}): McpToolDefinition[] {
@@ -118,6 +150,18 @@ export class McpToolRegistry {
       );
     }
 
+    const missing = this.missingRole(tool, context);
+    if (missing) {
+      return this.errorResult(
+        tool.name.split('.')[0] ?? 'mcp',
+        tool.name.split('.').slice(1).join('.'),
+        context,
+        'MCP_FORBIDDEN',
+        `permissão insuficiente: requer um dos papéis ${missing.join(', ')}`,
+        { requiredRoles: missing },
+      );
+    }
+
     const validationErrors = validateJsonSchema(input, tool.inputSchema);
     if (validationErrors.length > 0) {
       return this.errorResult(
@@ -137,18 +181,17 @@ export class McpToolRegistry {
     }
   }
 
-  public toModelTools(): Array<{
-    type: 'function';
-    function: { name: string; description: string; parameters: JsonSchema };
-  }> {
-    return this.listTools({ exposeToModelOnly: true }).map((tool) => ({
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.inputSchema,
-      },
-    }));
+  // Operações descobríveis: tudo que o modelo pode acionar (exclui commit_* e as próprias
+  // meta-tools) e que o usuário tem papel para executar.
+  public listOperations(context: McpToolContext): McpToolDefinition[] {
+    return this.listTools({ exposeToModelOnly: true }).filter(
+      (tool) => !tool.name.startsWith('nexus.') && this.missingRole(tool, context) === null,
+    );
+  }
+
+  public getOperation(name: string): McpToolDefinition | undefined {
+    const tool = this.tools.get(name);
+    return tool && tool.exposeToModel !== false && !name.startsWith('nexus.') ? tool : undefined;
   }
 
   private normalizeError(name: string, context: McpToolContext, error: unknown): McpToolResult {
@@ -217,6 +260,9 @@ export class McpToolRegistry {
         permissions: context.permissions,
         executionMode: context.executionMode,
         sessionId: context.sessionId,
+        // Quem preparou: só o mesmo ator/tenant pode confirmar.
+        actorSub: context.requestContext.actorSub,
+        tenantId: context.requestContext.tenantId,
       },
       createdAt: createdAt.toISOString(),
       expiresAt: new Date(createdAt.getTime() + DEFAULT_CONFIRMATION_TTL_MS).toISOString(),
@@ -262,6 +308,18 @@ export class McpToolRegistry {
         'confirmation token does not match the requested operation',
       );
     }
+    if (
+      pending.context.actorSub !== context.requestContext.actorSub ||
+      pending.context.tenantId !== context.requestContext.tenantId
+    ) {
+      return this.errorResult(
+        domain,
+        operation,
+        context,
+        'MCP_CONFIRMATION_NOT_FOUND',
+        'confirmation token not found',
+      );
+    }
     if (pending.consumedAt) {
       return this.errorResult(
         domain,
@@ -283,12 +341,19 @@ export class McpToolRegistry {
 
     const consumed = await this.confirmations.consume(confirmationToken);
     if (!consumed) {
+      // Outro commit pode ter consumido o token entre a leitura e o UPDATE atômico.
+      // Consulta novamente para devolver o motivo correto em vez de mascarar a corrida como 404.
+      const afterConsume = await this.confirmations.get(confirmationToken);
       return this.errorResult(
         domain,
         operation,
         context,
-        'MCP_CONFIRMATION_NOT_FOUND',
-        'confirmation token not found',
+        afterConsume?.consumedAt
+          ? 'MCP_CONFIRMATION_ALREADY_CONSUMED'
+          : 'MCP_CONFIRMATION_NOT_FOUND',
+        afterConsume?.consumedAt
+          ? 'confirmation token already consumed'
+          : 'confirmation token not found',
       );
     }
 
@@ -357,6 +422,49 @@ const characteristicArraySchema: JsonSchema = {
 export const createNexusMcpModule = (runtime: NexusRuntime) => {
   const confirmations = new OracleMcpConfirmationRepository(runtime.db);
   const registry = new McpToolRegistry(confirmations);
+  const geocoder = createGoogleGeocodingGateway();
+
+  const projectIdSchema: JsonSchema = {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+    required: ['id'],
+    additionalProperties: false,
+  };
+  const projectMutationSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      payload: { type: 'object', additionalProperties: true },
+    },
+    required: ['id', 'payload'],
+    additionalProperties: false,
+  };
+
+  registry.register({
+    name: 'project.list_projects',
+    description: 'Lista projetos que o usuário pode consultar.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: async (_input, context) =>
+      registry.successResult(
+        'project',
+        'list_projects',
+        context,
+        await runtime.projectService.list(context.requestContext),
+      ),
+  });
+
+  registry.register({
+    name: 'project.get_project',
+    description: 'Consulta um projeto por identificador.',
+    inputSchema: projectIdSchema,
+    handler: async (input, context) =>
+      registry.successResult(
+        'project',
+        'get_project',
+        context,
+        (await runtime.projectService.get(String(input.id), context.requestContext)) ?? null,
+      ),
+  });
 
   const querySiteSchema: JsonSchema = {
     type: 'object',
@@ -367,7 +475,20 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       parentSiteId: { type: 'string' },
       placeId: { type: 'string' },
       relatedPartyId: { type: 'string' },
-      status: { type: 'string', enum: ['planned', 'active', 'suspended', 'terminated'] },
+      status: {
+        type: 'string',
+        enum: [
+          'Planned',
+          'InConstruction',
+          'Active',
+          'InDeactivation',
+          'Retired',
+          'planned',
+          'active',
+          'suspended',
+          'terminated',
+        ],
+      },
       limit: { type: 'integer' },
       offset: { type: 'integer' },
     },
@@ -461,32 +582,39 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       'Lista Geographic Sites do inventario Nexus com filtros por id, nome, status e relacionamentos.',
     inputSchema: querySiteSchema,
     handler: async (input, context) => {
-      const items = paginate(
-        (await runtime.geoService.listSites()).filter((site) => {
-          if (typeof input.id === 'string' && site.id !== input.id) return false;
-          if (
-            typeof input.name === 'string' &&
-            !site.name.toLowerCase().includes(input.name.toLowerCase())
-          )
-            return false;
-          if (
-            typeof input.siteSpecificationId === 'string' &&
-            site.siteSpecificationId !== input.siteSpecificationId
-          )
-            return false;
-          if (typeof input.parentSiteId === 'string' && site.parentSite?.id !== input.parentSiteId)
-            return false;
-          if (typeof input.placeId === 'string' && site.place?.id !== input.placeId) return false;
-          if (
-            typeof input.relatedPartyId === 'string' &&
-            !site.relatedParty.some((item) => item.id === input.relatedPartyId)
-          )
-            return false;
-          if (typeof input.status === 'string' && site.status !== input.status) return false;
-          return true;
-        }),
-        input,
+      // Status, especificação e pai filtram no banco (aceita os valores reais e os aliases). Só
+      // quando sobra filtro em memória (id, nome, place, party) a paginação acontece depois dele.
+      const inMemory = ['id', 'name', 'placeId', 'relatedPartyId'].some(
+        (key) => typeof input[key] === 'string',
       );
+      const sites = await runtime.geoService.listSites(
+        {
+          ...(typeof input.status === 'string' ? { status: input.status as never } : {}),
+          ...(typeof input.siteSpecificationId === 'string'
+            ? { siteSpecificationId: input.siteSpecificationId }
+            : {}),
+          ...(typeof input.parentSiteId === 'string' ? { parentSiteId: input.parentSiteId } : {}),
+          ...(!inMemory && typeof input.limit === 'number' ? { limit: input.limit } : {}),
+          ...(!inMemory && typeof input.offset === 'number' ? { offset: input.offset } : {}),
+        },
+        context.requestContext,
+      );
+      const filtered = sites.filter((site) => {
+        if (typeof input.id === 'string' && site.id !== input.id) return false;
+        if (
+          typeof input.name === 'string' &&
+          !site.name.toLowerCase().includes(input.name.toLowerCase())
+        )
+          return false;
+        if (typeof input.placeId === 'string' && site.place?.id !== input.placeId) return false;
+        if (
+          typeof input.relatedPartyId === 'string' &&
+          !site.relatedParty.some((item) => item.id === input.relatedPartyId)
+        )
+          return false;
+        return true;
+      });
+      const items = inMemory ? paginate(filtered, input) : filtered;
 
       return registry.successResult('geo', 'list_sites', context, {
         items,
@@ -509,7 +637,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'geo',
         'get_site',
         context,
-        (await runtime.geoService.getSite(String(input.id))) ?? null,
+        (await runtime.geoService.getSite(String(input.id), context.requestContext)) ?? null,
       ),
   });
 
@@ -533,10 +661,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       if (typeof input.geographicLocationId === 'string')
         query.geographicLocationId = input.geographicLocationId;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = await runtime.geoService.listAddresses(query);
+      const items = await runtime.geoService.listAddresses(query, context.requestContext);
       if (items.length === 0 && typeof input.street === 'string') {
         // Não cadastrado não é "não existe": geocodifica para o modelo não encerrar a conversa aqui.
-        const geocoded = await geocodeAddressText([
+        const geocoded = await geocoder.geocode([
           input.street,
           input.streetNr,
           input.city,
@@ -578,7 +706,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'geo',
         'get_address',
         context,
-        (await runtime.geoService.getAddress(String(input.id))) ?? null,
+        (await runtime.geoService.getAddress(String(input.id), context.requestContext)) ?? null,
       ),
   });
 
@@ -620,12 +748,18 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       if (typeof input.postcode === 'string') addressQuery.postcode = input.postcode;
       if (typeof input.country === 'string') addressQuery.country = input.country;
 
-      const addresses = await runtime.geoService.listAddresses(addressQuery);
+      const addresses = await runtime.geoService.listAddresses(
+        addressQuery,
+        context.requestContext,
+      );
       const resolvedAddresses = (
         await Promise.all(
           addresses.map(async (address) => {
             if (!address.geographicLocationId) return undefined;
-            const location = await runtime.geoService.getLocation(address.geographicLocationId);
+            const location = await runtime.geoService.getLocation(
+              address.geographicLocationId,
+              context.requestContext,
+            );
             if (!isPointGeographicLocation(location)) return undefined;
             return { address, location };
           }),
@@ -639,7 +773,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       // o endereço" virava count 0 e o Copilot afirmava que não havia CDO próxima.
       let geocoded: { lng: number; lat: number; formattedAddress: string } | undefined;
       if (resolvedAddresses.length === 0) {
-        geocoded = await geocodeAddressText([
+        geocoded = await geocoder.geocode([
           input.street,
           input.streetNr,
           input.city,
@@ -670,7 +804,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       const perPoint = await Promise.all(
         points.map(async (point) => ({
           point,
-          cdos: await findNearbyCdos(runtime.db, point, { radiusMeters, limit }),
+          cdos: await findNearbyCdos(runtime.db, point, {
+            radiusMeters,
+            limit,
+            tenantId: context.requestContext.tenantId,
+          }),
         })),
       );
       const seen = new Set<string>();
@@ -758,7 +896,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         query.lifecycleStatus = input.lifecycleStatus;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const listed = await runtime.geoService.listSpecs(query);
+      const listed = await runtime.geoService.listSpecs(query, context.requestContext);
       const items =
         typeof input.id === 'string' ? listed.filter((item) => item.id === input.id) : listed;
       return registry.successResult('geo', 'list_site_specifications', context, {
@@ -836,7 +974,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     schema: JsonSchema,
     domain: string,
     operation: string,
-    prepare: (payload: Record<string, unknown>) => Promise<PrepareResult> | PrepareResult,
+    prepare: (
+      payload: Record<string, unknown>,
+      context: McpToolContext,
+    ) => Promise<PrepareResult> | PrepareResult,
   ) => {
     registry.register({
       name,
@@ -848,10 +989,300 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           operation,
           input.payload as Record<string, unknown>,
           context,
-          () => prepare(input.payload as Record<string, unknown>),
+          () => prepare(input.payload as Record<string, unknown>, context),
         ),
     });
   };
+
+  const createProjectSchema: JsonSchema = {
+    type: 'object',
+    properties: { payload: { type: 'object', additionalProperties: true } },
+    required: ['payload'],
+    additionalProperties: false,
+  };
+  registerPreparationAlias(
+    'project.create_project',
+    'Prepara a criação de um projeto. Retorna confirmationToken para commit.',
+    createProjectSchema,
+    'project',
+    'create_project',
+    (payload) => ({
+      summary: `Projeto ${String((payload as { name?: unknown }).name ?? 'sem título')} será criado.`,
+    }),
+  );
+  registry.register({
+    name: 'project.commit_create_project',
+    description: 'Confirma e cria um projeto.',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationToken: { type: 'string' } },
+      required: ['confirmationToken'],
+      additionalProperties: false,
+    },
+    handler: (input, context) =>
+      registry.commitMutation(
+        'project',
+        'create_project',
+        String(input.confirmationToken),
+        context,
+        (pending) => runtime.projectService.create(pending.payload, context.requestContext),
+      ),
+  });
+  // Escritas de Projeto: o prepare guarda o input inteiro (id incluso) para o commit reaplicar. O
+  // prepare já falha se o projeto não existe, para o usuário não confirmar algo que não executa.
+  const confirmationTokenSchema: JsonSchema = {
+    type: 'object',
+    properties: { confirmationToken: { type: 'string' } },
+    required: ['confirmationToken'],
+    additionalProperties: false,
+  };
+  const registerProjectWrite = (
+    operation: string,
+    description: string,
+    inputSchema: JsonSchema,
+    summarize: (input: Record<string, unknown>, projectName: string) => string,
+    execute: (input: Record<string, unknown>, context: McpToolContext) => Promise<unknown>,
+  ) => {
+    registry.register({
+      name: `project.${operation}`,
+      description: `Prepara: ${description} Retorna confirmationToken; a execução exige confirmação do usuário.`,
+      inputSchema,
+      handler: (input, context) =>
+        registry.prepareMutation('project', operation, input, context, async () => {
+          const project = await runtime.projectService.get(
+            String(input.id),
+            context.requestContext,
+          );
+          if (!project)
+            throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
+          return { summary: summarize(input, project.name) };
+        }),
+    });
+    registry.register({
+      name: `project.commit_${operation}`,
+      description: `Confirma e executa: ${description}`,
+      inputSchema: confirmationTokenSchema,
+      handler: (input, context) =>
+        registry.commitMutation(
+          'project',
+          operation,
+          String(input.confirmationToken),
+          context,
+          (pending) => execute(pending.payload, context),
+        ),
+    });
+  };
+  const objectPayload = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const projectChildSchema = (
+    extra: Record<string, JsonSchema>,
+    required: string[],
+  ): JsonSchema => ({
+    type: 'object',
+    properties: { id: { type: 'string' }, ...extra },
+    required: ['id', ...required],
+    additionalProperties: false,
+  });
+
+  registerProjectWrite(
+    'update_project',
+    'atualiza metadados do projeto ou muda seu estado (statusCode).',
+    projectMutationSchema,
+    (_input, name) => `Projeto "${name}" será atualizado.`,
+    (input, context) =>
+      runtime.projectService.update(
+        String(input.id),
+        objectPayload(input.payload),
+        context.requestContext,
+      ),
+  );
+  registerProjectWrite(
+    'transition_project',
+    'executa uma transição do workflow do projeto, com cascata para locais e recursos.',
+    projectChildSchema(
+      { transitionId: { type: 'string' }, targetStateCode: { type: 'string' } },
+      [],
+    ),
+    (input, name) =>
+      `Projeto "${name}" mudará de estado (${String(input.targetStateCode ?? input.transitionId ?? 'transição')}), propagando aos locais e recursos vinculados.`,
+    (input, context) =>
+      runtime.projectWorkflowService.executeTransition(
+        String(input.id),
+        {
+          ...(input.transitionId ? { transitionId: String(input.transitionId) } : {}),
+          ...(input.targetStateCode ? { targetStateCode: String(input.targetStateCode) } : {}),
+        },
+        context.requestContext,
+      ),
+  );
+  registerProjectWrite(
+    'archive_project',
+    'arquiva um projeto já encerrado, preservando locais, recursos e histórico.',
+    projectChildSchema({}, []),
+    (_input, name) =>
+      `Projeto "${name}" será arquivado (somente projetos encerrados ou cancelados).`,
+    (input, context) => runtime.projectService.archive(String(input.id), context.requestContext),
+  );
+  registerProjectWrite(
+    'create_project_site',
+    'cria um local no projeto (exige geonetAddressId; o local herda o estado do projeto).',
+    projectChildSchema({ payload: { type: 'object', additionalProperties: true } }, ['payload']),
+    (input, name) => {
+      const site = objectPayload(objectPayload(input.payload).site);
+      return `Local "${String(site.name ?? 'sem nome')}" será criado no projeto "${name}".`;
+    },
+    (input, context) =>
+      runtime.projectService.createSite(
+        String(input.id),
+        objectPayload(input.payload),
+        context.requestContext,
+      ),
+  );
+  registerProjectWrite(
+    'update_project_site',
+    'edita nome, especificação ou nota de um local do projeto.',
+    projectChildSchema(
+      { siteId: { type: 'string' }, payload: { type: 'object', additionalProperties: true } },
+      ['siteId', 'payload'],
+    ),
+    (input, name) => `Local ${String(input.siteId)} do projeto "${name}" será atualizado.`,
+    (input, context) =>
+      runtime.projectService.updateSite(
+        String(input.id),
+        String(input.siteId),
+        objectPayload(input.payload),
+        context.requestContext,
+      ),
+  );
+  registerProjectWrite(
+    'remove_project_site',
+    'remove um local do projeto (o local é encerrado, nunca excluído).',
+    projectChildSchema({ siteId: { type: 'string' } }, ['siteId']),
+    (input, name) =>
+      `Local ${String(input.siteId)} será encerrado e removido do projeto "${name}".`,
+    async (input, context) => {
+      await runtime.projectService.removeSite(
+        String(input.id),
+        String(input.siteId),
+        context.requestContext,
+      );
+      return { removed: true, siteId: String(input.siteId) };
+    },
+  );
+  registerProjectWrite(
+    'create_project_resource',
+    'cria um recurso (físico ou lógico) já vinculado ao projeto, herdando o estado dele.',
+    projectChildSchema({ payload: { type: 'object', additionalProperties: true } }, ['payload']),
+    (input, name) =>
+      `Recurso "${String(objectPayload(input.payload).name ?? 'sem nome')}" será criado no projeto "${name}".`,
+    (input, context) =>
+      runtime.projectService.createResource(
+        String(input.id),
+        objectPayload(input.payload),
+        context.requestContext,
+      ),
+  );
+  registerProjectWrite(
+    'link_project_resource',
+    'vincula um recurso existente ao projeto.',
+    projectChildSchema({ resourceId: { type: 'string' } }, ['resourceId']),
+    (input, name) => `Recurso ${String(input.resourceId)} será vinculado ao projeto "${name}".`,
+    (input, context) =>
+      runtime.projectService.linkResource(
+        String(input.id),
+        String(input.resourceId),
+        context.requestContext,
+      ),
+  );
+  registerProjectWrite(
+    'detach_project_resource',
+    'desvincula um recurso do projeto (o recurso é encerrado, nunca excluído).',
+    projectChildSchema({ resourceId: { type: 'string' } }, ['resourceId']),
+    (input, name) => `Recurso ${String(input.resourceId)} será desvinculado do projeto "${name}".`,
+    async (input, context) => {
+      await runtime.projectService.detachResource(
+        String(input.id),
+        String(input.resourceId),
+        context.requestContext,
+      );
+      return { detached: true, resourceId: String(input.resourceId) };
+    },
+  );
+
+  const pageSchema = (extra: Record<string, JsonSchema> = {}): JsonSchema => ({
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      limit: { type: 'number' },
+      offset: { type: 'number' },
+      ...extra,
+    },
+    required: ['id'],
+    additionalProperties: false,
+  });
+  const pageArgs = (input: Record<string, unknown>, max: number, fallback: number) => ({
+    limit: Math.min(Math.max(Number(input.limit ?? fallback) || fallback, 1), max),
+    offset: Math.max(Number(input.offset ?? 0) || 0, 0),
+  });
+  registry.register({
+    name: 'project.get_project_transitions',
+    description: 'Lista as transições de workflow que o usuário pode executar no projeto.',
+    inputSchema: projectIdSchema,
+    handler: async (input, context) =>
+      registry.successResult(
+        'project',
+        'get_project_transitions',
+        context,
+        await runtime.projectWorkflowService.getProjectTransitions(
+          String(input.id),
+          context.requestContext,
+        ),
+      ),
+  });
+  registry.register({
+    name: 'project.list_project_sites',
+    description: 'Lista (paginado) os locais vinculados a um projeto.',
+    inputSchema: pageSchema(),
+    handler: async (input, context) => {
+      const { limit, offset } = pageArgs(input, 100, 50);
+      const page = await runtime.geoTreeService.projectSitePage(
+        context.requestContext.tenantId,
+        String(input.id),
+        limit,
+        offset,
+      );
+      return registry.successResult('project', 'list_project_sites', context, {
+        items: page.items,
+        offset,
+        limit,
+        total: page.total,
+        hasMore: offset + page.items.length < page.total,
+      });
+    },
+  });
+  registry.register({
+    name: 'project.list_project_resources',
+    description:
+      'Lista (paginado) os recursos vinculados a um projeto; view=infrastructure filtra infraestrutura.',
+    inputSchema: pageSchema({ view: { type: 'string', enum: ['all', 'infrastructure'] } }),
+    handler: async (input, context) => {
+      const { limit, offset } = pageArgs(input, 100, 50);
+      const links = await runtime.projectRepository.listResourceLinks(
+        context.requestContext.tenantId,
+        String(input.id),
+        { limit, offset, view: input.view === 'infrastructure' ? 'infrastructure' : 'all' },
+      );
+      const items = await runtime.geoTreeService.resourcesByIds(
+        links.map((link) => link.resourceId),
+      );
+      return registry.successResult('project', 'list_project_resources', context, {
+        items,
+        offset,
+        limit,
+        hasMore: links.length === limit,
+      });
+    },
+  });
 
   registerPreparationAlias(
     'geo.create_site',
@@ -859,13 +1290,20 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createSitePayloadSchema,
     'geo',
     'create_site',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as Record<string, unknown>;
-      const specification = await resolveSiteSpecificationReference(runtime, typedPayload);
+      const specification = await resolveSiteSpecificationReference(
+        runtime,
+        typedPayload,
+        context.requestContext,
+      );
       typedPayload.siteSpecificationId = specification.id;
       if (
         typedPayload.placeId &&
-        !(await runtime.geoService.getLocation(String(typedPayload.placeId)))
+        !(await runtime.geoService.getLocation(
+          String(typedPayload.placeId),
+          context.requestContext,
+        ))
       ) {
         throw new AppError('geographic location not found', {
           code: 'GEO_LOCATION_NOT_FOUND',
@@ -874,7 +1312,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       }
       if (
         typedPayload.addressId &&
-        !(await runtime.geoService.getAddress(String(typedPayload.addressId)))
+        !(await runtime.geoService.getAddress(
+          String(typedPayload.addressId),
+          context.requestContext,
+        ))
       ) {
         throw new AppError('geographic address not found', {
           code: 'GEO_ADDRESS_NOT_FOUND',
@@ -883,7 +1324,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       }
       if (
         typedPayload.parentSiteId &&
-        !(await runtime.geoService.getSite(String(typedPayload.parentSiteId)))
+        !(await runtime.geoService.getSite(
+          String(typedPayload.parentSiteId),
+          context.requestContext,
+        ))
       ) {
         throw new AppError('geographic site not found', {
           code: 'GEO_SITE_NOT_FOUND',
@@ -928,6 +1372,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
               characteristic?: Characteristic[];
               relatedSite?: Array<{ id: string; relationshipType: string }>;
             },
+            context.requestContext,
           ),
       ),
   });
@@ -984,6 +1429,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       const prepared = await prepareCondominiumWorkflow(
         runtime,
         input.payload as unknown as CondominiumWorkflowInput,
+        context.requestContext,
       );
       return await registry.prepareMutation(
         'geo',
@@ -1018,6 +1464,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           commitCondominiumWorkflow(
             runtime,
             pending.payload as unknown as PreparedCondominiumWorkflow,
+            context.requestContext,
           ),
       ),
   });
@@ -1047,7 +1494,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       if (typeof input.resourceTypeId === 'string') query.resourceTypeId = input.resourceTypeId;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = await runtime.resourceService.listResourceSpecifications(query);
+      const items = await runtime.resourceService.listResourceSpecifications(
+        query,
+        context.requestContext,
+      );
       return registry.successResult('resource', 'list_resource_specifications', context, {
         items,
         count: items.length,
@@ -1069,7 +1519,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'resource',
         'get_resource_specification',
         context,
-        (await runtime.resourceService.getResourceSpecification(String(input.id))) ?? null,
+        (await runtime.resourceService.getResourceSpecification(
+          String(input.id),
+          context.requestContext,
+        )) ?? null,
       ),
   });
 
@@ -1095,7 +1548,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       if (typeof input.relatedPartyId === 'string') query.relatedPartyId = input.relatedPartyId;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = await runtime.resourceService.listResources(query);
+      const items = await runtime.resourceService.listResources(query, context.requestContext);
       return registry.successResult('resource', 'list_resources', context, {
         items,
         count: items.length,
@@ -1119,7 +1572,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       const name = typeof input.name === 'string' ? input.name.trim().toLowerCase() : '';
       const status =
         input.status === 'active' || input.status === 'inactive' ? input.status : undefined;
-      const items = (await runtime.resourceService.listResourceTypes())
+      const items = (await runtime.resourceService.listResourceTypes(context.requestContext))
         .filter(
           (item) =>
             !name ||
@@ -1148,7 +1601,8 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'resource',
         'get_resource',
         context,
-        (await runtime.resourceService.getResource(String(input.id))) ?? null,
+        (await runtime.resourceService.getResource(String(input.id), context.requestContext)) ??
+          null,
       ),
   });
 
@@ -1163,9 +1617,28 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           placeId: { type: 'string' },
           placeType: { type: 'string' },
           status: { type: 'string', enum: ['active', 'inactive', 'suspended', 'terminated'] },
-          administrativeState: { type: 'string', enum: ['unlocked', 'locked'] },
+          administrativeState: { type: 'string', enum: ['unlocked', 'locked', 'shuttingDown'] },
           operationalState: { type: 'string', enum: ['enabled', 'disabled'] },
-          usageState: { type: 'string', enum: ['idle', 'busy', 'unknown'] },
+          usageState: { type: 'string', enum: ['idle', 'active', 'busy', 'unknown'] },
+          serialNumber: { type: 'string' },
+          statusCode: { type: 'string' },
+          label: { type: 'string' },
+          assetReference: { type: 'string' },
+          projectId: { type: 'string' },
+          relatedParty: entityRefArraySchema,
+          resourceRelationship: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                relationshipType: { type: 'string' },
+                '@referredType': { type: 'string', enum: ['Resource'] },
+              },
+              required: ['id', 'relationshipType'],
+              additionalProperties: false,
+            },
+          },
           characteristic: characteristicArraySchema,
         },
         required: ['id'],
@@ -1184,7 +1657,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     handler: async (input, context) => {
       const payload = input.payload as Record<string, unknown>;
       const id = String(payload.id);
-      const resource = await runtime.resourceService.getResource(id);
+      const resource = await runtime.resourceService.getResource(id, context.requestContext);
       if (!resource || resource['@type'] !== 'PhysicalResource') {
         throw new AppError('physical resource not found', {
           code: 'RESOURCE_NOT_FOUND',
@@ -1193,9 +1666,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       }
       if (typeof payload.placeId === 'string') {
         const [site, address, location] = await Promise.all([
-          runtime.geoService.getSite(payload.placeId),
-          runtime.geoService.getAddress(payload.placeId),
-          runtime.geoService.getLocation(payload.placeId),
+          runtime.geoService.getSite(payload.placeId, context.requestContext),
+          runtime.geoService.getAddress(payload.placeId, context.requestContext),
+          runtime.geoService.getLocation(payload.placeId, context.requestContext),
         ]);
         const placeType = site
           ? 'GeographicSite'
@@ -1248,6 +1721,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           return runtime.resourceService.updatePhysicalResource(
             String(id),
             changes as UpdatePhysicalResourceInput,
+            context.requestContext,
           );
         },
       ),
@@ -1264,13 +1738,28 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           placeId: { type: 'string' },
           placeType: { type: 'string' },
           status: { type: 'string', enum: ['active', 'inactive', 'suspended', 'terminated'] },
-          administrativeState: { type: 'string', enum: ['unlocked', 'locked'] },
+          administrativeState: { type: 'string', enum: ['unlocked', 'locked', 'shuttingDown'] },
           operationalState: { type: 'string', enum: ['enabled', 'disabled'] },
-          usageState: { type: 'string', enum: ['idle', 'busy', 'unknown'] },
-          manufacturer: { type: 'string' },
-          model: { type: 'string' },
+          usageState: { type: 'string', enum: ['idle', 'active', 'busy', 'unknown'] },
           serialNumber: { type: 'string' },
+          statusCode: { type: 'string' },
+          label: { type: 'string' },
+          assetReference: { type: 'string' },
+          projectId: { type: 'string' },
           relatedParty: entityRefArraySchema,
+          resourceRelationship: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                relationshipType: { type: 'string' },
+                '@referredType': { type: 'string', enum: ['Resource'] },
+              },
+              required: ['id', 'relationshipType'],
+              additionalProperties: false,
+            },
+          },
           characteristic: characteristicArraySchema,
         },
         required: ['name', 'resourceSpecificationId'],
@@ -1287,11 +1776,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createPhysicalResourceSchema,
     'resource',
     'create_physical_resource',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as CreatePhysicalResourceInput;
       if (
         !(await runtime.resourceService.getResourceSpecification(
           typedPayload.resourceSpecificationId,
+          context.requestContext,
         ))
       ) {
         throw new AppError('resource specification not found', {
@@ -1301,9 +1791,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       }
       if (typedPayload.placeId) {
         const [site, address, location] = await Promise.all([
-          runtime.geoService.getSite(typedPayload.placeId),
-          runtime.geoService.getAddress(typedPayload.placeId),
-          runtime.geoService.getLocation(typedPayload.placeId),
+          runtime.geoService.getSite(typedPayload.placeId, context.requestContext),
+          runtime.geoService.getAddress(typedPayload.placeId, context.requestContext),
+          runtime.geoService.getLocation(typedPayload.placeId, context.requestContext),
         ]);
         if (!site && !address && !location) {
           throw new AppError('place not found', {
@@ -1344,6 +1834,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         (pending) =>
           runtime.resourceService.createPhysicalResource(
             pending.payload as CreatePhysicalResourceInput,
+            context.requestContext,
           ),
       ),
   });
@@ -1374,11 +1865,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createResourceSpecificationSchema,
     'resource',
     'create_resource_specification',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as CreateResourceSpecificationInput;
-      const resourceType = (await runtime.resourceService.listResourceTypes()).find(
-        (item) => item.id === typedPayload.resourceTypeId,
-      );
+      const resourceType = (
+        await runtime.resourceService.listResourceTypes(context.requestContext)
+      ).find((item) => item.id === typedPayload.resourceTypeId);
       if (!resourceType) {
         throw new AppError('resource type not found', {
           code: 'RESOURCE_TYPE_NOT_FOUND',
@@ -1427,6 +1918,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         (pending) =>
           runtime.resourceService.createResourceSpecification(
             pending.payload as CreateResourceSpecificationInput,
+            context.requestContext,
           ),
       ),
   });
@@ -1439,7 +1931,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         properties: {
           model: { type: 'string' },
           manufacturerName: { type: 'string' },
-          equipmentType: { type: 'string', enum: ['ONT', 'CPE', 'OLT', 'Router', 'Switch'] },
+          equipmentType: {
+            type: 'string',
+            description:
+              'Código ou nome de um ResourceType ativo do Resource Catalog (ex.: ONT, OLT). Use resource.list_resource_types.',
+          },
           description: { type: 'string' },
           equipmentCode: { type: 'string' },
           skuId: { type: 'string' },
@@ -1464,8 +1960,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createEquipmentModelSchema,
     'resource',
     'create_equipment_model',
-    async (payload) => {
-      const prepared = await prepareEquipmentModel(runtime, payload as EquipmentModelInput);
+    async (payload, context) => {
+      const prepared = await prepareEquipmentModel(
+        runtime,
+        payload as EquipmentModelInput,
+        context.requestContext,
+      );
 
       return {
         summary: `Modelo de ${prepared.catalogEntry.label} ${prepared.model} da ${prepared.manufacturer.name} sera criado no catalogo.`,
@@ -1494,9 +1994,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           const prepared = await prepareEquipmentModel(
             runtime,
             pending.payload as EquipmentModelInput,
+            context.requestContext,
           );
           return runtime.resourceService.createResourceSpecification(
             buildEquipmentModelSpecificationInput(prepared),
+            context.requestContext,
           );
         },
       ),
@@ -1515,7 +2017,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
               properties: {
                 model: { type: 'string' },
                 manufacturerName: { type: 'string' },
-                equipmentType: { type: 'string', enum: ['ONT', 'CPE', 'OLT', 'Router', 'Switch'] },
+                equipmentType: {
+                  type: 'string',
+                  description:
+                    'Código ou nome de um ResourceType ativo do Resource Catalog (ex.: ONT, OLT). Use resource.list_resource_types.',
+                },
                 description: { type: 'string' },
                 equipmentCode: { type: 'string' },
                 skuId: { type: 'string' },
@@ -1545,7 +2051,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createEquipmentModelsSchema,
     'resource',
     'create_equipment_models',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as { items: EquipmentModelInput[] };
       if (typedPayload.items.length === 0) {
         throw new AppError('batch is empty', {
@@ -1554,7 +2060,9 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         });
       }
       const items = await Promise.all(
-        typedPayload.items.map((item) => prepareEquipmentModel(runtime, item)),
+        typedPayload.items.map((item) =>
+          prepareEquipmentModel(runtime, item, context.requestContext),
+        ),
       );
       const duplicateKeys = new Set<string>();
 
@@ -1595,15 +2103,23 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         async (pending) => {
           const payload = pending.payload as { items: EquipmentModelInput[] };
           const items = await Promise.all(
-            payload.items.map((item) => prepareEquipmentModel(runtime, item)),
-          );
-          const createdItems = await Promise.all(
-            items.map((item) =>
-              runtime.resourceService.createResourceSpecification(
-                buildEquipmentModelSpecificationInput(item),
-              ),
+            payload.items.map((item) =>
+              prepareEquipmentModel(runtime, item, context.requestContext),
             ),
           );
+          // Tudo ou nada: uma falha no meio do lote não deixa modelos pela metade.
+          const createdItems = await runtime.db.transaction(async () => {
+            const created = [];
+            for (const item of items) {
+              created.push(
+                await runtime.resourceService.createResourceSpecification(
+                  buildEquipmentModelSpecificationInput(item),
+                  context.requestContext,
+                ),
+              );
+            }
+            return created;
+          });
 
           return {
             items: createdItems,
@@ -1620,7 +2136,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         properties: {
           model: { type: 'string' },
           manufacturerName: { type: 'string' },
-          equipmentType: { type: 'string', enum: ['ONT', 'CPE', 'OLT', 'Router', 'Switch'] },
+          equipmentType: {
+            type: 'string',
+            description:
+              'Código ou nome de um ResourceType ativo do Resource Catalog (ex.: ONT, OLT). Use resource.list_resource_types.',
+          },
         },
         required: ['model', 'manufacturerName'],
         additionalProperties: true,
@@ -1636,14 +2156,18 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     deleteEquipmentModelSchema,
     'resource',
     'delete_equipment_model',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as {
         model: string;
         manufacturerName: string;
-        equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+        equipmentType?: string;
       };
 
-      const match = await findEquipmentModelSpecification(runtime, typedPayload);
+      const match = await findEquipmentModelSpecification(
+        runtime,
+        typedPayload,
+        context.requestContext,
+      );
       if (!match) {
         throw new AppError('equipment model not found', {
           code: 'RESOURCE_EQUIPMENT_MODEL_NOT_FOUND',
@@ -1684,10 +2208,14 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
           const payload = pending.payload as {
             model: string;
             manufacturerName: string;
-            equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+            equipmentType?: string;
           };
 
-          const match = await findEquipmentModelSpecification(runtime, payload);
+          const match = await findEquipmentModelSpecification(
+            runtime,
+            payload,
+            context.requestContext,
+          );
           if (!match || match.state === 'alreadyRemoved') {
             throw new AppError('equipment model not found', {
               code: !match
@@ -1697,7 +2225,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
             });
           }
 
-          return runtime.resourceService.deleteResourceSpecification(match.spec.id);
+          return runtime.resourceService.deleteResourceSpecification(
+            match.spec.id,
+            context.requestContext,
+          );
         },
       ),
   });
@@ -1734,11 +2265,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createLogicalResourceSchema,
     'resource',
     'create_logical_resource',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as CreateLogicalResourceInput;
       if (
         !(await runtime.resourceService.getResourceSpecification(
           typedPayload.resourceSpecificationId,
+          context.requestContext,
         ))
       ) {
         throw new AppError('resource specification not found', {
@@ -1750,6 +2282,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         typedPayload.supportingPhysicalResourceId &&
         !(await runtime.resourceService.getPhysicalResource(
           typedPayload.supportingPhysicalResourceId,
+          context.requestContext,
         ))
       ) {
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
@@ -1781,6 +2314,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         (pending) =>
           runtime.resourceService.createLogicalResource(
             pending.payload as CreateLogicalResourceInput,
+            context.requestContext,
           ),
       ),
   });
@@ -1809,9 +2343,12 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     activationSchema,
     'resource',
     'activate_resource_function',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as ResourceFunctionActivationInput;
-      const current = await runtime.resourceService.getResource(typedPayload.resourceId);
+      const current = await runtime.resourceService.getResource(
+        typedPayload.resourceId,
+        context.requestContext,
+      );
       if (!current) {
         throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
       }
@@ -1839,6 +2376,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         (pending) =>
           runtime.resourceService.activateResource(
             pending.payload as ResourceFunctionActivationInput,
+            context.requestContext,
           ),
       ),
   });
@@ -1873,7 +2411,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         query.supportingServiceId = input.supportingServiceId;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = await runtime.serviceService.listServices(query);
+      const items = await runtime.serviceService.listServices(query, context.requestContext);
       return registry.successResult('service', 'list_services', context, {
         items,
         count: items.length,
@@ -1895,7 +2433,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'service',
         'get_service',
         context,
-        (await runtime.serviceService.getService(String(input.id))) ?? null,
+        (await runtime.serviceService.getService(String(input.id), context.requestContext)) ?? null,
       ),
   });
 
@@ -1954,7 +2492,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createCfsSchema,
     'service',
     'create_cfs',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as CreateServiceInput & {
         subscriberId: string;
         supportingService?: Array<{ id: string }>;
@@ -1962,6 +2500,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       };
       const spec = await runtime.serviceService.getServiceSpecification(
         typedPayload.serviceSpecificationId,
+        context.requestContext,
       );
       if (!spec) {
         throw new AppError('service specification not found', {
@@ -1982,7 +2521,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         });
       }
       for (const reference of typedPayload.supportingService ?? []) {
-        const supporting = await runtime.serviceService.getService(reference.id);
+        const supporting = await runtime.serviceService.getService(
+          reference.id,
+          context.requestContext,
+        );
         if (!supporting || supporting['@type'] !== 'ResourceFacingService') {
           throw new AppError('supporting service type mismatch', {
             code: 'SERVICE_SUPPORTING_SERVICE_TYPE_MISMATCH',
@@ -2014,6 +2556,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         (pending) =>
           runtime.serviceService.createCustomerFacingService(
             pending.payload as unknown as CreateServiceInput,
+            context.requestContext,
           ),
       ),
   });
@@ -2073,13 +2616,14 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
     createRfsSchema,
     'service',
     'create_rfs',
-    async (payload) => {
+    async (payload, context) => {
       const typedPayload = payload as CreateServiceInput & {
         supportingResource?: Array<{ id: string }>;
         subscriberId?: string;
       };
       const spec = await runtime.serviceService.getServiceSpecification(
         typedPayload.serviceSpecificationId,
+        context.requestContext,
       );
       if (!spec) {
         throw new AppError('service specification not found', {
@@ -2100,7 +2644,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         });
       }
       for (const reference of typedPayload.supportingResource ?? []) {
-        if (!(await runtime.resourceService.getResource(reference.id))) {
+        if (!(await runtime.resourceService.getResource(reference.id, context.requestContext))) {
           throw new AppError('supporting resource not found', {
             code: 'SERVICE_SUPPORTING_RESOURCE_NOT_FOUND',
             statusCode: 422,
@@ -2131,31 +2675,52 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         (pending) =>
           runtime.serviceService.createResourceFacingService(
             pending.payload as unknown as CreateServiceInput,
+            context.requestContext,
           ),
       ),
   });
 
+  // Persiste uma qualification: por isso é escrita em duas etapas (antes rodava sem await e sem
+  // confirmação, devolvendo `{}` e perdendo erros).
+  const qualificationSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      placeId: { type: 'string' },
+      placeType: { type: 'string' },
+      serviceSpecificationId: { type: 'string' },
+      serviceType: { type: 'string' },
+      relatedParty: entityRefArraySchema,
+      serviceCharacteristic: characteristicArraySchema,
+    },
+    additionalProperties: false,
+  };
   registry.register({
     name: 'order.check_service_qualification',
-    description: 'Executa uma consulta de viabilidade via Service Qualification.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        placeId: { type: 'string' },
-        placeType: { type: 'string' },
-        serviceSpecificationId: { type: 'string' },
-        serviceType: { type: 'string' },
-        relatedParty: entityRefArraySchema,
-        serviceCharacteristic: characteristicArraySchema,
-      },
-      additionalProperties: false,
-    },
+    description:
+      'Prepara uma consulta de viabilidade via Service Qualification (persiste o registro). Retorna confirmationToken; a execução exige confirmação do usuário.',
+    inputSchema: qualificationSchema,
     handler: (input, context) =>
-      registry.successResult(
+      registry.prepareMutation('order', 'check_service_qualification', input, context, () => ({
+        summary: `Consulta de viabilidade será registrada${
+          typeof input.placeId === 'string' ? ` para o local ${input.placeId}` : ''
+        }.`,
+      })),
+  });
+  registry.register({
+    name: 'order.commit_check_service_qualification',
+    description: 'Confirma e executa a consulta de viabilidade (Service Qualification).',
+    inputSchema: confirmationTokenSchema,
+    handler: (input, context) =>
+      registry.commitMutation(
         'order',
         'check_service_qualification',
+        String(input.confirmationToken),
         context,
-        runtime.orderService.createServiceQualification(input as CreateServiceQualificationInput),
+        (pending) =>
+          runtime.orderService.createServiceQualification(
+            pending.payload as CreateServiceQualificationInput,
+            context.requestContext,
+          ),
       ),
   });
 
@@ -2226,7 +2791,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         String(input.confirmationToken),
         context,
         (pending) =>
-          runtime.orderService.createServiceOrder(pending.payload as CreateServiceOrderInput),
+          runtime.orderService.createServiceOrder(
+            pending.payload as CreateServiceOrderInput,
+            context.requestContext,
+          ),
       ),
   });
 
@@ -2297,7 +2865,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         String(input.confirmationToken),
         context,
         (pending) =>
-          runtime.orderService.createResourceOrder(pending.payload as CreateResourceOrderInput),
+          runtime.orderService.createResourceOrder(
+            pending.payload as CreateResourceOrderInput,
+            context.requestContext,
+          ),
       ),
   });
 
@@ -2315,7 +2886,7 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         query.status = input.status;
       if (typeof input.limit === 'number') query.limit = input.limit;
       if (typeof input.offset === 'number') query.offset = input.offset;
-      const items = await runtime.partyService.listParties(query);
+      const items = await runtime.partyService.listParties(query, context.requestContext);
       return registry.successResult('party', 'list_parties', context, {
         items,
         count: items.length,
@@ -2386,7 +2957,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'create_party',
         String(input.confirmationToken),
         context,
-        (pending) => runtime.partyService.createParty(pending.payload as CreatePartyInput),
+        (pending) =>
+          runtime.partyService.createParty(
+            pending.payload as CreatePartyInput,
+            context.requestContext,
+          ),
       ),
   });
 
@@ -2441,7 +3016,11 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
         'create_party_role',
         String(input.confirmationToken),
         context,
-        (pending) => runtime.partyService.createPartyRole(pending.payload as CreatePartyRoleInput),
+        (pending) =>
+          runtime.partyService.createPartyRole(
+            pending.payload as CreatePartyRoleInput,
+            context.requestContext,
+          ),
       ),
   });
 
@@ -2488,6 +3067,10 @@ export const createNexusMcpModule = (runtime: NexusRuntime) => {
       ),
   });
 
+  registerGeoOperations(registry, runtime);
+  registerResourceOperations(registry, runtime);
+  registerOperationMetaTools(registry);
+
   return {
     serverName: SOURCE,
     registry,
@@ -2508,7 +3091,10 @@ const registerAddressCreationTools = (
     handler: async (input, context) => {
       const payload = input.payload as unknown as AddressInput;
       if (payload.geographicLocationId) {
-        const location = await runtime.geoService.getLocation(payload.geographicLocationId);
+        const location = await runtime.geoService.getLocation(
+          payload.geographicLocationId,
+          context.requestContext,
+        );
         if (!location) {
           throw new AppError('geographic location not found', {
             code: 'GEO_LOCATION_NOT_FOUND',
@@ -2516,14 +3102,17 @@ const registerAddressCreationTools = (
           });
         }
       }
-      const existing = await runtime.geoService.listAddresses({
-        street: payload.street,
-        ...(payload.streetNr ? { streetNr: payload.streetNr } : {}),
-        ...(payload.city ? { city: payload.city } : {}),
-        ...(payload.postcode ? { postcode: payload.postcode } : {}),
-        includeCharacteristics: false,
-        limit: 1,
-      });
+      const existing = await runtime.geoService.listAddresses(
+        {
+          street: payload.street,
+          ...(payload.streetNr ? { streetNr: payload.streetNr } : {}),
+          ...(payload.city ? { city: payload.city } : {}),
+          ...(payload.postcode ? { postcode: payload.postcode } : {}),
+          includeCharacteristics: false,
+          limit: 1,
+        },
+        context.requestContext,
+      );
       if (existing.length > 0) {
         throw new AppError('geographic address already exists', {
           code: 'GEO_ADDRESS_DUPLICATE',
@@ -2557,7 +3146,11 @@ const registerAddressCreationTools = (
         'create_address',
         String(input.confirmationToken),
         context,
-        (pending) => runtime.geoService.createAddress(pending.payload as unknown as AddressInput),
+        (pending) =>
+          runtime.geoService.createAddress(
+            pending.payload as unknown as AddressInput,
+            context.requestContext,
+          ),
       ),
   });
 };
@@ -2565,9 +3158,13 @@ const registerAddressCreationTools = (
 const resolveSiteSpecificationReference = async (
   runtime: NexusRuntime,
   payload: Record<string, unknown>,
+  requestContext?: RequestContext,
 ) => {
   if (typeof payload.siteSpecificationId === 'string') {
-    const specification = await runtime.geoService.getSpec(payload.siteSpecificationId);
+    const specification = await runtime.geoService.getSpec(
+      payload.siteSpecificationId,
+      requestContext,
+    );
     if (specification?.lifecycleStatus === 'Active') return specification;
   }
 
@@ -2580,9 +3177,15 @@ const resolveSiteSpecificationReference = async (
       ? payload.siteSpecificationName.trim()
       : undefined;
   const candidates = code
-    ? await runtime.geoService.listSpecs({ code, lifecycleStatus: 'Active', limit: 2 })
+    ? await runtime.geoService.listSpecs(
+        { code, lifecycleStatus: 'Active', limit: 2 },
+        requestContext,
+      )
     : name
-      ? await runtime.geoService.listSpecs({ name, lifecycleStatus: 'Active', limit: 10 })
+      ? await runtime.geoService.listSpecs(
+          { name, lifecycleStatus: 'Active', limit: 10 },
+          requestContext,
+        )
       : [];
   const exact = candidates.filter(
     (item) =>
@@ -2602,43 +3205,134 @@ const resolveSiteSpecificationReference = async (
   });
 };
 
-const geocodeAddressText = async (
-  parts: unknown[],
-): Promise<{ lng: number; lat: number; formattedAddress: string } | undefined> => {
-  const key = process.env.GOOGLE_MAPS_API_KEY ?? process.env.VITE_GOOGLE_MAPS_API_KEY;
-  if (!key) return undefined;
-  const address = parts
-    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-    .join(', ');
-  if (!address) return undefined;
-  try {
-    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-    url.searchParams.set('address', address);
-    url.searchParams.set('region', 'br');
-    url.searchParams.set('key', key);
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!response.ok) return undefined;
-    const body = (await response.json()) as {
-      status?: string;
-      results?: Array<{
-        formatted_address?: string;
-        geometry?: { location?: { lat?: number; lng?: number } };
-      }>;
-    };
-    const first = body.status === 'OK' ? body.results?.[0] : undefined;
-    const lat = first?.geometry?.location?.lat;
-    const lng = first?.geometry?.location?.lng;
-    if (typeof lat !== 'number' || typeof lng !== 'number') return undefined;
-    return { lng, lat, formattedAddress: first?.formatted_address ?? address };
-  } catch {
-    return undefined;
-  }
-};
-
 const paginate = <T>(items: T[], input: Record<string, unknown>): T[] => {
   const offset = typeof input.offset === 'number' ? input.offset : 0;
   const limit = typeof input.limit === 'number' ? input.limit : undefined;
   return items.slice(offset, limit !== undefined ? offset + limit : undefined);
+};
+
+// Tools nomeadas expostas direto ao modelo; o restante do registro é alcançado pelas meta-tools.
+export const CORE_MODEL_TOOLS: ReadonlySet<string> = new Set([
+  'geo.list_sites',
+  'geo.get_site',
+  'geo.list_addresses',
+  'geo.find_nearby_cdos',
+  'geo.geocode_address',
+  'geo.search_geonet_addresses',
+  'resource.list_resources',
+  'resource.get_resource',
+  'service.list_services',
+  'party.list_parties',
+  'project.list_projects',
+  'event.list_events',
+]);
+
+// Descoberta sob demanda (search → describe → invoke). Escrita continua em duas etapas: invocar
+// um prepare devolve o `confirmationToken` e só o clique do usuário aciona o commit.
+// A permissão real é conferida na operação de destino (executeTool) e no filtro da busca;
+// as meta-tools só exigem algum papel de uso do Nexus.
+const META_TOOL_ROLES = [
+  ...INVENTORY_READ_ROLES,
+  ...INVENTORY_WRITE_ROLES,
+  ...CATALOG_ADMIN_ROLES,
+  ...ORDER_READ_ROLES,
+  ...ORDER_REQUEST_ROLES,
+] as const;
+
+const registerOperationMetaTools = (registry: McpToolRegistry): void => {
+  registry.register({
+    name: 'nexus.search_operations',
+    requiredRoles: META_TOOL_ROLES,
+    description:
+      'Busca operações do Nexus (leitura e escrita) por texto e domínio, limitadas ao que o usuário pode executar. Use antes de describe_operation/invoke_operation.',
+    inputSchema: {
+      type: 'object',
+      properties: { query: { type: 'string' }, domain: { type: 'string' } },
+      additionalProperties: false,
+    },
+    handler: (input, context) => {
+      const query = normalizeSearchText(typeof input.query === 'string' ? input.query : '');
+      const domain = typeof input.domain === 'string' ? input.domain : undefined;
+      const terms = query.split(/\s+/).filter(Boolean);
+      const operations = registry
+        .listOperations(context)
+        .filter((tool) => !domain || tool.name.startsWith(`${domain}.`))
+        .filter((tool) => {
+          const haystack = normalizeSearchText(`${tool.name} ${tool.description}`);
+          return terms.every((term) => haystack.includes(term));
+        })
+        .slice(0, 40)
+        .map((tool) => ({
+          name: tool.name,
+          summary: tool.description,
+          kind: isPrepareLike(registry, tool.name) ? 'write' : 'read',
+        }));
+      return registry.successResult('nexus', 'search_operations', context, { operations });
+    },
+  });
+
+  registry.register({
+    name: 'nexus.describe_operation',
+    requiredRoles: META_TOOL_ROLES,
+    description:
+      'Devolve o schema de entrada completo de uma operação encontrada por search_operations.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    handler: (input, context) => {
+      const tool = registry.getOperation(String(input.name));
+      if (!tool) {
+        return registry.successResult('nexus', 'describe_operation', context, null, [
+          'operação não encontrada',
+        ]);
+      }
+      return registry.successResult('nexus', 'describe_operation', context, {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        kind: isPrepareLike(registry, tool.name) ? 'write' : 'read',
+      });
+    },
+  });
+
+  registry.register({
+    name: 'nexus.invoke_operation',
+    requiredRoles: META_TOOL_ROLES,
+    description:
+      'Executa uma operação. Leitura devolve os dados; escrita só prepara e devolve confirmationToken para o usuário confirmar.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        input: { type: 'object', additionalProperties: true },
+      },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    handler: async (input, context) => {
+      const name = String(input.name);
+      if (!registry.getOperation(name)) {
+        return registry.successResult('nexus', 'invoke_operation', context, null, [
+          `operação ${name} não encontrada`,
+        ]);
+      }
+      // Papel e schema são verificados por executeTool; o resultado mantém domain/operation da
+      // operação real para o card de confirmação.
+      return await registry.executeTool(
+        name,
+        (input.input as Record<string, unknown> | undefined) ?? {},
+        context,
+      );
+    },
+  });
+};
+
+const isPrepareLike = (registry: McpToolRegistry, name: string): boolean => {
+  const [domain = '', ...rest] = name.split('.');
+  return registry.listTools().some((tool) => tool.name === `${domain}.commit_${rest.join('.')}`);
 };
 
 type ManufacturerPartyReference = {
@@ -2648,10 +3342,12 @@ type ManufacturerPartyReference = {
   name: string;
 };
 
+type EquipmentCatalogEntry = { resourceTypeCode: string; label: string };
+
 type EquipmentModelInput = {
   model: string;
   manufacturerName: string;
-  equipmentType: keyof typeof EQUIPMENT_MODEL_CATALOG;
+  equipmentType: string;
   description?: string;
   equipmentCode?: string;
   skuId?: string;
@@ -2665,7 +3361,7 @@ type EquipmentModelInput = {
 
 type PreparedEquipmentModel = EquipmentModelInput & {
   manufacturer: ManufacturerPartyReference;
-  catalogEntry: (typeof EQUIPMENT_MODEL_CATALOG)[keyof typeof EQUIPMENT_MODEL_CATALOG];
+  catalogEntry: EquipmentCatalogEntry;
   resourceTypeId: string;
 };
 
@@ -2679,6 +3375,7 @@ type EquipmentModelLookupResult = {
 const resolveManufacturerParty = async (
   runtime: NexusRuntime,
   manufacturerName: string,
+  requestContext?: RequestContext,
 ): Promise<ManufacturerPartyReference> => {
   const normalizedName = normalizeSearchText(manufacturerName);
   if (!normalizedName) {
@@ -2689,12 +3386,15 @@ const resolveManufacturerParty = async (
   }
 
   const manufacturerRoles = (
-    await runtime.partyService.listPartyRoles({
-      name: 'manufacturer',
-      status: 'active',
-      limit: 1000,
-      offset: 0,
-    })
+    await runtime.partyService.listPartyRoles(
+      {
+        name: 'manufacturer',
+        status: 'active',
+        limit: 1000,
+        offset: 0,
+      },
+      requestContext,
+    )
   )
     .map((role) => toManufacturerPartyReference(role.party))
     .filter((party): party is ManufacturerPartyReference => party !== null);
@@ -2723,13 +3423,16 @@ const resolveManufacturerParty = async (
   }
 
   const partyMatches = (
-    await runtime.partyService.listParties({
-      name: manufacturerName,
-      partyType: 'Organization',
-      status: 'active',
-      limit: 1000,
-      offset: 0,
-    })
+    await runtime.partyService.listParties(
+      {
+        name: manufacturerName,
+        partyType: 'Organization',
+        status: 'active',
+        limit: 1000,
+        offset: 0,
+      },
+      requestContext,
+    )
   )
     .filter(
       (party) =>
@@ -2777,24 +3480,18 @@ const normalizeEquipmentModelInput = (input: EquipmentModelInput): EquipmentMode
   ...(input.supportsVoice !== undefined ? { supportsVoice: input.supportsVoice } : {}),
 });
 
-const prepareEquipmentModel = async (
+const resolveEquipmentResourceType = async (
   runtime: NexusRuntime,
-  input: EquipmentModelInput,
-): Promise<PreparedEquipmentModel> => {
-  const normalized = normalizeEquipmentModelInput(input);
-  const catalogEntry = EQUIPMENT_MODEL_CATALOG[normalized.equipmentType];
-  if (!catalogEntry) {
-    throw new AppError('equipment type not supported', {
-      code: 'RESOURCE_EQUIPMENT_TYPE_NOT_SUPPORTED',
-      statusCode: 422,
-    });
-  }
-
-  const resourceType = (await runtime.resourceService.listResourceTypes()).find(
-    (item) => item.code === catalogEntry.resourceTypeCode,
+  equipmentType: string,
+  requestContext?: RequestContext,
+) => {
+  const wanted = normalizeSearchText(equipmentType);
+  const resourceType = (await runtime.resourceService.listResourceTypes(requestContext)).find(
+    (item) =>
+      normalizeSearchText(item.code) === wanted || normalizeSearchText(item.name) === wanted,
   );
   if (!resourceType) {
-    throw new AppError('resource type not found', {
+    throw new AppError('equipment type not found in the Resource Catalog', {
       code: 'RESOURCE_TYPE_NOT_FOUND',
       statusCode: 404,
     });
@@ -2805,8 +3502,31 @@ const prepareEquipmentModel = async (
       statusCode: 409,
     });
   }
+  return resourceType;
+};
 
-  const manufacturer = await resolveManufacturerParty(runtime, normalized.manufacturerName);
+const prepareEquipmentModel = async (
+  runtime: NexusRuntime,
+  input: EquipmentModelInput,
+  requestContext?: RequestContext,
+): Promise<PreparedEquipmentModel> => {
+  const normalized = normalizeEquipmentModelInput(input);
+  // O tipo vem do Resource Catalog (C9), não de lista fixa: aceita código ou nome do ResourceType.
+  const resourceType = await resolveEquipmentResourceType(
+    runtime,
+    normalized.equipmentType,
+    requestContext,
+  );
+  const catalogEntry: EquipmentCatalogEntry = {
+    resourceTypeCode: resourceType.code,
+    label: resourceType.name,
+  };
+
+  const manufacturer = await resolveManufacturerParty(
+    runtime,
+    normalized.manufacturerName,
+    requestContext,
+  );
   return {
     ...normalized,
     manufacturer,
@@ -2864,18 +3584,29 @@ const findEquipmentModelSpecification = async (
   input: {
     model: string;
     manufacturerName: string;
-    equipmentType?: keyof typeof EQUIPMENT_MODEL_CATALOG;
+    equipmentType?: string;
   },
+  requestContext?: RequestContext,
 ): Promise<EquipmentModelLookupResult | undefined> => {
   const normalizedModel = normalizeSearchText(input.model);
-  const manufacturer = await resolveManufacturerParty(runtime, input.manufacturerName);
-  const catalogEntry = input.equipmentType
-    ? EQUIPMENT_MODEL_CATALOG[input.equipmentType]
+  const manufacturer = await resolveManufacturerParty(
+    runtime,
+    input.manufacturerName,
+    requestContext,
+  );
+  const resolvedType = input.equipmentType
+    ? await resolveEquipmentResourceType(runtime, input.equipmentType, requestContext)
     : undefined;
-  const specs = await runtime.resourceService.listResourceSpecifications({
-    name: input.model,
-    includeEnded: true,
-  });
+  const catalogEntry: EquipmentCatalogEntry | undefined = resolvedType
+    ? { resourceTypeCode: resolvedType.code, label: resolvedType.name }
+    : undefined;
+  const specs = await runtime.resourceService.listResourceSpecifications(
+    {
+      name: input.model,
+      includeEnded: true,
+    },
+    requestContext,
+  );
 
   const matches = specs.filter((spec) => {
     if (normalizeSearchText(spec.name) !== normalizedModel) {

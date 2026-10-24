@@ -37,10 +37,10 @@ type CdoRow = {
 // viável para um drop novo.
 const CDO_NAME = /^\s*CDO/i;
 
-// As duas expressões de coordenada abaixo precisam ficar exatamente nesta forma textual: é o que
-// casa com o índice parcial geographic_idx_location_point_lnglat no Postgres (ver schema.ts) e
-// o que os regex de transformOracleQuery reescrevem para Oracle (ver oracle-database.ts).
-const NEARBY_CDO_SQL = `
+// SQL Oracle nativo. As duas expressões JSON_VALUE de coordenada precisam ficar exatamente nesta
+// forma: é a expressão do índice funcional geographic_idx_location_point_lnglat (oracle-schema.ts).
+// O tenant restringe recurso e site (C8); sem ele (scripts de lote) a busca cobre todo o inventário.
+const nearbyCdoSql = (withTenant: boolean) => `
   SELECT r.id, r.name, l.geometry
     FROM resource_physical r
     JOIN resource_specification rs ON rs.id = r.resource_specification_id
@@ -51,9 +51,10 @@ const NEARBY_CDO_SQL = `
      AND r.status = 'active'
      AND UPPER(r.name) LIKE 'CDO%'
      AND l.geometry_type = 'Point'
-     AND (l.geometry::jsonb->'coordinates'->>0)::float8 BETWEEN ? AND ?
-     AND (l.geometry::jsonb->'coordinates'->>1)::float8 BETWEEN ? AND ?
-   LIMIT ?`;
+     AND JSON_VALUE(l.geometry, '$.coordinates[0]' RETURNING NUMBER) BETWEEN ? AND ?
+     AND JSON_VALUE(l.geometry, '$.coordinates[1]' RETURNING NUMBER) BETWEEN ? AND ?
+     ${withTenant ? 'AND r.tenant_id = ? AND s.tenant_id = r.tenant_id' : ''}
+   FETCH FIRST ? ROWS ONLY`;
 
 /**
  * CDOs candidatas dentro de `radiusMeters` de `origin`, ordenadas da mais próxima (linha reta)
@@ -63,7 +64,7 @@ const NEARBY_CDO_SQL = `
 export async function findNearbyCdos(
   db: DatabaseClient,
   origin: { lng: number; lat: number },
-  options: { radiusMeters: number; limit: number },
+  options: { radiusMeters: number; limit: number; tenantId?: string },
 ): Promise<NearbyCdo[]> {
   const latDelta = options.radiusMeters / 111_320;
   const longitudeScale = Math.max(Math.cos((origin.lat * Math.PI) / 180), 0.01);
@@ -75,11 +76,12 @@ export async function findNearbyCdos(
 
   // Sem ORDER BY/LIMIT ajustado ao raio: o bbox já restringe a área, então um teto generoso (200x
   // o limite pedido) é só válvula contra bairro anormalmente denso — o corte fino é o haversine.
-  const rows = await db.all<CdoRow>(NEARBY_CDO_SQL, [
+  const rows = await db.all<CdoRow>(nearbyCdoSql(options.tenantId !== undefined), [
     minLng,
     maxLng,
     minLat,
     maxLat,
+    ...(options.tenantId !== undefined ? [options.tenantId] : []),
     Math.max(options.limit * 200, 1000),
   ]);
 

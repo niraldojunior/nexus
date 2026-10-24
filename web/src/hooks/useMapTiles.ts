@@ -13,7 +13,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { fetchMapTile, type MapTileFeature } from '../services/geoMapTileApi';
-import { tilesForBounds, tileKey, MAP_TILE_ZOOM } from '../utils/mapTile';
+import {
+  tilesForBounds,
+  tileCountForBounds,
+  tileKey,
+  MAP_TILE_ZOOM,
+  MAX_TILES_PER_VIEWPORT,
+} from '../utils/mapTile';
 import {
   isMapFeatureVisible,
   type MapLayerVisibility,
@@ -85,8 +91,11 @@ export function useMapTiles(
   useEffect(() => {
     // `include` vazio significa que não há nenhuma shape publicada, habilitada pelo usuário e
     // visível na faixa atual. A escala por si só nunca decide se a infraestrutura será buscada.
+    // Viewport grande demais para o índice por tile z16: não enumera (evita RangeError/OOM).
     const nothingRequested =
-      !bounds || (Array.isArray(include) && !include.includes('resource-points'));
+      !bounds ||
+      (Array.isArray(include) && !include.includes('resource-points')) ||
+      tileCountForBounds(bounds, MAP_TILE_ZOOM) > MAX_TILES_PER_VIEWPORT;
     if (nothingRequested) {
       if (debounceRef.current !== undefined) window.clearTimeout(debounceRef.current);
       // Uma resposta iniciada antes de todas as camadas serem desligadas não pode repopular o

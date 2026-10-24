@@ -12,7 +12,16 @@ const createFixture = async () => {
   const client = await getOracleTestClient();
   const runtime = await createNexusRuntime(client);
   const module = createNexusMcpModule(runtime);
-  const context = runtime.createToolContext({ executionMode: 'internal-chat' });
+  const context = runtime.createToolContext({
+    executionMode: 'internal-chat',
+    requestContext: {
+      actorSub: 'mcp-test-admin',
+      tenantId: 'default',
+      roles: ['platform.admin'],
+      traceId: 'mcp-test',
+    },
+  });
+  await runtime.geoService.ensureBootstrapSpecifications(context.requestContext);
   return { client, runtime, module, context };
 };
 
@@ -139,7 +148,7 @@ test.skipIf(!oracleConfigured)(
         { payload: workflowPayload },
         fixture.context,
       );
-      assert.equal(prepared.ok, true);
+      assert.equal(prepared.ok, true, JSON.stringify(prepared.error));
       const preparedData = prepared.data as {
         confirmationToken: string;
         payload: { blocks: Array<{ addressId: string; resourceId: string }> };

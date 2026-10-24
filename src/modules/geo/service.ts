@@ -1550,7 +1550,7 @@ export class GeoService {
         await this.recordMutation(
           ctx,
           'bulk-transition',
-          'GeoProject',
+          'Project',
           projectId,
           { siteCount: siteIds.length },
           { toStatus, updated: result.updated, blocked: blocked.length },

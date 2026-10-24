@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
-import { CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT } from '../src/modules/geo/project-workflow.js';
+import { CANONICAL_PROJECT_WORKFLOW_SNAPSHOT } from '../src/modules/project/project-workflow.js';
 import { RulesWorkflowsStudioAdapter } from '../src/modules/studio/adapters/rules-workflows-studio-adapter.js';
 
 describe('RulesWorkflowsStudioAdapter (unit)', () => {
@@ -8,7 +8,7 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('validates canonical geo-project workflow snapshot successfully', async () => {
     const result = await adapter.validate(
-      CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT as unknown as Record<string, unknown>,
+      CANONICAL_PROJECT_WORKFLOW_SNAPSHOT as unknown as Record<string, unknown>,
     );
     assert.equal(result.valid, true);
     assert.equal(result.issues.length, 0);
@@ -22,14 +22,14 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('rejects invalid schema version or workflowId', async () => {
     const badVersion = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       schemaVersion: 2,
     });
     assert.equal(badVersion.valid, false);
     assert.ok(badVersion.issues.some((e) => e.path === 'schemaVersion'));
 
     const badId = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       workflowId: 'other-workflow',
     });
     assert.equal(badId.valid, false);
@@ -38,7 +38,7 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('rejects non-existent initialStateCode', async () => {
     const result = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       initialStateCode: '9999',
     });
     assert.equal(result.valid, false);
@@ -47,7 +47,7 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('rejects duplicate state codes or empty names', async () => {
     const result = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       states: [
         { code: '1', name: 'Planejamento', sortOrder: 10, active: true, behavior: 'planning' },
         { code: '1', name: 'Duplicado', sortOrder: 20, active: true, behavior: 'planning' },
@@ -59,7 +59,7 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('rejects transitions pointing to unknown destination state', async () => {
     const result = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       transitions: [
         {
           id: 'trans-invalid-dest',
@@ -76,7 +76,7 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('rejects transitions with unknown roles or empty role set', async () => {
     const result = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       transitions: [
         {
           id: 'trans-bad-role',
@@ -93,7 +93,7 @@ describe('RulesWorkflowsStudioAdapter (unit)', () => {
 
   it('rejects transitions transitioning out of terminal close-release states', async () => {
     const result = await adapter.validate({
-      ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+      ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
       transitions: [
         {
           id: 'trans-out-of-terminal',

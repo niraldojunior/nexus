@@ -4,7 +4,15 @@
 // cliente tem as mesmas propriedades da do servidor, não que produzem o mesmo valor byte a
 // byte (isso exigiria importar um do outro, que é exatamente o que não pode acontecer).
 import { describe, expect, it } from 'vitest';
-import { lngLatToTile, tileBounds, tileKey, tilesForBounds, MAP_TILE_ZOOM } from './mapTile';
+import {
+  lngLatToTile,
+  tileBounds,
+  tileKey,
+  tilesForBounds,
+  tileCountForBounds,
+  MAP_TILE_ZOOM,
+  MAX_TILES_PER_VIEWPORT,
+} from './mapTile';
 
 type LngLatTuple = [number, number];
 const ICARAI: LngLatTuple = [-43.106, -22.906];
@@ -110,5 +118,14 @@ describe('tileKey', () => {
   it('é estável e distingue tiles diferentes', () => {
     expect(tileKey({ z: 16, x: 1, y: 2 })).toBe('16:1:2');
     expect(tileKey({ z: 16, x: 1, y: 2 })).not.toBe(tileKey({ z: 16, x: 2, y: 1 }));
+  });
+});
+
+describe('tileCountForBounds', () => {
+  it('conta tiles sem alocar e distingue viewport mundial de viewport de rua', () => {
+    const world = { minLng: -180, minLat: -80, maxLng: 180, maxLat: 80 };
+    const street = { minLng: -43.106, minLat: -22.9015, maxLng: -43.103, maxLat: -22.8995 };
+    expect(tileCountForBounds(world)).toBeGreaterThan(MAX_TILES_PER_VIEWPORT);
+    expect(tileCountForBounds(street)).toBeLessThanOrEqual(MAX_TILES_PER_VIEWPORT);
   });
 });

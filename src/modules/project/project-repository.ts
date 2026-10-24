@@ -13,29 +13,29 @@ const PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL =
 
 // Mesmo vocabulário de GeoStatus (web/src/services/geoApi.ts) — o projeto é a unidade de
 // estado do REQ-MOD01-015: mudar o status do projeto cascateia (best-effort) para cada Site
-// vinculado via GeoService.transitionSite (ver /v1/geo/projects/:id em app.ts). Um local de
+// vinculado via GeoService.transitionSite (ver /v1/projects/:id em app.ts). Um local de
 // projeto não tem status próprio editável, só herda este valor.
-export type GeoProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
-export type GeoProjectStatusBehavior = 'planning' | 'execution' | 'suspended' | 'close-release';
+export type ProjectStatus = 'planned' | 'active' | 'suspended' | 'terminated' | 'cancelled';
+export type ProjectStatusBehavior = 'planning' | 'execution' | 'suspended' | 'close-release';
 
-export type GeoProjectStatusCatalogItem = {
+export type ProjectStatusCatalogItem = {
   code: string;
   name: string;
   sortOrder: number;
   active: boolean;
-  behavior: GeoProjectStatusBehavior;
+  behavior: ProjectStatusBehavior;
 };
 
-export type GeoProject = {
+export type Project = {
   id: string;
   tenantId: string;
   name: string;
   description: string | null;
   iconDataUrl: string | null;
-  status: GeoProjectStatus;
+  status: ProjectStatus;
   statusCode: string;
   statusName: string;
-  statusBehavior: GeoProjectStatusBehavior;
+  statusBehavior: ProjectStatusBehavior;
   createdBy: string | null;
   // Total de locais vinculados ao projeto, ativos ou não — com o status herdado do projeto,
   // um projeto Terminado tem todos os Sites Retired; filtrar por status faria a lista mostrar
@@ -50,31 +50,31 @@ export type GeoProject = {
   updatedAt: string;
 };
 
-export type CreateGeoProjectInput = {
+export type CreateProjectInput = {
   name: string;
   description?: string | null;
   iconDataUrl?: string | null;
-  status?: GeoProjectStatus;
+  status?: ProjectStatus;
   statusCode?: string;
 };
 
-export type UpdateGeoProjectInput = {
+export type UpdateProjectInput = {
   name?: string;
   description?: string | null;
   iconDataUrl?: string | null;
-  status?: GeoProjectStatus;
+  status?: ProjectStatus;
   statusCode?: string;
 };
 
 // Observação de trabalho e endereço GEONET de um local, por dentro do vínculo com o
 // projeto (não é atributo do Site — ver nota em schema.ts sobre project_site).
-export type GeoProjectSiteLink = {
+export type ProjectSiteLink = {
   siteId: string;
   note: string | null;
   geonetAddressId: string | null;
 };
 
-export type GeoProjectResourceLink = {
+export type ProjectResourceLink = {
   id: string;
   resourceId: string;
   resourceKind: 'PhysicalResource' | 'LogicalResource';
@@ -86,15 +86,15 @@ export type GeoProjectResourceLink = {
 };
 
 /** Referência leve usada pelo autocomplete do Projeto antes da hidratação pelo GeoTreeService. */
-export type GeoProjectSearchItem = {
+export type ProjectSearchItem = {
   id: string;
   kind: 'site' | 'resource';
   label: string;
   rank: number;
 };
-export type GeoProjectSearchScope = 'all' | 'sites' | 'infrastructure' | 'resources';
+export type ProjectSearchScope = 'all' | 'sites' | 'infrastructure' | 'resources';
 
-export type UpdateGeoProjectSiteLinkInput = {
+export type UpdateProjectSiteLinkInput = {
   note?: string | null;
 };
 
@@ -103,12 +103,12 @@ export type UpdateGeoProjectSiteLinkInput = {
 // A geometria em si vive em geographic_location (Polygon, TMF675); esta forma é a junção
 // pronta para o mapa (id da Location + geometria + classificação), sem o chamador precisar
 // saber que a mancha é uma Location por baixo.
-export type GeoProjectArea = {
+export type ProjectArea = {
   id: string;
   kind: 'concentration' | 'dispersion';
   siteCount: number;
   resourceCount: number;
-  geometry: import('./domain.js').GeoJSONPolygon;
+  geometry: import('../geo/domain.js').GeoJSONPolygon;
   siteIds: string[];
   centroid: [number, number] | null;
   areaKm2: number | null;
@@ -138,10 +138,10 @@ type ProjectRow = {
   name: string;
   description: string | null;
   iconDataUrl: string | null;
-  status: GeoProjectStatus;
+  status: ProjectStatus;
   statusCode: string;
   statusName: string;
-  statusBehavior: GeoProjectStatusBehavior;
+  statusBehavior: ProjectStatusBehavior;
   createdBy: string | null;
   siteCount: number | string;
   resourceCount: number | string;
@@ -159,7 +159,7 @@ type ProjectSiteLinkRow = {
   geonetAddressId: string | null;
 };
 
-const PROJECT_STATUS_DEFAULTS: ReadonlyArray<GeoProjectStatusCatalogItem> = [
+const PROJECT_STATUS_DEFAULTS: ReadonlyArray<ProjectStatusCatalogItem> = [
   { code: '1', name: 'Projeto criado', sortOrder: 1, active: true, behavior: 'planning' },
   {
     code: '11',
@@ -236,7 +236,7 @@ const PROJECT_SELECT = `
       ON sc.tenant_id = p.tenant_id AND sc.code = p.status_code
 `;
 
-const toProject = (row: ProjectRow): GeoProject => ({
+const toProject = (row: ProjectRow): Project => ({
   id: row.id,
   tenantId: row.tenantId,
   name: row.name,
@@ -267,7 +267,7 @@ const toProject = (row: ProjectRow): GeoProject => ({
   updatedAt: row.updatedAt,
 });
 
-export class GeoProjectRepository {
+export class ProjectRepository {
   // Issue #291: `ensureStatusCatalog` percorre 17 entradas com SELECT + INSERT condicional
   // sequencial, e era chamado no início de list()/get()/create()/listStatusCatalog()/etc — 17+
   // round-trips em série antes de qualquer listagem de projeto, em toda request. Memoizado por
@@ -302,9 +302,9 @@ export class GeoProjectRepository {
     this.bootstrappedTenants.add(tenantId);
   }
 
-  async listStatusCatalog(tenantId: string): Promise<GeoProjectStatusCatalogItem[]> {
+  async listStatusCatalog(tenantId: string): Promise<ProjectStatusCatalogItem[]> {
     await this.ensureStatusCatalog(tenantId);
-    const rows = await this.db.all<GeoProjectStatusCatalogItem & { active: unknown }>(
+    const rows = await this.db.all<ProjectStatusCatalogItem & { active: unknown }>(
       `SELECT code, name, sort_order AS sortOrder,
               CASE WHEN active = 1 THEN 1 ELSE 0 END AS active, behavior
          FROM project_status_catalog WHERE tenant_id = ? ORDER BY sort_order, code`,
@@ -316,9 +316,9 @@ export class GeoProjectRepository {
   async getStatusCatalogItem(
     tenantId: string,
     code: string,
-  ): Promise<GeoProjectStatusCatalogItem | null> {
+  ): Promise<ProjectStatusCatalogItem | null> {
     await this.ensureStatusCatalog(tenantId);
-    const row = await this.db.get<GeoProjectStatusCatalogItem & { active: unknown }>(
+    const row = await this.db.get<ProjectStatusCatalogItem & { active: unknown }>(
       `SELECT code, name, sort_order AS sortOrder,
               CASE WHEN active = 1 THEN 1 ELSE 0 END AS active, behavior
          FROM project_status_catalog WHERE tenant_id = ? AND code = ?`,
@@ -344,8 +344,8 @@ export class GeoProjectRepository {
 
   async createStatusCatalogItem(
     tenantId: string,
-    item: Omit<GeoProjectStatusCatalogItem, 'code'>,
-  ): Promise<GeoProjectStatusCatalogItem> {
+    item: Omit<ProjectStatusCatalogItem, 'code'>,
+  ): Promise<ProjectStatusCatalogItem> {
     await this.ensureStatusCatalog(tenantId);
     const code = await this.nextStatusCode(tenantId);
     await this.db.run(
@@ -359,8 +359,8 @@ export class GeoProjectRepository {
   async updateStatusCatalogItem(
     tenantId: string,
     code: string,
-    patch: Partial<Omit<GeoProjectStatusCatalogItem, 'code'>>,
-  ): Promise<GeoProjectStatusCatalogItem | null> {
+    patch: Partial<Omit<ProjectStatusCatalogItem, 'code'>>,
+  ): Promise<ProjectStatusCatalogItem | null> {
     const current = await this.getStatusCatalogItem(tenantId, code);
     if (!current) return null;
     await this.db.run(
@@ -378,7 +378,7 @@ export class GeoProjectRepository {
     return await this.getStatusCatalogItem(tenantId, code);
   }
 
-  async list(tenantId: string): Promise<GeoProject[]> {
+  async list(tenantId: string): Promise<Project[]> {
     await this.ensureStatusCatalog(tenantId);
     const rows = await this.db.all<ProjectRow>(
       `${PROJECT_SELECT} WHERE p.tenant_id = ? AND p.archived_at IS NULL ORDER BY p.updated_at DESC`,
@@ -387,7 +387,7 @@ export class GeoProjectRepository {
     return rows.map(toProject);
   }
 
-  async get(tenantId: string, id: string): Promise<GeoProject | null> {
+  async get(tenantId: string, id: string): Promise<Project | null> {
     await this.ensureStatusCatalog(tenantId);
     const row = await this.db.get<ProjectRow>(
       `${PROJECT_SELECT} WHERE p.tenant_id = ? AND p.id = ?`,
@@ -396,7 +396,7 @@ export class GeoProjectRepository {
     return row ? toProject(row) : null;
   }
 
-  async archive(tenantId: string, id: string, actorSub: string): Promise<GeoProject | null> {
+  async archive(tenantId: string, id: string, actorSub: string): Promise<Project | null> {
     await this.db.run(
       `UPDATE project SET archived_at = ?, archived_by = ?, updated_at = ?
         WHERE tenant_id = ? AND id = ? AND archived_at IS NULL`,
@@ -405,11 +405,7 @@ export class GeoProjectRepository {
     return this.get(tenantId, id);
   }
 
-  async create(
-    tenantId: string,
-    actorSub: string,
-    input: CreateGeoProjectInput,
-  ): Promise<GeoProject> {
+  async create(tenantId: string, actorSub: string, input: CreateProjectInput): Promise<Project> {
     await this.ensureStatusCatalog(tenantId);
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -434,11 +430,7 @@ export class GeoProjectRepository {
     return (await this.get(tenantId, id))!;
   }
 
-  async update(
-    tenantId: string,
-    id: string,
-    patch: UpdateGeoProjectInput,
-  ): Promise<GeoProject | null> {
+  async update(tenantId: string, id: string, patch: UpdateProjectInput): Promise<Project | null> {
     const existing = await this.get(tenantId, id);
     if (!existing) return null;
     await this.db.run(
@@ -482,7 +474,7 @@ export class GeoProjectRepository {
   }
 
   // Checagem de pertinência de UM site — usada pelo PATCH/DELETE de
-  // /v1/geo/projects/:id/sites/:siteId, que antes chamava listSiteIds (lista inteira, sem
+  // /v1/projects/:id/sites/:siteId, que antes chamava listSiteIds (lista inteira, sem
   // LIMIT) só para fazer `.includes(siteId)`. Um SELECT 1 LIMIT 1 substitui o fetch de até
   // dezenas de milhares de ids por uma checagem O(1) via índice.
   async hasSiteLink(tenantId: string, projectId: string, siteId: string): Promise<boolean> {
@@ -506,7 +498,7 @@ export class GeoProjectRepository {
       includeDetached?: boolean;
       view?: 'all' | 'infrastructure';
     } = {},
-  ): Promise<GeoProjectResourceLink[]> {
+  ): Promise<ProjectResourceLink[]> {
     const infrastructureFilter =
       options.view === 'infrastructure'
         ? `AND pr.resource_kind = 'PhysicalResource'
@@ -519,7 +511,7 @@ export class GeoProjectRepository {
                 AND rt.code IN (${PROJECT_INFRASTRUCTURE_RESOURCE_TYPE_CODES_SQL})
            )`
         : '';
-    const rows = await this.db.all<GeoProjectResourceLink>(
+    const rows = await this.db.all<ProjectResourceLink>(
       `SELECT pr.id, pr.resource_id AS resourceId, pr.resource_kind AS resourceKind,
               pr.origin_kind AS originKind, pr.position, pr.linked_at AS linkedAt,
               pr.detached_at AS detachedAt, pr.detached_reason AS detachedReason
@@ -542,8 +534,8 @@ export class GeoProjectRepository {
     projectId: string,
     term: string,
     limit = 20,
-    scope: GeoProjectSearchScope = 'all',
-  ): Promise<GeoProjectSearchItem[]> {
+    scope: ProjectSearchScope = 'all',
+  ): Promise<ProjectSearchItem[]> {
     const trimmed = term.trim();
     if (!trimmed) return [];
     // A API pede uma linha extra para informar `hasMore`, sem jamais entregar mais de 20
@@ -555,7 +547,7 @@ export class GeoProjectRepository {
     const sites =
       scope === 'infrastructure' || scope === 'resources'
         ? []
-        : await this.db.all<GeoProjectSearchItem>(
+        : await this.db.all<ProjectSearchItem>(
             `SELECT s.id, 'site' AS kind, s.name AS label,
               CASE WHEN LOWER(s.name) LIKE LOWER(?) THEN 0 ELSE 1 END AS rank
          FROM project_site ps
@@ -570,7 +562,7 @@ export class GeoProjectRepository {
     const resources =
       scope === 'sites'
         ? []
-        : await this.db.all<GeoProjectSearchItem>(
+        : await this.db.all<ProjectSearchItem>(
             `SELECT * FROM (
          SELECT r.id, 'resource' AS kind, r.name AS label,
                 CASE WHEN LOWER(r.name) LIKE LOWER(?) THEN 0
@@ -649,13 +641,13 @@ export class GeoProjectRepository {
     resourceKind: 'PhysicalResource' | 'LogicalResource',
     originKind: 'created' | 'linked',
     actorSub: string,
-  ): Promise<GeoProjectResourceLink> {
+  ): Promise<ProjectResourceLink> {
     const now = new Date().toISOString();
     const max = await this.db.get<{ maxPos: number | null }>(
       `SELECT MAX(position) AS maxPos FROM project_resource WHERE project_id = ?`,
       [projectId],
     );
-    const link: GeoProjectResourceLink = {
+    const link: ProjectResourceLink = {
       id: randomUUID(),
       resourceId,
       resourceKind,
@@ -726,9 +718,9 @@ export class GeoProjectRepository {
   }
 
   // Locais do projeto com a anotação de trabalho e o endereço GEONET de origem (ver
-  // schema.ts) — usado por GET /v1/geo/projects/:id/sites para casar com os nós de árvore
+  // schema.ts) — usado por GET /v1/projects/:id/sites para casar com os nós de árvore
   // vindos de GeoTreeService.sitesByIds.
-  async listSiteLinks(tenantId: string, projectId: string): Promise<GeoProjectSiteLink[]> {
+  async listSiteLinks(tenantId: string, projectId: string): Promise<ProjectSiteLink[]> {
     const rows = await this.db.all<ProjectSiteLinkRow>(
       `SELECT ps.site_id AS siteId, ps.note, ps.geonet_address_id AS geonetAddressId
          FROM project_site ps
@@ -743,7 +735,7 @@ export class GeoProjectRepository {
   async updateSiteLink(
     projectId: string,
     siteId: string,
-    patch: UpdateGeoProjectSiteLinkInput,
+    patch: UpdateProjectSiteLinkInput,
   ): Promise<void> {
     if (patch.note === undefined) return;
     await this.db.run(`UPDATE project_site SET note = ? WHERE project_id = ? AND site_id = ?`, [
@@ -766,7 +758,7 @@ export class GeoProjectRepository {
   // relatório (siteIds de amostra, centroide, área) fica em colunas próprias de
   // project_area — mesma extensão de plataforma que project_site.note, não
   // characteristic TMF (C1 não se aplica).
-  async listAreas(tenantId: string, projectId: string): Promise<GeoProjectArea[]> {
+  async listAreas(tenantId: string, projectId: string): Promise<ProjectArea[]> {
     const rows = await this.db.all<{
       locationId: string;
       kind: 'concentration' | 'dispersion';
@@ -811,9 +803,9 @@ export class GeoProjectRepository {
           centroid,
           areaKm2: row.areaKm2 !== null ? Number(row.areaKm2) : null,
           generatedAt: row.generatedAt,
-        } satisfies GeoProjectArea;
+        } satisfies ProjectArea;
       })
-      .filter((area): area is GeoProjectArea => area !== null);
+      .filter((area): area is ProjectArea => area !== null);
   }
 
   // SUBSTITUI a geração anterior do projeto (idempotente por escopo, como
@@ -873,7 +865,7 @@ export class GeoProjectRepository {
   }
 }
 
-function parseAreaGeometry(raw: string | null): import('./domain.js').GeoJSONPolygon | null {
+function parseAreaGeometry(raw: string | null): import('../geo/domain.js').GeoJSONPolygon | null {
   if (!raw) return null;
   try {
     const geometry = JSON.parse(raw);

@@ -50,6 +50,17 @@ export function tileBounds(z: number, x: number, y: number): TileBoundsRect {
   };
 }
 
+// Teto de tiles z16 por viewport. Uma viewport afastada cobre milhões de tiles — enumerá-los
+// estoura o array (RangeError) e a memória da aba. Acima do teto o índice pontual não é buscado.
+export const MAX_TILES_PER_VIEWPORT = 1024;
+
+// Quantidade de tiles do bbox, sem alocar nada — permite recusar a viewport antes de enumerar.
+export function tileCountForBounds(bounds: TileBoundsRect, z: number = MAP_TILE_ZOOM): number {
+  const nwTile = lngLatToTile(bounds.minLng, bounds.maxLat, z);
+  const seTile = lngLatToTile(bounds.maxLng, bounds.minLat, z);
+  return (seTile.x - nwTile.x + 1) * (seTile.y - nwTile.y + 1);
+}
+
 // Planeja todos os tiles cujo retângulo intersecta o bbox lng/lat. A escala não é uma regra de
 // visibilidade deste índice: o Studio GEO decide se cada camada é exibida por faixa publicada.
 export function tilesForBounds(bounds: TileBoundsRect, z: number = MAP_TILE_ZOOM): Tile[] {

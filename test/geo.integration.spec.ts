@@ -1948,12 +1948,20 @@ test.skipIf(!oracleConfigured)(
       assert.equal(spec.statusCode, 201);
       const specId = (spec.body as { id: string }).id;
 
-      const project = await requestJson(port, 'POST', '/v1/geo/projects', {
+      const project = await requestJson(port, 'POST', '/v1/projects', {
         name: 'Projeto de teste',
       });
       assert.equal(project.statusCode, 201);
       const projectId = (project.body as { id: string; status: string }).id;
       assert.equal((project.body as { status: string }).status, 'planned');
+
+      // /v1/geo/projects segue aceito por compatibilidade e enxerga o mesmo projeto.
+      const legacyGet = await requestJson(
+        port,
+        'GET',
+        `/v1/geo/projects/${projectId}/transitions`,
+      );
+      assert.equal(legacyGet.statusCode, 200);
 
       // RN-008: sem geonetAddressId, a criação de local é recusada.
       const rejected = await requestJson(port, 'POST', `/v1/geo/projects/${projectId}/sites`, {
@@ -1967,7 +1975,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal(rejected.statusCode, 400);
       assert.equal(
         (rejected.body as { error: string }).error,
-        'GEO_PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
+        'PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
       );
 
       // RN-007: com geonetAddressId, cria — e ignora o status enviado pelo cliente (herda do
@@ -2109,7 +2117,7 @@ test.skipIf(!oracleConfigured)(
         status: 'active',
       });
       assert.equal(reopen.statusCode, 409);
-      assert.equal((reopen.body as { error: string }).error, 'GEO_PROJECT_TERMINATED_IMMUTABLE');
+      assert.equal((reopen.body as { error: string }).error, 'PROJECT_TERMINATED_IMMUTABLE');
     } finally {
       await server.stop();
       const client = await getOracleTestClient();
@@ -2134,7 +2142,7 @@ test.skipIf(!oracleConfigured)(
     try {
       const missing = await requestJson(port, 'DELETE', '/v1/geo/projects/does-not-exist');
       assert.equal(missing.statusCode, 404);
-      assert.equal((missing.body as { error: string }).error, 'GEO_PROJECT_NOT_FOUND');
+      assert.equal((missing.body as { error: string }).error, 'PROJECT_NOT_FOUND');
 
       const spec = await requestJson(port, 'POST', '/v1/geo/site-specifications', {
         name: 'Ponto de Instalação Delete',
@@ -2163,7 +2171,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal(premature.statusCode, 409);
       assert.equal(
         (premature.body as { error: string }).error,
-        'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
+        'PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
       );
 
       // Terminar libera o local (vira Active — RF-010) antes do projeto poder ser arquivado.
@@ -2252,7 +2260,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal(deleted.statusCode, 409);
       assert.equal(
         (deleted.body as { error: string }).error,
-        'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
+        'PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
       );
 
       // Projeto continua existindo, com os dois vínculos intactos e nenhum local tocado.

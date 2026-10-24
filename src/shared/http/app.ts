@@ -32,8 +32,9 @@ import {
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
+import { CORE_MODEL_TOOLS } from '../../modules/mcp/module.js';
 import type { GeoService } from '../../modules/geo/service.js';
-import { isProjectInfrastructureResourceType } from '../../modules/geo/project-resource-classification.js';
+import { isProjectInfrastructureResourceType } from '../../modules/project/project-resource-classification.js';
 import type { CoverageLevel } from '../../modules/geo/coverage-service.js';
 import { parseNodeId, type GeoTreeService } from '../../modules/geo/tree-service.js';
 import { promisify } from 'node:util';
@@ -42,10 +43,6 @@ import { MAP_LINE_MAX_SELECTIONS } from '../../modules/geo/map-line-service.js';
 import { isMapDensityZoom, MAP_DENSITY_ZOOMS } from '../../modules/geo/map-density.js';
 import type { OrderService } from '../../modules/order/service.js';
 import type { PartyRoleTypeCharacteristicValueType } from '../../modules/party/party-role-type-characteristic-repository.js';
-import type {
-  CreatePartyRoleTypeInput,
-  UpdatePartyRoleTypeInput,
-} from '../../modules/party/party-role-type-repository.js';
 import {
   createNexusRuntime,
   DEFAULT_RUNTIME_USER,
@@ -114,6 +111,20 @@ import type {
   ServiceOrderQuery,
   ServiceQualificationQuery,
 } from '../../modules/order/index.js';
+import {
+  CATALOG_ADMIN_ROLES,
+  PROJECT_READ_ROLES,
+  PROJECT_WRITE_ROLES,
+  INVENTORY_READ_ROLES,
+  INVENTORY_WRITE_ROLES,
+  ORDER_OPERATE_ROLES,
+  ORDER_READ_ROLES,
+  ORDER_REQUEST_ROLES,
+  STUDIO_ADMIN_ROLES,
+  STUDIO_EDIT_ROLES,
+  STUDIO_READ_ROLES,
+  USER_ADMIN_ROLES,
+} from './roles.js';
 
 type OpenAIChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -317,6 +328,17 @@ type RouteDependencies = AppDependencies & {
   llmRateLimiter: RateLimiter;
 };
 
+const normalizeProjectPath = (pathname: string): string => {
+  if (pathname === '/v1/projects' || pathname.startsWith('/v1/projects/')) {
+    return `/v1/geo/projects${pathname.slice('/v1/projects'.length)}`;
+  }
+  if (pathname === '/v1/project-statuses' || pathname.startsWith('/v1/project-statuses/')) {
+    return `/v1/geo/project-statuses${pathname.slice('/v1/project-statuses'.length)}`;
+  }
+  if (pathname === '/v1/project-workflow') return '/v1/geo/project-workflow';
+  return pathname;
+};
+
 const routeRequest = async ({
   request,
   response,
@@ -327,6 +349,9 @@ const routeRequest = async ({
   llmRateLimiter,
 }: RouteDependencies): Promise<void> => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+  // Projeto é entidade própria. `/v1/projects*` é o caminho canônico; `/v1/geo/projects*` e
+  // `/v1/geo/project-*` seguem aceitos por compatibilidade e resolvem para os mesmos handlers.
+  url.pathname = normalizeProjectPath(url.pathname);
   const searchService = runtime.searchService;
   const defaultUser = runtime.defaultUser;
   const userRepository = runtime.userRepository;
@@ -947,7 +972,13 @@ const routeRequest = async ({
   }
 
   if (url.pathname.startsWith('/v1/research/')) {
-    const llmToolCatalog = buildLlmToolCatalog(mcpModule);
+    // O catálogo exposto não depende de papel (a filtragem por permissão fica em
+    // nexus.search_operations), então é montado uma vez por módulo MCP.
+    let llmToolCatalog = llmToolCatalogCache.get(mcpModule);
+    if (!llmToolCatalog) {
+      llmToolCatalog = buildLlmToolCatalog(mcpModule);
+      llmToolCatalogCache.set(mcpModule, llmToolCatalog);
+    }
     await routeResearchRequest({
       request,
       response,
@@ -987,7 +1018,7 @@ const routePublishedGeoLayerCatalogRequest = async ({
   if (request.method !== 'GET')
     throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
   const context = await buildRequestContext(request, config);
-  requireRoles(context, GEO_PROJECT_READ_ROLES);
+  requireRoles(context, PROJECT_READ_ROLES);
   const published = await runtime.studioService.getPublishedVersion('studio-geo', context);
   const snapshot = published?.snapshot;
   const hasPublishedSnapshot = Boolean(
@@ -1321,34 +1352,7 @@ const routeStudioRequest = async ({
 };
 
 // Tipos de party são metadados de modelagem do Studio; suas instâncias continuam em TMF632/669.
-// O papel é renomeável porque o repositório propaga a alteração para características e PartyRoles.
-const parsePartyRoleTypeInput = (
-  body: Record<string, unknown>,
-  current?: CreatePartyRoleTypeInput,
-): CreatePartyRoleTypeInput => {
-  const key = String(body.key ?? current?.key ?? '').trim();
-  const roleName = String(body.roleName ?? current?.roleName ?? '').trim();
-  const label = String(body.label ?? current?.label ?? '').trim();
-  const description =
-    body.description === undefined
-      ? current?.description
-      : body.description === null
-        ? null
-        : String(body.description).trim();
-  if (!key || !roleName || !label) {
-    throw new AppError('party role type key, roleName and label are required', {
-      code: 'PARTY_ROLE_TYPE_INVALID',
-      statusCode: 400,
-    });
-  }
-  if (!/^[a-z][a-z0-9-]*$/.test(key) || !/^[a-z][a-z0-9-]*$/.test(roleName)) {
-    throw new AppError('party role type key and roleName must be lowercase identifiers', {
-      code: 'PARTY_ROLE_TYPE_INVALID',
-      statusCode: 400,
-    });
-  }
-  return { key, roleName, label, description: description || null };
-};
+// As regras (papel, draft ativo, auditoria) vivem em PartyRoleTypeService.
 
 const routePartyRoleTypeRequest = async ({
   request,
@@ -1366,24 +1370,13 @@ const routePartyRoleTypeRequest = async ({
   const context = await buildRequestContext(request, config);
   if (url.pathname === '/v1/party-role-types') {
     if (request.method === 'GET') {
-      requireRoles(context, INVENTORY_READ_ROLES);
-      return sendJson(response, 200, await runtime.partyRoleTypeRepository.list(context.tenantId));
+      return sendJson(response, 200, await runtime.partyRoleTypeService.list(context));
     }
     if (request.method === 'POST') {
-      requireRoles(context, CATALOG_ADMIN_ROLES);
-      await runtime.studioService.assertActiveDraft('parties', context);
-      const input = parsePartyRoleTypeInput(await readBody(request));
-      const conflict = await runtime.partyRoleTypeRepository.findByKey(context.tenantId, input.key);
-      if (conflict) {
-        throw new AppError('party role type key already exists', {
-          code: 'PARTY_ROLE_TYPE_CONFLICT',
-          statusCode: 409,
-        });
-      }
       return sendJson(
         response,
         201,
-        await runtime.partyRoleTypeRepository.create(context.tenantId, input),
+        await runtime.partyRoleTypeService.create(await readBody(request), context),
       );
     }
   }
@@ -1421,53 +1414,14 @@ const routePartyRoleTypeRequest = async ({
 
   const itemMatch = url.pathname.match(/^\/v1\/party-role-types\/([^/]+)$/);
   if (itemMatch?.[1] && (request.method === 'PATCH' || request.method === 'DELETE')) {
-    requireRoles(context, CATALOG_ADMIN_ROLES);
-    await runtime.studioService.assertActiveDraft('parties', context);
     const id = decodeURIComponent(itemMatch[1]);
-    const current = await runtime.partyRoleTypeRepository.get(context.tenantId, id);
-    if (!current) {
-      throw new AppError('party role type not found', {
-        code: 'PARTY_ROLE_TYPE_NOT_FOUND',
-        statusCode: 404,
-      });
-    }
     if (request.method === 'DELETE') {
-      const usage = await runtime.partyRoleTypeRepository.getUsage(
-        context.tenantId,
-        current.roleName,
-        current.id,
-      );
-      if (usage.organizationCount > 0 || usage.resourceSpecificationCount > 0) {
-        throw new AppError(
-          `Não é possível inativar o papel "${current.label}" porque ele está em uso (${usage.organizationCount} organizações, ${usage.resourceSpecificationCount} especificações de recurso).`,
-          {
-            code: 'PARTY_ROLE_TYPE_IN_USE',
-            statusCode: 409,
-          },
-        );
-      }
-      return sendJson(
-        response,
-        200,
-        await runtime.partyRoleTypeRepository.deactivate(context.tenantId, id),
-      );
-    }
-    const input = parsePartyRoleTypeInput(await readBody(request), current);
-    const conflict = await runtime.partyRoleTypeRepository.findByKey(context.tenantId, input.key);
-    if (conflict && conflict.id !== current.id) {
-      throw new AppError('party role type key already exists', {
-        code: 'PARTY_ROLE_TYPE_CONFLICT',
-        statusCode: 409,
-      });
+      return sendJson(response, 200, await runtime.partyRoleTypeService.deactivate(id, context));
     }
     return sendJson(
       response,
       200,
-      await runtime.partyRoleTypeRepository.update(
-        context.tenantId,
-        id,
-        input as UpdatePartyRoleTypeInput,
-      ),
+      await runtime.partyRoleTypeService.update(id, await readBody(request), context),
     );
   }
 
@@ -1673,27 +1627,6 @@ const routePartyRoleTypeCharacteristicRequest = async ({
 // usa INVENTORY_READ_ROLES, escrita usa CATALOG_ADMIN_ROLES. A mutação direta serve o editor do
 // Studio dentro de um draft — a publicação passa pelo ReferenceDataStudioAdapter via
 // /v1/studio/reference-data.
-const parseReferenceDataSetInput = (
-  body: Record<string, unknown>,
-): { key: string; name: string; description: string | null } => {
-  const key = String(body.key ?? '').trim();
-  const name = String(body.name ?? '').trim();
-  const description = body.description ? String(body.description).trim() : null;
-  if (!key || !name) {
-    throw new AppError('reference data set key and name are required', {
-      code: 'REFERENCE_DATA_SET_INVALID',
-      statusCode: 400,
-    });
-  }
-  if (!/^[a-z][a-z0-9-]*$/.test(key)) {
-    throw new AppError('reference data set key must be a lowercase identifier', {
-      code: 'REFERENCE_DATA_SET_INVALID',
-      statusCode: 400,
-    });
-  }
-  return { key, name, description };
-};
-
 const routeReferenceDataSetRequest = async ({
   request,
   response,
@@ -1708,95 +1641,26 @@ const routeReferenceDataSetRequest = async ({
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
+  const service = runtime.referenceDataService;
   if (url.pathname === '/v1/reference-data/sets') {
     if (request.method === 'GET') {
-      requireRoles(context, INVENTORY_READ_ROLES);
-      return sendJson(
-        response,
-        200,
-        await runtime.referenceDataRepository.listSets(context.tenantId),
-      );
+      return sendJson(response, 200, await service.listSets(context));
     }
     if (request.method === 'POST') {
-      requireRoles(context, CATALOG_ADMIN_ROLES);
-      await runtime.studioService.assertActiveDraft('reference-data', context);
-      const input = parseReferenceDataSetInput(await readBody(request));
-      const conflict = await runtime.referenceDataRepository.getSetByKey(
-        context.tenantId,
-        input.key,
-      );
-      if (conflict) {
-        throw new AppError('reference data set key already exists', {
-          code: 'REFERENCE_DATA_SET_CONFLICT',
-          statusCode: 409,
-        });
-      }
-      return sendJson(
-        response,
-        201,
-        await runtime.referenceDataRepository.createSet(context.tenantId, input),
-      );
+      return sendJson(response, 201, await service.createSet(await readBody(request), context));
     }
   }
 
   const itemMatch = url.pathname.match(/^\/v1\/reference-data\/sets\/([^/]+)$/);
   if (itemMatch?.[1] && (request.method === 'PATCH' || request.method === 'DELETE')) {
-    requireRoles(context, CATALOG_ADMIN_ROLES);
-    await runtime.studioService.assertActiveDraft('reference-data', context);
     const id = decodeURIComponent(itemMatch[1]);
-    const current = await runtime.referenceDataRepository.getSet(context.tenantId, id);
-    if (!current) {
-      throw new AppError('reference data set not found', {
-        code: 'REFERENCE_DATA_SET_NOT_FOUND',
-        statusCode: 404,
-      });
-    }
     if (request.method === 'DELETE') {
-      return sendJson(
-        response,
-        200,
-        await runtime.referenceDataRepository.deactivateSet(context.tenantId, id),
-      );
+      return sendJson(response, 200, await service.deactivateSet(id, context));
     }
-    const input = parseReferenceDataSetInput(await readBody(request));
-    if (input.key !== current.key) {
-      const conflict = await runtime.referenceDataRepository.getSetByKey(
-        context.tenantId,
-        input.key,
-      );
-      if (conflict && conflict.id !== current.id) {
-        throw new AppError('reference data set key already exists', {
-          code: 'REFERENCE_DATA_SET_CONFLICT',
-          statusCode: 409,
-        });
-      }
-    }
-    return sendJson(
-      response,
-      200,
-      await runtime.referenceDataRepository.updateSet(context.tenantId, id, input),
-    );
+    return sendJson(response, 200, await service.updateSet(id, await readBody(request), context));
   }
 
   throw new AppError('route not found', { code: 'NOT_FOUND', statusCode: 404 });
-};
-
-const parseReferenceDataValueInput = (
-  body: Record<string, unknown>,
-): { key: string; label: string; sortOrder?: number } => {
-  const key = String(body.key ?? '').trim();
-  const label = String(body.label ?? '').trim();
-  if (!key || !label) {
-    throw new AppError('reference data value key and label are required', {
-      code: 'REFERENCE_DATA_VALUE_INVALID',
-      statusCode: 400,
-    });
-  }
-  return {
-    key,
-    label,
-    ...(body.sortOrder !== undefined ? { sortOrder: Number(body.sortOrder) } : {}),
-  };
 };
 
 const routeReferenceDataValueRequest = async ({
@@ -1813,32 +1677,18 @@ const routeReferenceDataValueRequest = async ({
   url: URL;
 }): Promise<void> => {
   const context = await buildRequestContext(request, config);
+  const service = runtime.referenceDataService;
   const collectionMatch = url.pathname.match(/^\/v1\/reference-data\/sets\/([^/]+)\/values$/);
   if (collectionMatch?.[1]) {
     const setId = decodeURIComponent(collectionMatch[1]);
-    const set = await runtime.referenceDataRepository.getSet(context.tenantId, setId);
-    if (!set) {
-      throw new AppError('reference data set not found', {
-        code: 'REFERENCE_DATA_SET_NOT_FOUND',
-        statusCode: 404,
-      });
-    }
     if (request.method === 'GET') {
-      requireRoles(context, INVENTORY_READ_ROLES);
-      return sendJson(
-        response,
-        200,
-        await runtime.referenceDataRepository.listValues(context.tenantId, setId),
-      );
+      return sendJson(response, 200, await service.listValues(setId, context));
     }
     if (request.method === 'POST') {
-      requireRoles(context, CATALOG_ADMIN_ROLES);
-      await runtime.studioService.assertActiveDraft('reference-data', context);
-      const input = parseReferenceDataValueInput(await readBody(request));
       return sendJson(
         response,
         201,
-        await runtime.referenceDataRepository.createValue(context.tenantId, setId, input),
+        await service.createValue(setId, await readBody(request), context),
       );
     }
   }
@@ -1847,31 +1697,15 @@ const routeReferenceDataValueRequest = async ({
   if (itemMatch?.[1] && itemMatch?.[2]) {
     const setId = decodeURIComponent(itemMatch[1]);
     const id = decodeURIComponent(itemMatch[2]);
-    if (request.method === 'PATCH' || request.method === 'DELETE') {
-      requireRoles(context, CATALOG_ADMIN_ROLES);
-      await runtime.studioService.assertActiveDraft('reference-data', context);
-      const current = await runtime.referenceDataRepository.getValue(context.tenantId, id);
-      if (!current || current.setId !== setId) {
-        throw new AppError('reference data value not found', {
-          code: 'REFERENCE_DATA_VALUE_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
-      const updated =
-        request.method === 'DELETE'
-          ? await runtime.referenceDataRepository.deactivateValue(context.tenantId, id)
-          : await runtime.referenceDataRepository.updateValue(
-              context.tenantId,
-              id,
-              parseReferenceDataValueInput(await readBody(request)),
-            );
-      if (!updated) {
-        throw new AppError('reference data value not found', {
-          code: 'REFERENCE_DATA_VALUE_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
-      return sendJson(response, 200, updated);
+    if (request.method === 'DELETE') {
+      return sendJson(response, 200, await service.deactivateValue(setId, id, context));
+    }
+    if (request.method === 'PATCH') {
+      return sendJson(
+        response,
+        200,
+        await service.updateValue(setId, id, await readBody(request), context),
+      );
     }
   }
 
@@ -1976,18 +1810,14 @@ const routeGeoRequest = async ({
 
   if (url.pathname === '/v1/geo/project-workflow') {
     if (request.method === 'GET') {
-      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
-      return sendJson(
-        response,
-        200,
-        await runtime.geoProjectWorkflowService.getWorkflow(geoContext),
-      );
+      requireRoles(geoContext, PROJECT_READ_ROLES);
+      return sendJson(response, 200, await runtime.projectWorkflowService.getWorkflow(geoContext));
     }
   }
 
   // Projetos de trabalho da página Locais (REQ-MOD01-015, estilo "Salvos" do Google Maps):
   // coleções de locais compartilhadas por todo o tenant (C8), não por usuário — por isso
-  // `requireRoles`, não `requireUser`. Projeto em si não é entidade TMF (GeoProjectRepository
+  // `requireRoles`, não `requireUser`. Projeto em si não é entidade TMF (ProjectRepository
   // fala com o banco direto, como o histórico de busca), mas cada local do projeto é um
   // GeographicSite (TMF674) real, sempre criado/soft-terminado através do GeoService — nunca
   // um DELETE físico (C6). A exclusão da Hierarquia é feita no próprio GeoTreeService
@@ -1998,29 +1828,29 @@ const routeGeoRequest = async ({
       return sendJson(
         response,
         200,
-        await runtime.geoProjectRepository.listStatusCatalog(geoContext.tenantId),
+        await runtime.projectRepository.listStatusCatalog(geoContext.tenantId),
       );
     }
     if (request.method === 'POST') {
       const body = await readBody(request);
       const name = String(body.name ?? '').trim();
-      const behavior = parseGeoProjectStatusBehavior(body.behavior);
+      const behavior = parseProjectStatusBehavior(body.behavior);
       if (!name || !behavior) {
         throw new AppError('project status name and behavior are required', {
-          code: 'GEO_PROJECT_STATUS_CATALOG_INVALID',
+          code: 'PROJECT_STATUS_CATALOG_INVALID',
           statusCode: 400,
         });
       }
       if (behavior === 'close-release') {
         throw new AppError('only status code 17 can close a project', {
-          code: 'GEO_PROJECT_STATUS_TERMINAL_RESERVED',
+          code: 'PROJECT_STATUS_TERMINAL_RESERVED',
           statusCode: 409,
         });
       }
       return sendJson(
         response,
         201,
-        await runtime.geoProjectRepository.createStatusCatalogItem(geoContext.tenantId, {
+        await runtime.projectRepository.createStatusCatalogItem(geoContext.tenantId, {
           name,
           sortOrder: Number(body.sortOrder ?? 1000),
           active: body.active !== false,
@@ -2037,10 +1867,10 @@ const routeGeoRequest = async ({
     if (request.method === 'PATCH' || request.method === 'DELETE') {
       const body = request.method === 'PATCH' ? await readBody(request) : {};
       const behavior =
-        body.behavior === undefined ? undefined : parseGeoProjectStatusBehavior(body.behavior);
+        body.behavior === undefined ? undefined : parseProjectStatusBehavior(body.behavior);
       if (code === '1' && body.active === false) {
         throw new AppError('default project status cannot be deactivated', {
-          code: 'GEO_PROJECT_STATUS_DEFAULT_PROTECTED',
+          code: 'PROJECT_STATUS_DEFAULT_PROTECTED',
           statusCode: 409,
         });
       }
@@ -2049,17 +1879,17 @@ const routeGeoRequest = async ({
         ((behavior !== undefined && behavior !== 'close-release') || body.active === false)
       ) {
         throw new AppError('project closing status is protected', {
-          code: 'GEO_PROJECT_STATUS_TERMINAL_PROTECTED',
+          code: 'PROJECT_STATUS_TERMINAL_PROTECTED',
           statusCode: 409,
         });
       }
       if (code !== '17' && behavior === 'close-release') {
         throw new AppError('only status code 17 can close a project', {
-          code: 'GEO_PROJECT_STATUS_TERMINAL_RESERVED',
+          code: 'PROJECT_STATUS_TERMINAL_RESERVED',
           statusCode: 409,
         });
       }
-      const updated = await runtime.geoProjectRepository.updateStatusCatalogItem(
+      const updated = await runtime.projectRepository.updateStatusCatalogItem(
         geoContext.tenantId,
         code,
         request.method === 'DELETE'
@@ -2073,7 +1903,7 @@ const routeGeoRequest = async ({
       );
       if (!updated)
         throw new AppError('project status not found', {
-          code: 'GEO_PROJECT_STATUS_NOT_FOUND',
+          code: 'PROJECT_STATUS_NOT_FOUND',
           statusCode: 404,
         });
       return sendJson(response, 200, updated);
@@ -2082,50 +1912,11 @@ const routeGeoRequest = async ({
 
   if (url.pathname === '/v1/geo/projects') {
     if (request.method === 'GET') {
-      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
-      return sendJson(response, 200, await runtime.geoProjectRepository.list(geoContext.tenantId));
+      return sendJson(response, 200, await runtime.projectService.list(geoContext));
     }
     if (request.method === 'POST') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
       const body = await readBody(request);
-      assertProjectIconSize(body.iconDataUrl);
-      const workflow = await runtime.geoProjectWorkflowService.getWorkflow(geoContext);
-      if (workflow.states.length === 0 || !workflow.initialStateCode) {
-        throw new AppError('project workflow is not configured', {
-          code: 'GEO_PROJECT_WORKFLOW_NOT_CONFIGURED',
-          statusCode: 409,
-        });
-      }
-      const requestedStatusCode =
-        body.statusCode === undefined ? workflow.initialStateCode : String(body.statusCode);
-      const requestedCatalogStatus = await resolveProjectStatus(
-        runtime.geoProjectRepository,
-        geoContext.tenantId,
-        requestedStatusCode,
-      );
-      const workflowState = workflow.states.find((state) => state.code === requestedStatusCode);
-      if (!workflowState?.active) {
-        throw new AppError('project workflow state is not available', {
-          code: 'GEO_PROJECT_WORKFLOW_STATE_NOT_FOUND',
-          statusCode: 409,
-        });
-      }
-      const project = await runtime.geoProjectRepository.create(
-        geoContext.tenantId,
-        geoContext.actorSub,
-        {
-          name: String(body.name ?? '').trim() || 'Projeto sem título',
-          description: body.description ? String(body.description) : null,
-          iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null,
-          status:
-            projectStatusOperationalStatus(requestedCatalogStatus) ??
-            projectStatusOperationalStatus(workflowState) ??
-            parseGeoProjectStatus(body.status) ??
-            'planned',
-          statusCode: requestedStatusCode,
-        },
-      );
-      return sendJson(response, 201, project);
+      return sendJson(response, 201, await runtime.projectService.create(body, geoContext));
     }
   }
 
@@ -2133,17 +1924,17 @@ const routeGeoRequest = async ({
   if (projectTransitionsMatch?.[1]) {
     const projectId = decodeURIComponent(projectTransitionsMatch[1]);
     if (request.method === 'GET') {
-      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      requireRoles(geoContext, PROJECT_READ_ROLES);
       return sendJson(
         response,
         200,
-        await runtime.geoProjectWorkflowService.getProjectTransitions(projectId, geoContext),
+        await runtime.projectWorkflowService.getProjectTransitions(projectId, geoContext),
       );
     }
     if (request.method === 'POST') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+      requireRoles(geoContext, PROJECT_WRITE_ROLES);
       const body = await readBody(request);
-      const result = await runtime.geoProjectWorkflowService.executeTransition(
+      const result = await runtime.projectWorkflowService.executeTransition(
         projectId,
         {
           transitionId: body.transitionId ? String(body.transitionId) : undefined,
@@ -2159,91 +1950,15 @@ const routeGeoRequest = async ({
   if (projectMatch?.[1]) {
     const projectId = decodeURIComponent(projectMatch[1]);
     if (request.method === 'PATCH') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
       const body = await readBody(request);
-      assertProjectIconSize(body.iconDataUrl);
-      const current = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
-      if (!current) {
-        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
-      }
-
-      const hasMetadataUpdate =
-        body.name !== undefined || body.description !== undefined || body.iconDataUrl !== undefined;
-      let updatedProject = current;
-
-      if (hasMetadataUpdate) {
-        const afterMeta = await runtime.geoProjectRepository.update(
-          geoContext.tenantId,
-          projectId,
-          {
-            ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
-            ...(body.description !== undefined
-              ? { description: body.description ? String(body.description) : null }
-              : {}),
-            ...(body.iconDataUrl !== undefined
-              ? { iconDataUrl: body.iconDataUrl ? String(body.iconDataUrl) : null }
-              : {}),
-          },
-        );
-        if (!afterMeta) {
-          throw new AppError('project not found', {
-            code: 'GEO_PROJECT_NOT_FOUND',
-            statusCode: 404,
-          });
-        }
-        updatedProject = afterMeta;
-      }
-
-      const requestedStatusCode =
-        body.statusCode !== undefined
-          ? String(body.statusCode)
-          : body.status !== undefined
-            ? body.status === 'active'
-              ? '22'
-              : body.status === 'suspended'
-                ? '23'
-                : body.status === 'terminated'
-                  ? '17'
-                  : body.status === 'cancelled'
-                    ? 'legacy-cancelled'
-                    : '11'
-            : undefined;
-
-      if (requestedStatusCode !== undefined && requestedStatusCode !== current.statusCode) {
-        const transitionResult = await runtime.geoProjectWorkflowService.executeTransition(
-          projectId,
-          { targetStateCode: requestedStatusCode },
-          geoContext,
-        );
-        return sendJson(response, 200, {
-          ...transitionResult.project,
-          siteCascade: transitionResult.siteCascade,
-          resourceCascade: transitionResult.resourceCascade,
-        });
-      }
-
-      return sendJson(response, 200, updatedProject);
+      return sendJson(
+        response,
+        200,
+        await runtime.projectService.update(projectId, body, geoContext),
+      );
     }
     if (request.method === 'DELETE') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const current = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
-      if (!current) {
-        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
-      }
-      // Arquivamento é administrativo: preserva Sites, Resources e todos os vínculos
-      // históricos. O ciclo de vida já deve ter chegado a um estado terminal.
-      if (current.status !== 'terminated' && current.status !== 'cancelled') {
-        throw new AppError('only terminal projects can be archived', {
-          code: 'GEO_PROJECT_ARCHIVE_REQUIRES_TERMINAL_STATUS',
-          statusCode: 409,
-        });
-      }
-      const archived = await runtime.geoProjectRepository.archive(
-        geoContext.tenantId,
-        projectId,
-        geoContext.actorSub,
-      );
-      return sendJson(response, 200, { archived: Boolean(archived), project: archived });
+      return sendJson(response, 200, await runtime.projectService.archive(projectId, geoContext));
     }
   }
 
@@ -2253,11 +1968,11 @@ const routeGeoRequest = async ({
     /^\/v1\/geo\/projects\/([^/]+)\/resource-creation-options$/,
   );
   if (request.method === 'GET' && projectResourceCreationOptionsMatch?.[1]) {
-    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    requireRoles(geoContext, PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectResourceCreationOptionsMatch[1]);
-    const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
+    const project = await runtime.projectRepository.get(geoContext.tenantId, projectId);
     if (!project || project.archivedAt) {
-      throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
     }
     const catalogs = await runtime.resourceService.listResourceCatalogs(
       { status: 'active' },
@@ -2317,14 +2032,14 @@ const routeGeoRequest = async ({
   if (projectResourcesMatch?.[1]) {
     const projectId = decodeURIComponent(projectResourcesMatch[1]);
     if (request.method === 'GET') {
-      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      requireRoles(geoContext, PROJECT_READ_ROLES);
       const limit = Math.min(
         Math.max(parseOptionalNumber(url.searchParams.get('limit')) ?? 50, 1),
         100,
       );
       const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
       const view = url.searchParams.get('view') === 'infrastructure' ? 'infrastructure' : 'all';
-      const links = await runtime.geoProjectRepository.listResourceLinks(
+      const links = await runtime.projectRepository.listResourceLinks(
         geoContext.tenantId,
         projectId,
         { limit, offset, view },
@@ -2333,48 +2048,12 @@ const routeGeoRequest = async ({
       return sendJson(response, 200, { items, offset, limit, hasMore: links.length === limit });
     }
     if (request.method === 'POST') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
-      if (!project || project.archivedAt)
-        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
-      if (project.status === 'terminated' || project.status === 'cancelled')
-        throw new AppError('terminal project cannot receive resources', {
-          code: 'GEO_PROJECT_TERMINAL',
-          statusCode: 409,
-        });
       const body = await readBody(request);
-      const kind =
-        body['@type'] === 'LogicalResource' || body.supportingPhysicalResourceId
-          ? 'LogicalResource'
-          : 'PhysicalResource';
-      const state =
-        project.status === 'active'
-          ? { status: 'active', administrativeState: 'unlocked', operationalState: 'enabled' }
-          : project.status === 'suspended'
-            ? { status: 'suspended', administrativeState: 'locked', operationalState: 'disabled' }
-            : { status: 'inactive', administrativeState: 'locked', operationalState: 'disabled' };
-      const created =
-        kind === 'LogicalResource'
-          ? await runtime.resourceService.createLogicalResource(
-              { ...body, ...state } as Parameters<
-                typeof runtime.resourceService.createLogicalResource
-              >[0],
-              geoContext,
-            )
-          : await runtime.resourceService.createPhysicalResource(
-              { ...body, ...state } as Parameters<
-                typeof runtime.resourceService.createPhysicalResource
-              >[0],
-              geoContext,
-            );
-      await runtime.geoProjectRepository.linkResource(
-        projectId,
-        created.id,
-        kind,
-        'created',
-        geoContext.actorSub,
+      return sendJson(
+        response,
+        201,
+        await runtime.projectService.createResource(projectId, body, geoContext),
       );
-      return sendJson(response, 201, created);
     }
   }
 
@@ -2385,61 +2064,21 @@ const routeGeoRequest = async ({
     const projectId = decodeURIComponent(projectResourceMatch[1]);
     const resourceId = decodeURIComponent(projectResourceMatch[2]);
     if (request.method === 'POST') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
-      if (!project || project.archivedAt)
-        throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
-      if (project.status === 'terminated' || project.status === 'cancelled')
-        throw new AppError('terminal project cannot receive resources', {
-          code: 'GEO_PROJECT_TERMINAL',
-          statusCode: 409,
-        });
-      const occupied = await runtime.geoProjectRepository.findOpenProjectByResourceId(
-        geoContext.tenantId,
-        resourceId,
+      return sendJson(
+        response,
+        201,
+        await runtime.projectService.linkResource(projectId, resourceId, geoContext),
       );
-      if (occupied && occupied.projectId !== projectId)
-        throw new AppError('resource already belongs to an open project', {
-          code: 'GEO_PROJECT_RESOURCE_CONFLICT',
-          statusCode: 409,
-        });
-      const resource = await runtime.resourceService.getResource(resourceId, geoContext);
-      if (!resource)
-        throw new AppError('resource not found', { code: 'RESOURCE_NOT_FOUND', statusCode: 404 });
-      await runtime.geoProjectRepository.linkResource(
-        projectId,
-        resourceId,
-        resource['@type'],
-        'linked',
-        geoContext.actorSub,
-      );
-      return sendJson(response, 201, resource);
     }
     if (request.method === 'DELETE') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const detached = await runtime.geoProjectRepository.detachResource(
-        projectId,
-        resourceId,
-        geoContext.actorSub,
-        'Desvinculado manualmente do projeto',
-      );
-      if (!detached)
-        throw new AppError('project resource link not found', {
-          code: 'GEO_PROJECT_RESOURCE_NOT_FOUND',
-          statusCode: 404,
-        });
-      const resource = await runtime.resourceService.getResource(resourceId, geoContext);
-      if (resource?.['@type'] === 'LogicalResource')
-        await runtime.resourceService.deleteLogicalResource(resourceId, geoContext);
-      if (resource?.['@type'] === 'PhysicalResource')
-        await runtime.resourceService.deletePhysicalResource(resourceId, geoContext);
+      await runtime.projectService.detachResource(projectId, resourceId, geoContext);
       return sendJson(response, 200, { detached: true });
     }
   }
 
   const projectSearchMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/search$/);
   if (projectSearchMatch?.[1] && request.method === 'GET') {
-    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    requireRoles(geoContext, PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectSearchMatch[1]);
     const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase();
     const scopeParam = url.searchParams.get('scope');
@@ -2454,7 +2093,7 @@ const routeGeoRequest = async ({
     const offset = Math.max(parseOptionalNumber(url.searchParams.get('offset')) ?? 0, 0);
     if (query.length < 2)
       return sendJson(response, 200, { items: [], offset, limit, hasMore: false });
-    const matches = await runtime.geoProjectRepository.searchItems(
+    const matches = await runtime.projectRepository.searchItems(
       geoContext.tenantId,
       projectId,
       query,
@@ -2486,7 +2125,7 @@ const routeGeoRequest = async ({
     /^\/v1\/geo\/projects\/([^/]+)\/resource-candidates$/,
   );
   if (projectCandidatesMatch?.[1] && request.method === 'GET') {
-    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+    requireRoles(geoContext, PROJECT_READ_ROLES);
     const projectId = decodeURIComponent(projectCandidatesMatch[1]);
     const query = (url.searchParams.get('q') ?? '').trim();
     const resources = await runtime.resourceService.listResources(
@@ -2498,7 +2137,7 @@ const routeGeoRequest = async ({
     );
     const available = [] as Resource[];
     for (const resource of resources) {
-      const linked = await runtime.geoProjectRepository.findOpenProjectByResourceId(
+      const linked = await runtime.projectRepository.findOpenProjectByResourceId(
         geoContext.tenantId,
         resource.id,
       );
@@ -2510,8 +2149,8 @@ const routeGeoRequest = async ({
   const projectAreasMatch = url.pathname.match(/^\/v1\/geo\/projects\/([^/]+)\/areas$/);
   if (projectAreasMatch?.[1] && request.method === 'GET') {
     const projectId = decodeURIComponent(projectAreasMatch[1]);
-    requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
-    const areas = await runtime.geoProjectRepository.listAreas(geoContext.tenantId, projectId);
+    requireRoles(geoContext, PROJECT_READ_ROLES);
+    const areas = await runtime.projectRepository.listAreas(geoContext.tenantId, projectId);
     return sendJson(response, 200, { areas });
   }
 
@@ -2519,7 +2158,7 @@ const routeGeoRequest = async ({
   if (projectSitesMatch?.[1]) {
     const projectId = decodeURIComponent(projectSitesMatch[1]);
     if (request.method === 'GET') {
-      requireRoles(geoContext, GEO_PROJECT_READ_ROLES);
+      requireRoles(geoContext, PROJECT_READ_ROLES);
       const minLng = parseOptionalNumber(url.searchParams.get('minLng'));
       const minLat = parseOptionalNumber(url.searchParams.get('minLat'));
       const maxLng = parseOptionalNumber(url.searchParams.get('maxLng'));
@@ -2562,42 +2201,12 @@ const routeGeoRequest = async ({
       });
     }
     if (request.method === 'POST') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const project = await runtime.geoProjectRepository.get(geoContext.tenantId, projectId);
-      if (!project) {
-        throw new AppError('project not found', {
-          code: 'GEO_PROJECT_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
       const body = await readBody(request);
-      const geonetAddressId =
-        typeof body.geonetAddressId === 'string' ? body.geonetAddressId.trim() : '';
-      if (!geonetAddressId) {
-        throw new AppError('geonet address id required to create a project site', {
-          code: 'GEO_PROJECT_SITE_GEONET_ADDRESS_REQUIRED',
-          statusCode: 400,
-        });
-      }
-      const siteInput =
-        body.site && typeof body.site === 'object' ? (body.site as Record<string, unknown>) : {};
-      // O local nasce com o status do projeto (herança, não escolha do formulário) — o que
-      // o cliente mandar em `site.status` é ignorado aqui de propósito.
-      const created = await geoService.createSiteAtAddress(
-        {
-          ...(body as Parameters<typeof geoService.createSiteAtAddress>[0]),
-          site: { ...siteInput, status: project.status } as Parameters<
-            typeof geoService.createSiteAtAddress
-          >[0]['site'],
-        },
-        geoContext,
+      return sendJson(
+        response,
+        201,
+        await runtime.projectService.createSite(projectId, body, geoContext),
       );
-      await runtime.geoProjectRepository.linkSite(projectId, created.site.id, { geonetAddressId });
-      const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
-      if (note) {
-        await runtime.geoProjectRepository.updateSiteLink(projectId, created.site.id, { note });
-      }
-      return sendJson(response, 201, created);
     }
   }
 
@@ -2606,63 +2215,15 @@ const routeGeoRequest = async ({
     const projectId = decodeURIComponent(projectSiteMatch[1]);
     const siteId = decodeURIComponent(projectSiteMatch[2]);
     if (request.method === 'PATCH') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const linked = await runtime.geoProjectRepository.hasSiteLink(
-        geoContext.tenantId,
-        projectId,
-        siteId,
-      );
-      if (!linked) {
-        throw new AppError('project site not found', {
-          code: 'GEO_PROJECT_SITE_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
       const body = await readBody(request);
-      // Nunca aceita `status` aqui: o local herda o do projeto (RN — ver PATCH de projeto
-      // acima); mudar isoladamente quebraria a herança sem o usuário perceber.
-      const site = await geoService.updateSite(
-        siteId,
-        {
-          ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
-          ...(body.siteSpecificationId !== undefined
-            ? { siteSpecificationId: String(body.siteSpecificationId) }
-            : {}),
-        },
-        geoContext,
+      return sendJson(
+        response,
+        200,
+        await runtime.projectService.updateSite(projectId, siteId, body, geoContext),
       );
-      const note =
-        body.note === null
-          ? null
-          : typeof body.note === 'string'
-            ? body.note.trim() || null
-            : undefined;
-      if (note !== undefined) {
-        await runtime.geoProjectRepository.updateSiteLink(projectId, siteId, { note });
-      }
-      return sendJson(response, 200, { site, note });
     }
     if (request.method === 'DELETE') {
-      requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
-      const linked = await runtime.geoProjectRepository.hasSiteLink(
-        geoContext.tenantId,
-        projectId,
-        siteId,
-      );
-      if (!linked) {
-        throw new AppError('project site not found', {
-          code: 'GEO_PROJECT_SITE_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
-      // Mesma ordem e mesmo motivo do DELETE de projeto: soft-terminate (C6) antes de
-      // desvincular, para uma falha na transição não deixar o local órfão e visível.
-      await geoService.transitionSite(
-        siteId,
-        { status: 'Retired', statusReason: 'Local removido do projeto' },
-        geoContext,
-      );
-      await runtime.geoProjectRepository.unlinkSite(projectId, siteId);
+      await runtime.projectService.removeSite(projectId, siteId, geoContext);
       return sendJson(response, 204, null);
     }
   }
@@ -3272,7 +2833,7 @@ const routeGeoRequest = async ({
     if (typeof originSystem === 'string' && originSystem) {
       return sendJson(response, 200, { kind: 'import', system: originSystem });
     }
-    const project = await runtime.geoProjectRepository.findProjectBySiteId(
+    const project = await runtime.projectRepository.findProjectBySiteId(
       geoContext.tenantId,
       siteId,
     );
@@ -3299,7 +2860,7 @@ const routeGeoRequest = async ({
   // recursos (`routeResourceRequest`).
   const siteResourcesMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/resources$/);
   if (siteResourcesMatch?.[1] && request.method === 'POST') {
-    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    requireRoles(geoContext, PROJECT_WRITE_ROLES);
     const siteId = decodeURIComponent(siteResourcesMatch[1]);
     const site = await geoService.getSite(siteId, geoContext);
     if (!site) {
@@ -3334,7 +2895,7 @@ const routeGeoRequest = async ({
 
   const siteResourceMatch = url.pathname.match(/^\/v1\/geo\/sites\/([^/]+)\/resources\/([^/]+)$/);
   if (siteResourceMatch?.[1] && siteResourceMatch[2] && request.method === 'DELETE') {
-    requireRoles(geoContext, GEO_PROJECT_WRITE_ROLES);
+    requireRoles(geoContext, PROJECT_WRITE_ROLES);
     const resourceId = decodeURIComponent(siteResourceMatch[2]);
     const resource = await runtime.resourceService.getResource(resourceId, geoContext);
     if (!resource) {
@@ -5341,89 +4902,22 @@ const parseOptionalNumber = (value: string | null): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-// Recusa um ícone de projeto (REQ-MOD01-015) maior que GEO_PROJECT_ICON_MAX_CHARS antes de
-// gravar — a validação do cliente (web/src/utils/projectIconImage.ts) não pode ser a única
-// barreira contra um upload não processado.
-const assertProjectIconSize = (value: unknown): void => {
-  if (typeof value !== 'string' || value.length <= GEO_PROJECT_ICON_MAX_CHARS) return;
-  throw new AppError('project icon too large', {
-    code: 'GEO_PROJECT_ICON_TOO_LARGE',
-    statusCode: 413,
-  });
-};
+const PROJECT_STATUS_BEHAVIORS = ['planning', 'execution', 'suspended', 'close-release'] as const;
 
-const GEO_PROJECT_STATUSES = ['planned', 'active', 'suspended', 'terminated', 'cancelled'] as const;
-const GEO_PROJECT_STATUS_BEHAVIORS = [
-  'planning',
-  'execution',
-  'suspended',
-  'close-release',
-] as const;
-
-// `undefined` quando o corpo não trouxe `status` (patch parcial); lança quando trouxe um
-// valor fora do vocabulário de GeoProjectStatus.
-const parseGeoProjectStatus = (
+const parseProjectStatusBehavior = (
   value: unknown,
-): (typeof GEO_PROJECT_STATUSES)[number] | undefined => {
-  if (value === undefined) return undefined;
-  if (typeof value === 'string' && (GEO_PROJECT_STATUSES as readonly string[]).includes(value)) {
-    return value as (typeof GEO_PROJECT_STATUSES)[number];
-  }
-  throw new AppError('invalid project status', {
-    code: 'GEO_PROJECT_STATUS_INVALID',
-    statusCode: 400,
-  });
-};
-
-const parseGeoProjectStatusBehavior = (
-  value: unknown,
-): (typeof GEO_PROJECT_STATUS_BEHAVIORS)[number] | undefined => {
+): (typeof PROJECT_STATUS_BEHAVIORS)[number] | undefined => {
   if (value === undefined) return undefined;
   if (
     typeof value === 'string' &&
-    (GEO_PROJECT_STATUS_BEHAVIORS as readonly string[]).includes(value)
+    (PROJECT_STATUS_BEHAVIORS as readonly string[]).includes(value)
   ) {
-    return value as (typeof GEO_PROJECT_STATUS_BEHAVIORS)[number];
+    return value as (typeof PROJECT_STATUS_BEHAVIORS)[number];
   }
   throw new AppError('invalid project status behavior', {
-    code: 'GEO_PROJECT_STATUS_BEHAVIOR_INVALID',
+    code: 'PROJECT_STATUS_BEHAVIOR_INVALID',
     statusCode: 400,
   });
-};
-
-const projectStatusOperationalStatus = (
-  item: { behavior: (typeof GEO_PROJECT_STATUS_BEHAVIORS)[number] } | null | undefined,
-): (typeof GEO_PROJECT_STATUSES)[number] | undefined => {
-  if (!item) return undefined;
-  if (item.behavior === 'execution') return 'active';
-  if (item.behavior === 'suspended') return 'suspended';
-  if (item.behavior === 'close-release') return 'terminated';
-  return 'planned';
-};
-
-const resolveProjectStatus = async (
-  repository: {
-    getStatusCatalogItem: (
-      tenantId: string,
-      code: string,
-    ) => Promise<{
-      code: string;
-      active: boolean;
-      behavior: 'planning' | 'execution' | 'suspended' | 'close-release';
-    } | null>;
-  },
-  tenantId: string,
-  code: string | undefined,
-) => {
-  if (code === undefined) return null;
-  const item = await repository.getStatusCatalogItem(tenantId, code);
-  if (!item || !item.active) {
-    throw new AppError('project status is not available', {
-      code: 'GEO_PROJECT_STATUS_UNAVAILABLE',
-      statusCode: 409,
-    });
-  }
-  return item;
 };
 
 // Apenas parseia a query string. O clamp de `limit` (teto implícito quando ausente, ver
@@ -6134,7 +5628,11 @@ const parseSaveResourceAggregateInput = (
         }
       }
       if (child.placement !== undefined) {
-        if (!child.placement || typeof child.placement !== 'object' || Array.isArray(child.placement)) {
+        if (
+          !child.placement ||
+          typeof child.placement !== 'object' ||
+          Array.isArray(child.placement)
+        ) {
           throw new AppError(`${path}[${index}].placement must be an object`, {
             code: 'RESOURCE_AGGREGATE_COMPONENT_INVALID',
             statusCode: 400,
@@ -6983,6 +6481,7 @@ const routeResearchRequest = async ({
       runtime.createToolContext({
         executionMode: 'internal-chat',
         sessionId,
+        requestContext: context,
       }),
     );
     const outcomeMessage = buildConfirmationOutcomeMessage(pendingConfirmation, commitResult);
@@ -7088,9 +6587,10 @@ const routeResearchRequest = async ({
                     runtime.createToolContext({
                       executionMode: 'internal-chat',
                       sessionId,
+                      requestContext: context,
                     }),
                   ),
-                maxToolCalls: 4,
+                maxToolCalls: 8,
               }
             : {}),
           onDelta: (text) => sendEvent('delta', { text }),
@@ -7148,9 +6648,10 @@ const routeResearchRequest = async ({
                 runtime.createToolContext({
                   executionMode: 'internal-chat',
                   sessionId,
+                  requestContext: context,
                 }),
               ),
-            maxToolCalls: 4,
+            maxToolCalls: 8,
           }
         : undefined,
     );
@@ -7205,49 +6706,7 @@ const routeResearchRequest = async ({
 const ensureAuthorized = (request: IncomingMessage, config: AppConfig): Promise<void> =>
   ensureRequestAuthorized(request, config);
 
-// Papéis que administram contas de usuário (ver docs/3-system-design/security.md §3).
-const USER_ADMIN_ROLES = ['tenant.admin', 'platform.admin'] as const;
-
-// Mesmos papéis que GeoService.assertRole exige internamente para leitura/escrita de Site
-// (READ_ROLE/WRITE_ROLE, privados a service.ts) — os Projetos de trabalho (REQ-MOD01-015)
-// não passam pelo GeoService, então a rota HTTP replica a checagem aqui.
-const GEO_PROJECT_READ_ROLES = ['inventory.reader', 'platform.admin'] as const;
-const GEO_PROJECT_WRITE_ROLES = ['inventory.editor', 'platform.admin'] as const;
-
-// RBAC de Party/Resource/Service/Event/Order (ver docs/3-system-design/security.md §3). Segue o
-// mesmo critério estrito do GeoService.assertRole: papel exato ou platform.admin — não há
-// hierarquia implícita entre papéis (um editor sem `inventory.reader` não lê por herança).
-const INVENTORY_READ_ROLES = ['inventory.reader', 'platform.admin'] as const;
-const INVENTORY_WRITE_ROLES = ['inventory.editor', 'platform.admin'] as const;
-// Specifications/RelationshipTypes (catálogo) só mudam com catalog.admin; a leitura do catálogo
-// segue o papel de leitura comum, mesmo critério do GeoService para RelationshipType (§3, C9).
-const CATALOG_ADMIN_ROLES = ['catalog.admin', 'platform.admin'] as const;
-// Studio é o control plane de metadados. Os papéis são explícitos para que o leitor também possa
-// consultar o draft compartilhado; escrita/publicação usam gates mais estritos em seus endpoints.
-export const STUDIO_READ_ROLES = [
-  'studio.reader',
-  'studio.editor',
-  'studio.admin',
-  'platform.admin',
-] as const;
-export const STUDIO_EDIT_ROLES = ['studio.editor', 'studio.admin', 'platform.admin'] as const;
-export const STUDIO_ADMIN_ROLES = ['studio.admin', 'platform.admin'] as const;
-// order.requester abre ordens e consulta viabilidade (leitura + criação); order.operator executa
-// designação e avança o estado de uma ordem existente (PATCH/DELETE); order.reader é somente
-// leitura, sem criar nem operar — cobre quem só precisa visualizar Serviços/Ordens.
-const ORDER_READ_ROLES = [
-  'order.reader',
-  'order.requester',
-  'order.operator',
-  'platform.admin',
-] as const;
-const ORDER_REQUEST_ROLES = ['order.requester', 'platform.admin'] as const;
-const ORDER_OPERATE_ROLES = ['order.operator', 'platform.admin'] as const;
-
-// Teto do ícone de projeto (data URL): o cliente reduz para ~128×128 antes de enviar
-// (ver web/src/utils/projectIconImage.ts), então qualquer coisa acima disto é sinal de
-// upload não processado — recusar aqui evita gravar um blob grande na coluna CLOB.
-const GEO_PROJECT_ICON_MAX_CHARS = 120_000;
+export { STUDIO_READ_ROLES, STUDIO_EDIT_ROLES, STUDIO_ADMIN_ROLES };
 
 // Deriva as opções de autenticação do runtime a partir da AppConfig — o runtime não lê env
 // direto (testabilidade), então a fronteira HTTP traduz config → options.
@@ -7362,6 +6821,8 @@ const normalizeNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const llmToolCatalogCache = new WeakMap<object, ReturnType<typeof buildLlmToolCatalog>>();
+
 const buildLlmToolCatalog = (
   mcpModule: ReturnType<typeof createNexusMcpModule>,
 ): {
@@ -7369,7 +6830,11 @@ const buildLlmToolCatalog = (
   aliasToToolName: Map<string, string>;
 } => {
   const aliasToToolName = new Map<string, string>();
-  const tools = mcpModule.registry.listTools({ exposeToModelOnly: true }).map((tool) => {
+  // Só o núcleo nomeado e as meta-tools; o resto é descoberto via nexus.search_operations.
+  const exposed = mcpModule.registry
+    .listTools({ exposeToModelOnly: true })
+    .filter((tool) => tool.name.startsWith('nexus.') || CORE_MODEL_TOOLS.has(tool.name));
+  const tools = exposed.map((tool) => {
     const alias = tool.name.replace(/\./g, '__');
     aliasToToolName.set(alias, tool.name);
     return {

@@ -17,10 +17,10 @@
 import type { GoogleMapInstance, GoogleMapsApi } from '../../utils/googleMaps';
 import { buildFastProjection } from './CoverageOverlay';
 import { resolveOperationalIcon } from '../../utils/pointIconPreview';
-import type { ProjectSite } from '../../services/geoProjectApi';
+import type { ProjectSite } from '../../services/projectApi';
 
 type Maps = GoogleMapsApi['maps'];
-type Project = (lng: number, lat: number) => [number, number] | null;
+type Projector = (lng: number, lat: number) => [number, number] | null;
 type Viewport = { minLng: number; minLat: number; maxLng: number; maxLat: number };
 
 // Mesmo raio/tamanho de célula de InfraOverlay.ts — consistência de "sensação" de clique entre
@@ -54,7 +54,7 @@ export function createProjectSiteOverlay(
   let resourceMarkerSize: number | null = 25;
   let excludeNodeId: string | null = null;
 
-  let lastProject: Project | null = null;
+  let lastProject: Projector | null = null;
   let drawnPoints: DrawnPoint[] = [];
   let pointGrid = new Map<string, DrawnPoint[]>();
 
@@ -158,7 +158,7 @@ export function createProjectSiteOverlay(
       lastProject = null;
       if (data.length === 0) return;
 
-      const toLocal: Project = (lng, lat) => {
+      const toLocal: Projector = (lng, lat) => {
         const pixel = projection.fromLatLngToDivPixel(new maps.LatLng(lat, lng));
         return pixel ? [pixel.x - left, pixel.y - top] : null;
       };
@@ -189,7 +189,7 @@ export function createProjectSiteOverlay(
       for (const point of drawnPoints) insertPoint(point);
     }
 
-    private drawSite(context: CanvasRenderingContext2D, site: ProjectSite, project: Project): void {
+    private drawSite(context: CanvasRenderingContext2D, site: ProjectSite, project: Projector): void {
       if (site.geometry?.type !== 'Point') return;
       const [lng, lat] = site.geometry.coordinates;
       const local = project(lng, lat);

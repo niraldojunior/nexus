@@ -3,7 +3,7 @@ import {
   fetchProjectResourceCreationOptions,
   fetchProjectSites,
   projectIdOfNode,
-} from './geoProjectApi';
+} from './projectApi';
 import type { GeoTreeNode } from './geoTreeApi';
 
 afterEach(() => vi.restoreAllMocks());
@@ -78,7 +78,7 @@ describe('fetchProjectSites', () => {
     expect(page.hasMore).toBe(false);
     expect(page.items[0]).toMatchObject({ id: 'site:s2', projectId: 'project-1' });
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toContain(`/v1/geo/projects/project-1/sites?`);
+    expect(url).toContain(`/v1/projects/project-1/sites?`);
     expect(url).toContain('minLng=-44');
   });
 });
@@ -100,7 +100,7 @@ describe('fetchProjectResourceCreationOptions', () => {
     expect(second).toBe(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/v1/geo/projects/project-1/resource-creation-options',
+      '/v1/projects/project-1/resource-creation-options',
       expect.any(Object),
     );
 

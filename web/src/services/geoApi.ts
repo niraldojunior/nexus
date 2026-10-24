@@ -7,7 +7,7 @@ import type { VisualIdentity } from './studioGeoApi';
 
 export type { VisualIdentity };
 
-// Vocabulário de GeoProject.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
+// Vocabulário de Project.status (REQ-MOD01-015) — NÃO é o status de GeographicSite,
 // que usa o vocabulário canônico de 5 estados abaixo (GeoSiteStatus). Os dois nunca
 // colidem como chave de dicionário porque um é lowercase e o outro PascalCase, mas são
 // domínios diferentes — não use GeoStatus para status de site.

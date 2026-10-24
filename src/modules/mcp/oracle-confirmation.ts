@@ -94,16 +94,25 @@ export class OracleMcpConfirmationRepository {
     token: string,
     consumedAt = new Date().toISOString(),
   ): Promise<PendingMcpConfirmation | undefined> {
-    const current = await this.get(token);
-    if (!current) return undefined;
-
-    await this.db.run(
+    // Atômico: só o primeiro commit concorrente altera a linha. Sem o filtro `consumed_at IS NULL`,
+    // dois commits simultâneos passavam pela checagem de `get` e executavam a mutação duas vezes.
+    const result = await this.db.run(
       `UPDATE user_mcp_confirmation
        SET consumed_at = ?
-       WHERE token = ?`,
+       WHERE token = ? AND consumed_at IS NULL`,
       [consumedAt, token],
     );
+    if (result.changes === 0) return undefined;
 
     return await this.get(token);
+  }
+
+  // Mantém o token expirado até o commit devolver MCP_CONFIRMATION_EXPIRED. Depois disso ele
+  // pode ser removido; tokens consumidos preservam a prova de que o commit ocorreu.
+  public async purgeExpired(now = new Date().toISOString()): Promise<void> {
+    await this.db.run(
+      `DELETE FROM user_mcp_confirmation WHERE consumed_at IS NOT NULL AND expires_at < ?`,
+      [now],
+    );
   }
 }

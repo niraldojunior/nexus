@@ -7,7 +7,7 @@
  * há erro de coordenada/cadastro (locais isolados, longe do resto). Este script agrupa os
  * locais do projeto por proximidade espacial (raio de 200 m, mesma técnica de
  * src/modules/geo/coverage-grid.ts — grade Mercator + componente conexo + contorno suavizado
- * via src/modules/geo/project-area-grid.ts) e grava:
+ * via src/modules/project/project-area-grid.ts) e grava:
  *
  *   · um POLÍGONO por mancha → geographic_location (Polygon, TMF675), `reference_point`
  *     "PROJECT:<projectId>". É a geometria que o mapa desenha em qualquer escala.
@@ -39,7 +39,7 @@ import {
   PROJECT_AREA_RADIUS_METERS,
   PROJECT_AREA_CELL_METERS,
   PROJECT_AREA_MIN_SITES,
-} from '../dist/src/modules/geo/project-area-grid.js';
+} from '../dist/src/modules/project/project-area-grid.js';
 import { haversineMeters } from '../dist/src/modules/geo/coverage-grid.js';
 
 loadEnv();

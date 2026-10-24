@@ -2,7 +2,7 @@ import { TONE_CLASS, type StatusTone } from '../../utils/geoLabels';
 
 // Base única do contrato de status do Geo (cor + texto — o rótulo nunca é omitido):
 // StatusBadge e PrecisionBadge são adaptadores sobre este componente. Aqui para quem já resolveu o tom (verde/âmbar/
-// vermelho/cinza) fora do vocabulário de GeoProject/GeographicSite — caso dos eixos
+// vermelho/cinza) fora do vocabulário de Project/GeographicSite — caso dos eixos
 // SID (administrativeState/operationalState/usageState) e do `behavior` do catálogo
 // de status de recurso, usados em ResourceOverviewTab.
 export function TonePill({ label, tone }: { label: string; tone: StatusTone }) {

@@ -209,61 +209,76 @@ if ($Migrate) {
   }
 }
 
-Write-Host "== Subindo backend (Oracle, prefixo $Prefix, porta $backendPort) =="
-$backend = Start-Process -WindowStyle Hidden `
-  -FilePath npm.cmd `
-  -ArgumentList 'run','start:db' `
-  -WorkingDirectory $PSScriptRoot `
-  -RedirectStandardOutput $backendLog `
-  -RedirectStandardError $backendErr `
-  -PassThru
-Save-InstanceState -Backend $backend -Web $null
-
-$backendReady = $false
-$healthUrl = "http://127.0.0.1:$backendPort/health"
+$backend = $null
+$web = $null
 $backendLogs = "$(Split-Path $backendLog -Leaf) e $(Split-Path $backendErr -Leaf)"
+$webLogs = "$(Split-Path $webLog -Leaf) e $(Split-Path $webErr -Leaf)"
 
-# A primeira request faz o seed do runtime (varias idas ao Oracle), entao o timeout
-# por tentativa e generoso e a janela total e de ~3min.
-for ($attempt = 1; $attempt -le 60; $attempt++) {
-  if ($backend.HasExited) {
-    Write-Error "Backend saiu antes de ficar pronto. Veja $backendLogs."
-  }
+try {
+  Write-Host "== Subindo backend (Oracle, prefixo $Prefix, porta $backendPort) =="
+  $backend = Start-Process -WindowStyle Hidden `
+    -FilePath npm.cmd `
+    -ArgumentList 'run','start:db' `
+    -WorkingDirectory $PSScriptRoot `
+    -RedirectStandardOutput $backendLog `
+    -RedirectStandardError $backendErr `
+    -PassThru
+  Save-InstanceState -Backend $backend -Web $null
 
-  try {
-    $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 5
-    if ($response.StatusCode -eq 200) {
-      $backendReady = $true
-      break
+  $backendReady = $false
+  $healthUrl = "http://127.0.0.1:$backendPort/health"
+
+  # A primeira request faz o seed do runtime (varias idas ao Oracle), entao o timeout
+  # por tentativa e generoso e a janela total e de ~3min.
+  for ($attempt = 1; $attempt -le 60; $attempt++) {
+    if ($backend.HasExited) {
+      Write-Error "Backend saiu antes de ficar pronto. Veja $backendLogs."
     }
-  } catch {
-    Start-Sleep -Seconds 1
+
+    try {
+      $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 5
+      if ($response.StatusCode -eq 200) {
+        $backendReady = $true
+        break
+      }
+    } catch {
+      Start-Sleep -Seconds 1
+    }
   }
-}
 
-if (-not $backendReady) {
-  if (-not $backend.HasExited) {
-    Stop-Process -Id $backend.Id -Force
+  if (-not $backendReady) {
+    Write-Error "Backend nao ficou pronto em $healthUrl. Veja $backendLogs."
   }
-  Write-Error "Backend nao ficou pronto em $healthUrl. Veja $backendLogs."
+
+  Write-Host "Backend pronto em $healthUrl (Oracle · $Prefix)"
+
+  Write-Host "== Subindo web (Vite, porta $webPort) =="
+  $web = Start-Process -WindowStyle Hidden `
+    -FilePath npm.cmd `
+    -ArgumentList 'run','web:dev','--','--host','127.0.0.1','--port',"$webPort",'--strictPort' `
+    -WorkingDirectory $PSScriptRoot `
+    -RedirectStandardOutput $webLog `
+    -RedirectStandardError $webErr `
+    -PassThru
+  Save-InstanceState -Backend $backend -Web $web
+
+  Write-Host ""
+  Write-Host "Instancia $Instance"
+  Write-Host "Backend PID: $($backend.Id)  ->  http://127.0.0.1:$backendPort  (Oracle · $Prefix)"
+  Write-Host "Web PID:     $($web.Id)  ->  http://127.0.0.1:$webPort"
+  Write-Host "(Ctrl+C encerra backend e web desta instancia.)"
+
+  while (-not $backend.HasExited -and -not $web.HasExited) {
+    Start-Sleep -Milliseconds 500
+  }
+
+  if ($backend.HasExited) {
+    Write-Warning "Backend saiu. Veja $backendLogs."
+  }
+  if ($web.HasExited) {
+    Write-Warning "Web saiu. Veja $webLogs."
+  }
+} finally {
+  Write-Host "== Encerrando instancia $Instance =="
+  Stop-DevInstance
 }
-
-Write-Host "Backend pronto em $healthUrl (Oracle · $Prefix)"
-
-Write-Host "== Subindo web (Vite, porta $webPort) =="
-$web = Start-Process -WindowStyle Hidden `
-  -FilePath npm.cmd `
-  -ArgumentList 'run','web:dev','--','--host','127.0.0.1','--port',"$webPort",'--strictPort' `
-  -WorkingDirectory $PSScriptRoot `
-  -RedirectStandardOutput $webLog `
-  -RedirectStandardError $webErr `
-  -PassThru
-Save-InstanceState -Backend $backend -Web $web
-
-Write-Host ""
-Write-Host "Instancia $Instance"
-Write-Host "Backend PID: $($backend.Id)  ->  http://127.0.0.1:$backendPort  (Oracle · $Prefix)"
-Write-Host "Web PID:     $($web.Id)  ->  http://127.0.0.1:$webPort"
-Write-Host "(Ctrl+C encerra este script; os processos continuam ate serem encerrados na proxima execucao da mesma instancia.)"
-
-Wait-Process -Id $backend.Id, $web.Id

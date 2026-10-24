@@ -104,6 +104,12 @@ export class PartyRoleTypeCharacteristicRepository {
 
   /** Lista characteristics por `roleTypeId` (UUID do party_role_type). */
   async list(tenantId: string, roleTypeId: string): Promise<PartyRoleTypeCharacteristic[]> {
+    // Simétrico ao create(): aceita também o roleName (ex.: 'manufacturer') no lugar do id do tipo.
+    const byRoleName = await this.db.get<{ id: string }>(
+      `SELECT id FROM party_role_type WHERE tenant_id = ? AND role_name = ? AND id <> ?`,
+      [tenantId, roleTypeId, roleTypeId],
+    );
+    if (byRoleName) roleTypeId = byRoleName.id;
     const rows = await this.db.all<CharacteristicRow>(
       `${CHARACTERISTIC_SELECT} WHERE tenant_id = ? AND role_type_id = ? ORDER BY sort_order, name`,
       [tenantId, roleTypeId],

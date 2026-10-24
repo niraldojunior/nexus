@@ -292,9 +292,9 @@ test.skipIf(!oracleConfigured)(
       const bootstrap = await requestJson(port, 'POST', '/v1/geo/site-specifications/bootstrap');
       assert.equal(bootstrap.statusCode, 200);
       // BOOTSTRAP_SPECIFICATIONS em service.ts — Region, CO, POP, Cabinet, Installation Point,
-      // Customer Site, Condominium, Block, Floor, Room, Cage. Functional Group foi descontinuada
-      // (D-GEO-003 superada — categoria removida do domínio).
-      assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 11);
+      // Customer Site, Condominium, Building, Block, Floor, Room, Cage. Functional Group foi
+      // descontinuada (D-GEO-003 superada — categoria removida do domínio).
+      assert.equal((bootstrap.body as { specs: unknown[] }).specs.length, 12);
 
       const regionSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=REGION');
       const centralSpecs = await requestJson(port, 'GET', '/v1/geo/site-specifications?code=CO');

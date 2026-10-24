@@ -281,15 +281,14 @@ test.skipIf(!oracleConfigured)(
 );
 
 test.skipIf(!oracleConfigured)(
-  'listResourceTypes inativa duplicata legada de um código canônico mesmo quando o canônico já foi seedado antes',
+  'initialize inativa duplicata legada de um código canônico mesmo quando o canônico já foi seedado antes',
   async () => {
     const client = await getOracleTestClient();
     const repository = new OracleResourceRepository(client);
     await repository.initialize();
 
-    // Primeira chamada seeda o vocabulário canônico (tenant_id='default') — simula uma base já
-    // inicializada em boots anteriores, cenário em que `missing.length` fica 0 dali em diante.
-    await repository.listResourceTypes();
+    // O primeiro bootstrap semeia o vocabulário canônico (tenant_id='default') — simula uma base
+    // já inicializada em boots anteriores, cenário em que `missing.length` fica 0 dali em diante.
 
     // Simula a linha legada real: mesmo código de um tipo canônico ('OLT'), id aleatório, sob o
     // tenant do operador — exatamente o que uma base migrada de outro schema carrega.
@@ -301,9 +300,10 @@ test.skipIf(!oracleConfigured)(
       ['rt-olt-legacy-vtal', 'vtal', 'OLT', 'Optical Line Terminal', now, now],
     );
 
-    // Segunda chamada: `missing` já está vazio (canônico existe), mas a linha legada ativa e
+    // O próximo bootstrap: `missing` já está vazio (canônico existe), mas a linha legada ativa e
     // duplicada precisa ser detectada e inativada mesmo assim (bug original: `return` antecipado
     // nunca alcançava essa limpeza fora do primeiro seed).
+    await repository.initialize();
     const types = await repository.listResourceTypes({ tenantId: 'vtal' });
     // A API retorna ativos e inativos (o filtro de ativo é do consumidor, ex.: combo de relações)
     // — a duplicata precisa desaparecer da fatia ativa, não da lista bruta.

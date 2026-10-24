@@ -317,6 +317,15 @@ test.skipIf(!oracleConfigured)(
       );
       assert.equal(physicalResourcePeer.statusCode, 201);
 
+      // A natureza da specification precisa casar com o tipo do recurso (RESOURCE_SPECIFICATION_NATURE_MISMATCH).
+      const logicalSpec = await requestJson(
+        port,
+        'POST',
+        '/tmf-api/resourceCatalogManagement/v4/resourceSpecification',
+        { name: 'VLAN L2', resourceTypeId: 'rt-vlan' },
+      );
+      assert.equal(logicalSpec.statusCode, 201);
+
       const logicalResource = await requestJson(
         port,
         'POST',
@@ -324,7 +333,7 @@ test.skipIf(!oracleConfigured)(
         {
           '@type': 'LogicalResource',
           name: 'VLAN 100',
-          resourceSpecificationId: (resourceSpec.body as { id: string }).id,
+          resourceSpecificationId: (logicalSpec.body as { id: string }).id,
           supportingPhysicalResourceId: (physicalResource.body as { id: string }).id,
           relatedParty: [
             {
@@ -460,14 +469,7 @@ test.skipIf(!oracleConfigured)(
       assert.equal(logicalPatch.statusCode, 200);
       assert.equal((logicalPatch.body as { name: string }).name, 'VLAN 100 Updated');
 
-      const physicalDelete = await requestJson(
-        port,
-        'DELETE',
-        `/tmf-api/resourceInventoryManagement/v4/resource/${(physicalResource.body as { id: string }).id}`,
-      );
-      assert.equal(physicalDelete.statusCode, 200);
-      assert.equal((physicalDelete.body as { status: string }).status, 'terminated');
-
+      // O recurso lógico depende do físico (supportingPhysicalResourceId): termina primeiro.
       const logicalDelete = await requestJson(
         port,
         'DELETE',
@@ -475,6 +477,14 @@ test.skipIf(!oracleConfigured)(
       );
       assert.equal(logicalDelete.statusCode, 200);
       assert.equal((logicalDelete.body as { status: string }).status, 'terminated');
+
+      const physicalDelete = await requestJson(
+        port,
+        'DELETE',
+        `/tmf-api/resourceInventoryManagement/v4/resource/${(physicalResource.body as { id: string }).id}`,
+      );
+      assert.equal(physicalDelete.statusCode, 200);
+      assert.equal((physicalDelete.body as { status: string }).status, 'terminated');
     } finally {
       await server.stop();
       const client = await getOracleTestClient();

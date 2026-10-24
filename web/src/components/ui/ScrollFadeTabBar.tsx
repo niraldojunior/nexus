@@ -11,7 +11,7 @@ export type ScrollFadeTabBarProps = {
 };
 
 /**
- * Faixa horizontal sem quebra de linha e sem scroll visível (painéis de detalhe do Geo, chips de
+ * Faixa horizontal sem quebra de linha, rolável (roda/toque) e sem barra visível (painéis de detalhe do Geo, chips de
  * filtro do Studio) — mantém os itens numa linha só em vez de quebrar em múltiplas linhas quando
  * não cabem: a aba/chip ativo é trazido para a área visível via `scrollIntoView` e as bordas
  * cortadas ganham um esmaecimento (`mask-image`) como pista de que há mais itens para aquele lado
@@ -44,6 +44,16 @@ export function ScrollFadeTabBar({
     const el = scrollRef.current;
     if (!el) return;
     el.addEventListener('scroll', updateFade, { passive: true });
+    // Roda do mouse (eixo vertical) rola a faixa na horizontal — sem barra visível, é o único
+    // jeito de o mouse alcançar abas cortadas pela largura do painel.
+    const onWheel = (event: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+        return;
+      }
+      event.preventDefault();
+      el.scrollLeft += event.deltaY;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
     // `ResizeObserver` não existe no jsdom (testes) — mesmo guard de OverlayScrollArea.tsx.
     let observer: ResizeObserver | undefined;
     if (typeof ResizeObserver !== 'undefined') {
@@ -52,6 +62,7 @@ export function ScrollFadeTabBar({
     }
     return () => {
       el.removeEventListener('scroll', updateFade);
+      el.removeEventListener('wheel', onWheel);
       observer?.disconnect();
     };
   }, []);
@@ -81,8 +92,11 @@ export function ScrollFadeTabBar({
       ref={scrollRef}
       role={role}
       aria-label={ariaLabel}
-      className={`flex flex-nowrap gap-1 overflow-x-hidden ${className ?? ''}`}
-      style={maskImage ? { maskImage, WebkitMaskImage: maskImage } : undefined}
+      className={`flex flex-nowrap gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden ${className ?? ''}`}
+      style={{
+        scrollbarWidth: 'none',
+        ...(maskImage ? { maskImage, WebkitMaskImage: maskImage } : {}),
+      }}
     >
       {children}
     </div>

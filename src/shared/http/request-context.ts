@@ -167,6 +167,21 @@ export const requireRoles = (context: RequestContext, allowed: readonly string[]
   throw new AppError('forbidden', { code: 'AUTH_FORBIDDEN', statusCode: 403 });
 };
 
+// Transportes sem HTTP (MCP stdio) autenticam por um Bearer entregue fora de banda
+// (NEXUS_MCP_TOKEN). Reaproveita exatamente a validação das rotas HTTP — JWT assinado, claims,
+// tenant — montando um pedido sintético que só carrega o cabeçalho Authorization.
+export const buildRequestContextFromBearer = async (
+  token: string,
+  config: AppConfig,
+): Promise<RequestContext> =>
+  await buildRequestContext(
+    {
+      headers: { authorization: `Bearer ${token}` },
+      socket: {},
+    } as unknown as IncomingMessage,
+    config,
+  );
+
 const buildBaseContext = (
   request: IncomingMessage,
 ): Pick<RequestContext, 'traceId' | 'sourceIp'> => {

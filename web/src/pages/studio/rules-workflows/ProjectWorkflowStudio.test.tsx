@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GeoProjectWorkflowStudio } from './GeoProjectWorkflowStudio';
+import { ProjectWorkflowStudio } from './ProjectWorkflowStudio';
 import * as studioApi from '../../../services/studioApi';
 import type { StudioStatus } from '../../../services/studioApi';
 
@@ -39,7 +39,7 @@ const makeStatus = (snapshot: Record<string, unknown> | undefined): StudioStatus
     : undefined,
 });
 
-describe('GeoProjectWorkflowStudio', () => {
+describe('ProjectWorkflowStudio', () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
@@ -51,13 +51,13 @@ describe('GeoProjectWorkflowStudio', () => {
   it('carrega vazio quando não há draft nem publicação, sem título/descritivo interno banido', async () => {
     vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(undefined));
 
-    render(<GeoProjectWorkflowStudio canEdit isEditing />);
+    render(<ProjectWorkflowStudio canEdit isEditing />);
     await waitFor(() => expect(studioApi.getStudioStatus).toHaveBeenCalled());
 
     expect(
       await screen.findByText('Nenhum estado configurado neste snapshot.'),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Workflow de Projetos \(GeoProject\)/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Workflow de Projetos \(Project\)/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/Estados operacionais, matriz de transições permitidas/),
     ).not.toBeInTheDocument();
@@ -66,7 +66,7 @@ describe('GeoProjectWorkflowStudio', () => {
   it('expõe abas Estados/Transições acessíveis, com um único painel visível por vez', async () => {
     vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(undefined));
     const user = userEvent.setup();
-    render(<GeoProjectWorkflowStudio canEdit isEditing />);
+    render(<ProjectWorkflowStudio canEdit isEditing />);
     await waitFor(() => expect(studioApi.getStudioStatus).toHaveBeenCalled());
 
     const tablist = screen.getByRole('tablist', { name: 'Workflow de Projetos' });
@@ -89,7 +89,7 @@ describe('GeoProjectWorkflowStudio', () => {
   it('cria um estado via botão Adicionar e modal, tornando-o o estado inicial automaticamente', async () => {
     vi.mocked(studioApi.getStudioStatus).mockResolvedValue(makeStatus(undefined));
     const user = userEvent.setup();
-    render(<GeoProjectWorkflowStudio canEdit isEditing />);
+    render(<ProjectWorkflowStudio canEdit isEditing />);
     await waitFor(() => expect(studioApi.getStudioStatus).toHaveBeenCalled());
 
     await user.click(screen.getByRole('button', { name: 'Adicionar' }));
@@ -130,7 +130,7 @@ describe('GeoProjectWorkflowStudio', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<GeoProjectWorkflowStudio canEdit isEditing />);
+    render(<ProjectWorkflowStudio canEdit isEditing />);
     await waitFor(() => expect(studioApi.getStudioStatus).toHaveBeenCalled());
 
     await user.click(screen.getByRole('button', { name: 'Editar Planejado' }));
@@ -169,7 +169,7 @@ describe('GeoProjectWorkflowStudio', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<GeoProjectWorkflowStudio canEdit isEditing />);
+    render(<ProjectWorkflowStudio canEdit isEditing />);
     await waitFor(() => expect(studioApi.getStudioStatus).toHaveBeenCalled());
 
     await user.click(screen.getByRole('button', { name: 'Editar Planejado' }));
@@ -207,7 +207,7 @@ describe('GeoProjectWorkflowStudio', () => {
     );
     let captureInitial: (() => Promise<Record<string, unknown>>) | null = null;
     render(
-      <GeoProjectWorkflowStudio
+      <ProjectWorkflowStudio
         canEdit
         isEditing
         onRegisterCaptureInitialSnapshot={(fn) => {

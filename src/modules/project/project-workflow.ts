@@ -1,16 +1,16 @@
 import type {
-  GeoProjectStatus,
-  GeoProjectStatusBehavior,
-  GeoProjectStatusCatalogItem,
+  ProjectStatus,
+  ProjectStatusBehavior,
+  ProjectStatusCatalogItem,
 } from './project-repository.js';
 
-export const GEO_PROJECT_WORKFLOW_SCHEMA_VERSION = 1 as const;
-export const GEO_PROJECT_WORKFLOW_ID = 'geo-project' as const;
+export const PROJECT_WORKFLOW_SCHEMA_VERSION = 1 as const;
+export const PROJECT_WORKFLOW_ID = 'geo-project' as const;
 
-export const GEO_PROJECT_WORKFLOW_ROLES = ['inventory.editor', 'platform.admin'] as const;
-export type GeoProjectWorkflowRole = (typeof GEO_PROJECT_WORKFLOW_ROLES)[number];
+export const PROJECT_WORKFLOW_ROLES = ['inventory.editor', 'platform.admin'] as const;
+export type ProjectWorkflowRole = (typeof PROJECT_WORKFLOW_ROLES)[number];
 
-export type GeoProjectWorkflowAction =
+export type ProjectWorkflowAction =
   | 'update-project'
   | 'cascade-sites-planning'
   | 'cascade-sites-execution'
@@ -18,37 +18,37 @@ export type GeoProjectWorkflowAction =
   | 'release-inventory'
   | 'terminate-inventory';
 
-export type GeoProjectWorkflowState = GeoProjectStatusCatalogItem;
+export type ProjectWorkflowState = ProjectStatusCatalogItem;
 
-export type GeoProjectWorkflowTransition = {
+export type ProjectWorkflowTransition = {
   id: string;
   fromStateCodes: string[];
   toStateCode: string;
-  allowedRoles: GeoProjectWorkflowRole[];
-  actions: GeoProjectWorkflowAction[];
+  allowedRoles: ProjectWorkflowRole[];
+  actions: ProjectWorkflowAction[];
 };
 
-export type GeoProjectWorkflowSnapshot = {
-  schemaVersion: typeof GEO_PROJECT_WORKFLOW_SCHEMA_VERSION;
-  workflowId: typeof GEO_PROJECT_WORKFLOW_ID;
+export type ProjectWorkflowSnapshot = {
+  schemaVersion: typeof PROJECT_WORKFLOW_SCHEMA_VERSION;
+  workflowId: typeof PROJECT_WORKFLOW_ID;
   initialStateCode: string;
-  states: GeoProjectWorkflowState[];
-  transitions: GeoProjectWorkflowTransition[];
+  states: ProjectWorkflowState[];
+  transitions: ProjectWorkflowTransition[];
 };
 
-export type GeoProjectWorkflowReadModel = GeoProjectWorkflowSnapshot & {
+export type ProjectWorkflowReadModel = ProjectWorkflowSnapshot & {
   publicationChecksum?: string;
   fallback: boolean;
 };
 
-export type GeoProjectWorkflowTransitionResult = {
-  project: import('./project-repository.js').GeoProject;
+export type ProjectWorkflowTransitionResult = {
+  project: import('./project-repository.js').Project;
   transitionId: string;
   siteCascade: { updated: number; skipped: number; blocked?: number };
   resourceCascade: { updated: number; skipped: number };
 };
 
-export const PROJECT_STATUS_DEFAULTS: ReadonlyArray<GeoProjectStatusCatalogItem> = [
+export const PROJECT_STATUS_DEFAULTS: ReadonlyArray<ProjectStatusCatalogItem> = [
   { code: '1', name: 'Projeto criado', sortOrder: 1, active: true, behavior: 'planning' },
   {
     code: '11',
@@ -103,7 +103,7 @@ export const PROJECT_STATUS_DEFAULTS: ReadonlyArray<GeoProjectStatusCatalogItem>
   },
 ];
 
-const statesByBehavior = (behavior: GeoProjectStatusBehavior): string[] =>
+const statesByBehavior = (behavior: ProjectStatusBehavior): string[] =>
   PROJECT_STATUS_DEFAULTS.filter((state) => state.active && state.behavior === behavior).map(
     (state) => state.code,
   );
@@ -112,25 +112,23 @@ const nonTerminalStates = PROJECT_STATUS_DEFAULTS.filter(
   (state) => state.active && state.behavior !== 'close-release',
 ).map((state) => state.code);
 
-const actionsForBehavior = (behavior: GeoProjectStatusBehavior): GeoProjectWorkflowAction[] => {
+const actionsForBehavior = (behavior: ProjectStatusBehavior): ProjectWorkflowAction[] => {
   if (behavior === 'execution') return ['update-project', 'cascade-sites-execution'];
   if (behavior === 'suspended') return ['update-project', 'cascade-sites-suspended'];
   if (behavior === 'close-release') return ['update-project', 'release-inventory'];
   return ['update-project', 'cascade-sites-planning'];
 };
 
-export const projectStatusOperationalStatus = (
-  behavior: GeoProjectStatusBehavior,
-): GeoProjectStatus => {
+export const projectStatusOperationalStatus = (behavior: ProjectStatusBehavior): ProjectStatus => {
   if (behavior === 'execution') return 'active';
   if (behavior === 'suspended') return 'suspended';
   if (behavior === 'close-release') return 'terminated';
   return 'planned';
 };
 
-export const CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT: GeoProjectWorkflowSnapshot = {
-  schemaVersion: GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
-  workflowId: GEO_PROJECT_WORKFLOW_ID,
+export const CANONICAL_PROJECT_WORKFLOW_SNAPSHOT: ProjectWorkflowSnapshot = {
+  schemaVersion: PROJECT_WORKFLOW_SCHEMA_VERSION,
+  workflowId: PROJECT_WORKFLOW_ID,
   initialStateCode: '1',
   states: PROJECT_STATUS_DEFAULTS.map((state) => ({ ...state })),
   transitions: [
@@ -140,7 +138,7 @@ export const CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT: GeoProjectWorkflowSnapshot
           id: `${fromBehavior}-to-${toStateCode}`,
           fromStateCodes: statesByBehavior(fromBehavior),
           toStateCode,
-          allowedRoles: [...GEO_PROJECT_WORKFLOW_ROLES],
+          allowedRoles: [...PROJECT_WORKFLOW_ROLES],
           actions: actionsForBehavior(toBehavior),
         })),
       ),
@@ -149,7 +147,7 @@ export const CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT: GeoProjectWorkflowSnapshot
       id: 'close-and-release',
       fromStateCodes: nonTerminalStates,
       toStateCode: '17',
-      allowedRoles: [...GEO_PROJECT_WORKFLOW_ROLES],
+      allowedRoles: [...PROJECT_WORKFLOW_ROLES],
       actions: ['update-project', 'release-inventory'],
     },
   ],

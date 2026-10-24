@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectListView } from './ProjectListView';
-import type { GeoProject } from '../../services/geoProjectApi';
+import type { Project } from '../../services/projectApi';
 
 afterEach(() => {
   cleanup();
 });
 
-const project = (overrides: Partial<GeoProject> = {}): GeoProject => ({
+const project = (overrides: Partial<Project> = {}): Project => ({
   id: 'prj-1',
   tenantId: 'default',
   name: 'Expansão Icaraí',

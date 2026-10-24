@@ -15,7 +15,7 @@ import { toDataUrl } from '../../utils/resourceIcon';
 import type { MapDensityCell, MapDensityResponse } from '../../services/geoMapDensityApi';
 
 type Maps = GoogleMapsApi['maps'];
-type Project = (lng: number, lat: number) => [number, number] | null;
+type Projector = (lng: number, lat: number) => [number, number] | null;
 
 // Faixa de raio do disco, em px. O piso garante que uma célula com pouquíssima planta ainda
 // seja visível (senão "vazio" e "quase vazio" viram a mesma coisa); o teto impede que a célula
@@ -68,7 +68,7 @@ export function densityRadiusPx(count: number, maxCount: number): number {
 
 export function createDensityOverlay(maps: Maps, map: GoogleMapInstance): DensityOverlayHandle {
   let data: MapDensityResponse | null = null;
-  let lastProject: Project | null = null;
+  let lastProject: Projector | null = null;
   let drawn: DrawnCell[] = [];
 
   class DensityOverlayView extends maps.OverlayView {
@@ -120,7 +120,7 @@ export function createDensityOverlay(maps: Maps, map: GoogleMapInstance): Densit
       lastProject = null;
       if (!data || data.cells.length === 0) return;
 
-      const toLocal: Project = (lng, lat) => {
+      const toLocal: Projector = (lng, lat) => {
         const pixel = projection.fromLatLngToDivPixel(new maps.LatLng(lat, lng));
         return pixel ? [pixel.x - left, pixel.y - top] : null;
       };

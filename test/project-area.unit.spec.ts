@@ -6,7 +6,7 @@ import {
   PROJECT_AREA_MIN_SITES,
   PROJECT_AREA_RADIUS_METERS,
   type ProjectSitePoint,
-} from '../src/modules/geo/project-area-grid.js';
+} from '../src/modules/project/project-area-grid.js';
 
 // Bairro de Icaraí, Niterói — mesmo ponto de referência de geo.coverage.unit.spec.ts.
 const ICARAI: [number, number] = [-43.106, -22.906];

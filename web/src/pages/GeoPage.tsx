@@ -72,7 +72,7 @@ import {
   type DropSimulation,
   type GeoSearchSelection,
 } from './geo-tabs';
-import { useGeoProjects } from '../hooks/useGeoProjects';
+import { useProjects } from '../hooks/useProjects';
 import {
   fetchProjectAreasAndSites,
   fetchProjectResources,
@@ -81,7 +81,7 @@ import {
   removeProjectSite,
   type ProjectArea,
   type ProjectSite,
-} from '../services/geoProjectApi';
+} from '../services/projectApi';
 import { type PortDropPreview, pathMidpoint, pathSpanMeters } from '../utils/dropSimulation';
 import type { BottomSheetSnapState } from '../components/BottomSheet';
 import {
@@ -293,7 +293,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   const [projectSitesHasMore, setProjectSitesHasMore] = useState(false);
   const [projectSitesLoadingMore, setProjectSitesLoadingMore] = useState(false);
   // Incrementado após criar/remover um local do projeto para forçar um novo GET — os
-  // demais estados (nome, descrição, ícone) já atualizam otimista via useGeoProjects.
+  // demais estados (nome, descrição, ícone) já atualizam otimista via useProjects.
   const [projectSitesReloadToken, setProjectSitesReloadToken] = useState(0);
   // Manchas de concentração/dispersão do projeto aberto (REQ-MOD01-017), geradas por
   // scripts/build-project-areas.mjs. Vazio quando o projeto não tem manchas geradas — nesse
@@ -303,7 +303,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   // Locais do projeto visíveis no MAPA quando ele tem manchas geradas (busca por bbox, ver o
   // efeito abaixo) — distinto de `projectSites`, que nesse caso vira a página do painel.
   const [projectViewportSites, setProjectViewportSites] = useState<ProjectSite[]>([]);
-  const projects = useGeoProjects();
+  const projects = useProjects();
   // Projeto (ou local de projeto) atualmente aberto na doca — `null` fora desse fluxo.
   const activeProjectId = dockView.kind !== 'hierarchy' ? dockView.projectId : null;
   const [query, setQuery] = useState('');
@@ -677,7 +677,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
   }, [loadGeo]);
 
   // Manchas do projeto aberto (REQ-MOD01-017) e a primeira página de locais do painel — o
-  // teto do servidor é 100 por página (ver GET /v1/geo/projects/:id/sites em app.ts);
+  // teto do servidor é 100 por página (ver GET /v1/projects/:id/sites em app.ts);
   // `loadMoreProjectSites` abaixo busca as páginas seguintes. `projectSitesReloadToken`
   // força um novo GET (da primeira página) após criar/remover um local.
   useEffect(() => {
@@ -1066,7 +1066,7 @@ export default function GeoPage({ onOpenMainMenu }: { onOpenMainMenu?: () => voi
       // Clicar num pin de local do Projeto de trabalho aberto abre o painel unificado de Local
       // em contexto de projeto (SitePanel ao lado do ProjectDetailPanel), não o painel comum: o
       // Site não existe na Hierarquia (ver PROJECT_SITE_EXCLUSION_SQL). O vínculo viaja
-      // carimbado no próprio nó (ver ProjectSite.projectId em geoProjectApi.ts) — não num Set
+      // carimbado no próprio nó (ver ProjectSite.projectId em projectApi.ts) — não num Set
       // derivado de `projectSites`, que é só a página de 200 do painel e não cobre os pins que
       // vêm de `projectViewportSites` quando o projeto tem manchas geradas (REQ-MOD01-017).
       if (activeProjectId && projectIdOfNode(node) === activeProjectId) {

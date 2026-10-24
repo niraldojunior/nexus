@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { GeoProject, GeoProjectDeleteSummary } from '../../services/geoProjectApi';
+import type { Project, ProjectDeleteSummary } from '../../services/projectApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
 import { StatusBadge } from './StatusBadge';
 
 export type ProjectListViewProps = {
-  projects: GeoProject[];
+  projects: Project[];
   loading: boolean;
   // Gate de UI (inventory.editor/platform.admin) — sem ele, "Novo Projeto" some e o botão
   // de excluir (que só aparece no hover) some junto.
   canEdit: boolean;
   onCreate: () => void;
   onOpen: (projectId: string) => void;
-  onDelete: (projectId: string) => Promise<GeoProjectDeleteSummary>;
+  onDelete: (projectId: string) => Promise<ProjectDeleteSummary>;
 };
 
 /**
@@ -29,7 +29,7 @@ export function ProjectListView({
   onOpen,
   onDelete,
 }: ProjectListViewProps) {
-  const [pendingDelete, setPendingDelete] = useState<GeoProject | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Some locais podem ter dependência ativa e ficar de fora (issue #58) — o projeto é
   // mantido íntegro nesse caso, e o usuário precisa saber por quê ele continua na lista.

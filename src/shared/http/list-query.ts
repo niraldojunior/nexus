@@ -3,8 +3,8 @@
 // `GET /v1/geo/sites` varreu `geographic_site` inteira pós-migração RJ (192.698 ms) e
 // derrubou o processo por OOM.
 //
-// Semântica deliberada: nunca truncar em silêncio. Scripts de carga (scripts/estacoes_carregar.mjs,
-// scripts/seed-service-scenarios.mjs e outros) chamam `GET /v1/geo/sites` sem `limit` e montam um
+// Semântica deliberada: nunca truncar em silêncio. Scripts de carga
+// (scripts/seed-service-scenarios.mjs e outros) chamam `GET /v1/geo/sites` sem `limit` e montam um
 // índice completo nome→id para serem idempotentes — um corte silencioso os faria ver base parcial
 // e recriar sites existentes (a mesma classe de bug das specs duplicadas, ver
 // estacao-central-office-duplicate-spec na memória do projeto). Por isso: sem `limit` explícito,

@@ -180,7 +180,7 @@ export function AddressDetailPanel({
         <PanelBarButton
           asTab
           icon={InfoIcon}
-          label="Geral"
+          label="Info"
           active={tab === 'overview'}
           onClick={() => setTab('overview')}
         />

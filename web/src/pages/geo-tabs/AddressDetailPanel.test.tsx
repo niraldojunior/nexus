@@ -109,7 +109,7 @@ describe('AddressDetailPanel', () => {
     await userEvent.click(screen.getByRole('tab', { name: /Locais/ }));
 
     expect(screen.getByRole('alert').textContent).toMatch(/Não foi possível consultar/);
-    expect(screen.getByRole('tab', { name: /Geral/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Info' })).toBeTruthy();
   });
 
   it('prioriza a coordenada Geonet no empate de precisão e cede ao Google quando pior', () => {
@@ -276,7 +276,7 @@ describe('AddressDetailPanel', () => {
     expect(bodyWrapper).not.toHaveClass('overflow-x-hidden');
   });
 
-  it('alterna entre Geral e Viabilidade', async () => {
+  it('alterna entre Info e Viabilidade', async () => {
     const address: DraftAddress = {
       street: 'R. Dr. Paulo César',
       streetNr: '155',
@@ -287,18 +287,18 @@ describe('AddressDetailPanel', () => {
 
     render(<AddressDetailPanel isMobile={false} address={address} onClose={vi.fn()} />);
 
-    // Nasce na Geral.
+    // Nasce na Info.
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     expect(screen.getByText(/Nenhuma CDO num raio de 200 m/)).toBeInTheDocument();
     expect(screen.queryByText('Google Maps')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Geral' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Info' }));
     expect(screen.getByText('Google Maps')).toBeInTheDocument();
   });
 
-  it('no mobile, a aba Viabilidade oculta o Street View e a Geral o traz de volta', async () => {
+  it('no mobile, a aba Viabilidade oculta o Street View e a Info o traz de volta', async () => {
     const address: DraftAddress = {
       street: 'R. Dr. Paulo César',
       streetNr: '155',
@@ -309,14 +309,14 @@ describe('AddressDetailPanel', () => {
 
     render(<AddressDetailPanel isMobile address={address} onClose={vi.fn()} />);
 
-    // Na Geral a foto (mockada como indisponível) mostra o placeholder do hero.
+    // Na Info a foto (mockada como indisponível) mostra o placeholder do hero.
     expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
 
     // Na Viabilidade a foto some para o mapa ganhar a tela.
     await userEvent.click(screen.getByRole('tab', { name: 'Viabilidade' }));
     expect(screen.queryByText('Sem imagem de Street View')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Geral' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Info' }));
     expect(screen.getByText('Sem imagem de Street View')).toBeInTheDocument();
   });
 

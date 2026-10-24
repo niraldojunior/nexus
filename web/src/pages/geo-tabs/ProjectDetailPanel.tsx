@@ -18,18 +18,18 @@ import {
   X,
 } from 'lucide-react';
 import {
-  GeoProject,
-  GeoProjectDeleteSummary,
-  GeoProjectSiteCascade,
+  Project,
+  ProjectDeleteSummary,
+  ProjectSiteCascade,
   ProjectArea,
   fetchProjectResources,
   listProjectStatusCatalog,
   searchProject,
-  type GeoProjectStatusCatalogItem,
+  type ProjectStatusCatalogItem,
   createProjectResource,
   fetchProjectResourceCreationOptions,
   type ProjectResourceCreationOptions,
-} from '../../services/geoProjectApi';
+} from '../../services/projectApi';
 import {
   type PhysicalResourcePayload,
   type LogicalResourcePayload,
@@ -56,9 +56,9 @@ const projectSearchCache = new Map<string, GeoTreeNode[]>();
 
 // Dedupe do catálogo de status: o backend serializa requisições (AGENTS.md §3) e o painel
 // refaz este GET a cada montagem — StrictMode monta duas vezes, e reabrir o mesmo projeto
-// (fechar/abrir a doca) remonta o componente de novo. Mesmo padrão de useGeoProjects.ts.
-let statusCatalogInFlight: Promise<GeoProjectStatusCatalogItem[]> | null = null;
-const fetchStatusCatalogDeduped = (): Promise<GeoProjectStatusCatalogItem[]> => {
+// (fechar/abrir a doca) remonta o componente de novo. Mesmo padrão de useProjects.ts.
+let statusCatalogInFlight: Promise<ProjectStatusCatalogItem[]> | null = null;
+const fetchStatusCatalogDeduped = (): Promise<ProjectStatusCatalogItem[]> => {
   if (!statusCatalogInFlight) {
     statusCatalogInFlight = listProjectStatusCatalog().finally(() => {
       statusCatalogInFlight = null;
@@ -69,7 +69,7 @@ const fetchStatusCatalogDeduped = (): Promise<GeoProjectStatusCatalogItem[]> => 
 
 export type ProjectDetailPanelProps = {
   isMobile: boolean;
-  project: GeoProject;
+  project: Project;
   sites: GeoTreeNode[];
   sitesLoading: boolean;
   // Total real de locais do projeto, vindo do servidor (COUNT(*) OVER() em
@@ -93,10 +93,10 @@ export type ProjectDetailPanelProps = {
   canEdit: boolean;
   onUpdate: (
     patch: Partial<
-      Pick<GeoProject, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
+      Pick<Project, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
     >,
-  ) => Promise<{ siteCascade?: GeoProjectSiteCascade } | void>;
-  onDelete: () => Promise<GeoProjectDeleteSummary>;
+  ) => Promise<{ siteCascade?: ProjectSiteCascade } | void>;
+  onDelete: () => Promise<ProjectDeleteSummary>;
   onBack: () => void;
   onAddSite: () => void;
   addSiteDisabled?: boolean;
@@ -152,7 +152,7 @@ export function ProjectDetailPanel({
   // Aviso de cascata parcial (PATCH de status que mudou o projeto, mas alguns Sites não
   // seguiram por causa de SITE_STATUS_TRANSITIONS) — some ao trocar de status de novo.
   const [cascadeSkipped, setCascadeSkipped] = useState<number | null>(null);
-  const [statusCatalog, setStatusCatalog] = useState<GeoProjectStatusCatalogItem[]>([]);
+  const [statusCatalog, setStatusCatalog] = useState<ProjectStatusCatalogItem[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState<'sites' | 'infrastructure' | 'resources' | 'coverage'>('sites');
   const [resources, setResources] = useState<GeoTreeNode[]>([]);
@@ -496,7 +496,7 @@ export function ProjectDetailPanel({
     </div>
   ) : null;
 
-  // `sites` é sempre uma PÁGINA (teto de 100 por vez, ver GET /v1/geo/projects/:id/sites em
+  // `sites` é sempre uma PÁGINA (teto de 100 por vez, ver GET /v1/projects/:id/sites em
   // app.ts) — o total real vem do servidor via `sitesTotal`, nunca de `sites.length`.
   const totalCount = sitesTotal ?? sites.length;
   const countLabel = (

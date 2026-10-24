@@ -18,7 +18,7 @@ import { OrganizationsPage } from './studio/organizations/OrganizationsPage';
 import { RolesPage } from './studio/party-roles/RolesPage';
 import { ReferenceDataStudio } from './studio/reference-data/ReferenceDataStudio';
 import { StudioGeoExperience } from './studio/StudioGeoExperience';
-import { GeoProjectWorkflowStudio } from './studio/rules-workflows/GeoProjectWorkflowStudio';
+import { ProjectWorkflowStudio } from './studio/rules-workflows/ProjectWorkflowStudio';
 import EmptyState from '../components/EmptyState';
 import { PageHead } from '../components/ui';
 import type { StudioDomain } from '../services/studioApi';
@@ -347,7 +347,7 @@ export function StudioPage({
             </div>
           ) : section === 'rules-workflows' ? (
             <div>
-              <GeoProjectWorkflowStudio
+              <ProjectWorkflowStudio
                 canEdit={canEdit}
                 isEditing={isEditing}
                 onRegisterCaptureDraft={handleRegisterCaptureDraft}

@@ -4,18 +4,18 @@ import type { DatabaseClient } from '../../shared/persistence/database-client.js
 import type { EventService } from '../../shared/tmf/index.js';
 import type { ResourceService } from '../resource/service.js';
 import type { StudioService } from '../studio/service.js';
-import type { GeoProject, GeoProjectRepository } from './project-repository.js';
+import type { Project, ProjectRepository } from './project-repository.js';
 import {
-  CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
-  GEO_PROJECT_WORKFLOW_ID,
-  GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
+  CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
+  PROJECT_WORKFLOW_ID,
+  PROJECT_WORKFLOW_SCHEMA_VERSION,
   projectStatusOperationalStatus,
-  type GeoProjectWorkflowReadModel,
-  type GeoProjectWorkflowState,
-  type GeoProjectWorkflowTransition,
-  type GeoProjectWorkflowTransitionResult,
+  type ProjectWorkflowReadModel,
+  type ProjectWorkflowState,
+  type ProjectWorkflowTransition,
+  type ProjectWorkflowTransitionResult,
 } from './project-workflow.js';
-import type { GeoService } from './service.js';
+import type { GeoService } from '../geo/service.js';
 
 export type ExecuteProjectTransitionInput = {
   transitionId?: string | undefined;
@@ -25,9 +25,9 @@ export type ExecuteProjectTransitionInput = {
 const DEFAULT_TENANT_ID = 'default';
 const tenantOf = (context?: RequestContext): string => context?.tenantId ?? DEFAULT_TENANT_ID;
 
-const emptyWorkflow = (fallbackChecksum?: string): GeoProjectWorkflowReadModel => ({
-  schemaVersion: GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
-  workflowId: GEO_PROJECT_WORKFLOW_ID,
+const emptyWorkflow = (fallbackChecksum?: string): ProjectWorkflowReadModel => ({
+  schemaVersion: PROJECT_WORKFLOW_SCHEMA_VERSION,
+  workflowId: PROJECT_WORKFLOW_ID,
   initialStateCode: '',
   states: [],
   transitions: [],
@@ -39,37 +39,37 @@ const normalizeWorkflow = (
   raw: Record<string, unknown> | undefined,
   fallbackChecksum?: string,
   fallbackToCanonical = true,
-): GeoProjectWorkflowReadModel => {
+): ProjectWorkflowReadModel => {
   if (
     !raw ||
-    raw.workflowId !== GEO_PROJECT_WORKFLOW_ID ||
-    raw.schemaVersion !== GEO_PROJECT_WORKFLOW_SCHEMA_VERSION ||
+    raw.workflowId !== PROJECT_WORKFLOW_ID ||
+    raw.schemaVersion !== PROJECT_WORKFLOW_SCHEMA_VERSION ||
     !Array.isArray(raw.states) ||
     !Array.isArray(raw.transitions)
   ) {
     return fallbackToCanonical
       ? {
-          ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+          ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
           fallback: true,
           ...(fallbackChecksum ? { publicationChecksum: fallbackChecksum } : {}),
         }
       : emptyWorkflow(fallbackChecksum);
   }
   return {
-    schemaVersion: GEO_PROJECT_WORKFLOW_SCHEMA_VERSION,
-    workflowId: GEO_PROJECT_WORKFLOW_ID,
+    schemaVersion: PROJECT_WORKFLOW_SCHEMA_VERSION,
+    workflowId: PROJECT_WORKFLOW_ID,
     initialStateCode: String(raw.initialStateCode ?? '1'),
-    states: raw.states as GeoProjectWorkflowState[],
-    transitions: raw.transitions as GeoProjectWorkflowTransition[],
+    states: raw.states as ProjectWorkflowState[],
+    transitions: raw.transitions as ProjectWorkflowTransition[],
     fallback: false,
     ...(fallbackChecksum ? { publicationChecksum: fallbackChecksum } : {}),
   };
 };
 
-export class GeoProjectWorkflowService {
+export class ProjectWorkflowService {
   constructor(
     private readonly db: DatabaseClient,
-    private readonly projectRepository: GeoProjectRepository,
+    private readonly projectRepository: ProjectRepository,
     private readonly geoService: GeoService,
     private readonly resourceService: ResourceService,
     private readonly studioService: StudioService,
@@ -77,7 +77,7 @@ export class GeoProjectWorkflowService {
     private readonly options: { fallbackToCanonical?: boolean } = {},
   ) {}
 
-  public async getWorkflow(context?: RequestContext): Promise<GeoProjectWorkflowReadModel> {
+  public async getWorkflow(context?: RequestContext): Promise<ProjectWorkflowReadModel> {
     const ctx: RequestContext = context ?? {
       actorSub: 'anonymous',
       tenantId: DEFAULT_TENANT_ID,
@@ -99,7 +99,7 @@ export class GeoProjectWorkflowService {
     return this.options.fallbackToCanonical === false
       ? emptyWorkflow()
       : {
-          ...CANONICAL_GEO_PROJECT_WORKFLOW_SNAPSHOT,
+          ...CANONICAL_PROJECT_WORKFLOW_SNAPSHOT,
           fallback: true,
         };
   }
@@ -108,20 +108,20 @@ export class GeoProjectWorkflowService {
     projectId: string,
     context: RequestContext,
   ): Promise<{
-    project: GeoProject;
-    allowedTransitions: GeoProjectWorkflowTransition[];
-    workflow: GeoProjectWorkflowReadModel;
+    project: Project;
+    allowedTransitions: ProjectWorkflowTransition[];
+    workflow: ProjectWorkflowReadModel;
   }> {
     const tenantId = tenantOf(context);
     const project = await this.projectRepository.get(tenantId, projectId);
     if (!project) {
-      throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
     }
 
     const workflow = await this.getWorkflow(context);
     if (workflow.states.length === 0) {
       throw new AppError('project workflow is not configured', {
-        code: 'GEO_PROJECT_WORKFLOW_NOT_CONFIGURED',
+        code: 'PROJECT_WORKFLOW_NOT_CONFIGURED',
         statusCode: 409,
       });
     }
@@ -150,11 +150,11 @@ export class GeoProjectWorkflowService {
     projectId: string,
     input: ExecuteProjectTransitionInput,
     context: RequestContext,
-  ): Promise<GeoProjectWorkflowTransitionResult> {
+  ): Promise<ProjectWorkflowTransitionResult> {
     const tenantId = tenantOf(context);
     const project = await this.projectRepository.get(tenantId, projectId);
     if (!project) {
-      throw new AppError('project not found', { code: 'GEO_PROJECT_NOT_FOUND', statusCode: 404 });
+      throw new AppError('project not found', { code: 'PROJECT_NOT_FOUND', statusCode: 404 });
     }
 
     if (
@@ -163,7 +163,7 @@ export class GeoProjectWorkflowService {
       project.statusBehavior === 'close-release'
     ) {
       throw new AppError('terminated project status is immutable', {
-        code: 'GEO_PROJECT_TERMINATED_IMMUTABLE',
+        code: 'PROJECT_TERMINATED_IMMUTABLE',
         statusCode: 409,
       });
     }
@@ -171,7 +171,7 @@ export class GeoProjectWorkflowService {
     const workflow = await this.getWorkflow(context);
     if (workflow.states.length === 0) {
       throw new AppError('project workflow is not configured', {
-        code: 'GEO_PROJECT_WORKFLOW_NOT_CONFIGURED',
+        code: 'PROJECT_WORKFLOW_NOT_CONFIGURED',
         statusCode: 409,
       });
     }
@@ -179,12 +179,12 @@ export class GeoProjectWorkflowService {
     const isPlatformAdmin = actorRoles.has('platform.admin');
 
     // Resolução da transição
-    let transition: GeoProjectWorkflowTransition | undefined;
+    let transition: ProjectWorkflowTransition | undefined;
     if (input.transitionId) {
       transition = workflow.transitions.find((t) => t.id === input.transitionId);
       if (!transition || !transition.fromStateCodes.includes(project.statusCode)) {
         throw new AppError('workflow transition not applicable to current project state', {
-          code: 'GEO_PROJECT_WORKFLOW_TRANSITION_INVALID',
+          code: 'PROJECT_WORKFLOW_TRANSITION_INVALID',
           statusCode: 422,
         });
       }
@@ -195,27 +195,27 @@ export class GeoProjectWorkflowService {
       );
       if (candidates.length === 0) {
         throw new AppError('no workflow transition found for target state', {
-          code: 'GEO_PROJECT_WORKFLOW_TRANSITION_NOT_FOUND',
+          code: 'PROJECT_WORKFLOW_TRANSITION_NOT_FOUND',
           statusCode: 422,
         });
       }
       if (candidates.length > 1) {
         throw new AppError('multiple transitions match target state; specify transitionId', {
-          code: 'GEO_PROJECT_WORKFLOW_TRANSITION_AMBIGUOUS',
+          code: 'PROJECT_WORKFLOW_TRANSITION_AMBIGUOUS',
           statusCode: 422,
         });
       }
       transition = candidates[0];
     } else {
       throw new AppError('transitionId or targetStateCode is required', {
-        code: 'GEO_PROJECT_WORKFLOW_TARGET_REQUIRED',
+        code: 'PROJECT_WORKFLOW_TARGET_REQUIRED',
         statusCode: 400,
       });
     }
 
     if (!transition) {
       throw new AppError('workflow transition not found', {
-        code: 'GEO_PROJECT_WORKFLOW_TRANSITION_NOT_FOUND',
+        code: 'PROJECT_WORKFLOW_TRANSITION_NOT_FOUND',
         statusCode: 404,
       });
     }
@@ -225,7 +225,7 @@ export class GeoProjectWorkflowService {
       const hasAuthorizedRole = transition.allowedRoles.some((role) => actorRoles.has(role));
       if (!hasAuthorizedRole) {
         throw new AppError('actor does not possess an authorized role for this transition', {
-          code: 'GEO_PROJECT_WORKFLOW_ROLE_FORBIDDEN',
+          code: 'PROJECT_WORKFLOW_ROLE_FORBIDDEN',
           statusCode: 403,
         });
       }
@@ -234,7 +234,7 @@ export class GeoProjectWorkflowService {
     const targetState = workflow.states.find((s) => s.code === transition.toStateCode);
     if (!targetState) {
       throw new AppError('target state does not exist in workflow', {
-        code: 'GEO_PROJECT_WORKFLOW_STATE_NOT_FOUND',
+        code: 'PROJECT_WORKFLOW_STATE_NOT_FOUND',
         statusCode: 422,
       });
     }
@@ -249,7 +249,7 @@ export class GeoProjectWorkflowService {
       });
       if (!updatedProject) {
         throw new AppError('failed to update project state', {
-          code: 'GEO_PROJECT_NOT_FOUND',
+          code: 'PROJECT_NOT_FOUND',
           statusCode: 404,
         });
       }

@@ -405,7 +405,7 @@ export class OracleResourceRepository implements IResourceRepository {
    * Bootstrap do catálogo de estados granulares (issue #171). Sem `ON CONFLICT` — o runtime
    * corporativo é Oracle e o catálogo é editável via API (C9), então o bootstrap só insere o que
    * falta e nunca sobrescreve o que o operador ajustou. Mesmo desenho de
-   * `GeoProjectRepository.ensureStatusCatalog`.
+   * `ProjectRepository.ensureStatusCatalog`.
    */
   private async seedStatusCatalog(tenantId = 'default'): Promise<void> {
     for (const entry of RESOURCE_STATUS_DEFAULTS) {
@@ -1678,7 +1678,7 @@ export class OracleResourceRepository implements IResourceRepository {
             project: {
               id: project.id,
               name: project.name,
-              '@referredType': 'GeoProject',
+              '@referredType': 'Project',
             },
           }
         : {}),

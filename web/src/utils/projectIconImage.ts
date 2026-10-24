@@ -1,6 +1,6 @@
 // Reduz o ícone de projeto (REQ-MOD01-015) carregado pelo usuário a um quadrado pequeno antes
 // de subir ao servidor — sem isto, uma foto de câmera (vários MB) viraria uma linha gigante na
-// tabela project (ver GEO_PROJECT_ICON_MAX_CHARS em src/shared/http/app.ts, que recusa o
+// tabela project (ver PROJECT_ICON_MAX_CHARS em src/modules/project/project-service.ts, que recusa o
 // que passar disso no servidor). Ajuste "contain" (nunca corta a imagem, sobra vira fundo
 // transparente) em 128×128, WebP (o navegador cai para PNG sozinho quando o encoder não
 // existe — canvas.toDataURL ignora o tipo pedido nesse caso).

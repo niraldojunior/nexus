@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResourcePanel } from './ResourcePanel';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
@@ -25,8 +25,10 @@ vi.mock('../../hooks/useResourceConnections', () => ({
 vi.mock('../../components/StreetViewHero', () => ({
   StreetViewHero: () => <div>Street View</div>,
 }));
-vi.mock('./ResourceOverviewTab', () => ({
-  ResourceOverviewTab: () => <div>Detalhe da CTO</div>,
+vi.mock('./ResourceInfoTab', () => ({
+  // Porta passa a própria visão em `generalOverride` — o mock a repassa.
+  ResourceInfoTab: ({ generalOverride }: { generalOverride?: ReactNode }) =>
+    generalOverride ?? <div>Detalhe da CTO</div>,
 }));
 vi.mock('../internal-plant/ResourceEditorModal', () => ({
   ResourceEditorModal: ({ onSaved }: { onSaved: () => void }) => (
@@ -209,7 +211,8 @@ describe('ResourcePanel', () => {
     expect(mocks.useResourceConnections).toHaveBeenCalledWith('cto-1', {
       enabled: false,
     });
-    expect(screen.getByRole('tab', { name: 'Geral' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Info' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Sobre' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '2Componentes' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Conexões' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Esquemático' })).not.toBeInTheDocument();
@@ -280,6 +283,20 @@ describe('ResourcePanel', () => {
     renderPanel({ canEdit: false });
     expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remover' })).not.toBeInTheDocument();
+  });
+
+  it('Editar/Remover ficam no fim da faixa de abas, depois de Histórico', () => {
+    renderPanel({ canEdit: true });
+    const tablist = screen.getByRole('tablist', { name: 'Seções do recurso' });
+    const strip = tablist.parentElement!;
+    const edit = screen.getByRole('button', { name: 'Editar' });
+
+    expect(strip.contains(edit)).toBe(true);
+    expect(tablist.contains(edit)).toBe(false);
+    expect(
+      screen.getByRole('tab', { name: 'Histórico' }).compareDocumentPosition(edit) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('Editar abre o modal compartilhado e, ao salvar, recarrega e avisa o pai', () => {

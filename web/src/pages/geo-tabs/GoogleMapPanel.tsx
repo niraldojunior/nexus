@@ -77,7 +77,7 @@ import {
   type DeviceLocation,
   type DropSimulation,
 } from './index';
-import { type ProjectArea, type ProjectSite } from '../../services/geoProjectApi';
+import { type ProjectArea, type ProjectSite } from '../../services/projectApi';
 import { createProjectAreaOverlay, type ProjectAreaOverlayHandle } from './ProjectAreaOverlay';
 import { createInfraOverlay, type InfraOverlayHandle } from './InfraOverlay';
 import { createProjectSiteOverlay, type ProjectSiteOverlayHandle } from './ProjectSiteOverlay';

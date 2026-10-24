@@ -1,6 +1,7 @@
-import { Building2, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import type { AddressSitesState } from '../../hooks/useAddressSites';
+import { SiteIdentityIcon } from './SiteIdentityIcon';
 
 type AddressSitesTabProps = {
   state: AddressSitesState;
@@ -50,7 +51,13 @@ export function AddressSitesTab({ state, onSelectSite }: AddressSitesTabProps) {
             onClick={() => onSelectSite(site)}
             className="flex w-full items-start gap-3 rounded-lg border border-app-border px-3 py-2 text-left transition hover:bg-app-surface-hover"
           >
-            <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-app-muted" aria-hidden="true" />
+            <span className="mt-0.5 flex shrink-0 text-app-muted">
+              <SiteIdentityIcon
+                siteId={site.refId}
+                specificationId={site.siteSpecificationId}
+                size={16}
+              />
+            </span>
             <span className="min-w-0">
               <span className="block break-words text-sm font-semibold text-app-text">
                 {site.label}

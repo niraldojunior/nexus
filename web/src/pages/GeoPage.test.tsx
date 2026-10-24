@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GoogleMapPanel } from './GeoPage';
 import type { GeoTreeNode } from '../services/geoTreeApi';
 import type { MapTileFeature } from '../services/geoMapTileApi';
-import type { ProjectSite } from '../services/geoProjectApi';
+import type { ProjectSite } from '../services/projectApi';
 
 // InfraOverlay (canvas, Fase 3 da issue #69) precisa de projeção real (getProjection não-null)
 // pra `draw`/`hitTest` funcionarem de verdade — o mock de OverlayView abaixo devolve null de

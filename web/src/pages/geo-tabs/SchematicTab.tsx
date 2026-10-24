@@ -34,7 +34,7 @@ function SchematicHopIcon({ node }: { node: GeoTreeNode }) {
   return <NodeIcon node={node} />;
 }
 
-/** Caminho físico a montante do Resource selecionado até a Estação. */
+/** Caminho físico a montante do Resource selecionado até o Local Atendido (serving site). */
 export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProps) {
   const { status, path, error } = useResourceSchematic(nodeId);
   const presentationForResourceType = useResourceTypeVisualIdentities();
@@ -79,7 +79,7 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
     return (
       <div className="flex items-center gap-2 px-1 py-6 text-[0.86rem] text-app-muted">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-        Traçando o caminho até a Estação...
+        Traçando o caminho até o Local Atendido...
       </div>
     );
   }
@@ -108,7 +108,7 @@ export function SchematicTab({ nodeId, onSimulate, onPreview }: SchematicTabProp
           <span className="min-w-0 flex-1">
             {path.truncated
               ? `Caminho muito longo — mostrando os primeiros ${path.hops.length} saltos.`
-              : 'A caminhada não chegou a uma Estação — cadeia incompleta na origem.'}
+              : 'A caminhada não chegou ao Local Atendido — nenhum recurso da cadeia tem serving site.'}
           </span>
         </div>
       ) : null}

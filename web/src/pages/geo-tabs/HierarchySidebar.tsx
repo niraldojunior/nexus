@@ -1,6 +1,6 @@
 import { RefreshCw } from 'lucide-react';
 import type { GeoTreeNode } from '../../services/geoTreeApi';
-import type { GeoProject, GeoProjectDeleteSummary } from '../../services/geoProjectApi';
+import type { Project, ProjectDeleteSummary } from '../../services/projectApi';
 import type { GeoTree } from '../../hooks/useGeoTree';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { DOCK_WIDTH_CLASS, DOCK_SEARCH_CLEARANCE_PT_CLASS, DOCK_ELEVATION_CLASS } from './dock';
@@ -26,14 +26,14 @@ export type HierarchySidebarProps = {
   tab: HierarchySidebarTab;
   onTabChange: (tab: HierarchySidebarTab) => void;
   // Projetos de trabalho (REQ-MOD01-015) — a lista vive aqui, o CRUD é do GeoPage
-  // (useGeoProjects), que também alimenta o painel de detalhe do projeto.
-  projects: GeoProject[];
+  // (useProjects), que também alimenta o painel de detalhe do projeto.
+  projects: Project[];
   projectsLoading: boolean;
   // Gate de UI (inventory.editor/platform.admin) — repassado à aba Projetos (ProjectListView).
   canEdit: boolean;
   onCreateProject: () => void;
   onOpenProject: (projectId: string) => void;
-  onDeleteProject: (projectId: string) => Promise<GeoProjectDeleteSummary>;
+  onDeleteProject: (projectId: string) => Promise<ProjectDeleteSummary>;
 };
 
 /**

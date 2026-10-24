@@ -136,14 +136,15 @@ A ordem de resolução das variáveis Oracle está em
 
 ### Integrações opcionais
 
-| Variável                                    | Padrão                      | Descrição                                                                                           |
-| ------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`                            | —                           | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/`          |
-| `OPENAI_MODEL`                              | `gpt-4o-mini`               | Modelo usado nas rotas de chat                                                                      |
-| `API_ENDPOINT`                              | `https://api.openai.com/v1` | Endpoint compatível com OpenAI                                                                      |
-| `VITE_GOOGLE_MAPS_API_KEY`                  | —                           | Mapas do módulo Geo (só a JS API está habilitada)                                                   |
-| `GEONET_API_BASE_URL` / `GEONET_TOKEN_URL`  | —                           | Base e OAuth2 do GeographicAddressManagement; ambas obrigatórias para habilitar a comparação Geonet |
-| `GEONET_CLIENT_ID` / `GEONET_CLIENT_SECRET` | —                           | Credenciais OAuth2 server-side do Geonet; nunca devem ter prefixo `VITE_`                           |
+| Variável                                    | Padrão                      | Descrição                                                                                                           |
+| ------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                            | —                           | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/`                          |
+| `OPENAI_MODEL`                              | `gpt-4o-mini`               | Modelo usado nas rotas de chat                                                                                      |
+| `API_ENDPOINT`                              | `https://api.openai.com/v1` | Endpoint compatível com OpenAI                                                                                      |
+| `VITE_GOOGLE_MAPS_API_KEY`                  | —                           | Mapas do módulo Geo (só a JS API está habilitada)                                                                   |
+| `GOOGLE_MAPS_API_KEY`                       | —                           | Geocoding server-side do Copilot/MCP (`geo.find_nearby_cdos`); sem ela, endereço não cadastrado fica sem coordenada |
+| `GEONET_API_BASE_URL` / `GEONET_TOKEN_URL`  | —                           | Base e OAuth2 do GeographicAddressManagement; ambas obrigatórias para habilitar a comparação Geonet                 |
+| `GEONET_CLIENT_ID` / `GEONET_CLIENT_SECRET` | —                           | Credenciais OAuth2 server-side do Geonet; nunca devem ter prefixo `VITE_`                                           |
 
 ### Avançadas
 

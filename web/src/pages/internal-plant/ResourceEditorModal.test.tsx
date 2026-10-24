@@ -407,6 +407,91 @@ describe('ResourceEditorModal', () => {
     );
   });
 
+  describe('place × Local Atendido (issue #423)', () => {
+    // CDOI instalada num prédio (place) e atendida por uma estação (servingSite): conceitos distintos.
+    const cdoiInBuilding = () =>
+      vi.mocked(fetchResourceEditor).mockResolvedValueOnce({
+        resource: {
+          id: 'cdoi-1',
+          name: 'CDOI-3917PS',
+          '@type': 'PhysicalResource',
+          resourceSpecificationId: 'spec-1',
+          place: { id: 'site-predio', '@referredType': 'GeographicSite' },
+          characteristic: [
+            { name: 'servingSite', value: 'site-estacao', valueType: 'string' },
+            { name: '_origin.system', value: 'NETWIN' },
+          ],
+        },
+        resourceType: { id: 'rt-olt', code: 'OLT', name: 'OLT', resourceTypeCharacteristic: [] },
+        specification: { id: 'spec-1', name: 'Huawei MA5800-X17', relatedParty: [] },
+        components: [],
+        relationships: [],
+        siteRelationships: [
+          { id: 'srel-1', site: { id: 'site-x', name: 'X' }, relationshipType: 'servedBy' },
+        ],
+      });
+    const lastPayload = () => vi.mocked(saveResourceAggregate).mock.calls[0]![0];
+
+    it('salvar sem mexer em nada não envia place nem relações com locais', async () => {
+      cdoiInBuilding();
+      render(<ResourceEditorModal resourceId="cdoi-1" onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(await screen.findByLabelText('Número de série'), {
+        target: { value: 'SN-1' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+      await waitFor(() => expect(saveResourceAggregate).toHaveBeenCalled());
+      const payload = lastPayload();
+      expect(payload).not.toHaveProperty('placeId');
+      expect(payload).not.toHaveProperty('placeType');
+      expect(payload).not.toHaveProperty('siteRelationships');
+      expect(payload.characteristic).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'servingSite', value: 'site-estacao' }),
+          expect.objectContaining({ name: '_origin.system', value: 'NETWIN' }),
+        ]),
+      );
+    });
+
+    it('trocar o Local Atendido muda só a característica, nunca o place', async () => {
+      cdoiInBuilding();
+      render(<ResourceEditorModal resourceId="cdoi-1" onClose={vi.fn()} onSaved={vi.fn()} />);
+      await screen.findByLabelText('Número de série');
+      fireEvent.click(screen.getAllByRole('button', { name: 'Locais' })[0]!);
+      fireEvent.click(await screen.findByRole('button', { name: 'Remover local atendido' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+      await waitFor(() => expect(saveResourceAggregate).toHaveBeenCalled());
+      const payload = lastPayload();
+      expect(payload).not.toHaveProperty('placeId');
+      expect(JSON.stringify(payload.characteristic)).not.toContain('servingSite');
+    });
+
+    it('criação a partir de um Site envia o place e o Local Atendido', async () => {
+      render(
+        <ResourceEditorModal
+          initialTypeId="rt-olt"
+          initialPlace={{ id: 'site-estacao', name: 'ICI - ICARAÍ' }}
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+        />,
+      );
+      fireEvent.change(await screen.findByLabelText('Nome'), { target: { value: 'OLT-NOVA' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+      await waitFor(() => expect(saveResourceAggregate).toHaveBeenCalled());
+      expect(lastPayload()).toEqual(
+        expect.objectContaining({
+          placeId: 'site-estacao',
+          placeType: 'GeographicSite',
+          characteristic: expect.arrayContaining([
+            expect.objectContaining({ name: 'servingSite', value: 'site-estacao' }),
+          ]),
+        }),
+      );
+    });
+  });
+
   it('cria filho e neto na organização padrão (NONE) sem enviar placement', async () => {
     vi.mocked(listResourceTypeRelationshipRules).mockResolvedValue([
       {

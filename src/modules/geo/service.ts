@@ -1416,7 +1416,13 @@ export class GeoService {
       );
       return updated;
     });
-    await this.mapFeatureSynchronizer?.syncEntity(updatedSite.id, ctx.tenantId);
+    // Site trocou de Location: os recursos instalados nele herdam a posição pelo place, então
+    // precisam se mover no mapa junto com o Site (issue #425).
+    if (updatedSite.place?.id !== current.place?.id) {
+      await this.mapFeatureSynchronizer?.syncSite(updatedSite.id, ctx.tenantId);
+    } else {
+      await this.mapFeatureSynchronizer?.syncEntity(updatedSite.id, ctx.tenantId);
+    }
     return updatedSite;
   }
 
@@ -1550,7 +1556,7 @@ export class GeoService {
         await this.recordMutation(
           ctx,
           'bulk-transition',
-          'GeoProject',
+          'Project',
           projectId,
           { siteCount: siteIds.length },
           { toStatus, updated: result.updated, blocked: blocked.length },
@@ -3061,7 +3067,7 @@ export class GeoService {
     const normalized = name.trim().toLowerCase();
     // Filtra por nome antes de trazer para JS — sem isto, cada criação/atualização de
     // Site varre a tabela inteira do tenant (com join de relationships) só pra checar
-    // duplicidade, o que vira O(n²) em qualquer carga em lote (ver scripts/estacoes_carregar.mjs).
+    // duplicidade, o que vira O(n²) em qualquer carga em lote.
     const candidates = await this.repository.listSites({ tenantId: context.tenantId, name });
     const duplicate = candidates.find((site) => {
       if (site.id === currentSiteId || site.status === 'Retired') return false;

@@ -61,7 +61,7 @@ export class ChatGPTProvider {
     apiEndpoint = 'https://api.openai.com/v1',
   ) {
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is required');
+      throw new Error('COPILOT_API_KEY environment variable is required');
     }
 
     this.apiEndpoint = apiEndpoint;
@@ -102,7 +102,7 @@ export class ChatGPTProvider {
                   function: {
                     name: tool.name,
                     description: tool.description,
-                    parameters: tool.inputSchema,
+                    parameters: encodeSchemaKeys(tool.inputSchema),
                   },
                 })),
                 tool_choice: 'auto',
@@ -119,6 +119,11 @@ export class ChatGPTProvider {
 
       if (streaming && apiResponse.body) {
         return await this.consumeStream(apiResponse.body, onDelta!);
+      }
+      // Roteadores OpenAI-compatíveis podem responder em SSE mesmo sem `stream: true`.
+      const contentType = apiResponse.headers.get('content-type') ?? '';
+      if (contentType.includes('text/event-stream') && apiResponse.body) {
+        return await this.consumeStream(apiResponse.body, () => {});
       }
 
       const data = (await apiResponse.json()) as OpenAIChatCompletionResponse;
@@ -227,7 +232,7 @@ export class ChatGPTProvider {
       .map(([index, call]) => ({
         id: call.id || `call_${index}`,
         name: call.name as string,
-        arguments: call.arguments ? (JSON.parse(call.arguments) as Record<string, unknown>) : {},
+        arguments: call.arguments ? decodeArguments(JSON.parse(call.arguments)) : {},
       }));
 
     if (!content && toolCalls.length === 0) {
@@ -294,7 +299,7 @@ const toOpenAiMessage = (message: LLMConversationMessage): Record<string, unknow
         type: 'function',
         function: {
           name: sanitizeToolName(toolCall.name),
-          arguments: JSON.stringify(toolCall.arguments),
+          arguments: JSON.stringify(encodeArgumentKeys(toolCall.arguments)),
         },
       })),
     };
@@ -327,10 +332,67 @@ const parseToolCalls = (
       id: toolCall.id,
       name: toolCall.function.name,
       arguments: toolCall.function.arguments
-        ? (JSON.parse(toolCall.function.arguments) as Record<string, unknown>)
+        ? decodeArguments(JSON.parse(toolCall.function.arguments))
         : {},
     };
   });
 };
 
 const sanitizeToolName = (name: string): string => name.replace(/[^a-zA-Z0-9_-]/g, '__');
+
+// Backends atrás de roteadores OpenAI-compat (ex.: Anthropic) só aceitam chaves de propriedade
+// `^[a-zA-Z0-9_.-]{1,64}$` no schema das tools e recusam a requisição inteira com `@type`/
+// `@referredType` (TMF). Codifica cada caractere inválido como `_xHH_` na ida e desfaz na volta.
+const INVALID_KEY_CHAR = /[^a-zA-Z0-9_.-]/g;
+const ENCODED_KEY_CHAR = /_x([0-9a-f]{2,4})_/g;
+
+export const encodePropertyKey = (key: string): string =>
+  key.replace(INVALID_KEY_CHAR, (char) => `_x${char.charCodeAt(0).toString(16)}_`);
+
+export const decodePropertyKey = (key: string): string =>
+  key.replace(ENCODED_KEY_CHAR, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const encodeSchemaKeys = (schema: unknown): Record<string, unknown> =>
+  encodeSchemaNode(schema) as Record<string, unknown>;
+
+const encodeSchemaNode = (node: unknown): unknown => {
+  if (Array.isArray(node)) return node.map(encodeSchemaNode);
+  if (!isPlainObject(node)) return node;
+  const encoded: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'properties' && isPlainObject(value)) {
+      encoded[key] = Object.fromEntries(
+        Object.entries(value).map(([prop, propSchema]) => [
+          encodePropertyKey(prop),
+          encodeSchemaNode(propSchema),
+        ]),
+      );
+    } else if (key === 'required' && Array.isArray(value)) {
+      encoded[key] = value.map((item) =>
+        typeof item === 'string' ? encodePropertyKey(item) : item,
+      );
+    } else {
+      encoded[key] = encodeSchemaNode(value);
+    }
+  }
+  return encoded;
+};
+
+const mapKeysDeep = (value: unknown, mapKey: (key: string) => string): unknown => {
+  if (Array.isArray(value)) return value.map((item) => mapKeysDeep(item, mapKey));
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [mapKey(key), mapKeysDeep(item, mapKey)]),
+  );
+};
+
+const decodeArguments = (value: unknown): Record<string, unknown> => {
+  const decoded = mapKeysDeep(value, decodePropertyKey);
+  return isPlainObject(decoded) ? decoded : {};
+};
+
+const encodeArgumentKeys = (value: Record<string, unknown>): unknown =>
+  mapKeysDeep(value, encodePropertyKey);

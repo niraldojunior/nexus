@@ -1,4 +1,5 @@
-import { Layers, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+﻿import { Layers, MapPin, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { UnderlineTabs, type UnderlineTab } from '../components/ui/UnderlineTabs';
 import {
   useEffect,
   useMemo,
@@ -53,6 +54,11 @@ import { invalidateInternalPlantRoots, LocationTree } from './internal-plant/Loc
 import { TypeTree, type TypeSelection } from './internal-plant/TypeTree';
 
 type DockTab = 'locations' | 'types';
+
+const DOCK_TABS: ReadonlyArray<UnderlineTab<DockTab>> = [
+  { id: 'locations', label: 'Locais', icon: <MapPin size={14} aria-hidden="true" /> },
+  { id: 'types', label: 'Recursos', icon: <Layers size={14} aria-hidden="true" /> },
+];
 
 type ContextIcon = {
   kind: 'site' | 'type' | 'search' | 'site-search';
@@ -397,16 +403,6 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
     storeDockWidth(next);
   };
 
-  // Aba ativa no estilo Google Maps: sem fundo, com barra sob o texto do nome.
-  const tabClass = (active: boolean) =>
-    `flex flex-1 items-center justify-center px-3 pt-1 text-[0.8125rem] font-medium transition ${
-      active ? 'text-app-text' : 'text-app-muted hover:text-app-text'
-    }`;
-  const tabLabelClass = (active: boolean) =>
-    `flex items-center gap-1.5 border-b-[2px] pb-1.5 ${
-      active ? 'border-app-accent' : 'border-transparent'
-    }`;
-
   return (
     <div className="relative flex h-full min-h-0 w-full bg-app-bg">
       {isMobile && dockOpen ? (
@@ -427,57 +423,13 @@ export default function InternalPlantPage({ onOpenMainMenu }: { onOpenMainMenu?:
             : ''
         }`}
       >
-        <div
-          role="tablist"
-          aria-label="Navegação de Planta Interna"
-          className="flex shrink-0 border-b border-[var(--border-input-strong)]"
-          onKeyDown={(event) => {
-            if (
-              event.key !== 'ArrowLeft' &&
-              event.key !== 'ArrowRight' &&
-              event.key !== 'Home' &&
-              event.key !== 'End'
-            )
-              return;
-            event.preventDefault();
-            const next: DockTab = tab === 'locations' ? 'types' : 'locations';
-            const target: DockTab =
-              event.key === 'Home' ? 'locations' : event.key === 'End' ? 'types' : next;
-            setTab(target);
-            document.getElementById(`internal-plant-tab-${target}`)?.focus();
-          }}
-        >
-          <button
-            type="button"
-            role="tab"
-            id="internal-plant-tab-locations"
-            aria-controls="internal-plant-tabpanel"
-            tabIndex={tab === 'locations' ? 0 : -1}
-            aria-selected={tab === 'locations'}
-            className={tabClass(tab === 'locations')}
-            onClick={() => setTab('locations')}
-          >
-            <span className={tabLabelClass(tab === 'locations')}>
-              <MapPin size={14} aria-hidden="true" />
-              Locais
-            </span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="internal-plant-tab-types"
-            aria-controls="internal-plant-tabpanel"
-            tabIndex={tab === 'types' ? 0 : -1}
-            aria-selected={tab === 'types'}
-            className={tabClass(tab === 'types')}
-            onClick={() => setTab('types')}
-          >
-            <span className={tabLabelClass(tab === 'types')}>
-              <Layers size={14} aria-hidden="true" />
-              Recursos
-            </span>
-          </button>
-        </div>
+        <UnderlineTabs
+          tabs={DOCK_TABS}
+          value={tab}
+          onChange={setTab}
+          idPrefix="internal-plant"
+          ariaLabel="Navegação de Planta Interna"
+        />
         {isMobile ? null : (
           <div
             role="separator"

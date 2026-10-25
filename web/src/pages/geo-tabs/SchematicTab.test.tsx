@@ -22,7 +22,7 @@ vi.mock('../../components/ResourceIcon', () => ({
   },
 }));
 
-vi.mock('./HierarchyTreeView', () => ({
+vi.mock('./NodeIcon', () => ({
   NodeIcon: (props: { node: GeoTreeNode }) => {
     mocks.nodeIcon(props);
     return <span data-testid="node-icon" data-node-id={props.node.id} />;

@@ -58,7 +58,7 @@ node --use-system-ca node_modules/vitest/vitest.mjs run --config vitest.config.t
 - **Os testes de banco usam exclusivamente Oracle.** Configure `ORACLE_CONNECTION_STRING`, `ORACLE_USER`, `ORACLE_PASSWORD` e `ORACLE_TEST_OBJECT_PREFIX=NEXUS_TEST_` no `.env`.
 - **O prefixo Oracle de teste é obrigatório.** A suíte recusa qualquer prefixo que não termine em `_TEST_`, pois os ambientes compartilham schema.
 - **Oracle roda em worker único.** O prefixo é um namespace compartilhado; não execute os testes Oracle em paralelo.
-- **O backend de dev atende requisições em série.** Duas chamadas concorrentes iguais custam o dobro, não o mesmo. Com `React.StrictMode` (double-invoke), hooks que buscam listas caras devem deduplicar a requisição em voo com uma promise compartilhada em nível de módulo — padrão já aplicado em `web/src/hooks/useGeoDirectory.ts` e `useGeoTree.ts`.
+- **O backend de dev atende requisições em série.** Duas chamadas concorrentes iguais custam o dobro, não o mesmo. Com `React.StrictMode` (double-invoke), hooks que buscam listas caras devem deduplicar a requisição em voo com uma promise compartilhada em nível de módulo — padrão já aplicado em `web/src/hooks/useGeoDirectory.ts`.
 
 ---
 
@@ -138,7 +138,7 @@ Estas decisões estão firmadas. Respeite-as; não as reabra sem pedido explíci
 - **Entidades e atributos seguem o vocabulário TMF** (C1), inclusive no banco e nas rotas.
 - **Nunca hardcode tokens visuais** (cor, espaçamento, fonte) — use as variáveis CSS do design system.
 - **`href` TMF é derivado, nunca persistido.** Use `buildHref` de `src/shared/tmf/href.ts`; não monte self-links em template literal nem adicione coluna `href` a SQL, schema ou loaders.
-- **Segredos nunca entram no repositório.** `.env` está no `.gitignore` e contém `DATABASE_URL*`, `AUTH_TOKEN` e `OPENAI_API_KEY`. Não os imprima em log, output ou commit.
+- **Segredos nunca entram no repositório.** `.env` está no `.gitignore` e contém `DATABASE_URL*`, `AUTH_TOKEN` e `COPILOT_API_KEY`. Não os imprima em log, output ou commit.
 
 ---
 

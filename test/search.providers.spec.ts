@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
 import { ChatGPTProvider } from '../src/modules/search/chatgpt-provider.js';
-import { GeminiProvider, DEFAULT_GEMINI_ENDPOINT } from '../src/modules/search/gemini-provider.js';
 import { LocalKnowledgeProvider } from '../src/modules/search/local-knowledge-provider.js';
 import {
-  resolveDefaultModel,
-  resolveResearchProvider,
-} from '../src/modules/search/provider-router.js';
+  createCopilotProvider,
+  DEFAULT_COPILOT_API_ENDPOINT,
+  resolveCopilotModel,
+} from '../src/modules/search/copilot-provider.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 test('ChatGPTProvider rejeita chave ausente', () => {
-  assert.throws(() => new ChatGPTProvider(''), /OPENAI_API_KEY environment variable is required/);
+  assert.throws(() => new ChatGPTProvider(''), /COPILOT_API_KEY environment variable is required/);
 });
 
 test('ChatGPTProvider completa mensagens, usa endpoint sanitizado e propaga metadados', async () => {
@@ -185,77 +185,132 @@ test('ChatGPTProvider monta contexto, histórico e mensagem atual ao chamar call
   assert.equal(completeSpy.mock.calls[0]?.[3], 90);
 });
 
-test('GeminiProvider usa o endpoint OpenAI-compat do Gemini e autentica com Bearer', async () => {
+test('createCopilotProvider lê só COPILOT_API_KEY/COPILOT_API_ENDPOINT', () => {
+  assert.equal(createCopilotProvider({} as NodeJS.ProcessEnv), null);
+  assert.equal(createCopilotProvider({ COPILOT_API_KEY: '   ' } as NodeJS.ProcessEnv), null);
+  // Variáveis antigas não habilitam mais o Copilot.
+  assert.equal(
+    createCopilotProvider({
+      OPENAI_API_KEY: 'openai-key',
+      GEMINI_API_KEY: 'gemini-key',
+    } as NodeJS.ProcessEnv),
+    null,
+  );
+
+  const defaultEndpoint = createCopilotProvider({
+    COPILOT_API_KEY: 'copilot-key',
+  } as NodeJS.ProcessEnv);
+  assert.equal(defaultEndpoint?.apiEndpoint, DEFAULT_COPILOT_API_ENDPOINT);
+
+  const routed = createCopilotProvider({
+    COPILOT_API_KEY: 'copilot-key',
+    COPILOT_API_ENDPOINT: 'https://router.local/v1',
+  } as NodeJS.ProcessEnv);
+  assert.equal(routed?.apiEndpoint, 'https://router.local/v1');
+});
+
+test('resolveCopilotModel usa COPILOT_MODEL e ignora OPENAI_MODEL/GEMINI_MODEL', () => {
+  assert.equal(
+    resolveCopilotModel({ COPILOT_MODEL: ' nexus-plan ' } as NodeJS.ProcessEnv),
+    'nexus-plan',
+  );
+  assert.equal(
+    resolveCopilotModel({
+      OPENAI_MODEL: 'gpt-4o',
+      GEMINI_MODEL: 'gemini-2.5-pro',
+    } as NodeJS.ProcessEnv),
+    'gpt-4o-mini',
+  );
+});
+
+test('ChatGPTProvider lê resposta SSE mesmo sem stream: true (roteadores OpenAI-compat)', async () => {
+  const sse = [
+    'data: {"model":"nexus-plan","choices":[{"delta":{"content":"Olá "}}]}',
+    'data: {"choices":[{"delta":{"content":"do roteador"},"finish_reason":"stop"}]}',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    ),
+  );
+
+  const provider = new ChatGPTProvider('copilot-key', 'https://router.local/v1');
+  const result = await provider.complete([{ role: 'user', content: 'oi' }], 'nexus-plan');
+
+  assert.equal(result.content, 'Olá do roteador');
+  assert.equal(result.finishReason, 'stop');
+});
+
+test('ChatGPTProvider codifica chaves TMF (@type) no schema e decodifica nos argumentos', async () => {
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
     return new Response(
       JSON.stringify({
-        model: 'gemini-2.5-flash',
-        choices: [{ finish_reason: 'stop', message: { content: 'Olá do Gemini' } }],
-        usage: { total_tokens: 42 },
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: {
+                    name: 'service__create_cfs',
+                    arguments: JSON.stringify({
+                      _x40_type: 'CustomerFacingService',
+                      supportingResource: [{ id: 'r1', _x40_referredType: 'Resource' }],
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  const provider = new GeminiProvider('gemini-key');
-  const result = await provider.complete([{ role: 'user', content: 'oi' }], 'gemini-2.5-flash');
+  const provider = new ChatGPTProvider('copilot-key');
+  const result = await provider.complete(
+    [{ role: 'user', content: 'crie' }],
+    'nexus-plan',
+    0.2,
+    100,
+    [
+      {
+        name: 'service__create_cfs',
+        description: 'Cria CFS',
+        inputSchema: {
+          type: 'object',
+          required: ['@type'],
+          properties: {
+            '@type': { type: 'string' },
+            supportingResource: {
+              type: 'array',
+              items: { type: 'object', properties: { '@referredType': { type: 'string' } } },
+            },
+          },
+        },
+      },
+    ],
+  );
 
-  const firstCall = fetchMock.mock.calls[0];
-  assert.ok(firstCall);
-  assert.equal(firstCall[0], `${DEFAULT_GEMINI_ENDPOINT}/chat/completions`);
-  assert.equal(
-    (firstCall[1]?.headers as Record<string, string>)?.Authorization,
-    'Bearer gemini-key',
-  );
-  assert.equal(result.content, 'Olá do Gemini');
-});
-
-test('GeminiProvider respeita um endpoint customizado', () => {
-  const provider = new GeminiProvider('gemini-key', 'https://proxy.local/v1');
-  assert.equal(provider.apiEndpoint, 'https://proxy.local/v1');
-  const blank = new GeminiProvider('gemini-key', '   ');
-  assert.equal(blank.apiEndpoint, DEFAULT_GEMINI_ENDPOINT);
-});
-
-test('resolveResearchProvider roteia por prefixo de modelo e cai em null sem chave', () => {
-  const chatGptProvider = new ChatGPTProvider('openai-key');
-  const geminiProvider = new GeminiProvider('gemini-key');
-
-  assert.equal(
-    resolveResearchProvider('gemini-2.5-flash', { chatGptProvider, geminiProvider }),
-    geminiProvider,
-  );
-  assert.equal(
-    resolveResearchProvider('gpt-4o', { chatGptProvider, geminiProvider }),
-    chatGptProvider,
-  );
-  // Modelo Gemini sem provider configurado → null (fallback local no chamador).
-  assert.equal(
-    resolveResearchProvider('gemini-2.5-pro', { chatGptProvider, geminiProvider: null }),
-    null,
-  );
-  // Modelo indefinido cai no caminho OpenAI.
-  assert.equal(
-    resolveResearchProvider(undefined, { chatGptProvider, geminiProvider }),
-    chatGptProvider,
-  );
-});
-
-test('resolveDefaultModel prefere Gemini quando a chave está presente', () => {
-  assert.equal(
-    resolveDefaultModel({ GEMINI_API_KEY: 'k' } as NodeJS.ProcessEnv),
-    'gemini-2.5-flash',
-  );
-  assert.equal(
-    resolveDefaultModel({
-      GEMINI_API_KEY: 'k',
-      GEMINI_MODEL: 'gemini-2.5-pro',
-    } as NodeJS.ProcessEnv),
-    'gemini-2.5-pro',
-  );
-  assert.equal(resolveDefaultModel({ OPENAI_MODEL: 'gpt-4o' } as NodeJS.ProcessEnv), 'gpt-4o');
-  assert.equal(resolveDefaultModel({} as NodeJS.ProcessEnv), 'gpt-4o-mini');
+  const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+    tools: Array<{ function: { parameters: Record<string, unknown> } }>;
+  };
+  const keys = JSON.stringify(body.tools[0]?.function.parameters);
+  assert.doesNotMatch(keys, /@/);
+  assert.match(keys, /"required":\["_x40_type"\]/);
+  assert.deepEqual(result.toolCalls?.[0]?.arguments, {
+    '@type': 'CustomerFacingService',
+    supportingResource: [{ id: 'r1', '@referredType': 'Resource' }],
+  });
 });
 
 test('LocalKnowledgeProvider responde com conteúdo curado e fallback local', async () => {

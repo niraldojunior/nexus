@@ -3,11 +3,6 @@ import { SendHorizontal } from 'lucide-react';
 import { useAutoResizeTextarea } from '../hooks/useAutoResizeTextarea';
 import NexusLoadingMark from './NexusLoadingMark';
 
-interface ComposerModelOption {
-  value: string;
-  label: string;
-}
-
 interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
@@ -18,9 +13,6 @@ interface ComposerProps {
   modelLabel: string;
   qualityLabel?: string;
   autoFocus?: boolean;
-  /** When provided together with `onModelChange`, the model badge becomes a real dropdown. */
-  models?: ComposerModelOption[];
-  onModelChange?: (value: string) => void;
 }
 
 export default function Composer({
@@ -33,12 +25,9 @@ export default function Composer({
   modelLabel,
   qualityLabel,
   autoFocus = false,
-  models,
-  onModelChange,
 }: ComposerProps) {
   const isHero = size === 'hero';
   const textareaRef = useAutoResizeTextarea(value, isHero ? 320 : 240);
-  const isModelSelectable = Boolean(models && models.length > 0 && onModelChange);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -92,46 +81,21 @@ export default function Composer({
           isHero ? 'justify-center' : 'justify-start'
         }`}
       >
-        {isModelSelectable ? (
-          <select
-            value={modelLabel}
-            onChange={(event) => onModelChange?.(event.target.value)}
-            disabled={loading}
-            aria-label="Modelo"
-            style={{
-              height: 30,
-              padding: '0 8px',
-              background: 'var(--surface-card)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              font: 'var(--text-label)',
-              color: 'var(--text-primary)',
-            }}
-            className="outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {models!.map((model) => (
-              <option key={model.value} value={model.value}>
-                {model.label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span
-            style={{
-              height: 28,
-              display: 'inline-flex',
-              alignItems: 'center',
-              padding: '0 10px',
-              background: 'var(--surface-card)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              font: 'var(--text-label)',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            {modelLabel}
-          </span>
-        )}
+        <span
+          style={{
+            height: 28,
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0 10px',
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            font: 'var(--text-label)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {modelLabel}
+        </span>
         {qualityLabel ? (
           <span
             style={{

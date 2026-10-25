@@ -21,6 +21,8 @@ export type UseMapLayers = {
   toggleLayer: (id: MapLayerId) => void;
   toggleGroup: (groupId: MapLayerGroupId) => void;
   resetLayers: () => void;
+  /** Aplica uma mudança em lote (ex.: pedido do Copilot) sobre o estado atual. */
+  updateLayers: (update: (current: MapLayerVisibility) => MapLayerVisibility) => void;
   allVisible: boolean;
   groupVisibility: (groupId: MapLayerGroupId) => ReturnType<typeof groupVisibility>;
 };
@@ -92,6 +94,7 @@ export function useMapLayers(catalog: StudioGeoCatalog): UseMapLayers {
     toggleLayer,
     toggleGroup,
     resetLayers,
+    updateLayers: setLayers,
     allVisible,
     groupVisibility: (groupId: MapLayerGroupId) => groupVisibility(layers, groupId, catalog),
   };

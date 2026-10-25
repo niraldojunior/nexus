@@ -5,7 +5,7 @@
  * Usage: node scripts/test-research-api.mjs
  *
  * Make sure to:
- * 1. Set OPENAI_API_KEY environment variable
+ * 1. Set COPILOT_API_KEY (and optionally COPILOT_MODEL / COPILOT_API_ENDPOINT)
  * 2. Start dev server: npm run dev
  * 3. Run this script: node scripts/test-research-api.mjs
  */

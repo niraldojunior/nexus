@@ -311,10 +311,8 @@ test.skipIf(!oracleConfigured)(
     // no meio da sequência. `llmRateLimitMax`/`llmRateLimitWindowMs` existem só para isso.
     // O .env local pode conter credenciais remotas; removê-las força o provider local síncrono e
     // impede que a janela expire durante chamadas externas.
-    const openAiApiKey = process.env.OPENAI_API_KEY;
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
+    const copilotApiKey = process.env.COPILOT_API_KEY;
+    delete process.env.COPILOT_API_KEY;
     const app = await startApp({ llmRateLimitMax: 3, llmRateLimitWindowMs: 60_000 });
     try {
       const adminToken = await loginToken(app.port, ADMIN_EMAIL, ADMIN_PASSWORD);
@@ -335,10 +333,8 @@ test.skipIf(!oracleConfigured)(
       assert.equal(limitedCount, 1);
     } finally {
       await app.cleanup();
-      if (openAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = openAiApiKey;
-      if (geminiApiKey === undefined) delete process.env.GEMINI_API_KEY;
-      else process.env.GEMINI_API_KEY = geminiApiKey;
+      if (copilotApiKey === undefined) delete process.env.COPILOT_API_KEY;
+      else process.env.COPILOT_API_KEY = copilotApiKey;
     }
   },
 );

@@ -1,6 +1,6 @@
 // Cobertura da viewport, buscada por bbox + nível de escala (ver GeoCoverageService).
 //
-// Segue o padrão dos demais hooks de mapa (useGeoTree/useAddressViability): debounce de 250 ms,
+// Segue o padrão dos demais hooks de mapa (useAddressViability): debounce de 250 ms,
 // dedupe da requisição em voo por chave (o backend de dev atende em série e o StrictMode monta
 // duas vezes) e um token para descartar respostas fora de ordem. A decisão de buscar é recebida
 // do catálogo publicado do Studio GEO; a escala escolhe somente o nível de detalhe.
@@ -17,7 +17,11 @@
 // entrada (a viewport pode ser a mesma, os dados não).
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchCoverage, type CoverageLayerRef, type CoverageResponse } from '../services/geoCoverageApi';
+import {
+  fetchCoverage,
+  type CoverageLayerRef,
+  type CoverageResponse,
+} from '../services/geoCoverageApi';
 import type { MapBounds } from '../services/geoTreeApi';
 import { coverageLevelForScale, type CoverageLevel } from '../utils/mapScale';
 

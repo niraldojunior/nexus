@@ -334,6 +334,9 @@ const noopResetMapLayers = (): void => {};
 // InfraOverlay em jogo (GeoPage sempre passa selectNodeFromInfraOverlay).
 const noopSelectInfraFeature = (): void => {};
 
+export type CopilotMarker = { lat: number; lng: number; label?: string };
+export const NO_COPILOT_MARKERS: CopilotMarker[] = [];
+
 // O mapa sempre mostra todas as estações (mesmo com o ramo fechado na árvore). Infra
 // passiva (recursos + cabos) vem de fora, já filtrada por escala/viewport pelo
 // GeoPage — este painel só desenha o que chega em `nodes` e avisa (`onViewportChange`)
@@ -341,6 +344,7 @@ const noopSelectInfraFeature = (): void => {};
 export function GoogleMapPanel({
   nodes,
   pinnedNode = null,
+  copilotMarkers = NO_COPILOT_MARKERS,
   projectSiteFeatures = [],
   infraFeatures = [],
   onSelectInfraFeature = noopSelectInfraFeature,
@@ -351,6 +355,7 @@ export function GoogleMapPanel({
   dropSimulation,
   portDropPreview,
   focusRequest,
+  baseLayerRequest,
   initialView = null,
   bottomSheetState,
   balloon,
@@ -389,6 +394,9 @@ export function GoogleMapPanel({
   // marcadores normais (issue #72). `null` quando o selecionado já está em `nodes` ou não
   // deve aparecer.
   pinnedNode?: GeoTreeNode | null;
+  // Pontos só com lat/lng pedidos pelo Copilot (`map_show_points`). São no máximo dezenas,
+  // por isso Marker simples num efeito próprio, fora do caminho dos N marcadores de `nodes`.
+  copilotMarkers?: CopilotMarker[];
   // Locais do Projeto de trabalho aberto, desenhados por ProjectSiteOverlay (canvas) — nunca
   // viram Marker/Polyline (issue #72). Já vem filtrada por escala/projeto pelo chamador (ver
   // `projectSiteFeatures` em GeoPage). Opcional com default vazio, para os testes existentes.
@@ -422,6 +430,8 @@ export function GoogleMapPanel({
   portDropPreview?: PortDropPreview | null;
   // Pedido de foco: para onde a câmera voa e com que zoom de chegada (ver flyTo).
   focusRequest?: FlyTarget | null;
+  /** Pedido externo (Copilot) para trocar a base cartográfica; `nonce` distingue repetições. */
+  baseLayerRequest?: { layerId: string; nonce: number } | null;
   // Câmera restaurada (issue #182, ver hooks/useGeoViewState) com que o mapa já NASCE
   // posicionado, em vez de nascer no `DEFAULT_CENTER` e voar depois — evita carregar tiles do
   // centro padrão à toa, animação de voo encadeada e o zoom fracionário que `flyTo`
@@ -640,6 +650,11 @@ export function GoogleMapPanel({
     },
     [baseMapLayers, mapLayerCatalog.environmentId, userId],
   );
+
+  useEffect(() => {
+    if (baseLayerRequest) handleBaseLayerChange(baseLayerRequest.layerId);
+    // Só reage a um novo pedido (nonce), não a mudanças em handleBaseLayerChange.
+  }, [baseLayerRequest]);
 
   useEffect(() => {
     setBaseLayerId(readStoredBaseMap(baseMapLayers, mapLayerCatalog.environmentId, userId));
@@ -1327,6 +1342,27 @@ export function GoogleMapPanel({
     // Centralizar fica por conta do voo de câmera (focusRequest → flyTo abaixo): quem
     // largou este rascunho também emitiu um focusRequest para o mesmo ponto.
   }, [draftAddress, mapsReady]);
+
+  // Marcadores dos pontos sem id pedidos pelo Copilot — um efeito próprio, recriado por lote.
+  const copilotMarkerRefs = useRef<Array<{ setMap: (map: null) => void }>>([]);
+  useEffect(() => {
+    const maps = window.google?.maps;
+    for (const marker of copilotMarkerRefs.current) marker.setMap(null);
+    copilotMarkerRefs.current = [];
+    if (!mapsReady || !mapRef.current || !maps) return;
+    copilotMarkerRefs.current = copilotMarkers.map(
+      (point) =>
+        new maps.Marker({
+          position: { lat: point.lat, lng: point.lng },
+          title: point.label ?? '',
+          map: mapRef.current,
+        }),
+    );
+    return () => {
+      for (const marker of copilotMarkerRefs.current) marker.setMap(null);
+      copilotMarkerRefs.current = [];
+    };
+  }, [mapsReady, copilotMarkers]);
 
   // Marker isolado do nó selecionado quando ele cai fora de `nodes` (fora do recorte de
   // escala/viewport) — único ponto que toca `pinnedNode`, nunca o efeito dos N marcadores

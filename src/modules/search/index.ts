@@ -8,4 +8,9 @@ export type {
 export { OracleSearchRepository } from './oracle-repository.js';
 export { SearchService } from './service.js';
 export { ChatGPTProvider } from './chatgpt-provider.js';
-export { GeminiProvider, DEFAULT_GEMINI_ENDPOINT } from './gemini-provider.js';
+export {
+  createCopilotProvider,
+  resolveCopilotModel,
+  DEFAULT_COPILOT_MODEL,
+  DEFAULT_COPILOT_API_ENDPOINT,
+} from './copilot-provider.js';

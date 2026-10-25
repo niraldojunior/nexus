@@ -6,15 +6,6 @@ interface NewResearchPageProps {
   onSessionCreated?: (sessionId: string) => void;
 }
 
-// A primeira opção é o padrão de novas conversas (ver useState abaixo). O prefixo do modelo decide o
-// provider no backend: `gemini*` → Gemini; senão → OpenAI (ver resolveResearchProvider em app.ts).
-const AVAILABLE_MODELS = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
-  { value: 'gpt-4o', label: 'GPT-4o' },
-];
-
 const promptStarters = [
   {
     icon: Sparkles,
@@ -59,7 +50,6 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [model, setModel] = useState(AVAILABLE_MODELS[0].value);
   const greeting = useMemo(getGreeting, []);
 
   const handleSubmit = async () => {
@@ -74,10 +64,8 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
-        body: JSON.stringify({
-          title: input.substring(0, 50),
-          model,
-        }),
+        // O modelo é sempre o COPILOT_MODEL do backend; o cliente não escolhe.
+        body: JSON.stringify({ title: input.substring(0, 50) }),
       });
 
       if (!sessionResponse.ok) {
@@ -144,9 +132,7 @@ export default function NewResearchPage({ onSessionCreated }: NewResearchPagePro
             loading={loading}
             placeholder="Pergunte sobre Locais, Recursos, Serviços, Ordens ou gere uma especificação..."
             size="hero"
-            modelLabel={model}
-            models={AVAILABLE_MODELS}
-            onModelChange={setModel}
+            modelLabel="Nexus"
             autoFocus
           />
         </div>

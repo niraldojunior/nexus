@@ -22,6 +22,9 @@ test('sendMessage posts the expected payload and returns assistant content', asy
   expect(content).toBe('Resposta');
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0]?.[0]).toBe('/v1/chat/completions');
+  // O cliente não escolhe modelo: o backend sempre usa o COPILOT_MODEL.
+  const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+  expect(payload).not.toHaveProperty('model');
 });
 
 test('sendMessage surfaces backend error payloads', async () => {
@@ -48,6 +51,6 @@ test('sendMessage rejects empty assistant responses', async () => {
   vi.stubGlobal('fetch', fetchMock);
 
   await expect(sendMessage([{ role: 'user', content: 'Hello' }])).rejects.toThrow(
-    'A resposta do ChatGPT veio vazia.',
+    'A resposta do Copilot veio vazia.',
   );
 });

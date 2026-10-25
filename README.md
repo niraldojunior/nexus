@@ -138,9 +138,9 @@ A ordem de resolução das variáveis Oracle está em
 
 | Variável                                    | Padrão                      | Descrição                                                                                                           |
 | ------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`                            | —                           | Habilita as rotas de research/chat. Sem ela, o Copilot cai em fallback local sobre `docs/`                          |
-| `OPENAI_MODEL`                              | `gpt-4o-mini`               | Modelo usado nas rotas de chat                                                                                      |
-| `API_ENDPOINT`                              | `https://api.openai.com/v1` | Endpoint compatível com OpenAI                                                                                      |
+| `COPILOT_API_KEY`                           | —                           | Habilita o Copilot (rotas de research/chat). Sem ela, o Copilot cai em fallback local sobre `docs/`                 |
+| `COPILOT_MODEL`                             | `gpt-4o-mini`               | Único modelo do Copilot — não há seletor na UI nem modelo por conversa                                              |
+| `COPILOT_API_ENDPOINT`                      | `https://api.openai.com/v1` | Endpoint compatível com OpenAI (`/chat/completions`), inclusive roteadores de LLM                                   |
 | `VITE_GOOGLE_MAPS_API_KEY`                  | —                           | Mapas do módulo Geo (só a JS API está habilitada)                                                                   |
 | `GOOGLE_MAPS_API_KEY`                       | —                           | Geocoding server-side do Copilot/MCP (`geo.find_nearby_cdos`); sem ela, endereço não cadastrado fica sem coordenada |
 | `GEONET_API_BASE_URL` / `GEONET_TOKEN_URL`  | —                           | Base e OAuth2 do GeographicAddressManagement; ambas obrigatórias para habilitar a comparação Geonet                 |

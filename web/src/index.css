@@ -769,6 +769,61 @@ aside .hover-scroll::-webkit-scrollbar-thumb {
   padding: 0.75rem 0.85rem;
 }
 
+/* Chat na doca da Planta Externa (CopilotChat variant="panel"): mensagens, composer e
+   sugestões um degrau abaixo da página de conversa, para caber nos 396px da doca. */
+.vt-chat-compact .vt-turn .vt-bubble,
+.vt-chat-compact .copilot-message,
+.vt-chat-compact .vt-composer textarea,
+.vt-chat-compact .vt-suggestion {
+  font-size: var(--fs-body);
+}
+
+.vt-chat-compact .vt-turn-time {
+  font-size: var(--fs-xs);
+}
+
+/* Composer da doca: justo a uma linha de texto (28px = linha de 13px + respiro), crescendo
+   com o auto-resize do textarea; o botão de envio acompanha a altura de uma linha. */
+.vt-chat-compact .vt-composer {
+  gap: 6px;
+  padding: 4px 4px 4px 12px;
+}
+
+.vt-chat-compact .vt-composer textarea {
+  min-height: 28px;
+  padding-block: 4px;
+}
+
+.vt-chat-compact .vt-send {
+  width: 28px;
+  height: 28px;
+}
+
+.vt-chat-compact .vt-send svg {
+  width: 15px;
+  height: 15px;
+}
+
+.vt-chat-compact [role='status'] img {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.vt-chat-compact .markdown-content h1 {
+  font-size: 1rem;
+}
+
+.vt-chat-compact .markdown-content h2 {
+  font-size: 0.94rem;
+}
+
+.vt-chat-compact .markdown-content h3,
+.vt-chat-compact .markdown-content h4,
+.vt-chat-compact .markdown-content h5,
+.vt-chat-compact .markdown-content h6 {
+  font-size: var(--fs-body-lg);
+}
+
 .markdown-content pre code {
   border: 0;
   background: transparent;

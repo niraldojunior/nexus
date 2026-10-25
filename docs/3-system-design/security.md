@@ -209,7 +209,7 @@ usam uma credencial DDL separada. Wallet/mTLS e VPD continuam no hardening poste
 | Configuração não sensível | ConfigMap | Substitui o `.env` do laboratório |
 
 > ⚠️ A execução local usa `.env` com `ORACLE_CONNECTION_STRING`, `ORACLE_USER`, `ORACLE_PASSWORD`,
-> `AUTH_TOKEN` e `OPENAI_API_KEY` — aceitável só enquanto a execução for local. O arquivo está no
+> `AUTH_TOKEN` e `COPILOT_API_KEY` — aceitável só enquanto a execução for local. O arquivo está no
 > `.gitignore` e **não deve** ser replicado em OpenShift.
 
 Também na execução local, `src/main.ts` define `NODE_TLS_REJECT_UNAUTHORIZED=0` fora de

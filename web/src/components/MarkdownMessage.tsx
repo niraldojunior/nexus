@@ -1,13 +1,29 @@
 import { isValidElement, useState, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github.css';
 import { normalizeMarkdownResponse } from '../utils/markdown';
 
+export type InternalLink = { kind: 'site' | 'resource'; id: string };
+
 type MarkdownMessageProps = {
   content: string;
+  /** Chamado ao clicar em `nexus://site/<id>` ou `nexus://resource/<id>`. */
+  onInternalLink?: (link: InternalLink) => void;
 };
+
+const INTERNAL_LINK = /^nexus:\/\/(site|resource)\/([A-Za-z0-9:_.-]{1,80})$/;
+
+/** Interpreta um link interno do Nexus; `null` quando não for `nexus://site|resource/<id>`. */
+export const parseInternalLink = (href: string | undefined): InternalLink | null => {
+  const match = href ? INTERNAL_LINK.exec(href) : null;
+  return match ? { kind: match[1] as InternalLink['kind'], id: match[2]! } : null;
+};
+
+/** O react-markdown apaga esquemas fora da lista segura; libera só os links internos válidos. */
+export const markdownUrlTransform = (url: string): string =>
+  INTERNAL_LINK.test(url) ? url : defaultUrlTransform(url);
 
 /** Flattens a React children tree (including rehype-highlight's token spans) back to plain text. */
 const extractText = (node: ReactNode): string => {
@@ -18,7 +34,7 @@ const extractText = (node: ReactNode): string => {
   return '';
 };
 
-export default function MarkdownMessage({ content }: MarkdownMessageProps) {
+export default function MarkdownMessage({ content, onInternalLink }: MarkdownMessageProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const normalizedContent = normalizeMarkdownResponse(content);
 
@@ -35,8 +51,25 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
+        urlTransform={markdownUrlTransform}
         components={{
-          a: ({ ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+          a: ({ node: _node, ...props }) => {
+            const internal = onInternalLink ? parseInternalLink(props.href) : null;
+            if (internal) {
+              return (
+                <a
+                  {...props}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onInternalLink?.(internal);
+                  }}
+                />
+              );
+            }
+            // Sem handler, um nexus:// não tem destino: renderiza só o texto.
+            if (props.href?.startsWith('nexus://')) return <span>{props.children}</span>;
+            return <a {...props} target="_blank" rel="noopener noreferrer" />;
+          },
           pre: ({ children }) => {
             const rawCode = extractText(children);
 

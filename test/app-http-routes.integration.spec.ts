@@ -105,9 +105,9 @@ test('Searches API creates, lists, reads, updates and deletes searches', async (
   }
 });
 
-test('Chat completions route falls back to local knowledge provider without an OpenAI key', async () => {
-  const previousKey = process.env.OPENAI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
+test('Chat completions route falls back to local knowledge provider without COPILOT_API_KEY', async () => {
+  const previousKey = process.env.COPILOT_API_KEY;
+  delete process.env.COPILOT_API_KEY;
 
   const app = await startHttpTestApp();
   try {
@@ -125,6 +125,6 @@ test('Chat completions route falls back to local knowledge provider without an O
     assert.equal((invalid.body as { error: string }).error, 'INVALID_MESSAGE');
   } finally {
     await app.cleanup();
-    if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
+    if (previousKey !== undefined) process.env.COPILOT_API_KEY = previousKey;
   }
 });

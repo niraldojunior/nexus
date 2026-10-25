@@ -1,22 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, PencilLine, Trash2 } from 'lucide-react';
-
-interface ResearchSession {
-  '@type': 'ResearchSession';
-  id: string;
-  href: string;
-  userId: string;
-  title: string;
-  description?: string;
-  context?: string;
-  status: 'active' | 'archived' | 'deleted';
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  messages?: unknown[];
-  createdAt: string;
-  updatedAt: string;
-}
+import {
+  archiveResearchSession,
+  listResearchSessions,
+  updateResearchSessionTitle,
+  type ResearchSession,
+} from '../services/researchApi';
 
 /**
  * Modal de confirmação de arquivamento — popover flutuante do design system
@@ -109,22 +98,7 @@ export const ResearchHistoryPage: React.FC<{
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/v1/research/sessions', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
-      });
-
-      if (!response.ok) throw new Error('Erro ao carregar conversas');
-
-      const data = await response.json();
-      setSessions(
-        data
-          .filter((s: ResearchSession) => s.status === 'active')
-          .sort(
-            (a: ResearchSession, b: ResearchSession) =>
-              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-          )
-          .slice(0, 20), // Only 20 most recent
-      );
+      setSessions((await listResearchSessions()).slice(0, 20)); // Only 20 most recent
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
       console.error('Error loading recent sessions:', err);
@@ -145,12 +119,7 @@ export const ResearchHistoryPage: React.FC<{
     const sessionId = archiveTarget.id;
 
     try {
-      const response = await fetch(`/v1/research/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` },
-      });
-
-      if (!response.ok) throw new Error(`Falha ao arquivar conversa: ${response.status}`);
+      await archiveResearchSession(sessionId);
       setActionError(null);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
@@ -187,18 +156,7 @@ export const ResearchHistoryPage: React.FC<{
     }
 
     try {
-      const response = await fetch(`/v1/research/sessions/${sessionId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
-        },
-        body: JSON.stringify({ title: nextTitle }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Falha ao atualizar conversa: ${response.status}`);
-      }
+      await updateResearchSessionTitle(sessionId, nextTitle);
 
       setSessions((prev) =>
         prev.map((session) =>

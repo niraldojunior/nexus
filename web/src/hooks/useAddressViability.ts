@@ -44,7 +44,7 @@ export type UseAddressViabilityResult = {
 
 // Requisições em voo por endereço. O React.StrictMode monta o componente duas vezes e o
 // backend de dev atende em série — sem deduplicar, abrir a aba custa o dobro (mesmo
-// padrão de useGeoDirectory/useGeoTree).
+// padrão de useGeoDirectory).
 const inFlight = new Map<string, Promise<ViabilityCandidate[]>>();
 
 const addressKey = ([lng, lat]: LngLat): string => `${lng.toFixed(6)},${lat.toFixed(6)}`;

@@ -22,14 +22,24 @@ import { InMemoryEntityRepository } from '../persistence/in-memory-entity-reposi
 import type { DatabaseClient } from '../persistence/database-client.js';
 import { createDatabaseClient } from '../persistence/database-factory.js';
 import { createCanonicalId } from '../utils/canonical-id.js';
-import { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
-import { GeminiProvider } from '../../modules/search/gemini-provider.js';
+import type { ChatGPTProvider } from '../../modules/search/chatgpt-provider.js';
 import { LocalKnowledgeProvider } from '../../modules/search/local-knowledge-provider.js';
 import {
-  resolveDefaultModel,
-  resolveResearchProvider,
-} from '../../modules/search/provider-router.js';
+  createCopilotProvider,
+  resolveCopilotModel,
+} from '../../modules/search/copilot-provider.js';
 import { prependNexusCopilotContext } from '../../modules/search/nexus-copilot-context.js';
+import {
+  buildCopilotClientContextMessage,
+  sanitizeCopilotClientContext,
+  type CopilotClientContext,
+} from '../../modules/search/copilot-client-context.js';
+import {
+  executeMapClientTool,
+  isMapClientTool,
+  MAP_CLIENT_TOOLS,
+  type MapClientAction,
+} from '../../modules/search/map-client-tools.js';
 import { SearchService } from '../../modules/search/service.js';
 import { createNexusMcpModule } from '../../modules/mcp/index.js';
 import { handleJsonRpcMessage, type JsonRpcRequest } from '../../modules/mcp/jsonrpc.js';
@@ -75,8 +85,8 @@ import type {
   AddMessageInput,
   LLMRequest,
   LLMResponse,
+  LLMToolDefinition,
   ResearchMessage,
-  ResearchSession,
 } from '../../modules/search/domain.js';
 import type { TmfEventQuery } from '../tmf/index.js';
 import type { EventService } from '../tmf/index.js';
@@ -368,13 +378,9 @@ const routeRequest = async ({
     serviceService,
     orderService,
   } = runtime;
-  const apiKey = process.env.OPENAI_API_KEY;
-  const apiEndpoint = process.env.API_ENDPOINT || 'https://api.openai.com/v1';
-  const chatGptProvider = apiKey ? new ChatGPTProvider(apiKey, apiEndpoint) : null;
-  const geminiKey = process.env.GEMINI_API_KEY;
-  const geminiProvider = geminiKey
-    ? new GeminiProvider(geminiKey, process.env.GEMINI_API_ENDPOINT)
-    : null;
+  // Copilot usa um único provider/modelo, configurado só por COPILOT_API_KEY/_MODEL/_API_ENDPOINT.
+  const copilotProvider = createCopilotProvider();
+  const copilotModel = resolveCopilotModel();
   const localKnowledgeProvider = new LocalKnowledgeProvider();
   const mcpModule = createNexusMcpModule(runtime);
 
@@ -523,27 +529,26 @@ const routeRequest = async ({
 
     const messages = prependNexusCopilotContext(parsed.messages);
 
-    const chatProvider = resolveResearchProvider(parsed.model, { chatGptProvider, geminiProvider });
-    if (!chatProvider) {
+    if (!copilotProvider) {
       logger.warn(
-        { model: parsed.model },
+        { model: copilotModel },
         'No LLM provider configured; returning fallback completion',
       );
-      const fallbackCompletion = await localKnowledgeProvider.complete(messages, parsed.model);
-      return sendFallbackChatCompletion(response, parsed.model, fallbackCompletion.content);
+      const fallbackCompletion = await localKnowledgeProvider.complete(messages, copilotModel);
+      return sendFallbackChatCompletion(response, copilotModel, fallbackCompletion.content);
     }
 
     try {
-      const completion = await chatProvider.complete(
+      const completion = await copilotProvider.complete(
         messages,
-        parsed.model,
+        copilotModel,
         parsed.temperature,
         parsed.maxTokens,
       );
 
       return sendJson(response, 200, {
         object: 'chat.completion',
-        model: parsed.model,
+        model: copilotModel,
         choices: [
           {
             index: 0,
@@ -563,9 +568,9 @@ const routeRequest = async ({
       });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.warn({ error: errorMsg }, 'ChatGPT request failed; returning fallback completion');
-      const fallbackCompletion = await localKnowledgeProvider.complete(messages, parsed.model);
-      return sendFallbackChatCompletion(response, parsed.model, fallbackCompletion.content);
+      logger.warn({ error: errorMsg }, 'Copilot request failed; returning fallback completion');
+      const fallbackCompletion = await localKnowledgeProvider.complete(messages, copilotModel);
+      return sendFallbackChatCompletion(response, copilotModel, fallbackCompletion.content);
     }
   }
 
@@ -1009,8 +1014,8 @@ const routeRequest = async ({
       runtime,
       searchService,
       researchRepository,
-      chatGptProvider,
-      geminiProvider,
+      copilotProvider,
+      copilotModel,
       localKnowledgeProvider,
       mcpModule,
       llmToolCatalog,
@@ -6228,21 +6233,22 @@ const resolveGeoEntityRoute = (pathname: string): GeoEntityRoute | undefined => 
 };
 
 /**
- * Builds the ChatGPT-with-local-fallback provider callback shared by the buffered and
+ * Builds the Copilot-with-local-fallback provider callback shared by the buffered and
  * streaming "send message" routes. Streaming is opt-in per call via `llmRequest.onDelta`/
- * `llmRequest.signal`, which the service layer attaches to each request it builds.
+ * `llmRequest.signal`, which the service layer attaches to each request it builds. The model is
+ * always `COPILOT_MODEL`: whatever an older session persisted in `session.model` is ignored.
  */
 const createLlmProvider = (
   provider: ChatGPTProvider | null,
+  model: string,
   localKnowledgeProvider: LocalKnowledgeProvider,
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>,
-  session: ResearchSession,
   logger: Logger,
 ): ((llmRequest: LLMRequest) => Promise<LLMResponse>) =>
   provider
     ? async (llmRequest) => {
         try {
-          const providerResponse = await provider.invoke(llmRequest);
+          const providerResponse = await provider.invoke({ ...llmRequest, model });
           if (!providerResponse.toolCalls) {
             return providerResponse;
           }
@@ -6259,7 +6265,7 @@ const createLlmProvider = (
           return localKnowledgeProvider
             .invoke({
               ...llmRequest,
-              model: `fallback:${session.model ?? 'nexus-local-docs'}`,
+              model: `fallback:${model}`,
             })
             .then((fallback) => ({
               ...fallback,
@@ -6273,8 +6279,77 @@ const createLlmProvider = (
     : async (llmRequest) =>
         localKnowledgeProvider.invoke({
           ...llmRequest,
-          model: `fallback:${session.model ?? 'nexus-local-docs'}`,
+          model: 'fallback:nexus-local-docs',
         });
+
+/**
+ * Configuração de ferramentas de uma mensagem do Copilot, compartilhada pelas rotas buffered e
+ * streaming. Sem provedor real não há tools. Com `clientContext` do mapa (só no stream), as
+ * ferramentas `map_*` entram nesta requisição — fora do catálogo cacheado e do registro MCP — e
+ * cada chamada vira um `client_action` entregue ao navegador por `emitClientAction`.
+ */
+const buildResearchToolOptions = ({
+  activeProvider,
+  llmToolCatalog,
+  mcpModule,
+  runtime,
+  sessionId,
+  requestContext,
+  clientContext,
+  emitClientAction,
+}: {
+  activeProvider: ChatGPTProvider | null;
+  llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
+  mcpModule: ReturnType<typeof createNexusMcpModule>;
+  runtime: NexusRuntime;
+  sessionId: string;
+  requestContext: RequestContext;
+  clientContext?: CopilotClientContext | null;
+  emitClientAction?: (action: MapClientAction) => void;
+}): {
+  tools?: LLMToolDefinition[];
+  executeTool?: (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+  maxToolCalls?: number;
+  ephemeralSystemMessage?: string;
+} => {
+  // O fallback local não chama tools, então sem provedor real não há instruções de mapa.
+  if (!activeProvider) return {};
+  const mapContext = clientContext?.surface === 'geo-map' ? clientContext : null;
+  const emit = mapContext ? emitClientAction : undefined;
+
+  const resolvePlace = async (
+    target: { siteId: string } | { resourceId: string },
+  ): Promise<string | undefined> => {
+    if ('siteId' in target) {
+      const site = await runtime.geoService.getSite(target.siteId, requestContext);
+      return site ? (site.name ?? target.siteId) : undefined;
+    }
+    const resource = await runtime.resourceService.getResource(target.resourceId, requestContext);
+    return resource ? (resource.name ?? target.resourceId) : undefined;
+  };
+
+  return {
+    tools: emit ? [...llmToolCatalog.tools, ...MAP_CLIENT_TOOLS] : llmToolCatalog.tools,
+    executeTool: async (toolName, input) => {
+      if (emit && isMapClientTool(toolName)) {
+        return await executeMapClientTool(toolName, input, { resolvePlace, emit });
+      }
+      return await mcpModule.registry.executeTool(
+        toolName,
+        input,
+        runtime.createToolContext({
+          executionMode: 'internal-chat',
+          sessionId,
+          requestContext,
+        }),
+      );
+    },
+    maxToolCalls: 8,
+    ...(mapContext && emit
+      ? { ephemeralSystemMessage: buildCopilotClientContextMessage(mapContext) }
+      : {}),
+  };
+};
 
 const routeResearchRequest = async ({
   request,
@@ -6283,8 +6358,8 @@ const routeResearchRequest = async ({
   runtime,
   searchService,
   researchRepository,
-  chatGptProvider,
-  geminiProvider,
+  copilotProvider,
+  copilotModel,
   localKnowledgeProvider,
   mcpModule,
   llmToolCatalog,
@@ -6298,8 +6373,8 @@ const routeResearchRequest = async ({
   runtime: NexusRuntime;
   searchService: SearchService;
   researchRepository: ResearchMessageRepository;
-  chatGptProvider: ChatGPTProvider | null;
-  geminiProvider: GeminiProvider | null;
+  copilotProvider: ChatGPTProvider | null;
+  copilotModel: string;
   localKnowledgeProvider: LocalKnowledgeProvider;
   mcpModule: ReturnType<typeof createNexusMcpModule>;
   llmToolCatalog: ReturnType<typeof buildLlmToolCatalog>;
@@ -6325,7 +6400,8 @@ const routeResearchRequest = async ({
     const body = await readBody(request);
     const sessionInput: Parameters<SearchService['createSession']>[1] = {
       title: (body.title || 'New Chat') as string,
-      model: (body.model || resolveDefaultModel()) as string,
+      // Informativo: o modelo efetivo é sempre COPILOT_MODEL, nunca escolhido pelo cliente.
+      model: copilotModel,
     };
 
     if (body.description !== undefined) {
@@ -6473,15 +6549,12 @@ const routeResearchRequest = async ({
       response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    const activeProvider = resolveResearchProvider(session.model, {
-      chatGptProvider,
-      geminiProvider,
-    });
+    const activeProvider = copilotProvider;
     const llmProvider = createLlmProvider(
       activeProvider,
+      copilotModel,
       localKnowledgeProvider,
       llmToolCatalog,
-      session,
       logger,
     );
 
@@ -6490,22 +6563,16 @@ const routeResearchRequest = async ({
     try {
       const { userMessage: userMsg, assistantMessage } =
         await searchService.addMessageAndGetResponse(sessionId, userMessage, llmProvider, {
-          ...(activeProvider
-            ? {
-                tools: llmToolCatalog.tools,
-                executeTool: async (toolName, input) =>
-                  await mcpModule.registry.executeTool(
-                    toolName,
-                    input,
-                    runtime.createToolContext({
-                      executionMode: 'internal-chat',
-                      sessionId,
-                      requestContext: context,
-                    }),
-                  ),
-                maxToolCalls: 8,
-              }
-            : {}),
+          ...buildResearchToolOptions({
+            activeProvider,
+            llmToolCatalog,
+            mcpModule,
+            runtime,
+            sessionId,
+            requestContext: context,
+            clientContext: sanitizeCopilotClientContext(body.clientContext),
+            emitClientAction: (action) => sendEvent('client_action', action),
+          }),
           onDelta: (text) => sendEvent('delta', { text }),
           signal: abortController.signal,
         });
@@ -6536,15 +6603,12 @@ const routeResearchRequest = async ({
     llmRateLimiter.check(user.id);
     llmRateLimiter.record(user.id);
 
-    const activeProvider = resolveResearchProvider(session.model, {
-      chatGptProvider,
-      geminiProvider,
-    });
+    const activeProvider = copilotProvider;
     const llmProvider = createLlmProvider(
       activeProvider,
+      copilotModel,
       localKnowledgeProvider,
       llmToolCatalog,
-      session,
       logger,
     );
 
@@ -6552,22 +6616,15 @@ const routeResearchRequest = async ({
       sessionId,
       userMessage,
       llmProvider,
-      activeProvider
-        ? {
-            tools: llmToolCatalog.tools,
-            executeTool: async (toolName, input) =>
-              await mcpModule.registry.executeTool(
-                toolName,
-                input,
-                runtime.createToolContext({
-                  executionMode: 'internal-chat',
-                  sessionId,
-                  requestContext: context,
-                }),
-              ),
-            maxToolCalls: 8,
-          }
-        : undefined,
+      // Sem stream não há canal para `client_action`: esta rota não oferece ferramentas de mapa.
+      buildResearchToolOptions({
+        activeProvider,
+        llmToolCatalog,
+        mcpModule,
+        runtime,
+        sessionId,
+        requestContext: context,
+      }),
     );
 
     return sendJson(response, 201, {
@@ -6686,7 +6743,6 @@ const parseOpenAIChatRequest = (
   body: OpenAIChatRequestBody,
 ): {
   messages: OpenAIChatMessage[];
-  model: string;
   temperature: number;
   maxTokens: number;
 } | null => {
@@ -6714,20 +6770,12 @@ const parseOpenAIChatRequest = (
     return null;
   }
 
+  // `body.model` é ignorado: o Copilot sempre responde com COPILOT_MODEL.
   return {
     messages,
-    model: normalizeOpenAIModel(body.model),
     temperature: normalizeNumber(body.temperature, 0.7),
     maxTokens: normalizeNumber(body.max_tokens, 2000),
   };
-};
-
-const normalizeOpenAIModel = (value: unknown): string => {
-  if (typeof value === 'string' && value.trim()) {
-    return value.trim();
-  }
-
-  return resolveDefaultModel();
 };
 
 const normalizeNumber = (value: unknown, fallback: number): number => {

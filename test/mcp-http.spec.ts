@@ -10,7 +10,7 @@ if (oracleConfigured) process.env.DATABASE_AUTO_SCHEMA = 'true';
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  delete process.env.OPENAI_API_KEY;
+  delete process.env.COPILOT_API_KEY;
 });
 
 test.skipIf(!oracleConfigured)(
@@ -94,7 +94,7 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'Copilot consulta sites via MCP e devolve dados reais do inventario',
   async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.COPILOT_API_KEY = 'test-key';
     let sawSanitizedToolCatalog = false;
 
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -193,7 +193,7 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'Copilot prepara cadastro de PhysicalResource, exige confirmacao e faz commit depois',
   async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.COPILOT_API_KEY = 'test-key';
     const serialNumber = `ONT-${Date.now()}`;
 
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -523,7 +523,7 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'Copilot cadastra modelo de ONT resolvendo fabricante sem pedir ID',
   async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.COPILOT_API_KEY = 'test-key';
 
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
@@ -729,7 +729,7 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'Copilot cadastra varios modelos de ONT em lote e mostra a lista completa na confirmacao',
   async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.COPILOT_API_KEY = 'test-key';
 
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
@@ -929,7 +929,7 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'Copilot remove modelo de ONT usando o mesmo fluxo de confirmacao',
   async () => {
-    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.COPILOT_API_KEY = 'test-key';
     const suffix = Date.now();
     const manufacturerName = `ZTE-${suffix}`;
     const model = `F6201BV9.3.12-${suffix}`;
@@ -1174,10 +1174,8 @@ test.skipIf(!oracleConfigured)(
 test.skipIf(!oracleConfigured)(
   'Fallback local sem provedores externos nao executa ferramentas MCP',
   async () => {
-    const openAiApiKey = process.env.OPENAI_API_KEY;
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
+    const copilotApiKey = process.env.COPILOT_API_KEY;
+    delete process.env.COPILOT_API_KEY;
     const app = await startHttpTestApp();
 
     try {
@@ -1198,10 +1196,8 @@ test.skipIf(!oracleConfigured)(
       assert.equal(assistant.metadata?.toolExecutions, undefined);
     } finally {
       await app.cleanup();
-      if (openAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = openAiApiKey;
-      if (geminiApiKey === undefined) delete process.env.GEMINI_API_KEY;
-      else process.env.GEMINI_API_KEY = geminiApiKey;
+      if (copilotApiKey === undefined) delete process.env.COPILOT_API_KEY;
+      else process.env.COPILOT_API_KEY = copilotApiKey;
     }
   },
 );

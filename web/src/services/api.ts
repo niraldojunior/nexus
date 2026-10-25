@@ -6,7 +6,6 @@ type ChatMessage = {
 };
 
 const API_BASE_URL = '/v1';
-const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 
 type ChatCompletionResponse = {
   choices?: Array<{
@@ -25,8 +24,8 @@ export const sendMessage = async (messages: ChatMessage[]) => {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${bearerToken()}`,
     },
+    // Sem `model`: o backend sempre usa o COPILOT_MODEL configurado.
     body: JSON.stringify({
-      model: DEFAULT_OPENAI_MODEL,
       messages,
       temperature: 0.7,
       max_tokens: 2000,
@@ -42,7 +41,7 @@ export const sendMessage = async (messages: ChatMessage[]) => {
 
   const assistantMessage = data?.choices?.[0]?.message?.content;
   if (!assistantMessage) {
-    throw new Error('A resposta do ChatGPT veio vazia.');
+    throw new Error('A resposta do Copilot veio vazia.');
   }
 
   return assistantMessage as string;

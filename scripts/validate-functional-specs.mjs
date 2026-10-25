@@ -11,7 +11,7 @@ const specs = [
     prefix: 'REQ-MOD01-',
     decisionPrefix: 'D-GEO-',
     count: 18,
-    version: '1.33',
+    version: '1.34',
     illustrative: new Set(),
   },
   {

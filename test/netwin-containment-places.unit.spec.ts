@@ -7,6 +7,7 @@ import {
   netwinInternalRackId,
   netwinInternalSubrackId,
   netwinLocationId,
+  netwinRelationshipId,
   NEXUS_NETWIN_NAMESPACE,
 } from '../src/scripts/netwin-migration/identity.js';
 import type { MigrationContext } from '../src/scripts/netwin-migration/context.js';
@@ -195,11 +196,13 @@ describe('phase2-station-internal-plant: regra canônica de place_id', () => {
           }
         }
         if (sql.includes('resource_relationship')) {
+          // columns: id, resource_from_id, resource_to_id, relationship_type
           for (const row of data) {
             capturedRelationships.push({
-              resource_from_id: row[0],
-              resource_to_id: row[1],
-              relationship_type: row[2],
+              id: row[0],
+              resource_from_id: row[1],
+              resource_to_id: row[2],
+              relationship_type: row[3],
             });
           }
         }
@@ -255,6 +258,7 @@ describe('phase2-station-internal-plant: regra canônica de place_id', () => {
     // Relação de contenção
     expect(capturedRelationships).toHaveLength(1);
     expect(capturedRelationships[0]).toEqual({
+      id: netwinRelationshipId(String(rack?.id), String(subrack?.id), 'containsAsChild'),
       resource_from_id: rack?.id,
       resource_to_id: subrack?.id,
       relationship_type: 'containsAsChild',

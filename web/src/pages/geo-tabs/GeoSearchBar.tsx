@@ -12,11 +12,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import {
-  fetchSitesByAddress,
-  fetchTreeSearch,
-  type GeoTreeNode,
-} from '../../services/geoTreeApi';
+import { fetchSitesByAddress, fetchTreeSearch, type GeoTreeNode } from '../../services/geoTreeApi';
 import {
   fetchAddressPredictions,
   geocodeAddress,
@@ -29,8 +25,8 @@ import { useGeoSearchHistory } from '../../hooks/useGeoSearchHistory';
 import { useVisualIdentityPreviewUrl } from '../../hooks/useVisualIdentityPreviewUrl';
 import { DOCK_SEARCH_WIDTH_CLASS } from './dock';
 import type { ResolvedOperationalIcon } from '../../utils/pointIconPreview';
-import { HierarchyIcon } from './HierarchyIcon';
-import { NodeIcon } from './HierarchyTreeView';
+import { CopilotIcon } from '../../components/icons/CopilotIcon';
+import { NodeIcon } from './NodeIcon';
 import {
   GEO_SEARCH_SCOPES,
   nodeMatchesScope,
@@ -59,15 +55,15 @@ export type GeoSearchBarProps = {
   // chamador decide como mostrar (ver modal de erro em GeoPage).
   onAddressError: (error: AddressSearchError) => void;
   // Clicar no X da caixa não só limpa o texto: é o gesto de desseleção — fecha o
-  // painel aberto, tira o alfinete do mapa e devolve a hierarquia (ver onDeselect em
-  // GeoPage). Sem ele, o botão só apaga o texto e os resultados. Opcional para a
+  // painel aberto, tira o alfinete do mapa e devolve o painel lateral (ver onDeselect
+  // em GeoPage). Sem ele, o botão só apaga o texto e os resultados. Opcional para a
   // barra funcionar isolada (testes, usos sem painel).
   onClear?: () => void;
-  // Estado do painel de hierarquia — é a barra que o abre e fecha quando não há texto
-  // nem seleção (ver o slot direito). `true` = hierarquia aberta (o slot mostra o X de
-  // fechar); `false` = fechada (o slot mostra o ListTree de abrir).
-  hierarchyOpen?: boolean;
-  onToggleHierarchy?: () => void;
+  // Estado do painel lateral (Copilot | Projetos) — é a barra que o abre e fecha quando não há texto
+  // nem seleção (ver o slot direito). `true` = painel aberto (o slot mostra o X de
+  // fechar); `false` = fechada (o slot mostra o ícone do Copilot de abrir).
+  sidePanelOpen?: boolean;
+  onToggleSidePanel?: () => void;
   // Só no mobile: a marca do Nexus no início da barra abre o menu principal do app,
   // no lugar do botão flutuante que foi removido nesta página (ver GeoPage/App).
   onOpenMainMenu?: () => void;
@@ -142,8 +138,8 @@ export function GeoSearchBar({
   onAddressFound,
   onAddressError,
   onClear,
-  hierarchyOpen = false,
-  onToggleHierarchy,
+  sidePanelOpen = false,
+  onToggleSidePanel,
   onOpenMainMenu,
   isMobile,
   selectedNodeIcon,
@@ -358,7 +354,7 @@ export function GeoSearchBar({
   // Fecha a picklist de resultados/histórico em clique fora da barra ou Escape — mesmo
   // padrão do menu de filtro (scopeMenuRef) e de MapBaseLayerSelector. Antes, só o Escape
   // com o input focado fechava (handleKeyDown); clicar em qualquer outro ponto da tela
-  // (o mapa, a hierarquia) deixava o dropdown aberto por cima do resto da página.
+  // (o mapa ou o painel lateral) deixava o dropdown aberto por cima do resto da página.
   useEffect(() => {
     if (!showDropdown) return;
     const handlePointerDown = (event: MouseEvent) => {
@@ -433,7 +429,8 @@ export function GeoSearchBar({
       onAddressError({
         term: address.label,
         status: 'INVENTORY_LOOKUP_ERROR',
-        message: error instanceof Error ? error.message : 'Não foi possível consultar os Locais do Nexus.',
+        message:
+          error instanceof Error ? error.message : 'Não foi possível consultar os Locais do Nexus.',
       });
       closeDropdown();
     } finally {
@@ -556,17 +553,17 @@ export function GeoSearchBar({
   const activeScope = GEO_SEARCH_SCOPES.find((candidate) => candidate.id === scope);
 
   // Quando há texto ou seleção, o X limpa a busca (comportamento antigo). Sem nada
-  // digitado nem selecionado, o slot direito vira o controle da hierarquia: um X
-  // quando ela está aberta (fecha), um ListTree quando fechada (abre).
+  // digitado nem selecionado, o slot direito vira o controle do painel: um X quando
+  // ele está aberto (fecha), o ícone do Copilot quando fechado (abre).
   const hasSearchToClear = Boolean(query) || Boolean(selection);
-  const showClose = hasSearchToClear || hierarchyOpen;
+  const showClose = hasSearchToClear || sidePanelOpen;
   // A marca do Nexus (abre o menu principal) só aparece no mobile — no desktop o menu
   // fica na barra lateral persistente.
   const showMenuMark = Boolean(isMobile && onOpenMainMenu);
 
   const wrapperClass = `absolute top-3 max-w-[calc(100%-1.5rem)] ${
     isMobile ? 'left-3 right-3' : `left-3 ${DOCK_SEARCH_WIDTH_CLASS}`
-  } ${isMobile && hierarchyOpen ? 'z-50' : 'z-30'}`;
+  } ${isMobile && sidePanelOpen ? 'z-50' : 'z-30'}`;
 
   return (
     <div className={wrapperClass}>
@@ -715,27 +712,27 @@ export function GeoSearchBar({
                     // barra utilizável quando o chamador não passa onClear.
                     onClear?.();
                   } else {
-                    // Sem texto nem seleção, o X só fecha o painel de hierarquia (ver
-                    // GeoPage) — o slot volta a mostrar o ListTree de abrir.
-                    onToggleHierarchy?.();
+                    // Sem texto nem seleção, o X só fecha o painel lateral (ver
+                    // GeoPage) — o slot volta a mostrar o ícone do Copilot.
+                    onToggleSidePanel?.();
                   }
                 }}
                 className="flex h-8 w-8 items-center justify-center rounded-full text-app-muted transition vt-hover-muted"
-                aria-label={hasSearchToClear ? 'Limpar busca' : 'Fechar hierarquia'}
+                aria-label={hasSearchToClear ? 'Limpar busca' : 'Fechar Copilot'}
               >
                 <X className="h-4 w-4" />
               </button>
-            ) : onToggleHierarchy ? (
+            ) : onToggleSidePanel ? (
               // Fundo transparente (o slot fica leve, sem moldura); quem carrega a leitura é
-              // o ícone próprio, colorido, de "lista em árvore" (ver HierarchyIcon).
+              // o ícone próprio, colorido, do Copilot (ver CopilotIcon).
               <button
                 type="button"
-                onClick={onToggleHierarchy}
+                onClick={onToggleSidePanel}
                 className="flex h-8 w-8 items-center justify-center rounded-full transition vt-hover-muted"
-                aria-label="Abrir hierarquia"
-                title="Hierarquia"
+                aria-label="Abrir Copilot"
+                title="Copilot"
               >
-                <HierarchyIcon className="h-6 w-6" />
+                <CopilotIcon className="h-6 w-6" />
               </button>
             ) : null}
             <span className="mx-1 h-6 w-px bg-app-border" />

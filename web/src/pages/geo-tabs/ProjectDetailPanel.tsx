@@ -37,7 +37,7 @@ import {
 import type { GeoTreeNode } from '../../services/geoTreeApi';
 import { ProjectIcon } from './ProjectIcon';
 import { Modal } from './Modal';
-import { NodeIcon } from './HierarchyTreeView';
+import { NodeIcon } from './NodeIcon';
 import { StatusBadge } from './StatusBadge';
 import { OverlayScrollArea } from '../../components/OverlayScrollArea';
 import {
@@ -92,9 +92,7 @@ export type ProjectDetailPanelProps = {
   // somem.
   canEdit: boolean;
   onUpdate: (
-    patch: Partial<
-      Pick<Project, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>
-    >,
+    patch: Partial<Pick<Project, 'name' | 'description' | 'iconDataUrl' | 'status' | 'statusCode'>>,
   ) => Promise<{ siteCascade?: ProjectSiteCascade } | void>;
   onDelete: () => Promise<ProjectDeleteSummary>;
   onBack: () => void;
@@ -382,7 +380,10 @@ export function ProjectDetailPanel({
           </button>
           {menuOpen ? (
             <>
-              <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setMenuOpen(false)} />
+              <div
+                className="fixed inset-0 z-[var(--z-dropdown)]"
+                onClick={() => setMenuOpen(false)}
+              />
               <div
                 role="menu"
                 className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-48 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"
@@ -558,7 +559,7 @@ export function ProjectDetailPanel({
       ))
     );
 
-  // Mesmo padrão de "Carregar mais" da Hierarquia (HierarchyTreeView/useGeoTree.loadMore):
+  // Mesmo padrão de "Carregar mais" da lista de locais:
   // reabre a próxima página a partir do offset já carregado — nunca refaz a lista inteira.
   const loadMoreSitesButton =
     hasMoreSites && sites.length > 0 ? (

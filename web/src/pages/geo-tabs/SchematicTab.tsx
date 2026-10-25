@@ -7,7 +7,7 @@ import { treeNodeRoute, type GeoSchematicHop, type GeoTreeNode } from '../../ser
 import { pathLengthMeters, stitchSchematicPath } from '../../utils/dropSimulation';
 import { statusBadgeMeta } from '../../utils/geoLabels';
 import { shortSubstatus } from '../../utils/substatus';
-import { NodeIcon } from './HierarchyTreeView';
+import { NodeIcon } from './NodeIcon';
 import type { DropSimulation } from './ViabilityTab';
 
 export type SchematicTabProps = {

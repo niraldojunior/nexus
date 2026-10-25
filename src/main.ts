@@ -4,7 +4,7 @@ import { createLogger } from './shared/logging/logger.js';
 import { config as loadEnv } from 'dotenv';
 
 // Load local .env when the server starts directly via `node dist/src/main.js`
-// so research/chat routes can see OPENAI_API_KEY outside the SQLite dev helper.
+// so research/chat routes can see COPILOT_* outside the SQLite dev helper.
 loadEnv();
 
 // Match the SQLite dev helper: many corporate environments intercept TLS with

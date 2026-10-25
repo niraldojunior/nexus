@@ -17,7 +17,7 @@ export type ProjectListViewProps = {
 };
 
 /**
- * Conteúdo da aba Projetos do HierarchySidebar, no espírito do painel "Salvos" do Google
+ * Conteúdo da aba Projetos do GeoSidePanel, no espírito do painel "Salvos" do Google
  * Maps: botão de criar no topo e a lista de projetos abaixo, cada um com ícone, nome,
  * volume de locais e um botão de excluir que aparece no hover.
  */

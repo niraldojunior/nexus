@@ -105,6 +105,11 @@ export class SearchService {
       maxToolCalls?: number;
       onDelta?: (textChunk: string) => void;
       signal?: AbortSignal;
+      /**
+       * Instruções `system` desta requisição apenas (ex.: estado do mapa da UI). Somam-se ao
+       * contexto da sessão no transcript enviado ao provedor e nunca são persistidas.
+       */
+      ephemeralSystemMessage?: string;
     },
   ): Promise<{ userMessage: ResearchMessage; assistantMessage: ResearchMessage }> {
     const session = await this.repository.getSession(sessionId);
@@ -121,12 +126,18 @@ export class SearchService {
     let llmResponse: LLMResponse;
     const toolExecutions: ToolExecutionRecord[] = [];
     const context = session.context?.trim().length ? session.context : getNexusCopilotContext();
-    const transcript = buildTranscript(context, session.messages || [], userMessage);
+    const transcript = buildTranscript(
+      context,
+      session.messages || [],
+      userMessage,
+      options?.ephemeralSystemMessage,
+    );
     try {
       const llmRequest: LLMRequest = {
         context,
         transcript,
         latestUserMessage: userMessage,
+        // Valor de referência: a rota HTTP substitui pelo COPILOT_MODEL antes de chamar o provider.
         model: session.model || 'gpt-4o-mini',
         temperature: session.temperature ?? 0.7,
         maxTokens: session.maxTokens ?? 2000,
@@ -290,17 +301,23 @@ const buildTranscript = (
   context: string,
   messages: ResearchMessage[],
   latestUserMessage: string,
-): LLMConversationMessage[] => [
-  ...(context ? [{ role: 'system' as const, content: context }] : []),
-  ...messages.map((message) => ({
-    role: message.role as 'system' | 'user' | 'assistant',
-    content: message.content,
-  })),
-  {
-    role: 'user' as const,
-    content: latestUserMessage,
-  },
-];
+  ephemeralSystemMessage?: string,
+): LLMConversationMessage[] => {
+  // O contexto efêmero é anexado à mensagem `system` inicial (remontada a cada requisição) em vez
+  // de virar um `system` no meio do histórico, que nem todo provedor OpenAI-compat aceita.
+  const system = [context, ephemeralSystemMessage?.trim() ?? ''].filter(Boolean).join('\n\n');
+  return [
+    ...(system ? [{ role: 'system' as const, content: system }] : []),
+    ...messages.map((message) => ({
+      role: message.role as 'system' | 'user' | 'assistant',
+      content: message.content,
+    })),
+    {
+      role: 'user' as const,
+      content: latestUserMessage,
+    },
+  ];
+};
 
 type PendingConfirmation = {
   confirmationToken: string;

@@ -4,7 +4,7 @@ import { patchJson, postJson, type GeoSpec } from '../../services/geoApi';
 import { fetchTreeChildren, type GeoTreeNode } from '../../services/geoTreeApi';
 import { useSiteChildren } from '../../hooks/useSiteChildren';
 import { allowedChildSpecsOf, siteSpecLabel } from '../../utils/geoLabels';
-import { NodeIcon } from './HierarchyTreeView';
+import { NodeIcon } from './NodeIcon';
 import { Modal } from './Modal';
 
 export type SiteSubSitesTabProps = {
@@ -39,10 +39,7 @@ export function SiteSubSitesTab({
   // Filhos do Site cacheados/deduplicados em nível de módulo (useSiteChildren) — a mesma
   // chamada alimenta SiteResourcesTab, cada aba filtrando por `kind` localmente.
   const { nodes: children, loading, reload: reloadSiteChildren } = useSiteChildren(siteId);
-  const rootNodes = useMemo(
-    () => children.filter((node) => node.kind === 'site'),
-    [children],
-  );
+  const rootNodes = useMemo(() => children.filter((node) => node.kind === 'site'), [children]);
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
@@ -237,7 +234,10 @@ function SubSiteBranch({
           </button>
           {menuOpen ? (
             <>
-              <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setMenuOpen(false)} />
+              <div
+                className="fixed inset-0 z-[var(--z-dropdown)]"
+                onClick={() => setMenuOpen(false)}
+              />
               <div
                 role="menu"
                 className="absolute right-0 top-full z-[var(--z-overlay)] mt-1 w-44 overflow-hidden rounded-[12px] border border-app-border bg-white py-1 shadow-soft"

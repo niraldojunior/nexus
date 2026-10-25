@@ -808,10 +808,12 @@ describe('GeoSearchBar', () => {
     await waitFor(() => expect(screen.getByText(/Rua Doutor Paulo Cesar/i)).toBeInTheDocument());
     fireEvent.click(screen.getByText(/Rua Doutor Paulo Cesar, 155, Niterói/i));
 
-    await waitFor(() => expect(mocks.fetchSitesByAddress).toHaveBeenCalledWith(
-      expect.objectContaining({ street: 'Rua Doutor Paulo Cesar', streetNr: '155' }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    ));
+    await waitFor(() =>
+      expect(mocks.fetchSitesByAddress).toHaveBeenCalledWith(
+        expect.objectContaining({ street: 'Rua Doutor Paulo Cesar', streetNr: '155' }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
     await waitFor(() => expect(onSelectNode).toHaveBeenCalledWith(node));
     expect(onAddressFound).not.toHaveBeenCalled();
   });
@@ -931,10 +933,10 @@ describe('GeoSearchBar', () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  it('sem texto nem seleção e com a hierarquia fechada, oferece abrir a hierarquia', () => {
+  it('sem texto nem seleção e com o painel fechado, oferece abrir o Copilot', () => {
     mocks.fetchTreeSearch.mockResolvedValue([]);
     mocks.fetchAddressPredictions.mockResolvedValue([]);
-    const onToggleHierarchy = vi.fn();
+    const onToggleSidePanel = vi.fn();
 
     render(
       <GeoSearchBar
@@ -943,20 +945,20 @@ describe('GeoSearchBar', () => {
         onSelectNode={vi.fn()}
         onAddressFound={vi.fn()}
         onAddressError={vi.fn()}
-        hierarchyOpen={false}
-        onToggleHierarchy={onToggleHierarchy}
+        sidePanelOpen={false}
+        onToggleSidePanel={onToggleSidePanel}
       />,
     );
 
     expect(screen.queryByLabelText('Limpar busca')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('Abrir hierarquia'));
-    expect(onToggleHierarchy).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText('Abrir Copilot'));
+    expect(onToggleSidePanel).toHaveBeenCalledTimes(1);
   });
 
-  it('com a hierarquia aberta e sem busca, o X só fecha o painel — não desseleciona', () => {
+  it('com o Copilot aberto e sem busca, o X só fecha o painel — não desseleciona', () => {
     mocks.fetchTreeSearch.mockResolvedValue([]);
     mocks.fetchAddressPredictions.mockResolvedValue([]);
-    const onToggleHierarchy = vi.fn();
+    const onToggleSidePanel = vi.fn();
     const onClear = vi.fn();
 
     render(
@@ -967,23 +969,23 @@ describe('GeoSearchBar', () => {
         onAddressFound={vi.fn()}
         onAddressError={vi.fn()}
         onClear={onClear}
-        hierarchyOpen
-        onToggleHierarchy={onToggleHierarchy}
+        sidePanelOpen
+        onToggleSidePanel={onToggleSidePanel}
       />,
     );
 
-    expect(screen.queryByLabelText('Abrir hierarquia')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('Fechar hierarquia'));
-    expect(onToggleHierarchy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Abrir Copilot')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Fechar Copilot'));
+    expect(onToggleSidePanel).toHaveBeenCalledTimes(1);
     expect(onClear).not.toHaveBeenCalled();
   });
 
-  it('com texto e a hierarquia aberta, o X limpa a busca e preserva a hierarquia', () => {
+  it('com texto e o Copilot aberto, o X limpa a busca e preserva o painel', () => {
     mocks.fetchTreeSearch.mockResolvedValue([]);
     mocks.fetchAddressPredictions.mockResolvedValue([]);
     const onQueryChange = vi.fn();
     const onClear = vi.fn();
-    const onToggleHierarchy = vi.fn();
+    const onToggleSidePanel = vi.fn();
 
     render(
       <GeoSearchBar
@@ -993,15 +995,15 @@ describe('GeoSearchBar', () => {
         onAddressFound={vi.fn()}
         onAddressError={vi.fn()}
         onClear={onClear}
-        hierarchyOpen
-        onToggleHierarchy={onToggleHierarchy}
+        sidePanelOpen
+        onToggleSidePanel={onToggleSidePanel}
       />,
     );
 
     fireEvent.click(screen.getByLabelText('Limpar busca'));
     expect(onQueryChange).toHaveBeenCalledWith('');
     expect(onClear).toHaveBeenCalledTimes(1);
-    expect(onToggleHierarchy).not.toHaveBeenCalled();
+    expect(onToggleSidePanel).not.toHaveBeenCalled();
   });
 
   it('no mobile a marca do Nexus abre o menu principal; no desktop ela não aparece', () => {

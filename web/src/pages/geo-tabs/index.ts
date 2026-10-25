@@ -1,11 +1,12 @@
 export { TabSelector, type TabSelectorProps, type TabId } from './TabSelector';
 export { AddEquipmentModal, type AddEquipmentModalProps } from './AddEquipmentModal';
 export {
-  HierarchySidebar,
-  type HierarchySidebarProps,
-  type HierarchySidebarTab,
-} from './HierarchySidebar';
-export { HierarchyTreeView, NodeIcon } from './HierarchyTreeView';
+  GeoSidePanel,
+  type GeoSidePanelProps,
+  type GeoSidePanelTab,
+  type CopilotPanelView,
+} from './GeoSidePanel';
+export { NodeIcon } from './NodeIcon';
 export { Modal, type ModalProps } from './Modal';
 export { ProjectIcon, type ProjectIconProps } from './ProjectIcon';
 export { ProjectListView, type ProjectListViewProps } from './ProjectListView';
